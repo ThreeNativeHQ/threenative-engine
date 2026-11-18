@@ -44,8 +44,8 @@ async function gameProject(): Promise<string> {
     join(root, "node_modules", "@threenative", "assets"),
   );
   await symlink(
-    new URL("../../procedural-vegetation/", import.meta.url).pathname,
-    join(root, "node_modules", "@threenative", "procedural-vegetation"),
+    new URL("../../procedural-environment/", import.meta.url).pathname,
+    join(root, "node_modules", "@threenative", "procedural-environment"),
   );
   await writeFile(
     join(root, "threenative.config.ts"),
@@ -169,6 +169,44 @@ describe("mapterhorn tiles", () => {
     vi.stubGlobal("fetch", notFound);
     await expect(surveyHeights({ ...sprague, ...credit }, 129)).rejects.toThrow(
       /Sprague Lake[\s\S]*no Mapterhorn tile at any zoom/,
+    );
+  });
+
+  it("waits for the remaining tile reads before returning a survey failure", async () => {
+    vi.stubEnv("TN_TERRAIN_TILE_CACHE", await makeTempDir("tn-terrain-pending-"));
+    let releaseTile = () => {};
+    const pendingTile = new Promise<Response>((resolve) => {
+      releaseTile = () => resolve(new Response(null, { status: 404 }));
+    });
+    let notifyFetch = () => {};
+    const siblingStarted = new Promise<void>((resolve) => {
+      notifyFetch = resolve;
+    });
+    vi.stubGlobal(
+      "fetch",
+      vi
+        .fn()
+        .mockRejectedValueOnce(new Error("fixture tile failure"))
+        .mockImplementation(() => {
+          notifyFetch();
+          return pendingTile;
+        }),
+    );
+    const failed = vi.fn();
+    const survey = surveyHeights(
+      { ...credit, name: "Tile seam", lat: 0, lon: 0, extentMeters: 90 },
+      129,
+    ).catch(failed);
+    try {
+      await siblingStarted;
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(failed).not.toHaveBeenCalled();
+    } finally {
+      releaseTile();
+      await survey;
+    }
+    expect(failed).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("fixture tile failure") }),
     );
   });
 

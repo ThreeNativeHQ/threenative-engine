@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+/* Storybook 8's dark theme as tokens; a light theme redefines these under a selector. */
+@theme {
+  --color-app: #222425;
+  --color-sidebar: #1b1c1d;
+  --color-raised: #2e3438;
+  --color-line: #3a3f43;
+  --color-ink: #c9cdcf;
+  --color-muted: #798186;
+  --color-accent: #029cfd;
+  --color-accent-ink: #ffffff;
+  --color-hover: #2a2f33;
+  --color-doc: #ffae00;
+  --color-story: #37d5d3;
+  --color-group: #1ea7fd;
+  --color-danger: #ff6b5f;
+  --font-sans: "Nunito Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+}
+
+:root {
+  color-scheme: dark;
+}
+
+@layer components {
+  .tool {
+    @apply inline-flex size-7 cursor-pointer items-center justify-center rounded text-muted hover:bg-hover hover:text-accent aria-pressed:text-accent disabled:opacity-40;
+  }
+  .field {
+    @apply w-full rounded border border-line bg-sidebar px-2 py-1.5 text-ink outline-none focus:border-accent;
+  }
+  details > summary {
+    @apply cursor-pointer list-none select-none;
+  }
+  details > summary::-webkit-details-marker {
+    display: none;
+  }
+  details:not([open]) > summary .chev {
+    @apply -rotate-90;
+  }
+}
+
+* {
+  scrollbar-color: var(--color-line) transparent;
+}

@@ -6,6 +6,7 @@ export default defineConfig({
   entry: {
     index: "src/index.ts",
     kit: "src/kit.ts",
+    "kit-world": "src/kit-world.ts",
     starter: "src/starter.ts",
     three: "src/three.ts",
     export: "src/export.ts",

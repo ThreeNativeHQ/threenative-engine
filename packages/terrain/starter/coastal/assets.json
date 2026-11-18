@@ -7,5 +7,15 @@
       "max": [2.763, 14.078, 2.465]
     },
     "tree": true
+  },
+  "boulder": {
+    "near": "boulder_01/boulder-near.glb",
+    "mid": "boulder_01/boulder-mid.glb",
+    "midDistance": 35,
+    "maxDistance": 300,
+    "bounds": {
+      "min": [-0.716, 0, -0.991],
+      "max": [0.557, 1.004, 0.841]
+    }
   }
 }

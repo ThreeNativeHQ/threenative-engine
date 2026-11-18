@@ -119,6 +119,9 @@ export class DesktopPlaytestDriver implements IDevicePlaytestDriver {
       // engine prints it only where a developer asked for the dev surfaces. The shell's value must
       // not decide it: an inherited `DEV_MODE=0` would leave the check blind rather than red.
       DEV_MODE: "1",
+      // The engine counts its work into TN_FRAME_BUDGET.counters.engine for the run, as the browser runner's
+      // __THREENATIVE_ENGINE_COST__ does; the player sets that global from this key before the game evaluates.
+      TN_ENGINE_COST: "1",
       ...this.options.env,
       TN_PLAYTEST_MAILBOX_ROOT: this.mailboxRoot,
       // The host reads the request before it evaluates the game entry, the way the browser runner

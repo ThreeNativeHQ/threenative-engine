@@ -7,16 +7,7 @@ import {
 } from "@threenative/core";
 import { Heightfield, warmUnculled } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import {
-  type AnimationClip,
-  Mesh,
-  MeshStandardMaterial,
-  type PerspectiveCamera,
-  Vector2,
-  Vector3,
-} from "three";
-import { uniform } from "three/tsl";
-import type { MeshStandardNodeMaterial } from "three/webgpu";
+import { addStreamedGround, createSpawnGate } from "@threenative/terrain/starter";
 import {
   beginScene,
   createMeasure,
@@ -27,12 +18,27 @@ import {
   observeFrame,
   observeWindow,
   publish,
-} from "./diagnostics.js";
+} from "@threenative/terrain/starter";
+import {
+  type AnimationClip,
+  Mesh,
+  MeshStandardMaterial,
+  type PerspectiveCamera,
+  Vector2,
+  Vector3,
+} from "three";
+import { uniform } from "three/tsl";
+import type { MeshStandardNodeMaterial } from "three/webgpu";
 import { type IMannequin, type IPlayerRig, createPlayerRig } from "./playerRig.js";
 import { BENCHMARK, type ViewName, posesFor } from "./render/benchmark.js";
 import { biomeSpec } from "./render/biomeData.js";
 import { BIOMES, type IWorldBiome, measureBiome } from "./render/biomes.js";
-import { HORIZON_REACH, loadHorizonSurroundings } from "./render/ground/horizon.js";
+import {
+  COLLAR_CURVE,
+  HORIZON_REACH,
+  createWorldHeight,
+  loadHorizonSurroundings,
+} from "./render/ground/horizon.js";
 import { type IBakedWorld, type ITerrainStream, createTerrain } from "./render/ground/terrain.js";
 import { forestAssets } from "./render/kitAssets.js";
 import { createLoadingScreen } from "./render/loading.js";
@@ -41,10 +47,9 @@ import { invalidatePropShadows } from "./render/props/propWorld.js";
 import { buildPropVariants } from "./render/props/props.js";
 import { type IOutdoorSky, createOutdoorSky, installOutdoorOcclusion } from "./render/sky/sky.js";
 import { type IRiverWater, WATER_LAYER, createLakes, createRivers } from "./render/water/river.js";
+import { WORLD } from "./render/worldNames.js";
 import { type IMeadow, type Scatter, type Variants, createMeadow } from "./sceneProps.js";
 import { type TerrainCtx, type TerrainState, initialState } from "./sceneState.js";
-import { createSpawnGate } from "./spawnGate.js";
-import { addStreamedGround } from "./world/streamedGround.js";
 import { walkBandSlices } from "./world/walkBand.js";
 import { waterCurrentAt, waterSurfaceAt } from "./world/water.js";
 import { loadBakedWorld } from "./worlds.js";
@@ -57,7 +62,7 @@ const SWIM_CLIPS = "mannequin-swim.glb";
 /** The player's model, from the game's own asset root (the scaffold ships it). */
 const MANNEQUIN = "mannequin.glb";
 
-const world = "forest";
+const world = WORLD;
 // What the game resolves this world from: its rules, and the look it is graded under.
 const spec = biomeSpec(world);
 const look = BIOMES[world];
@@ -186,7 +191,7 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
       revealed: () => ctx.state.set({ revealComplete: true }),
     });
     // One scene-local spawn gate: a single deadline, settled once by the world readiness join, a
-    // failure or teardown. `src/spawnGate.ts` owns it and reports the one line a failed spawn leaves.
+    // failure or teardown. `@threenative/terrain/starter` owns it and reports the one line a failed spawn leaves.
     const gate = createSpawnGate(ctx, {
       world,
       progress: () => (meadow?.progress() ?? 0) + ctx.state.getState().spawnCellsLoaded,
@@ -348,16 +353,20 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
       const streamLoad = this.#bandLoad;
       groundReady = stream.material.then((surface) => {
         if (streamLoad !== this.#bandLoad) return surface.dispose();
-        const ground = addStreamedGround(
+        const ground = addStreamedGround({
           ctx,
-          data,
-          world,
-          surface,
+          name: world,
+          size: data.size,
+          resolution: data.resolution,
+          height: createWorldHeight(data, world),
           collar,
-          stream.split,
-          actor,
-          (facts) => ctx.state.set(facts),
-        );
+          curve: COLLAR_CURVE,
+          reach: HORIZON_REACH,
+          stream: stream.split,
+          surface,
+          follow: actor,
+          report: (facts) => ctx.state.set(facts),
+        });
         ctx.entities.add("streamed-ground", { tiles: ground.tiles, dispose: ground.dispose });
         return ground.ready;
       });
@@ -602,7 +611,7 @@ export class ForestScene extends Scene<TerrainState, IPhysicsContext> {
     const at = (x: number, z: number, up: number): Vector3 =>
       new Vector3(x, field.heightAt(x, z) + up, z);
     ctx.beforeRender(() => {
-      observeFrame(world, ctx);
+      observeFrame(ctx);
       const view = ctx.state.getState().view;
       rig.figure.root.visible = view === "player" && !ctx.state.getState().showcase;
       if (view === "player") {

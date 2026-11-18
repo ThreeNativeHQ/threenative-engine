@@ -76,7 +76,7 @@ flowchart TD
   game["a generated game<br/>addStarterWorld from /starter"] --> terrain
   terrain --> core["@threenative/core<br/>/world: Heightfield, WorldCells, TerrainTiles"]
   terrain --> physics["@threenative/physics<br/>collider + rigid body in /starter"]
-  terrain --> arbor["@threenative/procedural-vegetation<br/>resolved in the project, never bundled"]
+  terrain --> arbor["@threenative/procedural-environment<br/>resolved in the project, never bundled"]
   terrain --> three["three<br/>geometry and GLB assembly only"]
   preview --> core
 ```
@@ -86,7 +86,7 @@ cook receives `cookTerrainWorld` through `loadCooker`, which resolves the instal
 project root (`packages/terrain/src/cook/cook.ts`), because a cook must run against the consumer's
 installed asset pipeline and never a second copy. A starter's `bake.mjs` is game source, so it imports
 `@threenative/assets` itself and hands `cookTerrainWorld` to `bakeKit`.
-`@threenative/procedural-vegetation` is the same shape: an Arbor species is baked by the installed
+`@threenative/procedural-environment` is the same shape: an Arbor species is baked by the installed
 package, and a project without it fails with a named error.
 
 ## 3. The three producers
@@ -192,6 +192,7 @@ is the stage; a file two stages import lives at the root of `src/` or in `core/`
 | `packages/terrain/src/ground/` | Where the heights come from | `surveys.ts`, `presets.ts`, `massif.ts`, `survey.ts` (the fetch) and `ground.ts` (the survey, heightmap and procedural ground, plus the far ring) |
 | `packages/terrain/src/water/` | Rivers, lakes, coast | `water.ts` (the segment index a consumer reads) and `stages.ts` (water rows, sea level, coast, lakes, rivers and the flooded bodies the reply reports) |
 | `packages/terrain/src/population/` | What grows and where | `scatter-ordered.ts`, `placements.ts`, `placement-edits.ts`, `cover-field.ts`, `grass-field.ts`, `arbor-species.ts` and `foliage.ts` (the biome's rows on the evaluated ground) |
+| `packages/terrain/src/runtime/` | What a starter kit composes | `streamed-ground.ts`, `collar.ts`, `prop-world.ts`, `prop-pose.ts`, `player-rig.ts`, `spawn-gate.ts`, `diagnostics.ts` and `view-statistics.ts`: the mechanisms a copied kit calls instead of writing its own |
 | `packages/terrain/src/package/` | The files a world ships as | `world-package.ts`, `prop-package.ts`, `export.ts`, `far-field.ts`, `bake.ts` and `glb-stats.ts` |
 | `packages/terrain/src/cook/` | The cook's order of stages | `cook.ts` (`cookKit`, `loadCooker` and `cookInto`, the stage order), `reply.ts` (the tool result and its game snippets), `cook-child.ts` and `child.ts` |
 | `packages/terrain/src/mcp/` | Tool schemas and dispatch | `server.ts` (the JSON-RPC surface) and `tools.ts` (the tool schemas, the request arguments and the patch parser); the cook itself is in `packages/terrain/src/cook/` (see [`cook.md`](cook.md)) |

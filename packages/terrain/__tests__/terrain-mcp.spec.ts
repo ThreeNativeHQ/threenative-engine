@@ -62,6 +62,14 @@ async function starterBiome(kit: TerrainKit): Promise<Record<string, unknown>> {
   );
 }
 
+/** The same world with one layer switched off: the ground a feature's cut is measured against. */
+function withoutLayer(recipe: ITerrainDocument, id: string): ITerrainDocument {
+  return {
+    ...recipe,
+    layers: recipe.layers.map((layer) => (layer.id === id ? { ...layer, enabled: false } : layer)),
+  };
+}
+
 /** Every file under `root`, skipping installed packages: a tool call's writes are what it proves. */
 async function filesUnder(root: string, prefix = ""): Promise<string[]> {
   const entries = await readdir(join(root, prefix), { withFileTypes: true });
@@ -138,8 +146,8 @@ describe("terrain_generate catalog and cook cache", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       const ask = async (args: Record<string, unknown>) => {
         const started = performance.now();
@@ -783,8 +791,8 @@ describe("terrain_generate result", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -919,8 +927,8 @@ describe("terrain_generate cold GLB handoff", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     const start = performance.now();
     const child = spawn(
@@ -997,8 +1005,8 @@ describe("every shipped kit cooks", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1078,8 +1086,8 @@ describe("terrain_generate overrides", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1189,8 +1197,8 @@ describe("terrain_generate biome cooks", () => {
       join(project, "node_modules", "@threenative", "assets"),
     );
     await symlink(
-      new URL("../../procedural-vegetation/", import.meta.url).pathname,
-      join(project, "node_modules", "@threenative", "procedural-vegetation"),
+      new URL("../../procedural-environment/", import.meta.url).pathname,
+      join(project, "node_modules", "@threenative", "procedural-environment"),
     );
     await writeFile(
       join(project, "threenative.config.ts"),
@@ -1331,21 +1339,22 @@ describe("terrain_generate biome cooks", () => {
   // digs one, and the sea the request names surrounds the land. The visual check that found both
   // gaps: the lake drew zero flooded cells, and the island stood as a slab in a flooded plane.
   it.each([
-    ["a volcanic island with a lake", "procedural"],
-    ["a small island with a lake", undefined],
+    ["a volcanic island with a lake", { ground: "procedural" }],
+    // The coast's own crop is a surveyed beach whose lagoon opens to the sea, and "island" names its
+    // own landform, so the words alone cook the starter rather than a preset. The dug lake this case
+    // asserts is the preset's, so the case cooks the preset the words name.
+    ["a small island with a lake", { landform: "coastalCliffs", ground: "procedural" }],
   ] as const)(
     "floods a lake inside the land of %s, and the sea rings it",
-    async (request, ground) => {
-      const world = await cook({
-        ...parseGenerateRequest({ request }).input,
-        ...(ground === undefined ? {} : { ground }),
-      });
+    async (request, overrides) => {
+      const world = await cook({ ...parseGenerateRequest({ request }).input, ...overrides });
       try {
         const state = Terrain.fromJSON(world.recipe).evaluate();
         const n = state.resolution;
         const ocean = state.waters.find((water) => water.kind === "ocean");
         const lake = state.waters.find((water) => water.kind === "lake");
-        expect(ocean?.level).toBe(1.5);
+        // The sea stands at the coastal starter's own level, a word floods what a starter does.
+        expect(ocean?.level).toBe(0);
         // The lake floods real cells, none of them the sea's or next to it.
         const wet = (lake?.mask ?? new Uint8Array()).reduce((sum, cell) => sum + cell, 0);
         expect(wet).toBeGreaterThan(20);
@@ -1355,9 +1364,9 @@ describe("terrain_generate biome cooks", () => {
         // Every border cell is under the sea: land the sea surrounds, not a slab.
         for (let k = 0; k < n; k += 1)
           for (const i of [k, (n - 1) * n + k, k * n, k * n + n - 1])
-            expect(state.height[i]).toBeLessThan(1.5);
+            expect(state.height[i]).toBeLessThan(0);
         expect(world.result.water).toEqual([
-          { kind: "ocean", level: 1.5 },
+          { kind: "ocean", level: 0 },
           expect.objectContaining({ kind: "lake" }),
         ]);
       } finally {
@@ -1401,15 +1410,20 @@ describe("terrain_generate biome cooks", () => {
           cellOf(x + Math.cos(turn) * radius[0] * 3, z + Math.sin(turn) * radius[0] * 3);
         expect(along.length).toBeGreaterThan(1);
         if (feature === "canyon") {
-          const mean = (cells: number[]) =>
-            cells.reduce((sum, i) => sum + (state.height[i] as number), 0) / cells.length;
-          const floor = mean(along.map(([x, z]) => cellOf(x, z)));
-          const rim = mean(along.map(([x, z]) => beside(x, z)));
-          expect(rim - floor).toBeGreaterThan(15);
+          // The cut's own depth, measured against the same ground without it: a real survey falls away
+          // along the cut, so ground beside it is not that cell's own floor.
+          const bare = Terrain.fromJSON(withoutLayer(world.recipe, `${feature}-0`)).evaluate();
+          const dropped = along.map(
+            ([x, z]) =>
+              (bare.height[cellOf(x, z)] as number) - (state.height[cellOf(x, z)] as number),
+          );
+          const mean = dropped.reduce((sum, value) => sum + value, 0) / dropped.length;
+          expect(mean).toBeGreaterThan(15);
         } else {
           const ocean = state.waters.find((water) => water.kind === "ocean");
           // The inlet's own points flood from the sea, and land stands beside them.
-          const inland = along.filter(([x, z]) => (state.height[beside(x, z)] as number) > 1.5);
+          const sea = ocean?.level ?? 0;
+          const inland = along.filter(([x, z]) => (state.height[beside(x, z)] as number) > sea);
           expect(inland.length).toBeGreaterThan(0);
           for (const [x, z] of inland) expect(ocean?.mask[cellOf(x, z)]).toBe(1);
         }
@@ -1458,9 +1472,9 @@ describe("terrain_generate request words", () => {
     ["river", { kind: "river", width: 5.32 }, "desert"],
     ["lake", { kind: "lake", radius: 105 }, "desert"],
     ["pond", { kind: "lake", radius: 105 }, "desert"],
-    ["island", { kind: "ocean", level: 1.5 }, "forest"],
-    ["ocean", { kind: "ocean", level: 1.5 }, "forest"],
-    ["sea", { kind: "ocean", level: 1.5 }, "forest"],
+    ["island", { kind: "ocean", level: 0 }, "forest"],
+    ["ocean", { kind: "ocean", level: 0 }, "forest"],
+    ["sea", { kind: "ocean", level: 0 }, "forest"],
   ])("reads '%s' as the water the world floods", (word, row, biome) => {
     const { input, decided } = parseGenerateRequest({ request: `a ${biome} world with a ${word}` });
     expect(input.water).toEqual([row]);
@@ -1608,8 +1622,8 @@ describe("terrain_generate request words", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),
@@ -1681,8 +1695,8 @@ describe("every landform under every biome", () => {
           join(project, "node_modules", "@threenative", "assets"),
         );
         await symlink(
-          new URL("../../procedural-vegetation/", import.meta.url).pathname,
-          join(project, "node_modules", "@threenative", "procedural-vegetation"),
+          new URL("../../procedural-environment/", import.meta.url).pathname,
+          join(project, "node_modules", "@threenative", "procedural-environment"),
         );
         await writeFile(
           join(project, "threenative.config.ts"),
@@ -1809,8 +1823,8 @@ describe("terrain_generate regions", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),
@@ -1930,8 +1944,8 @@ describe("terrain_biome_new", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       const retry = await askServer(project, "terrain_biome_new", {
         from: "forest",
@@ -1954,8 +1968,8 @@ describe("terrain_biome_new", () => {
         join(project, "node_modules", "@threenative", "assets"),
       );
       await symlink(
-        new URL("../../procedural-vegetation/", import.meta.url).pathname,
-        join(project, "node_modules", "@threenative", "procedural-vegetation"),
+        new URL("../../procedural-environment/", import.meta.url).pathname,
+        join(project, "node_modules", "@threenative", "procedural-environment"),
       );
       await writeFile(
         join(project, "threenative.config.ts"),

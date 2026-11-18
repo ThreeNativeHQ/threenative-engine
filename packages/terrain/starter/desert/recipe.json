@@ -46,7 +46,7 @@
         "type": "erode",
         "params": {
           "method": "thermal",
-          "talus": 60,
+          "talus": 48,
           "iterations": 1,
           "rate": 0.004
         }
@@ -58,12 +58,6 @@
         "type": "materials",
         "params": {
           "rules": [
-            {
-              "material": "sand",
-              "mask": {
-                "type": "all"
-              }
-            },
             {
               "material": "dirt",
               "mask": {
@@ -79,7 +73,7 @@
               "material": "rock",
               "mask": {
                 "type": "slope",
-                "min": 28,
+                "min": 30,
                 "max": 90,
                 "fade": 8
               }
@@ -90,19 +84,72 @@
       {
         "enabled": true,
         "opacity": 1,
-        "id": "scrub",
+        "id": "scree",
         "type": "scatter",
         "params": {
           "asset": "boulder",
-          "count": 140,
-          "minDistance": 5,
-          "maxSlope": 25,
-          "scale": [
-            0.7,
-            1.3
-          ]
+          "count": 90,
+          "minDistance": 6,
+          "minSlope": 15,
+          "maxSlope": 45,
+          "scale": [0.6, 1.6]
         }
       }
     ]
+  },
+  "world": {
+    "name": "desert",
+    "ground": {
+      "base": "grass",
+      "layers": ["dirt", "moss", "sand", "rock", "snow"],
+      "roughness": 0.95
+    },
+    "art": [
+      "boulder_01",
+      "rock_face",
+      "rock_boulder_dry",
+      "rocks",
+      "cliff_side",
+      "snow_02",
+      "grass_medium",
+      "leafy_grass",
+      "lichen_rock",
+      "mossy_rock",
+      "shrub_02",
+      "tree_small_02",
+      "fir_tree_01",
+      "hdri/kloofendal_48d_partly_cloudy_1k.hdr",
+      "mannequin-swim.glb",
+      "bark_brown_02",
+      "celandine_01",
+      "dandelion_01",
+      "dead_tree_trunk",
+      "dry_branches_medium_01",
+      "fern_02",
+      "forest_ground_04",
+      "moss_01",
+      "nettle_plant",
+      "periwinkle_plant",
+      "sand_01",
+      "shrub_04",
+      "tree_stump_01",
+      "weed_plant_02",
+      "needle-atlas.png",
+      "needle-surface.png",
+      "fir_tree_01/fir_tree_01_twig_arm_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_diff_1k.jpg",
+      "fir_tree_01/fir_tree_01_twig_nor_gl_1k.jpg",
+      "hdri/kloofendal_48d_partly_cloudy_2k.hdr",
+      "desert_flora",
+      "desert_rocks",
+      "aerial_beach_01",
+      "rocky_trail_02"
+    ],
+    "farRing": {
+      "survey": "desert-horizon",
+      "datum": 1420,
+      "seed": 1,
+      "layers": []
+    }
   }
 }

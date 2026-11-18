@@ -1,0 +1,83 @@
+# PRD-896 — A burned version fails in the first minute, and the upgrade proof runs before anything is public
+
+**Status:** DONE
+**Priority:** P1 — every box is closed. The gate was observed red on a real develop -> main board (below), and the proof ran end to end before the tag.
+**Complexity:** 4 (LOW-MEDIUM)
+**Owner:** CI tooling
+**Depends on:** PRD-629, PRD-630
+
+## Context
+
+A version whose git tag already carries a GitHub release, while npm does not serve its
+whole cohort, can never ship. `assertTagMovable` (`scripts/release-ship.ts`) refuses to move a tag that has any release, draft or
+public, and `nextStep` only skips the tag step when that tag already sits on the commit being
+shipped. With npm empty there is nothing to resume — the only move the
+repository has is a version bump, and nothing said so until the last step of a long road.
+
+Two releases burned on this, verified through the Actions API and the repository state:
+
+- **2026-11-12**, npm-release run 43294207203 shipped main `f2741d85` as 0.3.14. It tagged
+  `runtime-native-v0.3.14`, the native-release run made that release public at 20:01:59Z, and only
+  then did the publish step's upgrade check fail: `TN_RELEASE_UPGRADE_RED` — "a game on the previous
+  latest does not upgrade onto this candidate. Nothing was published." A public 0.3.14 release, no
+  `@threenative/core@0.3.14` on npm. The proof is the last gate before the first npm upload, and it
+  ran after the release was already public.
+- **2026-11-16**, release PR #676 (develop -> main) ran the full board, about an hour, merged as
+  `75dc4082`. npm-release run 43977377921 then spent evidence plus a roughly 20-minute
+  release-candidate run, and failed at the `tag` step: `TN_SHIP_TAG_HAS_RELEASE`. Nothing had told
+  anyone before the merge.
+
+## Solution
+
+Three parts, one rule each:
+
+1. Read the burn's three facts — the release on the tag, the commit the tag points at, and how much of
+   the cohort npm serves at the version — and refuse in `release:ship`'s first minute with
+   the fix named. One shared `assertVersionNotBurned`, so the two call sites cannot disagree.
+2. Run the same decision on the release pull request's own early board job, so a burned version is
+   red before the merge instead of after it.
+3. Prove the previous `latest` upgrades onto the candidate **before** the tag creates the release
+   that is visible (as a prerelease) the moment it exists. The publish proves again on purpose: its run
+   is the only one that reads the registry `latest` and the rebuilt tarballs at the moment of the upload.
+
+### Phase 1 — `release:ship` refuses a burned version before the evidence
+
+- [x] `release:ship` refuses through the same `checkReleaseVersion` the board job runs — one call, before the first state read, reading the release, the tag's commit and how many cohort packages npm serves, and no run list — and `assertVersionNotBurned` names the move that is actually available: a bump (`pnpm release:prepare --bump`), deleting a draft, or, when part of the cohort already reached npm, finishing it from the commit the tag points at. A draft with no tag yet is refused and says so, and deleting a *public* release is never advised. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 44 passed, including the three release states, the no-tag draft, the "1 of 2 packages" partial-cohort advice, the whole-cohort answer and the prerelease-is-not-a-hand-delete case; the burn cases fail while the call in `ship` is removed.
+
+### Phase 2 — the release pull request's board refuses it in its first minutes
+
+- [x] `pnpm release:check-version` (`scripts/release.ts check-version`) makes the same decision from the tree a release pull request would merge, with the same error and the same instruction. proof: the same spec's `pnpm release:check-version` cases.
+- [x] `ci.yml`'s `lint` job — an early job on the required path, gated on a pull request into `main` — runs it before the lint gate, which is where a burned version's red will land. proof: `node_modules/.bin/vitest run scripts/__tests__/ci-structure.spec.ts` — 201 passed, including the assertion that pins this step's command, its `github.base_ref == 'main'` condition, its token, and its place before the lint gate. ⚠️ **Wired and pinned, not yet observed**: this pull request targets `develop`, so the step's condition is false here and no run has executed it. The claim that the board goes red belongs to the open acceptance box below. **Three named limits**: a *draft* release is invisible to a `contents: read` token, so `release:ship` (which has write access) is what catches a draft, in its first minute; a `merge_group` into `main` skips the step, because `github.base_ref` is set only for pull requests and develop -> main merges with an ordinary merge commit; and the step lives in a job that a `prose` selection or a reused tree can skip, so it is a board gate and not a guarantee — `release:ship` reads the same facts again before it tags.
+
+### Phase 3 — the upgrade proof runs before anything about the version is public
+
+- [x] `pnpm release --prove-upgrade` is a real flag of the publish command: it refuses an uncommitted tree (a proof is a claim about HEAD's bytes) and every flag that would make it report a proof that never ran, and the argv `release:ship` runs is one shared constant with a spec. proof: `node_modules/.bin/vitest run scripts/__tests__/release.spec.ts` — 48 passed (the flag refusals, the argv case, and the `check-version` subcommand). What the run does end to end is the box below, still open.
+- [x] `pnpm release --prove-upgrade` runs end to end in CI mode on a real candidate, publishing nothing, and its wall time is recorded (5m16s). proof: 2026-11-16, this worktree at HEAD `cff165612` (version 0.3.14), `GITHUB_ACTIONS=true TN_PLAYTEST_ALLOW_SOFTWARE=1 pnpm release --prove-upgrade --skip-gates` — exit 1 with `TN_RELEASE_UPGRADE_RED`. The preflight printed "Every package is ready to publish", the run packed all 17 packages, installed the candidate into two clean rooms, passed `scaffold`, `install`, `lockfile` and `browser`, and failed on `gameplay`: `TN_PLAYTEST_CHECK_FAILED`, the reinvention lint rows rejecting the generated `Stage.ts` PRNG. That failure is the release branch's known red, not this branch's; the point of the run is that the proof executed, and that a burn is now visible *before* the tag instead of after it, which is exactly what 0.3.14 did not get. Two limits, named rather than hidden: the run used a tree whose 0.3.14 release exists, so it did not exercise the missing-prebuilt acknowledgement (that arm is covered by its spec table), and the proof's own lane is web-only.
+- [x] `release:ship` proves inside the `tag` step, before the tag is created: a red proof leaves nothing tagged, released, dispatched or published, an admin `--override` keeps its documented skip, a movable tag stays where it is when the proof is red, and a cohort npm only partly serves is refused before the tag instead of tagged. proof: `node_modules/.bin/vitest run scripts/__tests__/release-ship.spec.ts` — 44 passed (`proves the upgrade before the tag`, `a red upgrade proof leaves nothing tagged…`, `leaves a movable tag untouched when the upgrade proof is red`, `refuses to tag when part of the cohort is already on npm`, the override case; and `release.spec.ts`’s four `--prove-upgrade` flag refusals keep the proof-skipped guard unreachable).
+
+## Acceptance criteria
+
+- [x] A burned version stops `release:ship` in its first minute: no evidence read, no release-candidate dispatch, one error naming the bump. proof: the spec above plus the transcript in the pull request — `pnpm release:check-version` on this repository's own state, exit 1: "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.14 already has a public release at f2741d85099d4afb9ebd43178498fee0da348fc4. npm serves nothing of 0.3.14. The tag cannot move, so this commit cannot ship: run `pnpm release:prepare --bump`, then ship the new version."; `pnpm release:ship --dry-run` on the same state refuses with the same error before it reads any run. 
+- [x] A develop -> main board is red on this check before the merge, so a burned version never reaches `main`. proof: 2026-11-17, pull request #691 (base `main`, run `44026243755`), whose branch carried the burned 0.3.15 on purpose: `lint` job `133847335591`, step 6 of 21 "Refuse a release version whose tag is burned", failed 75 s into the run (step 05:45:54 -> 05:46:06) with "TN_SHIP_VERSION_BURNED: runtime-native-v0.3.15 already has a public release at dcc733fb… 1 of 17 cohort packages are on npm at 0.3.15 and the rest are not …", and step 7 "Run the complete lint gate" never ran. The pull request was closed and its branch deleted; nothing was merged and no release, tag or npm state was touched. The real release pull request #689 (0.3.16) ran the same step green, which is the correct answer for a version that is not burned — a green there is the gate holding, not a gap.
+
+## Decisions
+
+- 2026-11-16 (agent, per the owner's brief and the orchestrator's "Part B matters most"): the
+  fail-fast gate and the proof-before-the-tag ordering both land here. Keeping the release a draft
+  until npm serves the cohort is **not** attempted: the npm publish preflight requires the public
+  prebuilt release (`scripts/check-publish-state.ts:457`), and the consumer lanes read public asset
+  URLs, so that shape reaches further into the release path than the burn does. Its residue — a
+  publish proves after the release is public — is filed as PRD-897.
+- 2026-11-16 (agent, after a review round): a receipt-based reuse of the pre-tag proof — a
+  `--upgrade-proved` flag backed by a recorded green proof — was built and then **deleted**. It saved
+  one proof run, but it skipped the publish's own proof, which is the *only* run that sees the real
+  prebuilt release: a broken prebuilt download would then surface in the clean room after the npm
+  upload, and an npm version cannot be taken back. A red proof at the publish costs a version bump and
+  publishes nothing, so the extra run is the cheaper mistake. The residue it leaves — a publish that
+  proves behind a public release — is PRD-897's first phase.
+
+## Blocked on
+
+- The owner's separate call on the burned `0.3.14` state itself (the public
+  `runtime-native-v0.3.14` release and the missing npm cohort). This PRD touches no release, tag or
+  registry state, and its pull request merges only after the 0.3.15 release pull request.

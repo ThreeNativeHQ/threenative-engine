@@ -113,8 +113,8 @@ describe("pinned starter assets", () => {
     // The README's third devDependency: the bake grows the kit's Arbor trees and understory.
     await mkdir(join(game, "node_modules", "@threenative"), { recursive: true });
     await symlink(
-      join(root, "../procedural-vegetation"),
-      join(game, "node_modules", "@threenative", "procedural-vegetation"),
+      join(root, "../procedural-environment"),
+      join(game, "node_modules", "@threenative", "procedural-environment"),
     );
     await fixture.bake(pathToFileURL(join(game, "bake.mjs")).href, {
       sky: "hdri/kloofendal_48d_partly_cloudy_1k.hdr",

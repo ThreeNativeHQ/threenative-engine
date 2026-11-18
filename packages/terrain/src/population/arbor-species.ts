@@ -1,9 +1,11 @@
 import { existsSync, readFileSync } from "node:fs";
+import { cp, mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import type { IBiomeSpec } from "../biome/biome.js";
 
-/** The slice of `@threenative/procedural-vegetation` the cook calls; loaded from the game project. */
+/** The slice of `@threenative/procedural-environment` the cook calls; loaded from the game project. */
 interface IVegetation {
   bakeVegetation(options: {
     lods: readonly number[];
@@ -13,7 +15,11 @@ interface IVegetation {
     form?: Readonly<Record<string, unknown>>;
     leafImage?: string;
   }): Promise<
-    { bounds: { max: [number, number, number]; min: [number, number, number] }; path: string }[]
+    {
+      bounds: { max: [number, number, number]; min: [number, number, number] };
+      path: string;
+      lod?: number;
+    }[]
   >;
   vegetationPresets(): { id: string; kind: string }[];
 }
@@ -28,7 +34,7 @@ export interface IArborAsset {
   tree?: boolean;
 }
 
-/** Every tree preset `@threenative/procedural-vegetation` bakes, for the tool schemas; a spec checks it. */
+/** Every tree preset `@threenative/procedural-environment` bakes, for the tool schemas; a spec checks it. */
 export const ARBOR_TREE_IDS: readonly string[] = [
   "oak",
   "beech",
@@ -60,7 +66,7 @@ export const ARBOR_TREE_IDS: readonly string[] = [
   "jacaranda",
 ];
 
-const PACKAGE = "@threenative/procedural-vegetation";
+const PACKAGE = "@threenative/procedural-environment";
 const SPECIES = /^arbor:([a-z0-9]+)(?:@(\d{1,9}))?$/u;
 // The streamed LOD1 (about 7k triangles) is what an instanced stand draws; LOD2 is the far level.
 const LODS = [1, 2] as const;
@@ -107,7 +113,7 @@ async function loadVegetation(projectRoot: string, wanted: string): Promise<IVeg
 
 /**
  * Bakes one `arbor:<preset>[@seed]` species into `scratch` as a near and a mid level, with the
- * asset row a cook or a kit bake reads. `@threenative/procedural-vegetation` comes from `projectRoot`.
+ * asset row a cook or a kit bake reads. `@threenative/procedural-environment` comes from `projectRoot`.
  */
 export async function growArborAsset(
   projectRoot: string,
@@ -134,6 +140,77 @@ export async function growArborAsset(
   });
   const [near, mid] = files as [(typeof files)[number], (typeof files)[number]];
   return { bounds: near.bounds, maxDistance: 600, mid: mid.path, midDistance: 45, near: near.path };
+}
+
+/** One Arbor plant a streamed kit bakes: `lods` maps an Arbor level to the file suffix the pack reads. */
+export interface IKitArborArt {
+  readonly preset: string;
+  readonly seed: number;
+  readonly lods: Readonly<Record<string, string>>;
+  readonly form?: Readonly<Record<string, unknown>>;
+  readonly leafImage?: string;
+}
+
+/**
+ * Bakes a streamed kit's `world.arbor` rows into `out`: each `<stem>` writes `<stem><suffix>.glb`
+ * per level, so the species pack draws an Arbor plant like a scan with no GLB in the starter assets.
+ * The same preset, seed, form and level always write the same bytes. Returns the files written.
+ */
+export async function growKitArborArt(
+  rows: Readonly<Record<string, IKitArborArt>>,
+  projectRoot: string,
+  out: string,
+  assetsDir = projectRoot,
+): Promise<string[]> {
+  const written: string[] = [];
+  if (Object.keys(rows).length === 0) return written;
+  const vegetation = await loadVegetation(projectRoot, "world.arbor");
+  const presets = new Set(vegetation.vegetationPresets().map((one) => one.id));
+  const scratch = await mkdtemp(join(tmpdir(), "tn-kit-arbor-art-"));
+  try {
+    for (const [stem, row] of Object.entries(rows)) {
+      if (!presets.has(row.preset))
+        throw new Error(
+          `bake: world.arbor '${stem}' names no Arbor preset '${row.preset}'. Call vegetationPresets() from ${PACKAGE} for the ids.`,
+        );
+      written.push(...(await growKitArborRow(vegetation, stem, row, scratch, out, assetsDir)));
+    }
+  } finally {
+    await rm(scratch, { recursive: true, force: true });
+  }
+  return written;
+}
+
+/** One `world.arbor` row: bakes its levels in `scratch`, then copies each to `<stem><suffix>.glb`. */
+async function growKitArborRow(
+  vegetation: Awaited<ReturnType<typeof loadVegetation>>,
+  stem: string,
+  row: IKitArborArt,
+  scratch: string,
+  out: string,
+  assetsDir: string,
+): Promise<string[]> {
+  const lods = Object.keys(row.lods).map(Number);
+  if (lods.length === 0 || lods.some((lod) => !Number.isInteger(lod) || lod < 0))
+    throw new Error(`bake: world.arbor '${stem}' needs lods such as { "1": "-near" }`);
+  const files = await vegetation.bakeVegetation({
+    lods,
+    out: join(scratch, stem),
+    preset: row.preset,
+    seed: row.seed,
+    ...(row.form === undefined ? {} : { form: row.form }),
+    ...(row.leafImage === undefined ? {} : { leafImage: resolve(assetsDir, row.leafImage) }),
+  });
+  const written: string[] = [];
+  for (const [at, lod] of lods.entries()) {
+    const file = files.find((one) => one.lod === lod) ?? files[at];
+    if (file === undefined) throw new Error(`bake: world.arbor '${stem}' baked no level ${lod}`);
+    const target = join(out, `${stem}${row.lods[String(lod)]}.glb`);
+    await mkdir(dirname(target), { recursive: true });
+    await cp(file.path, target);
+    written.push(target);
+  }
+  return written;
 }
 
 /**

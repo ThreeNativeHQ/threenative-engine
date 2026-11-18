@@ -99,6 +99,10 @@ lifecycle.
 - **A real test harness.** Playtest scenarios drive the actual build in a browser or on a device
   and assert what happened — frames, transforms, state, performance.
 - **An asset pipeline.** Models and textures compile to hashed, manifest-tracked output.
+- **A procedural asset library.** `pnpm asset-library` opens a Storybook-style viewer of every
+  procedural tree, plant, rock, cliff and city module, each with its bake options as live controls
+  and a paste-ready bake call. See
+  [`procedural-environment`](packages/procedural-environment/README.md#browse-everything-pnpm-asset-library).
 - **An owned native runtime.** The same TypeScript runs on a C++ host for desktop and Android.
 - **Built for agents.** A searchable capability manifest ships with the library and is exposed over
   MCP, so an authoring agent finds what already exists instead of rewriting it.
@@ -141,7 +145,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
 | `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
-| `@threenative/procedural-vegetation` | Optional bake-first procedural tree GLBs (Arbor): `bakeVegetation`, `vegetationPresets` |
+| `@threenative/procedural-environment` | Optional bake-first procedural assets as GLBs: trees, cover and forest floor (`bakeVegetation`), rocks and cliffs (`bakeRock`), 75 city modules (`bakeCity`). Browse them with `pnpm asset-library` |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |
 | `@threenative/terrain` | Optional headless Strata authoring: validated recipes, baked heightfields and indexed Three.js geometry |
@@ -212,6 +216,8 @@ feature and the order to port them in.
   each version number promises before and after 1.0, and how a symbol gets deprecated.
 - [`packages/create-threenative/README.md`](packages/create-threenative/README.md) — templates and
   the scaffold command.
+- [`packages/procedural-environment/README.md`](packages/procedural-environment/README.md) — the
+  procedural asset library: what bakes, its options, and `pnpm asset-library` to browse it.
 - [Unreal render feature map](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
   — the Unreal 5.8.3 visual and performance systems, sized by measured lines of code, rated for
   complexity, and colored by ThreeNative status. Open the file in a browser. The

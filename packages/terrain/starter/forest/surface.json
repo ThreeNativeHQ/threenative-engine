@@ -28,8 +28,8 @@
       "tint": [0.8, 0.72, 0.62],
       "normal": true,
       "mask": "dirt",
-      "lo": 0.45,
-      "hi": 0.85,
+      "lo": 0.15,
+      "hi": 0.45,
       "far": {
         "tile": 15,
         "from": 4,

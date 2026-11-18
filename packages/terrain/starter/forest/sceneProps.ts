@@ -7,6 +7,8 @@ import {
   surfaceSampler,
 } from "@threenative/core/world";
 import { ScatterColliders } from "@threenative/physics";
+import type { ISpawnGate, ISpawnWitness } from "@threenative/terrain/starter";
+import type { IRevealProbe } from "@threenative/terrain/starter";
 import {
   Float32BufferAttribute,
   Mesh,
@@ -15,7 +17,6 @@ import {
   PerspectiveCamera,
   Vector3,
 } from "three";
-import type { IRevealProbe } from "./diagnostics.js";
 import { posesFor } from "./render/benchmark.js";
 import type { IBiome, IWorldBiome, WorldName } from "./render/biomes.js";
 import { HORIZON_WALK_BAND } from "./render/ground/horizon.js";
@@ -42,7 +43,6 @@ import {
 import { SHADOW_REACH } from "./render/sky/sky.js";
 import { preparePropTextures } from "./render/texturePreparation.js";
 import type { TerrainCtx } from "./sceneState.js";
-import type { ISpawnGate, ISpawnWitness } from "./spawnGate.js";
 
 /** The whole set of placements one world scatters, with the canopy weight painted from them. */
 export type Scatter = IScatter;

@@ -324,7 +324,9 @@ export function editWorldPlacements(
   const adds = normalizeAdds(edits.add, finalAssets);
   const overrideIds = new Set(Object.keys(overrides));
   if ((remove.length > 0 || overrideIds.size > 0) && sourceIds === undefined)
-    throw new Error("Placement ID edits require a sidecar; re-bake once to add placement IDs.");
+    throw new Error(
+      "TN_STARTER_EDIT_DATA: placement ID edits require a sidecar; re-bake once to add placement IDs.",
+    );
   for (const placementId of remove)
     if (overrideIds.has(placementId))
       throw new Error(`Placement '${placementId}' cannot be in both remove and overrides.`);

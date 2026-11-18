@@ -1251,6 +1251,22 @@
       "required": true
     },
     {
+      "id": "world-impostor-draw",
+      "title": "a baked whole-asset impostor draws its atlas colour beside its source (PRD-858)",
+      "category": "rendering",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/world-impostor-draw.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "channelRounding": 1,
+        "perceptualDeltaE": 3.0
+      },
+      "reason": "Ignore one 8-bit channel level of renderer rounding. At the same cutoff, sampling only layer 0 differs on 3.24% of pixels.",
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "72-tsl-time-node",
       "title": "tsl time node",
       "category": "webgpu-tsl",

@@ -21,6 +21,7 @@ import {
 import { biomeSpec } from "../biomeData.js";
 import type { WorldName } from "../biomes.js";
 import type { IBakedLake, IBakedRiver } from "../water/river.js";
+import { WORLD } from "../worldNames.js";
 
 /**
  * The far trees plant the band of hills just past the square, where a bare lawn read as a bug
@@ -30,7 +31,7 @@ const NEAR_REACH = 700;
 export const FAR_FOREST = true;
 
 /** The worlds that plant the collar past the square: the forest's surveyed valley. */
-export const FAR_FOREST_WORLDS: readonly WorldName[] = ["forest"];
+export const FAR_FOREST_WORLDS: readonly WorldName[] = [WORLD];
 
 /** The layer `streamedBucket` reads to put a placement in the far, shadowless bucket. */
 export const FAR_FOREST_LAYER = "far-forest";

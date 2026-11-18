@@ -1,47 +1,46 @@
 # Coastal starter kit
 
-A 512 m coastline on a real survey (USGS 1 m DEM, Colorado), with hydraulic and thermal erosion,
-rock on the steep ground, sand on the low ground, an ocean at 1.5 m and fir stands kept out of the
-water. It is game source: once copied, every file is yours to edit.
+A 512 m granite cove at Sand Beach and Great Head, Acadia National Park, Maine (USGS 3DEP 1 m DEM,
+NAVD88, so the sea stands at its real 0 m), with hydraulic and thermal erosion, pink granite on the
+steep ground, a pale sand beach, the flattened lagoon behind the beach as a lake, and red-spruce
+stands. The far ring is the same survey out to 5 km: Great Head, the Beehive and Champlain ridges and
+the open Gulf of Maine, real heights on the square's own datum. It is game source: once copied, every
+file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
-| `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the ocean and the stands. |
-| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
-| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
-| `assets.json` | The fir model, its LOD distance and draw distance, its bounds, and `"tree": true`: the art a landform cook plants the biome's own tree with. |
-| `surface.json` | The ground: the sand base, the rock layer, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package and `water.json` from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
-| `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the firs near the player, and the sky as the props' light. |
-| `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
-| `sea.ts` | The sea: the installed spectral simulation drives a lit water surface at the level the bake wrote. |
+| `recipe.json` | The terrain: the survey heightmap, erosion, the rock and sand surfaces, the granite stones its slopes scatter, the lagoon's lake and bed, and the sea at 0 m. Its `world` row names the far ring. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
+| `biome.data.json` | The biome record: spruce stands, understorey, ground and beach cover and their bands. The streamed bake places from it. |
+| `assets.json` | The legacy cell package's fir and granite boulder models, their LOD distances, draw distances and bounds. |
+| `surface.json` | The legacy cell package's ground table: sand base, rock layer, tiles, tints and thresholds. |
+| `bake.mjs` | Runs `bakeKit` with this kit's look and writes the streamed world: the baked grid, its splat, the canopy and sky bytes, `horizon.json`, the prop package and the art. |
+| `scene.ts` | The scene, `CoastalScene`, and `COASTAL_GAME`: the streamed ground, the far ring, the props, the sky, the sea, the lagoon and the player rig. |
+| `render/` | The look: the biome row (granite, sand, sea air), the ground material, the palette, the species pack, the sky and the water. `render/water/ocean.ts` draws the sea to the horizon, over the square's cove and the ring's open water alike. |
+| `world.ts`, `sky.ts`, `sea.ts` | The legacy cell-package loader, its daylight and its sea, kept until the streamed bake retires them here. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
-## Substitution
-
-The preview's coastal stands use its licensed spruce models, which cannot ship in a kit. This kit
-plants the CC0 fir from the forest kit in their place, with the same count and spacing. The
-`"tree": true` mark on that row is what a `terrain_generate` landform cook reads, so the biome
-file's own tree row grows the pack's fir instead of a treeless world; a kit with no such mark draws
-its preset's ground alone. The ocean is written to `water.json` as the one entry in `lakes`, with no
-`at`: the game draws it.
-
 ## Status
 
-The kit bakes, streams and draws its sea. The kit ships no scene: the game writes one. The sea is a
-lit surface at the baked level: the simulation's waves, the surf from the bake's shoreline, and the depth
-tint. Its colours and sea state are in `sea.ts`. The close-up view is named `boulders` in the shared captures, although
-it frames a fir.
+The kit is a source kit on the forest's stack: `scene.ts` streams the baked world, its far ring and
+its props, draws the sea at the baked level and the lagoon as a lake, and composes the player rig and
+diagnostics from `@threenative/terrain/starter`. The stands are the forest's spruce, which is the red
+spruce of the Maine coast; the PRD's pine, dune-grass and driftwood rows wait for the ordered stream
+to carry them.
 
 ## Steps
 
 1. Copy `node_modules/@threenative/terrain/starter/coastal` to `src/terrain/coastal`.
 2. Run `node src/terrain/coastal/bake.mjs --out assets/terrain/coastal` (needs `@threenative/terrain`
-   as a devDependency). The same recipe always writes the same bytes.
-3. In the scene, call `addCoastal(ctx, follow)` for the world and `coastalDaylight(follow)` for the light.
+   and `tsx` as devDependencies, because the bake reads this kit's TypeScript look). The same recipe
+   always writes the same bytes.
+3. Spread `COASTAL_GAME` into `defineGame` and register `CoastalScene`, as the forest kit's README shows.
 
 ## Edit at startup, without rebaking
+
+> The streamed bake retires this path for the coastal kit: the ground table and the props now come
+> from `render/`, and the section below still describes the legacy cell package.
 
 The copied `world.ts` loads its own `surface.json` as the ground table on every startup.
 Edit tints, tiling and blend thresholds there, or the material graph and prop dressing in

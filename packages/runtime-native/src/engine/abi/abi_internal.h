@@ -6,6 +6,7 @@
 
 #include <cstdint>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -86,6 +87,8 @@ void dropHandle(tn_handle_t handle);
 
 /** Calls that crossed the C ABI (construct, invoke, get, set) since the process started. */
 uint64_t crossings();
+/** Counts one crossing a language adapter made through an entry point outside construct/invoke/get/set. */
+void noteCrossing(std::string_view name);
 
 /**
  * A counter that moves whenever the engine may have started or stopped holding an object for the language

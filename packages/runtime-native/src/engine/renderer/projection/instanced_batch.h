@@ -40,6 +40,7 @@
 #include "engine/foundation/math/Euler.h"
 #include "engine/foundation/math/Matrix.h"
 #include "engine/foundation/math/Primitives.h"
+#include "engine/renderer/lod/instanced_lod.h"
 #include "engine/foundation/math/Quaternion.h"
 #include "engine/foundation/math/Vector.h"
 #include "engine/renderer/lod/model_lod.h"
@@ -260,7 +261,7 @@ class InstancedBatch {
     std::shared_ptr<BufferGeometry> carrier_;
     std::vector<std::vector<uint32_t>> groups_;
     std::vector<uint32_t> partitionOf_;
-    std::vector<int> states_;
+    lod::InstancedLodState lod_;
     std::vector<std::shared_ptr<InstancedMesh>> children_;
     Sphere local_;
 };

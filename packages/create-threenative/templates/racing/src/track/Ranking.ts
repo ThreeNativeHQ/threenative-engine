@@ -7,7 +7,13 @@ export interface IRacerProgress {
   readonly position: Vector3;
 }
 
-export interface IRankedRacer extends IRacerProgress {
+/**
+ * A ranked row is game state, so it holds plain values only: hot reload throws on a class
+ * instance, and a `position: Vector3` here reloaded the whole page on every edit.
+ */
+export interface IRankedRacer {
+  readonly id: string;
+  readonly lap: number;
   readonly place: number;
   readonly routeProgress: number;
 }
@@ -15,7 +21,6 @@ export interface IRankedRacer extends IRacerProgress {
 export interface IRankedRacerScratch {
   id: string;
   lap: number;
-  position: Vector3;
   place: number;
   routeProgress: number;
 }
@@ -58,7 +63,7 @@ export function rankRacers(
 ): readonly IRankedRacer[] {
   if (buffer.length > racers.length) buffer.length = racers.length;
   for (let index = buffer.length; index < racers.length; index += 1) {
-    buffer.push({ id: "", lap: 0, position: new Vector3(), place: 0, routeProgress: 0 });
+    buffer.push({ id: "", lap: 0, place: 0, routeProgress: 0 });
   }
   for (let index = 0; index < racers.length; index += 1) {
     const racer = racers[index];
@@ -67,7 +72,6 @@ export function rankRacers(
     if (ranked === undefined) throw new Error("Racing ranking buffer slot is missing.");
     ranked.id = racer.id;
     ranked.lap = racer.lap;
-    ranked.position = racer.position;
     ranked.routeProgress = routeProgress(route, racer.position, racer.lap, target);
     ranked.place = 0;
   }

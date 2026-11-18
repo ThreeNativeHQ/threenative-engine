@@ -189,7 +189,7 @@ describe("a biome file", () => {
     });
     // A second biome may name another field and another ground: the row is data, not a branch.
     expect(validateBiome(read("tundra"), "tundra").grass[0]?.drift.field).toBe("mats");
-    expect(validateBiome(read("alpine"), "alpine").cover.ground).toBe("crag");
+    expect(validateBiome(read("desert"), "desert").cover.ground).toBe("mesa");
 
     // Malformed: each field is named, with the value it cannot hold.
     const grass = (file: Record<string, unknown>) =>

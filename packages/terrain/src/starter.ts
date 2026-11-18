@@ -29,6 +29,93 @@ import {
 
 export { editWorldPlacements } from "./population/placement-edits.js";
 export type { IRemovedPlacement, IWorldPlacementEdits } from "./population/placement-edits.js";
+export { createSpawnGate } from "./runtime/spawn-gate.js";
+export type {
+  ISpawnGate,
+  ISpawnGateOptions,
+  ISpawnGateState,
+  ISpawnRegion,
+  ISpawnWitness,
+} from "./runtime/spawn-gate.js";
+export {
+  COLLAR_UNDER_TILE,
+  STREAM_TILE,
+  TILE_INSIDE_SQUARE,
+  collarArithmeticHeight,
+  collarDrawnHeight,
+  collarMorph,
+  collarSeamGap,
+  createMorphedHeight,
+} from "./runtime/collar.js";
+export type { ICollarRingCurve, ICollarStream } from "./runtime/collar.js";
+export { addStreamedGround } from "./runtime/streamed-ground.js";
+export type { IStreamedGroundFacts, IStreamedGroundOptions } from "./runtime/streamed-ground.js";
+export {
+  beginScene,
+  createDiagnosticsState,
+  createMeasure,
+  createRevealProbe,
+  enterView,
+  launchedAt,
+  leaveScene,
+  observeFrame,
+  observeWindow,
+  publish,
+} from "./runtime/diagnostics.js";
+export type {
+  DiagnosticsState,
+  ICounterCtx,
+  IContactProbeOptions,
+  IContactWitness,
+  IMeasure,
+  IMeasureFacts,
+  IMeasureOptions,
+  IRevealProbe,
+  IRevealProbeOptions,
+  ISceneFacts,
+  IViewWindow,
+} from "./runtime/diagnostics.js";
+export {
+  authoredQuaternion,
+  preparePose,
+  preparePropTransform,
+  propKey,
+  propRatio,
+  readPropTransform,
+  withAuthoredPose,
+  writePropTransform,
+} from "./runtime/prop-pose.js";
+export type {
+  IPropGroundRules,
+  IPropInstance,
+  IPropPose,
+  IPropPoseOverride,
+  PropGroundQuery,
+} from "./runtime/prop-pose.js";
+export type { IScatter } from "./runtime/prop-world.js";
+export {
+  type IPropBucketRow,
+  type IPropPart,
+  type IPropPreparationProgress,
+  type IPropWorldOptions,
+  invalidatePropShadows,
+  loadCanopy,
+  loadPropPackage,
+  loadSky,
+  propCounts,
+  streamProps,
+} from "./runtime/prop-world.js";
+export { createPlayerRig } from "./runtime/player-rig.js";
+export type {
+  IMannequin,
+  IPlayerRig,
+  IPlayerRigCamera,
+  IPlayerRigClips,
+  IPlayerRigGait,
+  IPlayerRigOptions,
+  IPlayerRigSight,
+  PlayerWallProbe,
+} from "./runtime/player-rig.js";
 
 export type StarterContext = ICtx<Record<string, unknown>, IPhysicsContext>;
 export type StarterColliders = Readonly<
@@ -127,18 +214,30 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
   try {
     assertCurrent();
     let manifest = (await (
-      await fetchAsset(ctx, url, assertCurrent, spec.name)
+      await fetchAsset(ctx, url, assertCurrent, spec.name, "TN_STARTER_WORLD_DATA")
     ).json()) as IWorldPackage;
     assertCurrent();
     const base = url.slice(0, url.lastIndexOf("/") + 1);
     let records = await (
-      await fetchAsset(ctx, base + manifest.placements, assertCurrent, spec.name)
+      await fetchAsset(
+        ctx,
+        base + manifest.placements,
+        assertCurrent,
+        spec.name,
+        "TN_STARTER_WORLD_DATA",
+      )
     ).arrayBuffer();
     assertCurrent();
     let placementIds: readonly string[] | undefined;
     if (manifest.placementIds !== undefined) {
       const ids: unknown = await (
-        await fetchAsset(ctx, base + manifest.placementIds, assertCurrent, spec.name)
+        await fetchAsset(
+          ctx,
+          base + manifest.placementIds,
+          assertCurrent,
+          spec.name,
+          "TN_STARTER_EDIT_DATA",
+        )
       ).json();
       assertCurrent();
       placementIds = validatePlacementIds(ids, records.byteLength / 32);
@@ -191,7 +290,13 @@ export async function addStarterWorld<Extra extends { dispose(): void } = { disp
     );
     if (spec.water) {
       const file = await (
-        await fetchAsset(ctx, `${base}water.json`, assertCurrent, spec.name)
+        await fetchAsset(
+          ctx,
+          `${base}water.json`,
+          assertCurrent,
+          spec.name,
+          "TN_STARTER_WATER_DATA",
+        )
       ).json();
       assertCurrent();
       extra = spec.water(ctx, file, field, manifest, heightmap);
@@ -240,7 +345,9 @@ async function lightProps(
   const [skyUrl] = await ctx.assets.resolve(`${base}${spec.lighting.sky}`);
   assertCurrent();
   if (skyUrl === undefined)
-    throw new Error(`${spec.name} world: '${spec.lighting.sky}' is not served.`);
+    throw new Error(
+      `TN_STARTER_SKY_DATA: ${spec.name} world: '${spec.lighting.sky}' is not served.`,
+    );
   const sky = await new HDRLoader().loadAsync(skyUrl);
   const originals = new Map<
     MeshStandardMaterial,
@@ -438,6 +545,13 @@ export class PropColliders extends Object3D implements IComputeDriven {
     this.name = `${name.toLowerCase()}-prop-colliders`;
     for (const cell of manifest.cells)
       for (const run of cell.runs) if (this.shapes[run.asset]) this.#runs.push(run);
+    // A row the world places nowhere can never hold a body: the kit meant another asset, or its
+    // bake dropped the one it named. Either way the player walks through the prop it named.
+    for (const id of Object.keys(this.shapes))
+      if (!this.#runs.some((run) => run.asset === id))
+        throw new Error(
+          `TN_STARTER_COLLIDER_DATA: the ${name} collider table names '${id}', which this world places nowhere.`,
+        );
     try {
       this.#rebuild();
     } catch (error) {
@@ -519,11 +633,13 @@ function colliderAt(
   };
 }
 
+/** The file an option names, fetched or refused by the code naming that option's data. */
 async function fetchAsset(
   ctx: ICtx<Record<string, unknown>, IPhysicsContext>,
   path: string,
   assertCurrent: () => void,
   name: string,
+  code: string,
 ): Promise<Response> {
   const candidates = await ctx.assets.resolve(path);
   assertCurrent();
@@ -532,5 +648,5 @@ async function fetchAsset(
     assertCurrent();
     if (response.ok) return response;
   }
-  throw new Error(`${name} world: '${path}' is not served.`);
+  throw new Error(`${code}: ${name} world: '${path}' is not served.`);
 }

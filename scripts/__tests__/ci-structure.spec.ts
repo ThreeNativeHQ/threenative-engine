@@ -782,6 +782,16 @@ describe("CI pipeline structure", () => {
     );
     expect(lint.runs(/pnpm test:browser|native:build/u)).toBe(false);
 
+    // PRD-896: a version whose release tag is already burned can never ship, and the release pull
+    // request must learn that from its own board, in an early job, instead of after a merge.
+    const burned = lint.step("Refuse a release version whose tag is burned");
+    expect(burned.run).toBe("pnpm release:check-version");
+    expect(burned.if).toMatch(/github\.base_ref == 'main'/u);
+    expect(burned.env.GH_TOKEN).toBe("${{ github.token }}");
+    expect(lint.steps.indexOf(burned)).toBeLessThan(
+      lint.steps.indexOf(lint.step("Run the complete lint gate")),
+    );
+
     const native = workflow("native-platforms.yml");
     const nativeScope = native.job("scope");
     expect(nativeScope.stepById("classify").run).toMatch(/node scripts\/ci-change-scope\.mjs/u);
@@ -3618,19 +3628,29 @@ describe("CI pipeline structure", () => {
     expect(download).toBeLessThan(job.indexOf("scripts/kit-contract-row.ts"));
   });
 
-  it("a stalled apt mirror fails the Chromium dependency install and retries it", async () => {
-    // Run 41249368283: `playwright install-deps` trickled from archive.ubuntu.com for 29 minutes and
-    // the tower-defense and animation jobs hit their 30-minute limit. A hang is not a failure, so
-    // retry-download.sh never retried it. Root runs the timeout, so it can kill apt's fetchers.
+  it("retries Chromium dependency downloads without timing out dpkg", async () => {
     const action = await readFile(
       path.join(repo, ".github/actions/playwright-chromium/action.yml"),
       "utf8",
     );
-    expect(action).toContain(
-      'sh scripts/retry-download.sh sudo timeout --kill-after=15 240 env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium',
-    );
+    const download = "sh scripts/retry-download.sh sudo timeout --kill-after=15 300 \\";
+    const install = 'sudo env "PATH=$PATH" node_modules/.bin/playwright install-deps chromium';
+    expect(action).toContain('APT::Get::Download-Only "true";');
+    expect(action).toContain(download);
+    expect(action).toContain('env "PATH=$PATH" "APT_CONFIG=$apt_download_config"');
+    expect(action).toContain(install);
+    expect(action.indexOf(download)).toBeLessThan(action.indexOf(install));
     expect(action).not.toContain("pnpm exec playwright install-deps");
     expect(action).not.toContain("--with-deps");
+  });
+
+  it("builds the racing kit before timing the playtest server startup", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const job = requiredJob(ci, "template-nonvisual");
+    const build = 'pnpm --dir "$target" build:web';
+    expect(job).toContain(build);
+    expect(job.indexOf(build)).toBeLessThan(job.indexOf("exec threenative-playtest"));
+    expect(job).toContain("pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort");
   });
 
   it("the review unit leg prepares what `vitest related` may select (PRD-731)", async () => {

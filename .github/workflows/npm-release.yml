@@ -89,7 +89,7 @@ jobs:
       #   @threenative/physics
       #   @threenative/playtest
       #   @threenative/procedural-animals
-      #   @threenative/procedural-vegetation
+      #   @threenative/procedural-environment
       #   @threenative/raw-unreal
       #   @threenative/runtime-native
       #   @threenative/terrain

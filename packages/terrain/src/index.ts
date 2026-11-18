@@ -33,6 +33,8 @@ export type { OperationOptions, LayerPatch, PatchCommand } from "./core/terrain.
 export { Mask, MATERIAL_IDS } from "./core/masks.js";
 export { landform, landformBackdrop, LANDFORMS } from "./ground/presets.js";
 export { liftMassif, placeMassif } from "./ground/massif.js";
+export { paintCanopyCover } from "./ground/canopy.js";
+export { skyVisibility } from "./ground/sky-visibility.js";
 export type { IMassifPlacement, IMassifTile, IPlaceMassifOptions } from "./ground/massif.js";
 export type {
   IBackdropOptions,

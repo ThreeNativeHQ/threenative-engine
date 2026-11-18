@@ -1002,21 +1002,21 @@ function searchMechanics(situation, manifest, scope) {
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const { weights, nameWeights } = manifestWeights(manifest.entries);
   const notOwned = notOwnedMatch(manifest, query);
-  if (notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation)) {
-    return {
-      guidance: notOwned.entry.guidance,
-      results: [],
-      verdict: "none"
-    };
+  const specific = notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation);
+  const optionalPackage = specific ? `@threenative/${notOwned.entry.id}` : void 0;
+  const candidates = optionalPackage === void 0 ? manifest.entries : manifest.entries.filter(
+    (entry) => entry.importPath === optionalPackage || entry.importPath.startsWith(`${optionalPackage}/`)
+  );
+  if (specific && candidates.length === 0) {
+    return { guidance: notOwned.entry.guidance, results: [], verdict: "none" };
   }
-  const results = manifest.entries.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(
-    ({ matchedSituation, score }) => matchedSituation.length > 0 && score >= RELEVANCE_FLOOR
-  ).sort(
+  const floor = optionalPackage === void 0 ? RELEVANCE_FLOOR : Number.MIN_VALUE;
+  const results = candidates.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(({ matchedSituation, score }) => matchedSituation.length > 0 && score >= floor).sort(
     (left, right) => right.score - left.score || right.specificity - left.specificity || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
   ).filter(
-    (candidate, index, candidates) => candidates.findIndex(
+    (candidate, index, candidates2) => candidates2.findIndex(
       (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry)
     ) === index
   ).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
@@ -1032,7 +1032,8 @@ function searchMechanics(situation, manifest, scope) {
     summary: entry.summary,
     symbol: entry.symbol
   }));
-  if (results.length > 0) return { guidance: "", results, verdict: "matched" };
+  if (results.length > 0)
+    return { guidance: specific ? notOwned.entry.guidance : "", results, verdict: "matched" };
   return {
     guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
     results: [],
@@ -1385,7 +1386,7 @@ async function handleLine(line2, manifestFile) {
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.15" }
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.16" }
       });
     }
     if (request.method === "tools/list") {

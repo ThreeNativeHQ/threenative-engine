@@ -15,6 +15,8 @@
 #include "engine/renderer/projection/plan.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/projected_cull.h"
+#include "engine/renderer/lod/instanced_lod.h"
+#include "engine/renderer/lod/model_lod.h"
 #include "engine/abi/bindings.h"
 #include "engine/abi/pooled_shared.h"
 #include "engine/animation/mixer.h"
@@ -231,6 +233,118 @@ struct SourceGuard {
         return true;
     }
 };
+
+// PRD-898 J1: a frozen root's transform as static-transform.ts `writeSnapshot` records it: position,
+// quaternion, scale, local matrix, then the parent's world matrix (identity with none).
+constexpr std::size_t kStaticSnapshot = 3 + 4 + 3 + 16 + 16;
+struct StaticWatch {
+    std::array<double, kStaticSnapshot> snapshot{};
+    bool watched = false;
+};
+
+// The parent's world matrix part of a record (16 numbers); a root with no parent records the identity.
+void writeStaticParent(Object3D* parent, double* into) {
+    if (parent != nullptr) parent->joinDeferredWorldTransform();
+    for (int i = 0; i < 16; ++i) into[i] = parent != nullptr ? double(parent->matrixWorld.elements[i]) : (i % 5 == 0 ? 1.0 : 0.0);
+}
+
+// The root's own part of a record (26 numbers): position, quaternion, scale and local matrix.
+void writeStaticOwn(Object3D& root, std::array<double, kStaticSnapshot>& into) {
+    into[0] = root.position.x;
+    into[1] = root.position.y;
+    into[2] = root.position.z;
+    into[3] = root.quaternion.x;
+    into[4] = root.quaternion.y;
+    into[5] = root.quaternion.z;
+    into[6] = root.quaternion.w;
+    into[7] = root.scale.x;
+    into[8] = root.scale.y;
+    into[9] = root.scale.z;
+    for (int i = 0; i < 16; ++i) into[10 + i] = root.matrix.elements[i];
+}
+
+void writeStaticSnapshot(Object3D& root, std::array<double, kStaticSnapshot>& into) {
+    writeStaticOwn(root, into);
+    writeStaticParent(root.parent, into.data() + 26);
+}
+
+// A frozen root and its record. The record lives in `staticWatchOf`'s map, whose nodes stay put on a rehash
+// and are erased only once their root is gone, so the pointer is read only after `object` locks.
+struct StaticRoot {
+    std::weak_ptr<Object3D> object;
+    StaticWatch* watch;
+};
+
+// The frozen set core handed over last (`__tnStaticRoots`), in its order.
+std::vector<StaticRoot>& staticRoots() {
+    static std::vector<StaticRoot> roots;
+    return roots;
+}
+
+StaticWatch& staticWatchOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, StaticWatch>> watches;
+    auto& entry = watches[&root];
+    if (entry.first.expired()) {
+        for (auto it = watches.begin(); it != watches.end();)
+            it = (it->first != &root && it->second.first.expired()) ? watches.erase(it) : std::next(it);
+        entry = {root.weak_from_this(), StaticWatch{}};
+    }
+    return entry.second;
+}
+
+// PRD-898 J4: the spheres a posed-bounds root measures, as core's envelope lists them.
+struct SphereSet {
+    std::vector<std::weak_ptr<Object3D>> objects;
+    std::vector<double> radii;
+};
+
+SphereSet& sphereSetOf(Object3D& root) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, SphereSet>> sets;
+    auto& entry = sets[&root];
+    if (entry.first.expired()) {
+        for (auto it = sets.begin(); it != sets.end();)
+            it = (it->first != &root && it->second.first.expired()) ? sets.erase(it) : std::next(it);
+        entry = {root.weak_from_this(), SphereSet{}};
+    }
+    return entry.second;
+}
+
+// PRD-898 J2: one ModelLod's selection inputs and kept level, as model-lod.ts `ModelLod` holds them.
+struct ModelLodState {
+    std::vector<double> errors;
+    Sphere local;
+    double maxPixelError = 0;
+    double hysteresis = 0;
+    int current = 0;
+};
+
+// The batched set core handed over last (`__tnModelLodMeshes`), in its order.
+std::vector<std::weak_ptr<Object3D>>& modelLodMeshes() {
+    static std::vector<std::weak_ptr<Object3D>> meshes;
+    return meshes;
+}
+
+ModelLodState& modelLodOf(Object3D& mesh) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, ModelLodState>> states;
+    auto& entry = states[&mesh];
+    if (entry.first.expired()) {
+        // Sweep dead meshes only when a new one arrives, so the per-frame lookup stays a hash probe.
+        for (auto it = states.begin(); it != states.end();)
+            it = (it->first != &mesh && it->second.first.expired()) ? states.erase(it) : std::next(it);
+        entry = {mesh.weak_from_this(), ModelLodState{}};
+    }
+    return entry.second;
+}
+
+// PRD-898 J3: an instanced batch's LOD sort state, kept while its mesh lives, as projectedCullOf keeps the cull's.
+lod::InstancedLodState& instancedLodOf(InstancedMesh& mesh) {
+    static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, lod::InstancedLodState>> states;
+    for (auto it = states.begin(); it != states.end();)
+        it = it->second.first.expired() ? states.erase(it) : std::next(it);
+    auto& entry = states[&mesh];
+    if (entry.first.expired()) entry = {mesh.weak_from_this(), lod::InstancedLodState{}};
+    return entry.second;
+}
 
 // The guard for an AutoBatch root, kept while the root lives, as projectedCullOf keeps the cull's.
 SourceGuard& sourceGuardOf(Object3D& root) {
@@ -1017,6 +1131,147 @@ void registerObject3D(ClassBinding& b) {
         Object3D::prepareTransformView(&target);
         target.copy(source.matrixWorld);
         return Value{};
+    };
+    // PRD-898 J4: core's posedBounds in one call. `__tnSphereBounds(objects, radii)` updates this root's
+    // world matrices (three's updateWorldMatrix(true, true)), then answers [minX, minY, minZ, maxX, maxY,
+    // maxZ] over a sphere of `radii[i]` at each object's world origin: the walk and the per-bone matrix
+    // reads the JavaScript path pays, without a crossing per bone. An empty set answers infinities.
+    // The spheres are handed over once (`__tnSphereBoundsAttach(objects, radii)`): sending 70 bone handles a
+    // call cost more than the walk it replaced, at 120 rigs a frame.
+    b.methods["__tnSphereBoundsAttach"] = [](void* self, const Args& a, Store& store) {
+        const std::vector<Value> objects = refsOf(a.at(0));
+        const std::vector<double> radii = numbersOf(a.at(1));
+        if (radii.size() != objects.size()) throw Unsupported{"__tnSphereBoundsAttach needs one radius per object"};
+        SphereSet set;
+        for (const Value& object : objects) set.objects.push_back(objectArg(store, object).weak_from_this());
+        set.radii = radii;
+        sphereSetOf(*as<Object3D>(self)) = std::move(set);
+        return Value::undefined();
+    };
+    b.methods["__tnSphereBounds"] = [](void* self, const Args&, Store&) {
+        const SphereSet& set = sphereSetOf(*as<Object3D>(self));
+        if (set.radii.empty()) throw Unsupported{"__tnSphereBounds before __tnSphereBoundsAttach"};
+        as<Object3D>(self)->updateWorldMatrix(true, true, false);
+        constexpr double inf = std::numeric_limits<double>::infinity();
+        std::vector<double> box{inf, inf, inf, -inf, -inf, -inf};
+        for (std::size_t i = 0; i < set.objects.size(); ++i) {
+            const std::shared_ptr<Object3D> held = set.objects[i].lock();
+            if (!held) throw Unsupported{"__tnSphereBounds: an attached object is gone; attach again"};
+            Object3D& object = *held;
+            object.joinDeferredWorldTransform();
+            const auto& e = object.matrixWorld.elements;
+            const double r = set.radii[i];
+            for (int axis = 0; axis < 3; ++axis) {
+                box[axis] = std::min(box[axis], double(e[12 + axis]) - r);
+                box[3 + axis] = std::max(box[3 + axis], double(e[12 + axis]) + r);
+            }
+        }
+        return Value::list(std::move(box));
+    };
+    // PRD-898 J2: core's ModelLod selection in one call a frame. `mesh.__tnModelLodAttach(errors, local,
+    // maxPixelError, hysteresis, current)` keeps a mesh's chain once; `any.__tnModelLodMeshes(meshes)` hands
+    // over the batched set when it changes; `camera.__tnModelLodSelect(viewportHeight, bias)` runs
+    // model-lod.ts `ModelLod.update` for each and answers [index, level] pairs for the meshes whose level
+    // changed only, so the game's side swaps geometry for those alone and sends no handle a frame.
+    b.methods["__tnModelLodAttach"] = [](void* self, const Args& a, Store&) {
+        ModelLodState state;
+        state.errors = numbersOf(a.at(0));
+        const std::vector<double> local = numbersOf(a.at(1));
+        if (state.errors.empty() || local.size() != 4)
+            throw Unsupported{"__tnModelLodAttach needs the chain errors and the local sphere [x, y, z, radius]"};
+        state.local.center.set(local[0], local[1], local[2]);
+        state.local.radius = local[3];
+        state.maxPixelError = number(a.at(2));
+        state.hysteresis = number(a.at(3));
+        state.current = static_cast<int>(number(a.at(4)));
+        modelLodOf(*as<Object3D>(self)) = std::move(state);
+        return Value::undefined();
+    };
+    b.methods["__tnModelLodMeshes"] = [](void*, const Args& a, Store& store) {
+        std::vector<std::weak_ptr<Object3D>>& meshes = modelLodMeshes();
+        meshes.clear();
+        for (const Value& mesh : refsOf(a.at(0))) meshes.push_back(objectArg(store, mesh).weak_from_this());
+        return Value::undefined();
+    };
+    b.methods["__tnModelLodSelect"] = [](void* self, const Args& a, Store&) {
+        auto* camera = dynamic_cast<Camera*>(as<Object3D>(self));
+        if (camera == nullptr) throw Unsupported{"__tnModelLodSelect runs on a camera"};
+        const double viewportHeight = number(a.at(0));
+        const double bias = number(a.at(1)); // core's adaptive bias, which the engine's lodBias() does not see
+        const std::vector<std::weak_ptr<Object3D>>& meshes = modelLodMeshes();
+        std::vector<double> changed;
+        std::string error;
+        for (std::size_t i = 0; i < meshes.size(); ++i) {
+            const std::shared_ptr<Object3D> held = meshes[i].lock();
+            if (!held) throw Unsupported{"__tnModelLodSelect: a mesh in the set is gone; hand the set over again"};
+            Object3D& mesh = *held;
+            ModelLodState& state = modelLodOf(mesh);
+            if (state.errors.empty()) throw Unsupported{"__tnModelLodSelect before __tnModelLodAttach"};
+            mesh.joinDeferredWorldTransform();
+            const Sphere world = lod::worldSphere(state.local, mesh.matrixWorld);
+            double depth = 0;
+            bool degenerate = false;
+            lod::conservativeViewDepth(*camera, world.center, world.radius, lod::cameraNear(*camera), depth, degenerate);
+            const lod::LodView view{camera, degenerate, depth * bias, viewportHeight, false};
+            int level = 0;
+            if (!lod::selectLodLevel(state.errors, state.current,
+                                     state.maxPixelError /
+                                         std::max(mesh.matrixWorld.getMaxScaleOnAxis(), std::numeric_limits<double>::epsilon()),
+                                     state.hysteresis, {view}, level, error))
+                throw Unsupported{error};
+            if (level == state.current) continue;
+            state.current = level;
+            changed.push_back(double(i));
+            changed.push_back(double(level));
+        }
+        return Value::list(std::move(changed));
+    };
+    // PRD-898 J1: core's frozen-root check in one call a frame. `root.__tnStaticWatch()` records a root's
+    // own transform and its parent's world matrix as static-transform.ts freezes it;
+    // `any.__tnStaticRoots(roots)` hands over the frozen set when it changes, and `any.__tnStaticChanged()`
+    // compares every root with its record and answers the indices whose transform or parent pose changed,
+    // so JavaScript visits no root that stayed put and sends no handle on a still frame.
+    b.methods["__tnStaticWatch"] = [](void* self, const Args&, Store&) {
+        Object3D& root = *as<Object3D>(self);
+        StaticWatch& watch = staticWatchOf(root);
+        watch.watched = true;
+        writeStaticSnapshot(root, watch.snapshot);
+        return Value::undefined();
+    };
+    b.methods["__tnStaticRoots"] = [](void*, const Args& a, Store& store) {
+        std::vector<StaticRoot>& roots = staticRoots();
+        roots.clear();
+        for (const Value& value : refsOf(a.at(0))) {
+            Object3D& root = objectArg(store, value);
+            roots.push_back({root.weak_from_this(), &staticWatchOf(root)});
+        }
+        return Value::undefined();
+    };
+    b.methods["__tnStaticChanged"] = [](void*, const Args&, Store&) {
+        const std::vector<StaticRoot>& roots = staticRoots();
+        std::vector<double> changed;
+        std::array<double, kStaticSnapshot> now{};
+        // Consecutive roots that share a parent read its world matrix once (a forest freezes thousands under one).
+        const Object3D* readParent = nullptr;
+        bool parentRead = false;
+        for (std::size_t i = 0; i < roots.size(); ++i) {
+            const std::shared_ptr<Object3D> held = roots[i].object.lock();
+            if (!held) {
+                changed.push_back(double(i)); // gone: JavaScript re-arms or drops it
+                continue;
+            }
+            Object3D& root = *held;
+            StaticWatch& watch = *roots[i].watch;
+            writeStaticOwn(root, now);
+            if (!parentRead || root.parent != readParent) {
+                writeStaticParent(root.parent, now.data() + 26);
+                readParent = root.parent;
+                parentRead = true;
+            }
+            // A draw re-parented at the pose its new parent still has stays frozen, as the JavaScript check keeps it.
+            if (now != watch.snapshot || !watch.watched) changed.push_back(double(i));
+        }
+        return Value::list(std::move(changed));
     };
     b.methods["updateMatrix"] = [](void* self, const Args&, Store&) {
         as<Object3D>(self)->updateMatrix();
@@ -2206,6 +2461,47 @@ void registerInstancedMesh(ClassBinding& b) {
     b.methods["computeBoundingSphere"] = [](void* self, const Args&, Store&) {
         as<InstancedMesh>(self)->computeBoundingSphere();
         return Value::undefined();
+    };
+    // PRD-898 J3: core's attachInstancedLod in one call a frame. `__tnInstancedLodAttach(children,
+    // partitionOf, distances, local, chainErrors, budget, hysteresis)` hands the engine the partitions core
+    // minted (partition * levels + level), the authored switch distances (first 0) or, with `distances`
+    // empty, the baked chain's errors; `__tnInstancedLodUpdate(camera, viewportHeight, bias)` then sorts every
+    // instance into its partition (lod::selectInstancedLods) and answers the triangles the partitions draw.
+    b.methods["__tnInstancedLodAttach"] = [](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        lod::InstancedLodState state;
+        for (const Value& child : refsOf(a.at(0))) state.children.push_back(store.shared<InstancedMesh>(child, "InstancedMesh"));
+        for (const double partition : numbersOf(a.at(1))) state.partitionOf.push_back(static_cast<uint32_t>(partition));
+        state.distances = numbersOf(a.at(2));
+        const std::vector<double> local = numbersOf(a.at(3));
+        if (local.size() != 4) throw Unsupported{"__tnInstancedLodAttach needs the local sphere as [x, y, z, radius]"};
+        state.local.center.set(local[0], local[1], local[2]);
+        state.local.radius = local[3];
+        if (a.at(4).kind != Value::Kind::Null) state.chainErrors = numbersOf(a.at(4));
+        state.budget = number(a.at(5));
+        state.hysteresis = number(a.at(6));
+        state.levelCount = state.chainErrors ? state.chainErrors->size() : state.distances.size();
+        if (state.levelCount == 0 || state.children.size() % state.levelCount != 0)
+            throw Unsupported{"__tnInstancedLodAttach needs one child per partition and level"};
+        if (state.partitionOf.size() < mesh.count) throw Unsupported{"__tnInstancedLodAttach needs a partition per instance"};
+        for (const uint32_t partition : state.partitionOf)
+            if ((partition + 1) * state.levelCount > state.children.size())
+                throw Unsupported{"__tnInstancedLodAttach partition outside the children"};
+        state.states.assign(state.partitionOf.size(), 0);
+        instancedLodOf(mesh) = std::move(state);
+        return Value::undefined();
+    };
+    b.methods["__tnInstancedLodUpdate"] = [](void* self, const Args& a, Store& store) {
+        InstancedMesh& mesh = *as<InstancedMesh>(self);
+        auto* camera = dynamic_cast<Camera*>(&objectArg(store, a.at(0)));
+        if (camera == nullptr) throw Unsupported{"__tnInstancedLodUpdate needs a camera"};
+        lod::InstancedLodState& state = instancedLodOf(mesh);
+        if (state.children.empty()) throw Unsupported{"__tnInstancedLodUpdate before __tnInstancedLodAttach"};
+        if (state.partitionOf.size() < mesh.count) throw Unsupported{"__tnInstancedLodUpdate: more instances than partitions"};
+        double triangles = 0;
+        if (!lod::selectInstancedLods(mesh, state, *camera, number(a.at(1)), number(a.at(2)), triangles))
+            throw Unsupported{"TN_LOD selection refused for an instanced batch"};
+        return Value::of(triangles);
     };
     b.members["boundingSphere"] = [](void* self, const Args&, Store& store) {
         return store.share("Sphere", as<InstancedMesh>(self)->boundingSphere);

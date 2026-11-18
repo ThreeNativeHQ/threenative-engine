@@ -87,6 +87,8 @@ export interface IBrowserEngine {
 
 /** Safe points a pass over the settled wrappers spans. */
 const SETTLED_PASS = 64;
+/** Safe points between settled passes the ownership epoch did not ask for (adapter.cpp kFullEvery). */
+const FULL_PASS_EVERY = 512;
 
 /** An engine object's address, kept on it after the first ask: every lane read and write needs it. */
 const ADDRESS = Symbol("tn.engineAddress");
@@ -328,6 +330,7 @@ export function defineBrowserClasses(
       debug?.crossing("call", self, method, typeNames.get(self.type) ?? String(self.type));
       return source.invoke(self, method, args);
     },
+    ...(source.ownershipEpoch === undefined ? {} : { ownershipEpoch: source.ownershipEpoch }),
     ...(source.engineReferences === undefined
       ? {}
       : {
@@ -625,6 +628,12 @@ export function defineBrowserClasses(
   };
   let cursor = settled.values(); // collect()'s place in `settled`
   let peak = 0; // the most wrappers settled since this pass of `cursor` began
+  // PRD-898 J5: a settled wrapper can only lose its engine references when the ownership epoch moves.
+  // While it stands still and no pass is due, a safe point asks nothing about the settled set.
+  let epochSeen: number | undefined;
+  let epochAtPass: number | undefined;
+  let passDue = true;
+  let sinceFullPass = 0;
   // userData is the game's: it lives with the wrapper, which `held` keeps while the engine references it.
   const userData = new WeakMap<object, unknown>();
   const shaderNodes = new Map<string, Map<string, unknown>>(); // material key -> slot -> TSL node
@@ -981,6 +990,14 @@ export function defineBrowserClasses(
           } finally {
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
+            // A native record batch writes other attributes through the receiver's method.
+            // Keep their JS arrays current so a later read cannot upload pre-refilter data.
+            if (method === "__tnRecords" && Array.isArray(args[0])) {
+              for (const attribute of args[0] as object[]) {
+                const entry = arrays.get(attribute);
+                if (entry !== undefined) syncFull(attribute, entry);
+              }
+            }
           }
           // The engine's clone and copy carry the material's graphs; the TSL nodes a slot reads back
           // follow them, or `clone().maskNode` answers null and a composed mask drops the source's.
@@ -1887,8 +1904,17 @@ export function defineBrowserClasses(
       // The sixty-fourth is of the pass's peak, so releases during a pass do not shrink it: a wrapper the
       // engine lets go is asked within two passes (tests/browser-backend-gc.ts). Holding a wrapper a
       // little longer only delays its release.
+      const epoch = runtime.ownershipEpoch?.();
+      // The native adapter's rule (adapter.cpp `collect`): a change the epoch cannot see is caught by a
+      // pass every FULL_PASS_EVERY safe points.
+      if (epoch === undefined || epoch !== epochSeen || ++sinceFullPass >= FULL_PASS_EVERY) {
+        epochSeen = epoch;
+        sinceFullPass = 0;
+        passDue = true;
+      }
+      if (held.size === 0 && !passDue) return;
       peak = Math.max(peak, settled.size);
-      const budget = Math.ceil(peak / SETTLED_PASS);
+      const budget = passDue ? Math.ceil(peak / SETTLED_PASS) : 0;
       const candidates: object[] = [...held];
       const fresh = candidates.length;
       while (candidates.length < fresh + budget) {
@@ -1899,6 +1925,9 @@ export function defineBrowserClasses(
         }
         cursor = settled.values();
         peak = settled.size;
+        // A whole pass ran with the epoch unmoved: nothing it already asked can have changed since.
+        if (epoch !== undefined && epochAtPass === epoch) passDue = false;
+        epochAtPass = epoch;
         // An emptied set would restart forever: a safe point that let the last wrapper go hung here.
         if (candidates.length > fresh || settled.size === 0) break;
       }

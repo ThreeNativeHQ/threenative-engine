@@ -1,36 +1,44 @@
 # Alpine starter kit
 
-A 512 m alpine headwall on a real survey (USGS 1 m DEM, Longs Peak, Colorado), with hydraulic and
-thermal erosion, rock base, dirt on slopes, snow on the high steep ground and boulder scree. It is
+A 512 m alpine pasture at Kleine Scheidegg, under the Eiger north face (swissALTI3D through
+Mapterhorn), with hydraulic and thermal erosion, rock base, dirt on slopes, snow on the high ground
+and boulder scree. The far ring is the same survey out to 5 km: the Eiger and the Mönch, real
+heights on the square's own datum. It is
 game source: once copied, every file is yours to edit.
 
 | File | What it decides |
 | --- | --- |
 | `recipe.json` | The terrain: the survey heightmap, erosion, the rock, dirt and snow surfaces, and the scree. |
-| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. |
-| `biome.data.json` | The biome record the `terrain_generate` MCP tool cooks from. The bake does not read it. |
-| `assets.json` | The boulder model, its LOD distance and draw distance, and its bounds. |
-| `surface.json` | The ground: the rock base, the dirt and snow layers, tiles, tints and blend thresholds. |
-| `bake.mjs` | Writes the world package from `recipe.json`, `heightmap.r16`, `assets.json` and `surface.json`. |
-| `world.ts` | The runtime: streams the baked world, one heightfield for the ground, sphere colliders for the boulders near the player, and the sky as the props' light. |
-| `sky.ts` | The daylight: the sun, sky, fill, haze, exposure and tone curve. |
+| `heightmap.r16` | The real elevations the recipe's heightmap layer reads: 16-bit samples, decoded at the bake to 0.1 m steps. `scripts/cook-kit-survey.ts` in `@threenative/terrain` cuts it and the far ring from any lat/lon. |
+| `biome.data.json` | The biome record: tree stands, understorey, ground cover and their bands. The streamed bake places from it. |
+| `assets.json` | The legacy cell package's boulder model, LOD distance, draw distance and bounds. |
+| `surface.json` | The legacy cell package's ground table: rock base, dirt and snow layers, tiles, tints and thresholds. |
+| `bake.mjs` | Runs `bakeKit` with this kit's look and writes the streamed world: the baked grid, its splat, the canopy and sky bytes, `horizon.json`, the prop package and the art. |
+| `scene.ts` | The scene, `AlpineScene`, and `ALPINE_GAME`: the streamed ground, the far ring, the props, the sky, the water and the player rig. |
+| `render/` | The look: the biome row, the ground material, the palette, the species pack, the sky and the water. |
+| `world.ts`, `sky.ts` | The legacy cell-package loader and its daylight, kept until the streamed bake retires them here. |
 
 Art is CC0 (Poly Haven); provenance is in `@threenative/terrain/starter-credits.json`.
 
 ## Status
 
-The kit bakes and streams. The kit ships no scene: the game writes one. The terrain is too steep to
-stand on near its centre, so a scene picks its spawn from the loaded heightfield. The proof's scene
-rings the nearest boulder with gentle ground and a clear walk.
+The kit is a source kit on the forest's stack: `scene.ts` streams the baked world, its far ring and
+its props, and composes the player rig and diagnostics from `@threenative/terrain/starter`. The
+terrain is too steep to stand on near its centre, so the scene picks its spawn from the loaded
+heightfield.
 
 ## Steps
 
 1. Copy `node_modules/@threenative/terrain/starter/alpine` to `src/terrain/alpine`.
 2. Run `node src/terrain/alpine/bake.mjs --out assets/terrain/alpine` (needs `@threenative/terrain`
-   as a devDependency). The same recipe always writes the same bytes.
-3. In the scene, call `addAlpine(ctx, follow)` for the world and `alpineDaylight(follow)` for the light.
+   and `tsx` as devDependencies, because the bake reads this kit's TypeScript look). The same recipe
+   always writes the same bytes.
+3. Spread `ALPINE_GAME` into `defineGame` and register `AlpineScene`, as the forest kit's README shows.
 
 ## Edit at startup, without rebaking
+
+> The streamed bake retires this path for the alpine kit: the ground table and the props now come
+> from `render/`, and the section below still describes the legacy cell package.
 
 The copied `world.ts` loads its own `surface.json` as the ground table on every startup.
 Edit tints, tiling and blend thresholds there, or the material graph and prop dressing in

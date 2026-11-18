@@ -29,7 +29,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 /** Packed with the rest, installed by the agent step below rather than by the scaffolder. */
 const TERRAIN = "@threenative/terrain";
-const VEGETATION = "@threenative/procedural-vegetation";
+const VEGETATION = "@threenative/procedural-environment";
 const PORT = 5187;
 const REPO = join(import.meta.dirname, "../../../..");
 const ARM = process.env.KIT_ARM ?? "default";
@@ -85,41 +85,93 @@ const KITS = {
     captures: ["forest-start", "meadow-close", "overview", "river", "vista", "forest-walk"],
     views: [],
   },
+  // Alpine is a source kit on the forest's scene since PRD-892 Phase 2, so it proves itself the way
+  // the forest does: its own `AlpineScene` as the game, not the generated `KitScene`.
   alpine: {
     playtest: "alpine.playtest.json",
+    source: "alpine-game.ts",
     generatedStand: false,
     water: false,
     cooked: "cookedAlpineBytes",
-    numbers: ["boulderInstances", "closestToBoulder"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["alpine-start", "meadow-close", "overview", "river", "vista", "alpine-walk"],
+    views: [],
   },
+  // Desert is a source kit on the forest's scene since PRD-892 Phase 2 (Valley of the Gods), so it
+  // proves itself the way alpine does: its own `DesertScene` as the game.
   desert: {
     playtest: "desert.playtest.json",
+    source: "desert-game.ts",
     generatedStand: false,
     water: false,
     cooked: "cookedDesertBytes",
-    numbers: ["boulderInstances", "closestToBoulder"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["desert-start", "meadow-close", "overview", "river", "vista", "desert-walk"],
+    views: [],
   },
+  // Tundra is a source kit on the forest's scene since PRD-892 Phase 2 (Trail Ridge), with the
+  // forest's number and capture rows; it draws two kettle ponds and two streams, so it has water.
   tundra: {
     playtest: "tundra.playtest.json",
+    source: "tundra-game.ts",
     generatedStand: false,
     water: true,
     cooked: "cookedTundraBytes",
-    numbers: ["boulderInstances", "closestToBoulder", "waterLakes", "waterRivers"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["tundra-start", "meadow-close", "overview", "river", "vista", "tundra-walk"],
+    views: [],
   },
+  // Coastal is a source kit on the forest's scene since PRD-892 Phase 2 (Sand Beach, Acadia), with
+  // the forest's number and capture rows; it draws the sea and its lagoon, so it has water.
   coastal: {
     playtest: "coastal.playtest.json",
+    source: "coastal-game.ts",
     generatedStand: false,
     water: true,
     cooked: "cookedCoastalBytes",
-    numbers: ["treeInstances", "closestToTree", "waterLakes"],
-    captures: ["boulders", "edge", "ground", "overview"],
-    views: ["boulders", "edge", "ground", "overview"],
+    numbers: [
+      "travel",
+      "maxContactError",
+      "propInstances",
+      "timeToReadyMs",
+      "maxViewGpuMs",
+      "playerFrameP50",
+      "meadowFrameP50",
+      "overviewFrameP50",
+      "riverFrameP50",
+    ],
+    captures: ["coastal-start", "meadow-close", "overview", "river", "vista", "coastal-walk"],
+    views: [],
   },
 };
 /** The kit this run proves: `forest` by default, or `KIT=alpine`. Any other name fails closed. */
@@ -560,7 +612,7 @@ function writeKitScene(game, world) {
     const worldSource = join(game, "src/terrain/alpine/world.ts");
     let source = readFileSync(worldSource, "utf8");
     if (!source.includes("import { edits }"))
-      source = `import { edits } from "../../composition.js";\n${source.replace('  name: "Alpine",', '  name: "Alpine",\n  edits,')}`;
+      source = `import { edits } from "../composition.js";\n${source.replace('  name: "Alpine",', '  name: "Alpine",\n  edits,')}`;
     writeFileSync(worldSource, source);
     const surfacePath = join(game, "src/terrain/alpine/surface.json");
     const originalPath = join(game, "src/terrain/alpine/surface.original.json");

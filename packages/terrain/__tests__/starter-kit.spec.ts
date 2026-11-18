@@ -1,6 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { copyFileSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync } from "node:fs";
+import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Terrain, decodeRAW16 } from "@threenative/terrain";
@@ -10,34 +10,9 @@ import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 const packageRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 const starterAssets = join(packageRoot, "starter-assets");
 
-// Manifest hashes include placementIds; terrain and prop payload hashes stay pinned.
-const GOLDEN_HASHES: Record<string, Record<string, string>> = {
-  alpine: {
-    "heightmap.u16": "bd84cb6c52a1142303dfb0f304190a981f29d77d118d3880e3eb246549838ae1",
-    "placements.bin": "5c47dd59619843bc056fbc8391ca7bccdef86c9950cd192c53a6928676865c26",
-    "splat.rgba": "fde8bf22c6841847f58ab523682f29e77a774a364cdd0e34c0025b6ad06c6f42",
-    "world.json": "48a504fb9764b279fb83646e723542e65efdf0fe5b0429113a3932029afc3b6d",
-  },
-  coastal: {
-    "heightmap.u16": "313539bae3010b949b65e55307736f6140a55255d81fbb8ab5dbae782bdc8482",
-    "placements.bin": "e10721cc99dfe96345a6b090eeb834ec87890927d8272ec8a8307b31a989b098",
-    "splat.rgba": "b3dcb6967095049a05fa113968b3cd8d74914c7b906f2c522ff109f6dbfe2b40",
-    "world.json": "c8a8400859b8b704c1d6772df3552d8518d9ba119f4532ca2ecfb595648d701f",
-  },
-  desert: {
-    "heightmap.u16": "a17965c4dd706f2732cc64af64dba086e006b405086d41a36f2ca37c45ee3add",
-    "placements.bin": "8dace58d5c91d50f8492149a826575edbff53d3ee78e5d892bbb12d8f809f3fe",
-    "splat.rgba": "a77791af98c157f371dfa1fdc053c712ea3bdb8a9f3f71de33a69b8f06c88d04",
-    "world.json": "e9836d3a9920f14c8b94a7294657b588d20465a3c3309b33bc25d595713c2d9a",
-  },
-  tundra: {
-    "heightmap.u16": "ff6f77a9f170ed3a3f52087052150fdeec763dafab874a7adfeab328dd7d2cf8",
-    "placements.bin": "040aeb0d7bfcb2792fb6d254f9b0402f029f989ca94d63cc4bf21d64020d6704",
-    "splat.rgba": "8afba577e7e3a355d24cba1ddbb0e7b002ab593bb206198a3e35b7f1555b130c",
-    "world.json": "965e6ac039105990e803f18716d9df1001aec8c1ac9ce2cddcd8a9a0c41f4c0e",
-  },
-};
-
+// No pinned cell-package hashes: since 2026-11-16 every data kit bakes the streamed world (PRD-892
+// Phase 2), so `world.json`, `placements.bin` and `splat.rgba` are no kit's output any more. Their
+// recipes stay pinned by the RAW16 hydration case below and their streamed output by `kit-bake.spec.ts`.
 /** SHA256 of each kit's inline heights and evaluated height grid at e12a5d578, as Float32 bytes. */
 const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = {
   forest: {
@@ -45,16 +20,18 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
     evaluated: "57751c30d9ea1a74dc6fadd445bd17a59fcf03ef4cb58925faac66770d737b26",
   },
   alpine: {
-    values: "72995391d8244365e32f8d8c38f80c04e6ec948b819918876d1f5d6eeed66c81",
-    evaluated: "5000eea008516889508c4efc0074bb8a36c41a0c5e0f1484c3c667d60644fc1c",
+    values: "7c7fa4490588672e0f17b328ff02d5529843c618edee82c47fb650c324effbcc",
+    evaluated: "6d7ee5858a2d4d257bb6210a63b45d6effc8761b1e5ade6e634299927ec6a7dc",
   },
+  // Evaluated since PRD-892 Phase 2 with the lagoon bed lowered under its 2.25 m surface.
   coastal: {
     values: "726595506d7dda30da88401b74c878375bcb40d88cef0debb4a10f27f47a2d17",
-    evaluated: "020ce3ba6dadb740886941287303c7ab37e53da2143cfcea3072eb197c934feb",
+    evaluated: "aedaf0355dd0d767bf370db44d704ba0b04378a86f039abae037de905be3f942",
   },
+  // Evaluated with the survey's own seed (97): #681 had copied alpine's 41 into the recipe.
   desert: {
     values: "b0f471e65576313f26f98e456323c4c6eb6c4e688c931e4cafc2c66663abce85",
-    evaluated: "86740e21dad3412d21524d1c85e85d5106d05eccc6e66f010ffd8168d1cdda54",
+    evaluated: "3aed3eae6fac15a487ff950962b2db06500fafca2228e709670b7fe263f163a4",
   },
   tundra: {
     values: "3fbcbc21b23e03a1c89d8ce0ccc2c8b93380973304e4be7662bc23185a706b58",
@@ -66,48 +43,6 @@ const BASELINE_HEIGHTS: Record<string, { values: string; evaluated: string }> = 
 interface IForestLayer {
   readonly id: string;
   readonly maps: { diffuse: string; normal?: string };
-}
-
-/** Copies the named kit into a temp directory whose node_modules resolves the workspace packages. */
-function kitInTempDir(kitName: string): string {
-  const dir = makeTempDirSync(`terrain-starter-kit-${kitName}-`);
-  const kit = join(packageRoot, "starter", kitName);
-  for (const name of ["bake.mjs", "recipe.json", "assets.json", "surface.json", "heightmap.r16"])
-    copyFileSync(join(kit, name), join(dir, name));
-  mkdirSync(join(dir, "node_modules", "@threenative"), { recursive: true });
-  symlinkSync(packageRoot, join(dir, "node_modules", "@threenative", "terrain"), "dir");
-  // A kit's bake.mjs imports the cook from @threenative/assets, so the fixture links this checkout's.
-  symlinkSync(
-    join(packageRoot, "..", "assets"),
-    join(dir, "node_modules", "@threenative", "assets"),
-    "dir",
-  );
-  // The kit's `arbor` rows grow with this package, the README's third devDependency.
-  symlinkSync(
-    join(packageRoot, "..", "procedural-vegetation"),
-    join(dir, "node_modules", "@threenative", "procedural-vegetation"),
-    "dir",
-  );
-  return dir;
-}
-
-function bake(out: string, kitName: string): { files: Map<string, string>; total: number } {
-  const dir = kitInTempDir(kitName);
-  execFileSync(process.execPath, ["bake.mjs", "--assets", starterAssets, "--out", out], {
-    cwd: dir,
-    stdio: "pipe",
-  });
-  const files = new Map<string, string>();
-  let total = 0;
-  for (const path of readdirSync(out, { recursive: true })) {
-    const name = String(path);
-    const full = join(out, name);
-    if (!statSync(full).isFile()) continue;
-    const bytes = readFileSync(full);
-    total += bytes.byteLength;
-    files.set(name, createHash("sha256").update(bytes).digest("hex"));
-  }
-  return { files, total };
 }
 
 describe("forest starter kit", () => {
@@ -174,19 +109,6 @@ describe("forest starter kit", () => {
     expect(() => bakeWith("--out", "--force")).toThrow(/--out needs a nonempty/);
     expect(readdirSync(dir)).toEqual([]);
   });
-
-  it.each(["alpine", "coastal", "desert", "tundra"] as const)(
-    "produces pinned golden baseline hashes for %s kit bake (PRD-592 AC-1)",
-    (kitName) => {
-      const out = join(makeTempDirSync(`terrain-starter-world-${kitName}-`), "world");
-      const { files } = bake(out, kitName);
-      const expected = GOLDEN_HASHES[kitName] ?? {};
-      expect.assertions(Object.keys(expected).length);
-      for (const [file, hash] of Object.entries(expected)) {
-        expect(files.get(file), `${kitName} ${file} hash mismatch`).toBe(hash);
-      }
-    },
-  );
 
   it.each(["forest", "alpine", "coastal", "desert", "tundra"] as const)(
     "hydrates the %s RAW16 sidecar to the original inline heights, bit for bit (PRD-589 AC-2)",

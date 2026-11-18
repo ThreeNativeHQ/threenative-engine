@@ -3,6 +3,7 @@ import path from "node:path";
 import type { IPhysicsContext } from "@threenative/physics";
 import { PerspectiveCamera, Vector3 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { assertPortableState } from "../../core/src/hot.js";
 import { CAR, FEEL, RIDE, SAG } from "../templates/racing/src/entities/CarBody.js";
 import { headingError } from "../templates/racing/src/entities/LineDriver.js";
 import { rivalLap } from "../templates/racing/src/entities/Rival.js";
@@ -277,6 +278,17 @@ describe("racing route promotion", () => {
     expect(ranked[0]?.routeProgress).toBeGreaterThan(CIRCUIT.totalLength);
     expect(routeProgress(CIRCUIT, position, 1)).toBe(ranked[0]?.routeProgress);
     expect(() => routeProgress(CIRCUIT, position, -1)).toThrow(/lap/u);
+  });
+
+  it("ranks into rows hot reload can keep: plain values, no Vector3", () => {
+    // Race.ts puts these rows straight into game state, and the engine's hot-reload check throws on
+    // a class instance: a `position: Vector3` on a row reloaded the whole page on every edit.
+    const position = CIRCUIT.at(10, CIRCUIT.createSample()).point;
+    const ranked = rankRacers(CIRCUIT, [
+      { id: "player", lap: 0, position },
+      { id: "rival", lap: 0, position },
+    ]);
+    expect(() => assertPortableState({ rankings: ranked })).not.toThrow();
   });
 
   it("counts the rival's laps at the finish line, where the player's Lap counts them", () => {

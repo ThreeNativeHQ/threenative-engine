@@ -102,7 +102,7 @@ describe("browser back end parameters objects", () => {
     const { classes } = defineBrowserClasses(registry, recordingRuntime([]).runtime);
     const Material = classes.MeshStandardMaterial as new (...args: unknown[]) => object;
     expect(() => new Material({ clearcoat: 1 })).toThrow(
-      "TN_BROWSER_PARAMETER_UNSUPPORTED: MeshStandardMaterial has no 'clearcoat'",
+      "TN_BROWSER_PARAMETER_UNSUPPORTED: MeshStandardMaterial has no 'clearcoat'. The engine does not implement this parameter on MeshStandardMaterial: remove the key.",
     );
   });
 });

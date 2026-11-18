@@ -28,24 +28,24 @@
   "foliage": [
     {
       "species": "sapling",
-      "density": 0,
-      "slope": [0, 32],
+      "density": 160,
+      "slope": [0, 26],
       "height": null,
-      "spacing": [3.4, 3.4],
+      "spacing": [9, 9],
       "collision": "trunk",
       "stands": false,
-      "grassThreshold": 0.18,
-      "standThreshold": 0.42,
+      "grassThreshold": 0.2,
+      "standThreshold": 0.3,
       "far": null
     }
   ],
   "grass": [
     {
       "species": "grass",
-      "density": 0.32,
+      "density": 0.55,
       "slope": [0, 24],
       "height": null,
-      "spacing": 7,
+      "spacing": 4,
       "slopeFalloff": 20,
       "heightFalloff": 28,
       "mats": null,
@@ -61,10 +61,10 @@
       },
       "bladeScale": 0.95,
       "bladeJitter": 0.5,
-      "scrubChance": 0.65,
+      "scrubChance": 0.8,
       "scrubScale": 0.8,
       "scrubJitter": 0.6,
-      "scrubBush": false,
+      "scrubBush": true,
       "shoreGround": false,
       "cobbledBed": false
     }
@@ -115,10 +115,22 @@
   ],
   "water": [],
   "spawn": {
-    "at": [180, 160],
+    "at": [140, 120],
     "cameraOffset": [28, 24, 42],
-    "focus": [170, 180]
+    "focus": [120, 110]
   },
-  "species": ["boulder", "grass", "reveal", "riverrock", "scree", "scrub", "volcanic"],
+  "species": [
+    "boulder",
+    "bush",
+    "deadfall",
+    "grass",
+    "pebble",
+    "reveal",
+    "riverrock",
+    "sapling",
+    "scree",
+    "scrub",
+    "volcanic"
+  ],
   "aliases": ["desert", "dune", "dunes", "sand", "canyon", "canyons", "arid", "badlands", "mesa"]
 }

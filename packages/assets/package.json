@@ -1,6 +1,6 @@
 {
   "name": "@threenative/assets",
-  "version": "0.3.16",
+  "version": "0.3.17",
   "license": "MIT",
   "description": "Content-addressed asset compile step for ThreeNative games.",
   "keywords": ["threenative", "three", "threejs", "assets", "gltf", "asset-pipeline", "webgpu"],
@@ -36,7 +36,7 @@
   },
   "devDependencies": {
     "@threenative/blender-bridge": "workspace:*",
-    "@threenative/procedural-vegetation": "workspace:*",
+    "@threenative/procedural-environment": "workspace:*",
     "@types/node": "20.19.43",
     "@types/pngjs": "6.0.5",
     "@types/three": "0.187.0",

@@ -16,7 +16,7 @@
           "enum": ["forest", "coastal", "alpine", "desert", "tundra"]
         },
         "biome": {
-          "description": "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent. A species named `arbor:<preset>[@seed]` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-vegetation; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: oak, beech, birch, spruce, scotspine, blackspruce, aspen, douglasfir, redcedar, bigleafmaple, cypress, olive, stonepine, acacia, baobab, coconut, banana, kapok, sakura, jmaple, ginkgo, bamboo, saguaro, joshua, fanpalm, araucaria, ipe, jacaranda.",
+          "description": "A starter biome's name or alias word (forest, woods, beach, ...), or an inline IBiomeSpec object; a spec cooks with `kit`'s surface and assets, forest's when kit is absent. A species named `arbor:<preset>[@seed]` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-environment; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: oak, beech, birch, spruce, scotspine, blackspruce, aspen, douglasfir, redcedar, bigleafmaple, cypress, olive, stonepine, acacia, baobab, coconut, banana, kapok, sakura, jmaple, ginkgo, bamboo, saguaro, joshua, fanpalm, araucaria, ipe, jacaranda.",
           "anyOf": [
             {
               "type": "string",
@@ -143,7 +143,7 @@
         },
         "overrides": {
           "type": "object",
-          "description": "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails. A species named `arbor:<preset>[@seed]` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-vegetation; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: oak, beech, birch, spruce, scotspine, blackspruce, aspen, douglasfir, redcedar, bigleafmaple, cypress, olive, stonepine, acacia, baobab, coconut, banana, kapok, sakura, jmaple, ginkgo, bamboo, saguaro, joshua, fanpalm, araucaria, ipe, jacaranda."
+          "description": "IBiomeSpec fields to change on the base file (landform, foliage, grass, layers, water, spawn, species, aliases, bake). An unknown field fails. A species named `arbor:<preset>[@seed]` (for example arbor:oak@7) is a procedural Arbor tree the cook bakes and scatters; needs npm i -D @threenative/procedural-environment; set the row's far.impostor beyond 190 m, past the tree's last LOD. Presets: oak, beech, birch, spruce, scotspine, blackspruce, aspen, douglasfir, redcedar, bigleafmaple, cypress, olive, stonepine, acacia, baobab, coconut, banana, kapok, sakura, jmaple, ginkgo, bamboo, saguaro, joshua, fanpalm, araucaria, ipe, jacaranda."
         },
         "ground": {
           "description": "Where the ground comes from. \"procedural\" keeps the landform preset's own noise; { heightmap } names a 16-bit grayscale PNG or a square .r16 file (min and max in metres, needed when the file carries no range); { location } cuts a survey at that latitude and longitude. Omitted, a landform preset is grounded on the real survey its kind names, and the result reports it as `ground` with its attribution.",

@@ -301,9 +301,19 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
       const loaded = await loadConfig(path.resolve(vite.root ?? process.cwd()));
       // The dep optimizer does not run resolveId, so a pre-bundled dependency (core) would inline the
       // upstream packages the engine replaces; three-mesh-bvh builds a refused Line3 at module scope.
+      // Physics loads its crate module by a URL relative to its own file, which a pre-bundled copy
+      // moves (PRD-899).
       if (loaded.engine === "threenative" && process.env.THREENATIVE_NATIVE_BUNDLE === undefined)
         return {
-          optimizeDeps: { exclude: ["three", "three/webgpu", "three/tsl", "three-mesh-bvh"] },
+          optimizeDeps: {
+            exclude: [
+              "three",
+              "three/webgpu",
+              "three/tsl",
+              "three-mesh-bvh",
+              "@threenative/physics",
+            ],
+          },
           // Vite runs only `worker.plugins` on a worker bundle, so a game booted in a worker
           // (PRD-752) needs the same resolver, as ES output for the engine's top-level await.
           worker: {
