@@ -1085,6 +1085,38 @@
       "reject": []
     },
     {
+      "id": "request.cars-and-vehicles",
+      "query": "cars and vehicles",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeCity"],
+      "reject": []
+    },
+    {
+      "id": "request.city-kit",
+      "query": "city kit",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeCity"],
+      "reject": []
+    },
+    {
+      "id": "request.low-poly-city-buildings",
+      "query": "low poly city buildings",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeCity"],
+      "reject": []
+    },
+    {
+      "id": "request.modular-road-tiles",
+      "query": "modular road tiles",
+      "scope": "request",
+      "source": "sandbox:studio-model-trial#lane-briefs",
+      "expect": ["bakeCity"],
+      "reject": []
+    },
+    {
       "id": "request.rocks-and-boulders",
       "query": "rocks and boulders",
       "scope": "request",
