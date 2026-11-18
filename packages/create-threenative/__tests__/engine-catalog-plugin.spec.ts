@@ -13,7 +13,7 @@ import { afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bindUpstreamExports } from "../../three-native/src/browser-entry.js";
 import { type ICatalog, loadCatalog } from "../../three-native/src/catalog.js";
-import { refusalsOf } from "../src/web-engine.js";
+import { esmEntry, refusalsOf } from "../src/web-engine.js";
 
 const REPO = process.cwd();
 const catalog: ICatalog = loadCatalog(REPO);
@@ -29,7 +29,7 @@ const names = [
     (
       await Promise.all(
         ["three", "three/webgpu", "three/tsl"].map(
-          (id) => import(pathToFileURL(fromCore.resolve(id)).href) as Promise<object>,
+          (id) => import(pathToFileURL(esmEntry(fromCore.resolve(id))).href) as Promise<object>,
         ),
       )
     ).flatMap((module) => Object.keys(module)),
@@ -120,6 +120,10 @@ describe("createEngineCatalogPlugin", () => {
   beforeAll(() => {
     expect(unsupported, "the catalog has an unbound unsupported class").toBeDefined();
     expect(partial, "the catalog has a bound partial entry").toBeDefined();
+  });
+
+  it("includes exports from the classic Three.js entry point", () => {
+    expect(names).toContain("WebGLRenderer");
   });
 
   it("refuses an uncatalogued import at its line with the runtime's code", async () => {

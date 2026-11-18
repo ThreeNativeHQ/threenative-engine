@@ -1,5 +1,5 @@
+import * as THREE from 'three';
 import { GeoBuilder, lin, mixc } from './GeoBuilder.js';
-import { icosphere } from './icosphere.js';
 import { mulberry32, range, pick, fbm } from './random.js';
 import { addTube, addLeaf } from './primitives.js';
 
@@ -110,24 +110,24 @@ export function leafLitter({ seed = 1, lod = 0, radius = 0.4 } = {}) {
 
 /** Weathered boulder / stone: noisy, flattened icosphere, mossy on top, half buried. */
 export function rock({ seed = 1, detail = 2 } = {}) {
-  const src = icosphere(detail), count = src.length / 3, rand = mulberry32(seed);
+  const src = new THREE.IcosahedronGeometry(1, detail), p = src.attributes.position, rand = mulberry32(seed);
   const sx = range(rand, 0.8, 1.3), sy = range(rand, 0.45, 0.75), sz = range(rand, 0.8, 1.3), ox = rand() * 50, oz = rand() * 50;
   const b = new GeoBuilder(), stone = lin('#8f8b80'), dark = lin('#5a574f');
   const P = [];
-  for (let i = 0; i < count; i++) {
-    const x = src[i * 3], y = src[i * 3 + 1], z = src[i * 3 + 2];
+  for (let i = 0; i < p.count; i++) {
+    const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
     const n = fbm(x * 1.3 + ox, y * 1.3 + z * 0.7 + oz, seed, 3), m = fbm(x * 3.1 + oz, z * 3.1 + y + ox, seed + 5, 2);
     const d = 0.72 + n * 0.45 + (m - 0.5) * 0.16;
     P.push([x * d * sx, y * d * sy + sy * 0.25, z * d * sz]);
   }
-  for (let i = 0; i < count; i += 3) { // flat-ish facets with per-face normals softened toward the sphere
+  for (let i = 0; i < p.count; i += 3) { // flat-ish facets with per-face normals softened toward the sphere
     const A = P[i], B = P[i + 1], C = P[i + 2];
     const ux = B[0] - A[0], uy = B[1] - A[1], uz = B[2] - A[2], vx = C[0] - A[0], vy = C[1] - A[1], vz = C[2] - A[2];
     let nx = uy * vz - uz * vy, ny = uz * vx - ux * vz, nz = ux * vy - uy * vx;
     const nl = Math.hypot(nx, ny, nz) || 1; nx /= nl; ny /= nl; nz /= nl;
     const ids = [];
     for (const [k, V] of [[i, A], [i + 1, B], [i + 2, C]]) {
-      const sxn = src[k * 3], syn = src[k * 3 + 1], szn = src[k * 3 + 2];
+      const sxn = p.getX(k), syn = p.getY(k), szn = p.getZ(k);
       let mx = nx * 0.45 + sxn * 0.55, my = ny * 0.45 + syn * 0.55, mz = nz * 0.45 + szn * 0.55;
       const ml = Math.hypot(mx, my, mz); mx /= ml; my /= ml; mz /= ml;
       const moss = Math.max(0, my - 0.35) * 1.5 * fbm(V[0] * 2 + ox, V[2] * 2 + oz, seed + 9, 2);
@@ -137,5 +137,6 @@ export function rock({ seed = 1, detail = 2 } = {}) {
     }
     b.tri(ids[0], ids[1], ids[2]);
   }
+  src.dispose();
   return b;
 }

@@ -65,7 +65,7 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
     views: ["player", "ridge", "overview"],
   },
   desert: {
-    focus: { x: 170, z: 180 },
+    focus: { x: 120, z: 110 },
     poses: {
       mesa: { at: [195, 190], eye: 3.2, look: [-35, -30], lookUp: 20 },
       overview: { at: [200, 200], eye: 165, look: [-40, -30], lookUp: 10 },
@@ -73,7 +73,7 @@ export const BENCHMARK: Record<WorldName, IBenchmark> = {
     views: ["player", "mesa", "overview"],
   },
   tundra: {
-    focus: { x: 150, z: 160 },
+    focus: { x: 150, z: 205 },
     poses: {
       plain: { at: [166, 180], eye: 2.2, look: [-65, -50], lookUp: 2 },
       overview: { at: [180, 180], eye: 62, look: [-20, -50], lookUp: 2 },

@@ -142,6 +142,7 @@ bool PipelineCache::IdKey::operator==(const IdKey& o) const {
     return vertex == o.vertex && fragment == o.fragment && vertexSize == o.vertexSize &&
            fragmentSize == o.fragmentSize && target.color == o.target.color && target.moreColors == o.target.moreColors &&
            target.depth == o.target.depth && target.sampleCount == o.target.sampleCount &&
+           target.alphaToCoverage == o.target.alphaToCoverage &&
            target.cull == o.target.cull && target.blend == o.target.blend && target.blendState == o.target.blendState &&
            target.depthWrite == o.target.depthWrite && target.colorWrite == o.target.colorWrite && target.layout == o.target.layout &&
            target.skinIndex == o.target.skinIndex && target.frontFace == o.target.frontFace &&
@@ -224,7 +225,8 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(key.target.blendState);
     mix(uint64_t(key.target.topology) | uint64_t(key.target.stripIndexFormat) << 32);
     for (const WGPUTextureFormat format : key.target.moreColors) mix(uint64_t(format));
-    mix(uint64_t(key.target.moreWrites) | uint64_t(key.target.materialColorWrite) << 8);
+    mix(uint64_t(key.target.moreWrites) | uint64_t(key.target.materialColorWrite) << 8 |
+        uint64_t(key.target.alphaToCoverage) << 9);
     return size_t(h ^ h >> 32);
 }
 
@@ -247,7 +249,8 @@ std::string PipelineCache::textKey(const shader::StageModule& vertex, const shad
            ':' + std::to_string(target.instanceStepMask) + ':' + std::to_string(target.topology) + ':' +
            std::to_string(target.stripIndexFormat);
     for (const WGPUTextureFormat format : target.moreColors) key += ':' + std::to_string(format);
-    key += ':' + std::to_string(target.moreWrites) + (target.materialColorWrite ? "w" : "m");
+    key += ':' + std::to_string(target.moreWrites) + (target.materialColorWrite ? "w" : "m") +
+           (target.alphaToCoverage ? "c" : "");
     return key;
 }
 
@@ -434,6 +437,7 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     desc.primitive.frontFace = target.frontFace;
     desc.multisample.count = target.sampleCount;
     desc.multisample.mask = 0xffffffffu;
+    desc.multisample.alphaToCoverageEnabled = target.alphaToCoverage && target.sampleCount > 1;
     WGPUDepthStencilState depth = {};
     depth.format = target.depth;
     depth.depthWriteEnabled = target.depthWrite ? WGPU_OPTIONAL_BOOL_TRUE : WGPU_OPTIONAL_BOOL_FALSE;

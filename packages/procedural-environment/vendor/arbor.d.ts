@@ -40,13 +40,35 @@ export interface IArborPreset {
   }[];
   readonly levels?: readonly Record<string, unknown>[];
 }
+/** Arbor's random stream: `R()` is 0 to 1, `R.range(a, b)` a to b. */
+export interface IArborRandom {
+  (): number;
+  range(a: number, b: number): number;
+}
+/** A painter that draws a leaf or a whole atlas cell itself, or returns false to keep Arbor's. */
+export interface IArborLeafHook {
+  leaf?(
+    ctx: unknown,
+    cell: Record<string, unknown>,
+    R: IArborRandom,
+    x: number,
+    y: number,
+    angle: number,
+    length: number,
+  ): boolean;
+  cell?(ctx: unknown, cell: Record<string, unknown>, R: IArborRandom, aspect: number): boolean;
+}
 declare const Arbor: {
   readonly PRESETS: Record<string, IArborPreset>;
   generate(preset: string | IArborPreset, opts?: { seed?: number; lod?: number }): IArborTree;
   barkTexture(id: string): IArborTexture;
   leafTexture(
     preset: string | IArborPreset,
-    opts?: { size?: number; createCanvas?: (w: number, h: number) => unknown },
+    opts?: {
+      size?: number;
+      createCanvas?: (w: number, h: number) => unknown;
+      hook?: IArborLeafHook;
+    },
   ): { readonly width: number; readonly height: number; readonly data: Uint8Array };
   toGLB(
     tree: IArborTree,

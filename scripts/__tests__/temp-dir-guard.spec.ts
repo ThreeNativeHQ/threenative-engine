@@ -19,6 +19,18 @@ const allowedProductionCreators = new Map<string, string>([
     "The starter-asset archive extracts into a sibling scratch directory renamed into the cache and removed in finally.",
   ],
   [
+    "packages/terrain/src/population/arbor-species.ts",
+    "A kit bake writes its Arbor tree GLBs into one scratch folder that the cooked world copies and this module removes in finally.",
+  ],
+  [
+    "packages/terrain/__tests__/alpine-world.spec.ts",
+    "The spec bakes the alpine kit into one scratch world, reads the square and the far ring from it, and removes it in finally.",
+  ],
+  [
+    "packages/terrain/__tests__/kit-arbor-art.spec.ts",
+    "The spec bakes every kit's Arbor art into scratch folders an afterAll removes, so a failed assertion leaves nothing behind.",
+  ],
+  [
     "packages/create-threenative/src/index.ts",
     "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
   ],

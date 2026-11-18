@@ -1,0 +1,92 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Asset Library</title>
+    <link rel="icon" href="data:," />
+    <link rel="stylesheet" href="./style.css" />
+  </head>
+  <body class="grid h-dvh overflow-hidden bg-app font-sans text-[13px] leading-snug text-ink md:grid-cols-[250px_minmax(0,1fr)]">
+    <aside id="sidebar" class="hidden min-h-0 flex-col bg-sidebar max-md:fixed max-md:inset-0 max-md:z-30 md:flex">
+      <header class="flex flex-col gap-3 p-4 pb-2">
+        <div class="flex items-center gap-2">
+          <span data-icon="logo" class="inline-flex size-6 items-center justify-center rounded bg-accent text-white"></span>
+          <h1 class="flex-1 text-base font-extrabold text-white">Asset Library</h1>
+          <button id="settings" class="tool" data-icon="gear" title="Settings: biome filter" aria-pressed="false" aria-controls="filters"></button>
+          <button id="close-tree" class="tool md:hidden" data-icon="close" title="Close the asset list"></button>
+        </div>
+        <div class="flex items-center gap-2 rounded border border-line bg-app px-2 focus-within:border-accent">
+          <span data-icon="search" class="text-muted"></span>
+          <input id="search" name="search" type="search" class="min-w-0 flex-1 bg-transparent py-1.5 text-ink outline-none placeholder:text-muted" placeholder="Find assets" aria-label="Find assets" />
+          <kbd class="text-muted">/</kbd>
+          <button id="filter" class="tool size-6" data-icon="filter" title="Filter by biome" aria-pressed="false" aria-controls="filters"></button>
+        </div>
+        <div id="filters" hidden>
+          <select id="biome" name="biome-filter" class="field" aria-label="Biome filter"><option value="">All biomes</option></select>
+        </div>
+      </header>
+      <nav id="tree" aria-label="Assets" class="min-h-0 flex-1 overflow-y-auto px-3 pb-4"></nav>
+    </aside>
+
+    <div class="flex min-h-0 min-w-0 flex-col">
+      <div id="toolbar" class="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-line bg-app px-2" role="toolbar" aria-label="Preview tools">
+        <button id="open-tree" class="tool md:hidden" data-icon="menu" title="Open the asset list"></button>
+        <button id="rebake" class="tool" data-icon="reload" title="Bake again"></button>
+        <button id="zoom-in" class="tool" data-icon="zoomIn" title="Zoom in"></button>
+        <button id="zoom-out" class="tool" data-icon="zoomOut" title="Zoom out"></button>
+        <button id="frame" class="tool" data-icon="reset" title="Reset the view to frame the asset"></button>
+        <span class="mx-1.5 h-5 w-px shrink-0 bg-line"></span>
+        <button id="grid" class="tool" data-icon="grid" title="1 m grid" aria-pressed="true"></button>
+        <button id="figure" class="tool" data-icon="figure" title="1.8 m scale figure" aria-pressed="true"></button>
+        <button id="wire" class="tool" data-icon="wire" title="Wireframe" aria-pressed="false"></button>
+        <button id="wind" class="tool" data-icon="wind" title="Animate the _WIND attribute" aria-pressed="true" hidden></button>
+        <button id="background" class="tool" data-icon="background" title="Background: biome sky"></button>
+        <span class="flex-1"></span>
+        <button id="toggle-panel" class="tool" data-icon="panel" title="Show or hide the addon panel" aria-pressed="true"></button>
+        <button id="fullscreen" class="tool" data-icon="fullscreen" title="Full screen"></button>
+        <button id="new-tab" class="tool" data-icon="external" title="Open in a new tab"></button>
+        <button id="copy-link" class="tool" data-icon="link" title="Copy the link to this view"></button>
+      </div>
+
+      <div id="workspace" class="flex min-h-0 flex-1 flex-col data-right:md:flex-row">
+        <main id="stage" class="relative min-h-[40dvh] min-w-0 flex-1 overflow-hidden">
+          <canvas id="view" class="absolute inset-0 block size-full" aria-label="Asset preview"></canvas>
+          <div id="status" role="status" class="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-line bg-app/90 px-2 py-1 text-muted data-error:text-danger">
+            Loading the catalog
+          </div>
+        </main>
+
+        <section id="panel" class="flex h-[42dvh] min-h-0 shrink-0 flex-col border-t border-line bg-app md:h-[300px] in-data-right:md:h-auto in-data-right:md:w-[400px] in-data-right:md:border-t-0 in-data-right:md:border-l">
+          <div class="flex shrink-0 items-center border-b border-line pr-2" role="tablist" aria-label="Addons">
+            <button id="tab-controls" role="tab" class="tab cursor-pointer px-4 py-2.5 font-bold text-muted aria-selected:text-accent aria-selected:shadow-[inset_0_-3px_var(--color-accent)]" aria-selected="true" aria-controls="controls">
+              Controls <span id="control-count" class="ml-1 rounded-full bg-raised px-1.5 text-[11px]">0</span>
+            </button>
+            <button id="tab-docs" role="tab" class="tab cursor-pointer px-4 py-2.5 font-bold text-muted aria-selected:text-accent aria-selected:shadow-[inset_0_-3px_var(--color-accent)]" aria-selected="false" aria-controls="docs">Docs</button>
+            <button id="tab-stats" role="tab" class="tab cursor-pointer px-4 py-2.5 font-bold text-muted aria-selected:text-accent aria-selected:shadow-[inset_0_-3px_var(--color-accent)]" aria-selected="false" aria-controls="stats">Stats</button>
+            <span class="flex-1"></span>
+            <button id="panel-side" class="tool max-md:hidden" data-icon="panelRight" title="Move the panel to the right"></button>
+            <button id="panel-close" class="tool" data-icon="close" title="Hide the addon panel"></button>
+          </div>
+          <div id="controls" role="tabpanel" class="min-h-0 flex-1 overflow-y-auto">
+            <table class="w-full border-collapse text-left">
+              <thead class="sticky top-0 z-10 bg-app">
+                <tr class="border-b border-line text-muted">
+                  <th class="w-2/5 px-4 py-2 font-bold">Name</th>
+                  <th class="px-4 py-2 font-bold">Control</th>
+                  <th class="w-10 pr-3 text-right"><button id="reset-all" class="tool" data-icon="undo" title="Reset every control to the bake's default"></button></th>
+                </tr>
+              </thead>
+              <tbody id="control-rows"></tbody>
+            </table>
+          </div>
+          <div id="docs" role="tabpanel" class="grid min-h-0 flex-1 content-start gap-3 overflow-y-auto p-4" hidden></div>
+          <div id="stats" role="tabpanel" class="min-h-0 flex-1 overflow-y-auto p-4" hidden>
+            <dl id="stat-rows" class="grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 [&_dt]:font-bold [&_dt]:text-muted"></dl>
+          </div>
+        </section>
+      </div>
+    </div>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

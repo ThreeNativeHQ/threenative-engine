@@ -129,8 +129,8 @@ const TUNDRA_LAKE: readonly IWaterProbe[] = [
 
 /** The coastal sea: the bake's level is 1.5 m, and its plane reaches past the surveyed square. */
 const SEA: readonly IWaterProbe[] = [
-  { at: [250, 250], current: { x: 0, z: 0 }, surface: 1.5 },
-  { at: [2000, -2000], current: { x: 0, z: 0 }, surface: 1.5 },
+  { at: [250, 250], current: { x: 0, z: 0 }, surface: 0 },
+  { at: [2000, -2000], current: { x: 0, z: 0 }, surface: 0 },
 ];
 
 describe("the forest river", () => {
@@ -173,9 +173,10 @@ describe("the coastal ocean", () => {
     expect(SEA_EXTENT).toBe(4120);
     expect(bodies.footprintAt(SEA_EXTENT, -SEA_EXTENT)).toBeDefined();
     expect(bodies.footprintAt(4200, 0)).toBeUndefined();
-    expect(coastal.waterLevel).toBe(1.5);
+    // The coast's own survey: the sea at 0 m and the lagoon behind the beach as a lake (PRD-892).
+    expect(coastal.waterLevel).toBe(0);
     expect(coastal.rivers ?? []).toEqual([]);
-    expect(coastal.lakes ?? []).toEqual([]);
+    expect(coastal.lakes).toEqual([{ id: "lagoon", at: [110, -60], radius: 150, level: 2.25 }]);
   });
 });
 

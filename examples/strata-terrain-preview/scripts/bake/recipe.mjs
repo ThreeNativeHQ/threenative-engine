@@ -255,7 +255,10 @@ export const coastal = new Terrain({ size: 512, resolution: 257, seed: 73 })
       { material: "sand", mask: Mask.height(-1000, 6, 4) },
     ],
   })
-  .water({ id: "ocean", kind: "ocean", level: 1.5, radius: 512 })
+  // The kit's surveyed water (PRD-892): the sea at its real 0 m and the flattened lagoon behind
+  // the beach as a lake, so the example and the kit it ships describe one world.
+  .water({ id: "lagoon", kind: "lake", at: [110, -60], radius: 150, level: 2.25 })
+  .water({ id: "ocean", kind: "ocean", level: 0, radius: 512 })
   .scatter({
     id: "stand",
     asset: "spruce",

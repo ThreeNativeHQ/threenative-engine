@@ -1080,7 +1080,7 @@ index 7c8d2322834904c1247c79cda31beff8e2bfc497..b87cf38629b2c52804888a10bda3b814
  
  			}
 diff --git a/build/three.webgpu.js b/build/three.webgpu.js
-index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c3cc56b09 100644
+index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..e6d9e39318189f6e555be86f2a57d9467fc1188d 100644
 --- a/build/three.webgpu.js
 +++ b/build/three.webgpu.js
 @@ -5182,7 +5182,7 @@ class Animation {
@@ -2992,7 +2992,36 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  
  		}
  
-@@ -51001,6 +51777,7 @@ class WebGPUBackend extends Backend {
+@@ -49324,28 +50100,24 @@
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+ 
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+-
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
+ 
+@@ -51001,6 +51773,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -3000,7 +3029,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -51025,7 +51802,8 @@ class WebGPUBackend extends Backend {
+@@ -51025,7 +51798,8 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology !== primitiveTopology || data.stripIndexFormat !== stripIndexFormat ||
  			data.frontFaceCW !== frontFaceCW ||
  			data.geometryVersion !== renderObject.geometryVersion ||
@@ -3010,7 +3039,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -51048,6 +51826,7 @@ class WebGPUBackend extends Backend {
+@@ -51048,6 +51822,7 @@ class WebGPUBackend extends Backend {
  			data.frontFaceCW = frontFaceCW;
  			data.geometryVersion = renderObject.geometryVersion;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -3018,7 +3047,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  
  			needsUpdate = true;
  
-@@ -51069,6 +51848,7 @@ class WebGPUBackend extends Backend {
+@@ -51069,6 +51844,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -3026,7 +3055,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -51088,9 +51868,11 @@ class WebGPUBackend extends Backend {
+@@ -51088,9 +51864,11 @@ class WebGPUBackend extends Backend {
  			material.side, material.alphaToCoverage,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -3038,7 +3067,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -51158,6 +51940,12 @@ class WebGPUBackend extends Backend {
+@@ -51158,6 +51936,12 @@ class WebGPUBackend extends Backend {
  
  	}
  
@@ -3052,7 +3081,7 @@ index f8fc49fe7df98cbac4609603a1f2a2c6aea79675..a458a6d75ee95fdb9913222f4ed31c5c
  	 * Generates mipmaps for the given texture.
  	 *
 diff --git a/build/three.webgpu.nodes.js b/build/three.webgpu.nodes.js
-index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6ffa50c62 100644
+index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..40a12e5262477dca5218c1e3396d07223adb673a 100644
 --- a/build/three.webgpu.nodes.js
 +++ b/build/three.webgpu.nodes.js
 @@ -179,6 +179,15 @@ class NodeMaterialObserver {
@@ -6034,7 +6063,36 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  
  		}
  
-@@ -92203,6 +93639,7 @@ class WebGPUBackend extends Backend {
+@@ -90525,28 +91961,24 @@
+ 							_viewDescriptor.arrayLayerCount = 1;
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+-
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+ 
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
+@@ -92203,6 +93635,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -6042,7 +6100,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -92227,7 +93664,8 @@ class WebGPUBackend extends Backend {
+@@ -92227,7 +93660,8 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology !== primitiveTopology || data.stripIndexFormat !== stripIndexFormat ||
  			data.frontFaceCW !== frontFaceCW ||
  			data.geometryVersion !== renderObject.geometryVersion ||
@@ -6052,7 +6110,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -92250,6 +93688,7 @@ class WebGPUBackend extends Backend {
+@@ -92250,6 +93684,7 @@ class WebGPUBackend extends Backend {
  			data.frontFaceCW = frontFaceCW;
  			data.geometryVersion = renderObject.geometryVersion;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -6060,7 +6118,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  
  			needsUpdate = true;
  
-@@ -92271,6 +93710,7 @@ class WebGPUBackend extends Backend {
+@@ -92271,6 +93706,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -6068,7 +6126,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -92290,9 +93730,11 @@ class WebGPUBackend extends Backend {
+@@ -92290,9 +93726,11 @@ class WebGPUBackend extends Backend {
  			material.side, material.alphaToCoverage,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -6080,7 +6138,7 @@ index 39c897cb2f5f2092419c2cd4f464a88f1151d7d0..790d97c1247564c7fd3aea2ee54ea0a6
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -92360,6 +93802,12 @@ class WebGPUBackend extends Backend {
+@@ -92360,6 +93798,12 @@ class WebGPUBackend extends Backend {
  
  	}
  
@@ -8357,7 +8415,7 @@ index 6f6a362a36b34c0b6cf7e3c93e818586822c6f3e..46f351dc993df997be456adc176b4a1e
  
  		}
 diff --git a/src/renderers/webgpu/WebGPUBackend.js b/src/renderers/webgpu/WebGPUBackend.js
-index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee357427b174 100644
+index 719d67abe3986ca058794b63a441ce66bedde891..9eee576d31cc5329ed67eb8e0ccba6f96edca088 100644
 --- a/src/renderers/webgpu/WebGPUBackend.js
 +++ b/src/renderers/webgpu/WebGPUBackend.js
 @@ -106,6 +106,27 @@ class WebGPUBackend extends Backend {
@@ -8422,7 +8480,36 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  
  		}
  
-@@ -2414,6 +2444,7 @@ class WebGPUBackend extends Backend {
+@@ -736,28 +766,24 @@
+ 							_viewDescriptor.arrayLayerCount = 1;
+ 							_viewDescriptor.dimension = GPUTextureViewDimension.TwoD;
+ 
+ 							const textureView = textureData.texture.createView( _viewDescriptor );
+ 							const msaaTexture = textureData.msaaTextures?.[ layer ];
+ 							textureViews.push( {
+ 								view: msaaTexture !== undefined ? msaaTexture.createView() : textureView,
+ 								resolveTarget: msaaTexture !== undefined && renderTarget.resolveColorBuffer === true ? textureView : undefined,
+ 								depthSlice: undefined
+ 							} );
+ 
+ 						}
+-
+-					} else {
+-
+-						_viewDescriptor.dimension = GPUTextureViewDimension.TwoDArray;
+ 
+ 					}
+ 
+ 				}
+ 
+ 				if ( isRenderCameraDepthArray !== true ) {
+ 
+ 					const textureView = textureData.texture.createView( _viewDescriptor );
+ 
+ 					let view, resolveTarget;
+ 
+ 					if ( textureData.msaaTexture !== undefined ) {
+@@ -2414,6 +2440,7 @@ class WebGPUBackend extends Backend {
  		const utils = this.utils;
  
  		const sampleCount = utils.getSampleCountRenderContext( renderObject.context );
@@ -8430,7 +8517,7 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  		const colorSpace = utils.getCurrentColorSpace( renderObject.context );
  		const colorFormat = utils.getCurrentColorFormat( renderObject.context );
  		const depthStencilFormat = utils.getCurrentDepthStencilFormat( renderObject.context );
-@@ -2438,7 +2469,8 @@ class WebGPUBackend extends Backend {
+@@ -2438,7 +2465,8 @@ class WebGPUBackend extends Backend {
  			data.primitiveTopology !== primitiveTopology || data.stripIndexFormat !== stripIndexFormat ||
  			data.frontFaceCW !== frontFaceCW ||
  			data.geometryVersion !== renderObject.geometryVersion ||
@@ -8440,7 +8527,7 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  		) {
  
  			data.material = material; data.materialVersion = material.version;
-@@ -2461,6 +2493,7 @@ class WebGPUBackend extends Backend {
+@@ -2461,6 +2489,7 @@ class WebGPUBackend extends Backend {
  			data.frontFaceCW = frontFaceCW;
  			data.geometryVersion = renderObject.geometryVersion;
  			data.clippingContextCacheKey = renderObject.clippingContextCacheKey;
@@ -8448,7 +8535,7 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  
  			needsUpdate = true;
  
-@@ -2482,6 +2515,7 @@ class WebGPUBackend extends Backend {
+@@ -2482,6 +2511,7 @@ class WebGPUBackend extends Backend {
  
  		const utils = this.utils;
  		const renderContext = renderObject.context;
@@ -8456,7 +8543,7 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  
  		// meshes with negative scale have a different frontFace render pipeline
  		// descriptor value so the following must be honored in the cache key
-@@ -2501,9 +2535,11 @@ class WebGPUBackend extends Backend {
+@@ -2501,9 +2531,11 @@ class WebGPUBackend extends Backend {
  			material.side, material.alphaToCoverage,
  			frontFaceCW,
  			utils.getSampleCountRenderContext( renderContext ),
@@ -8468,7 +8555,7 @@ index 719d67abe3986ca058794b63a441ce66bedde891..39001c639aafb8422852c8b75ce1ee35
  			renderObject.clippingContextCacheKey
  		].join();
  
-@@ -2571,6 +2607,12 @@ class WebGPUBackend extends Backend {
+@@ -2571,6 +2603,12 @@ class WebGPUBackend extends Backend {
  
  	}
  

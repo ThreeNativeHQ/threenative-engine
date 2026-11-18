@@ -562,6 +562,12 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
         case "clearUpdateRanges":
           updateRanges.delete(self.key);
           return null;
+        case "__tnRecords": {
+          const [attributes, ops, payload] = args as [IEngineRef[], number[], number[]];
+          const [, slot, offset, count, from] = ops as [number, number, number, number, number];
+          store(attributes[slot] as IEngineRef).set(payload.slice(from, from + count), offset);
+          return [];
+        }
         case "copyAt": {
           const source = args[1] as IEngineRef;
           for (let c = 0; c < size(self); c++)
@@ -1012,6 +1018,28 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     mesh.instanceMatrix.needsUpdate = true;
     expect(Array.from(array.subarray(12, 15))).toEqual([999, 9, 999]);
     expect(writes.at(-1)?.values.slice(12, 15)).toEqual([999, 9, 999]);
+  });
+
+  it("keeps native record writes visible through a held instance attribute array", () => {
+    const { classes, writes } = facade();
+    const InstancedAttribute = classes.InstancedBufferAttribute as unknown as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => IAttribute & {
+      __tnRecords(attributes: IAttribute[], ops: Float64Array, payload: Float32Array): number[];
+    };
+    const matrices = new InstancedAttribute(new Float32Array(16), 16);
+    const ranges = new InstancedAttribute(new Float32Array([0, 0, -1, 0]), 4);
+    const kept = ranges.array;
+    matrices.__tnRecords(
+      [matrices, ranges],
+      new Float64Array([1, 1, 0, 4, 0]),
+      new Float32Array([1, 2, 1, 5]),
+    );
+    void ranges.array;
+    ranges.needsUpdate = true;
+    expect(Array.from(kept)).toEqual([1, 2, 1, 5]);
+    expect(writes.at(-1)?.values).toEqual([1, 2, 1, 5]);
   });
 
   it("keeps a setColorAt the instanceColor.array a game reads would clobber", () => {

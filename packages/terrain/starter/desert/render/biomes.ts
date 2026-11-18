@@ -423,11 +423,12 @@ const desert: IBiome = {
   distantStoneShare: 0.32,
   stoneScans: 2,
   stoneSinkShare: null,
-  // Varnished red sandstone blocks, darker than the sand they lie on; the pale dry scan read white.
-  propStoneTint: [0.86, 0.56, 0.38],
+  // The Outcrop bakes carry their own red-brown (`bake-rocks.mjs`), so the props add no tint.
+  propStoneTint: [0.62, 0.62, 0.7],
   horizon: "mesa",
-  // The red_sand scan reads pink at noon; the valley floor's sand is orange-red.
-  grassTint: [1.06, 0.84, 0.66],
+  // The aerial sand scan is grey-tan (linear 0.28, 0.24, 0.20); this is the reference's iron-red
+  // dune sand (0.25, 0.075, 0.028).
+  grassTint: [0.88, 0.32, 0.145],
   stoneTint: [1.16, 0.82, 0.55],
   distantStone: [0.31, 0.205, 0.12],
   // No snow: the bands sit far above the survey's 270 m of relief.
@@ -440,32 +441,35 @@ const desert: IBiome = {
     cap: [20, 28],
   },
   maps: GROUND_MAPS,
-  // Late morning in May at 37 degrees north: the sun 55 degrees up in the south-east, so the buttes'
-  // east faces glow and their shadows fall short and dark across the sand.
-  sun: { color: 0xfff0d8, intensity: 6.4, direction: [140, 210, 110], shadowRadius: 1.1 },
-  sky: { turbidity: 2.2, rayleigh: 1.6, mieCoefficient: 0.004, mieDirectionalG: 0.8 },
+  // Late afternoon: the sun 23 degrees up, so each ripple, stone and ledge shades its far side
+  // and a shadow runs two and a half times the height of what casts it, as in the reference.
+  sun: { color: 0xffdfb4, intensity: 6.4, direction: [140, 76, 110], shadowRadius: 1.1 },
+  // Dust in the air: the sky pales and warms towards the horizon and the sun wears a wide halo.
+  sky: { turbidity: 4.6, rayleigh: 1.9, mieCoefficient: 0.009, mieDirectionalG: 0.86 },
   // Bounce light off red sand is warm; the clear sky above is a deep, dry blue.
-  fill: { sky: 0xb4cce0, ground: 0xa06a46, intensity: 0.36 },
+  fill: { sky: 0xa9c4de, ground: 0xa06a46, intensity: 0.36 },
+  // Wind-lifted dust, not water: a warm veil that thickens fast with distance and lies in the
+  // low ground, and glows where the eye looks towards the sun.
   haze: {
-    color: 0xc9b6a0,
-    density: 0.0006,
-    valleyDensity: 0.000003,
-    height: 90,
-    sunScatter: 0.18,
+    color: 0xd8b48e,
+    density: 0.0032,
+    valleyDensity: 0.00006,
+    height: 80,
+    sunScatter: 0.6,
   },
   atmosphere: {
     rayleigh: [0.005802, 0.013558, 0.0331],
     mie: 0.003,
     radiance: 1.35,
-    // Dry desert air: a butte 2 km off keeps its colour, the far escarpment turns a little blue.
-    distanceScale: 1.2,
+    // Dusty air: a butte 1 km off goes pale, the far escarpment melts into the sky.
+    distanceScale: 2.4,
     horizonFade: [3400, 4800],
   },
   skyRadiance: 0.27,
-  saturation: 0.96,
+  saturation: 1.04,
   // The temperate exposure less half a stop: red sand under a high sun reflects more than a meadow.
   exposure: 2 ** 0.4,
-  clouds: 0.12,
+  clouds: 0.2,
   shadowMapSize: 4096,
   shadowRefreshStep: [0.2, 0.125],
   temporalAA: true,
@@ -647,9 +651,9 @@ export function desertRockColor(sample: Node<"vec3">): Node<"vec3"> {
   )
     .mul(normalWorldGeometry.y.abs().oneMinus())
     .mul(0.4);
-  // Cedar Mesa sandstone: red-orange beds with pale cream beds between them.
+  // Red-brown sandstone with a few paler beds, the tone of the Outcrop rock that stands on it.
   const cream = smoothstep(0.15, 0.45, mx_noise_float(vec3(0, height.mul(0.33), 0)));
-  return mix(vec3(1.62, 0.7, 0.36), vec3(1.5, 1.12, 0.74), cream.mul(0.55))
+  return mix(vec3(1.0, 0.42, 0.25), vec3(1.0, 0.62, 0.4), cream.mul(0.3))
     .mul(grain)
     .mul(beds.mul(0.24).add(fine).add(1).sub(ledge))
     .mul(mix(vec3(1), vec3(0.55, 0.48, 0.42), varnish));

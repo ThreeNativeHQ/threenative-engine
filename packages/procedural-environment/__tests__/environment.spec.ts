@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -7,11 +8,12 @@ import {
   environmentElements,
   vegetationPresets,
 } from "../src/index.js";
+import Outcrop from "../vendor/outcrop.js";
 
 interface IGltf {
   accessors: { bufferView: number; componentType: number; count: number; type: string }[];
   bufferViews: { byteLength: number; byteOffset: number }[];
-  materials: { name: string }[];
+  materials: { extras?: Record<string, unknown>; name: string }[];
   meshes: { primitives: { attributes: Record<string, number> }[] }[];
 }
 
@@ -42,7 +44,8 @@ describe("environment elements are found by biome", () => {
     const ids = elements.map((element) => element.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(expect.arrayContaining(vegetationPresets().map((preset) => preset.id)));
-    expect(elements.filter((element) => element.biomes.length === 0).map((e) => e.id)).toEqual([]);
+    const unplaced = elements.filter((e) => e.kind !== "city" && e.biomes.length === 0);
+    expect(unplaced.map((e) => e.id)).toEqual([]);
     for (const biome of environmentBiomes())
       expect(biome.elements.filter((id) => !ids.includes(id))).toEqual([]);
   });
@@ -86,10 +89,46 @@ describe("bakeRock writes a rock GLB for a biome", () => {
       "COLOR_0",
       "NORMAL",
       "POSITION",
+      "_COVER",
+      "_ROCK",
+      "_WET",
     ]);
     expect(gltf.materials[0]?.name).toBe("rock");
+    expect(gltf.materials[0]?.extras).toMatchObject({ rockTexture: "granite" });
+    expect(lod0?.rock?.tile).toBeGreaterThan(0);
     expect(lod0?.bounds.min[1]).toBeLessThanOrEqual(0);
     expect(lod0?.bounds.max[1]).toBeGreaterThan(1);
+  });
+
+  it("writes Outcrop's own detail and normal maps beside the GLB as 512-px lossless WebPs", async () => {
+    const out = await makeTempDir("tn-rock-maps-");
+    const [arch] = await bakeRock({ form: "arch", biome: "desert", seed: 3, out });
+    expect(arch?.rock?.texture).toBe("sandstone");
+    for (const map of [arch?.rock?.detail, arch?.rock?.normal]) {
+      const meta = await sharp(await readFile(map ?? "")).metadata();
+      expect([meta.format, meta.width, meta.height, meta.channels]).toEqual(["webp", 512, 512, 4]);
+    }
+  });
+
+  it("keeps Outcrop's map bytes exactly, alpha (height, roughness) included", async () => {
+    const out = await makeTempDir("tn-rock-webp-");
+    const [rock] = await bakeRock({ form: "boulder", biome: "volcanic", out });
+    const got = await sharp(await readFile(rock?.rock?.normal ?? ""))
+      .raw()
+      .toBuffer();
+    const want = new Outcrop.RockGenerator().materialFor({
+      form: "boulder",
+      size: [2.4, 1.8, 2.1],
+      surface: { texture: "basalt" },
+    }).userData.uniforms.tRockNormal.value.image.data;
+    const size = 512 * 4;
+    let differ = 0;
+    for (let y = 0; y < 512; y++) {
+      const row = want.subarray((511 - y) * size, (512 - y) * size); // the image's top row is the data's last
+      for (let i = 0; i < size; i++) if (got[y * size + i] !== row[i]) differ++;
+    }
+    expect(got.length).toBe(want.length);
+    expect(differ).toBe(0);
   });
 
   it("colours the rock by biome: desert sandstone is redder than tundra granite", async () => {
@@ -113,5 +152,38 @@ describe("bakeRock writes a rock GLB for a biome", () => {
     );
     await expect(bakeRock({ form: "cliff", seed: 1.5, out })).rejects.toThrow(/seed/);
     await expect(bakeRock({ form: "cliff", detail: 2, out })).rejects.toThrow(/detail/);
+    await expect(bakeRock({ form: "cliff", offset: [Number.NaN, 0, 0], out })).rejects.toThrow(
+      /offset/,
+    );
+  });
+
+  it("joins two cliff modules that share a seed and stand one width apart", async () => {
+    const out = await makeTempDir("tn-rock-wall-");
+    /** The y and z of each vertex on the module's cut face at `x`. */
+    const face = async (offset: [number, number, number] | undefined, x: number) => {
+      const [module] = await bakeRock({
+        form: "cliff",
+        biome: "desert",
+        seed: 7,
+        detail: 0.1,
+        out,
+        ...(offset ? { offset } : {}),
+      });
+      const { bin, gltf } = parseGlb(await readFile(module?.path ?? ""));
+      const accessor = gltf.accessors[gltf.meshes[0]?.primitives[0]?.attributes.POSITION ?? -1];
+      const view = gltf.bufferViews[accessor?.bufferView ?? -1];
+      if (!accessor || !view) throw new Error("rock GLB has no POSITION");
+      const at = new Float32Array(bin.buffer, bin.byteOffset + view.byteOffset, accessor.count * 3);
+      const edge = new Set<string>();
+      for (let i = 0; i < at.length; i += 3)
+        if (Math.abs((at[i] as number) - x) < 1e-4)
+          edge.add(`${(at[i + 1] as number).toFixed(2)} ${(at[i + 2] as number).toFixed(2)}`);
+      return [...edge].sort();
+    };
+    const right = await face([0, 0, 0], 5);
+    expect(right.length).toBeGreaterThan(8);
+    expect(await face([10, 0, 0], -5)).toEqual(right);
+    // The same module twice does not join: its two ends are different rock.
+    expect(await face(undefined, -5)).not.toEqual(right);
   });
 });

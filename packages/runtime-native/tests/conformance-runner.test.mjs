@@ -1091,6 +1091,17 @@ test("bounded execution rejects unknown conformance ids before claiming a report
   assert.match(proc.stderr, /Unknown --only-tests/u);
 });
 
+test("registry limits channel rounding tolerance to one 8-bit level", () => {
+  const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
+  const row = registry.tests.find(({ id }) => id === "world-impostor-draw");
+  row.tolerance.channelRounding = 1;
+  assert.deepEqual(validateRegistry(registry), []);
+  for (const invalid of [null, -1, 0.5, 2, "1"]) {
+    row.tolerance.channelRounding = invalid;
+    assert.match(validateRegistry(registry).join("\n"), /tolerance\.channelRounding/u);
+  }
+});
+
 test("registry exclusions fail closed without an owner, reason, or explicit excluded status", () => {
   const registry = JSON.parse(readFileSync(join(root, "conformance/registry.json"), "utf8"));
   assert.deepEqual(validateRegistry(registry), []);
