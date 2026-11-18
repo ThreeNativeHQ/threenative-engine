@@ -3412,7 +3412,7 @@
       "symbol": "RippleField"
     },
     {
-      "aliases": [],
+      "aliases": ["scatter rocks, debris and plants over terrain"],
       "constraints": [
         "call `update(follow)` once per rendered frame",
         "`place` runs once per candidate per tile build: return false for paths and clearings",
@@ -10482,7 +10482,7 @@
       "constraints": [
         "the game supplies the actor, the player body and the probe fixture; it owns no look"
       ],
-      "example": "const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ... });",
+      "example": "const measure = createMeasure({ world, physics: ctx.physics, raycast, actor, player, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10514,7 +10514,7 @@
       "constraints": [
         "the game builds the camera and the wall probe; the package owns only their wiring"
       ],
-      "example": "const rig = createPlayerRig(ctx, { at, field, mannequin, clips, gait, camera, probe, ... });",
+      "example": "const rig = createPlayerRig({ at, field, mannequin, clips, gait, camera, probe, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10529,7 +10529,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ... });",
+      "example": "const reveal = createRevealProbe({ camera, covered, phase, released, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10764,7 +10764,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const key = propKey(placement, 2);\n`WorldCells` names the model through the run the record sits in, so this key is what the container\nstores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement\nthe editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays\none uniform scale and the picture keeps the edit.",
+      "example": "const key = propKey(placement, 2);",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10772,7 +10772,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function propKey(placement: IPlacement, variant: number): string { … }",
       "situations": ["name the model a baked or live placement record draws"],
-      "summary": "The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it.",
+      "summary": "The model a record draws: its asset, its variant, and the shape a non-uniform edit gave it. `WorldCells` names the model through the run the record sits in, so this key is what the container stores. A placement with one uniform scale draws its variant as authored (`spruce:2`); a placement the editor scaled unevenly draws a model of that shape (`spruce:2@1,0.5,0.5`), so the record stays one uniform scale and the picture keeps the edit.",
       "supersedes": [],
       "symbol": "propKey"
     },
@@ -10826,7 +10826,7 @@
       "constraints": [
         "the variant, reach, bucket, LOD and gate rows are the game's; the package only applies"
       ],
-      "example": "const props = await streamProps({ package, groundAt, parts, materials, surface,\n  follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ... });",
+      "example": "const props = await streamProps({ package: propPackage, groundAt, parts, materials, surface,\n  follow, size, whileCurrent, variantOf, reachOf, bucketOf, lodOf, ...options });",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10843,7 +10843,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "const record = withAuthoredPose(placement);\nA record holds position, quaternion and one uniform scale, so an edited placement's own transform\nis folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio,\nand the drawable model that ratio names carries it instead.",
+      "example": "const record = withAuthoredPose(placement);",
       "importPath": "@threenative/terrain/starter",
       "kind": "function",
       "overrides": [],
@@ -10851,7 +10851,7 @@
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function withAuthoredPose(placement: IPlacement): IPlacement { … }",
       "situations": ["fold an authored placement into the record transform the bake stores"],
-      "summary": "A placement as a package record stores it: the authored pose becomes its transform, at one scale.",
+      "summary": "A placement as a package record stores it: the authored pose becomes its transform, at one scale. A record holds position, quaternion and one uniform scale, so an edited placement's own transform is folded down to the scale its record carries. The shape that scale removed is `propKey`'s ratio, and the drawable model that ratio names carries it instead.",
       "supersedes": [],
       "symbol": "withAuthoredPose"
     },
