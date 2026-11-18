@@ -245,7 +245,8 @@ export async function foliageHook(
       const sprite = sprites.get(LEAF[S.leaf as string] ?? "");
       if (sprite === undefined) return false;
       const k = R.range(0.9, 1.1);
-      const colour = mix(S.colA as Rgb, S.colB as Rgb, R()).map((c) => c * k) as unknown as Rgb;
+      const [red, green, blue] = mix(S.colA as Rgb, S.colB as Rgb, R());
+      const colour: Rgb = [red * k, green * k, blue * k];
       const cell = Math.floor(R() * sprite.cells.length);
       const c = ctx as ICanvasContext;
       c.save();
