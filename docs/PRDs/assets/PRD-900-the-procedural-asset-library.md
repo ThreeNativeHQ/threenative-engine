@@ -56,7 +56,7 @@ flowchart LR
 - [ ] Textures that are generated and weak, or absent, use a Poly Haven CC0 scan by default, with `textures: "generated"` as the override that keeps the raw generator's bytes. Embedded textures are WebP. proof: package spec, identity harness rerun with the override, visual judge on before and after
 
 #### Phase 2: the Apex city kit
-- [ ] All 75 Apex modules bake to deterministic GLBs, and each has its textures. proof: package spec (same bytes twice, one GLB per module)
+- [x] All 75 Apex modules bake to deterministic GLBs, and each has its textures. proof: `city.spec.ts` (75 modules in 11 categories, every module textured, same bytes twice) in the 33/33 package run; geometry hash 75/75 against the page; glTF JSON 75/75 on Node 24 (16/75 on Node 20 and 22: `Math.pow` last-bit rounding); Poly Haven maps 1219/1219 pixel-identical; canvas-drawn maps 5/97 identical (machine fonts, GPU canvas). Not absorbed by decision: the page's layout mode and the traffic-light animation (`a89462244`)
 - [ ] The city categories show in the library next to Apex's own page, side by side. proof: contact sheet and visual judge
 
 #### Phase 3: the asset MCP finds it
@@ -66,6 +66,16 @@ flowchart LR
 ## Blocked on
 
 - Package name: keep `procedural-environment` or rename to `procedural-assets` before 0.3.16 publishes. Waits for the owner.
+
+## Compression and sharing (measured)
+
+| Set | Before | After |
+| --- | --- | --- |
+| Vendored scans (14, `scans/`) | 3.96 MB | 2.90 MB (512 px, colour q75, normals q80) |
+| Distinct vegetation images, 50 presets x 3 LODs | 11.1 MB | 8.1 MB (WebP q80 lossless alpha, leaf normal at half resolution) |
+| Distinct city images, 75 modules | 5.6 MB PNG and JPEG | 1.2 MB WebP q80 |
+
+Sharing: one scan serves every species of its family (21 bark profiles, 12 bark scans). The cook dedupes embedded copies: three trees on one bark scan embed 12 images and `compileAssets` writes 8 under `shared/images/`, the bark colour and normal once.
 
 ## Decisions
 
