@@ -4,11 +4,10 @@
  * The pin is the committed table below: per world, a digest of the prop package's containers, the
  * placement count per species, a digest of the baked heights and a digest of the world manifest,
  * plus the continuation ring. The containers replaced the single placement table when the bake
- * stopped writing one (PRD-792 AC-2); the counts and the heights are the Phase 1 numbers, byte for
- * byte, so only the container's own bytes moved here. Two forced bakes must produce the same numbers, so the table is a statement
- * about the recipe and not about one run's luck; a changed scatter rule, erosion pass, palette or
- * height crop fails here, named. The continuation digest moved once, for PRD-806 E19's removal of
- * the debug `forest-before` survey the `?massif=before` knob swapped in.
+ * stopped writing one (PRD-792 AC-2). PRD-892's scatter recipes changed four placement digests and
+ * counts. Two forced bakes must reproduce the table, so changes to scatter, erosion, palette or
+ * height crop fail by world. The continuation digest moved when PRD-806 E19 removed the debug
+ * `forest-before` survey.
  *
  * `--force` because the bake's stamp would otherwise skip the work under a warm `pnpm test`; the
  * recipe is seeded and the outputs are byte-identical, so the run rewrites the tracked files with
@@ -28,7 +27,7 @@ const WORLDS = ["forest", "coastal", "alpine", "desert", "tundra"] as const;
 /** The two worlds that share `baked.json`; the other three have their own module-sized file. */
 const DRAWN = new Set<string>(["forest", "coastal"]);
 
-/** The recipe's own output: the Phase 1 numbers, with the container digest re-measured at AC-2. */
+/** The baked output for the committed recipes. */
 const GOLDEN = {
   forest: {
     placements: "c8f5d0439e240c693f1f5d47f0b20923d5891031d5589e2ec7da3093e745296e",
@@ -51,38 +50,66 @@ const GOLDEN = {
     manifest: "df9936f9e3a31532426972a19c47c168262efc6117040d5a577863500307dd2c",
   },
   coastal: {
-    placements: "ef878ecc5f077bc74d29805cfa7a872436ea5ea8fca8bc0964dc9770f3ba6d49",
+    placements: "de5d608d5f2ee00fcf1e3e68e36cdbb7cb9b241438fd469c6f8bb28f3ea57104",
     counts: {
-      boulder: 235,
-      bush: 1225,
-      fern: 7466,
-      grass: 95231,
-      litter: 2097,
+      boulder: 277,
+      bush: 1208,
+      fern: 7460,
+      grass: 130753,
+      litter: 2095,
       mountain: 75,
-      poppy: 440,
-      riverrock: 170,
-      sapling: 5536,
-      scrub: 28517,
+      poppy: 1437,
+      riverrock: 150,
+      sapling: 5543,
+      scrub: 39186,
       spruce: 3200,
     },
     heights: "0c374becf41357b1db5526209ff7acbeb44a3a047e67cb88a0515a7c0660688c",
     manifest: "5bb08aeccc829c5dd5fc36954cfcd883f53b0b7c83b06233f9fdec7c833528a8",
   },
   alpine: {
-    placements: "9bbea86d01fc14fc37fb781df11f5bd8f995f0a5bf516580de662f82a0420b6f",
-    counts: { boulder: 1082, mountain: 231, scree: 2285 },
+    placements: "4cc173bafd9990d8e68ac46ee3c822639136f4739006f9f122a4c556612cd355",
+    counts: {
+      boulder: 492,
+      bush: 2422,
+      cliff: 29,
+      deadfall: 231,
+      fern: 5592,
+      grass: 40492,
+      litter: 13348,
+      mountain: 566,
+      poppy: 2348,
+      sapling: 698,
+      scrub: 12227,
+      spruce: 382,
+    },
     heights: "f2ca8381d0b7fc707a8225b2c078af699ee723ef1b681fb87274ea95899f313f",
     manifest: "927b5daf593923d63bb216968baf66d2a735269801915c6395aa84e60c1b4f86",
   },
   desert: {
-    placements: "0ee80bb17d8c40cb8c1a635f882ef5e309af05c096eaae75e434f0f15de3978e",
-    counts: { boulder: 248, grass: 2506, reveal: 170, scrub: 393, volcanic: 237 },
+    placements: "7c6b238f08bb857b1ac1fdd5dd0875fe1cc65b806d398e5ee0837849822b63ab",
+    counts: {
+      boulder: 247,
+      bush: 40,
+      grass: 6623,
+      reveal: 162,
+      sapling: 161,
+      scrub: 1305,
+      volcanic: 232,
+    },
     heights: "aa401a0bd80952f20f20e3f2fe5f7b81820d4b2ce2b1b6bc4116620b28188f02",
     manifest: "8d979f26cf4a02dd6c46d2a5c67e7aae7c50cab0920c1c9673039b7d43472872",
   },
   tundra: {
-    placements: "26e8912f173474b6ab5eff5db4693f9e6f98c5f0b3461372dfdd0b2b138fa827",
-    counts: { boulder: 2028, bush: 588, grass: 30490, riverrock: 612, sapling: 55, scrub: 6680 },
+    placements: "0987d7141890adb90a719cf00aed3cc4733120e43f06090b81c338430c3bdf56",
+    counts: {
+      boulder: 2098,
+      bush: 1247,
+      grass: 61160,
+      riverrock: 612,
+      sapling: 140,
+      scrub: 13415,
+    },
     heights: "dc182307fa2789f7297d53e96c77720b7fac97119489f725d8ebbb44e1d60533",
     manifest: "72c72e6f86b2a800aeae246b4800390b6c57fe6b95dc87510193549f9106c943",
   },
