@@ -1681,10 +1681,13 @@ export function nativeRuntimeCheck(
   // The build selects a local player before it would download one: an explicit variable, then a
   // checkout build. Doctor must read the same order, or it blocks a valid local build.
   const localPlayer = localNativeBinary(snapshot, target);
+  const recordedFailure = recordedInstallFailure(snapshot, target);
+  const retryHint =
+    "unset the override (or prefetch explicitly with `node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs`) to retry the download";
   if (localPlayer?.kind === "broken") {
     return {
-      detail: `${localPlayer.variable} names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.`,
-      fix: `Point ${localPlayer.variable} at a built binary, or unset it to download on the first desktop build.`,
+      detail: `${localPlayer.variable} names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.${recordedFailure === undefined ? "" : ` A previous download also failed (${recordedFailure}).`}`,
+      fix: `Point ${localPlayer.variable} at a built binary, or ${retryHint}.`,
       name: "native runtime",
       status: "fail",
     };
@@ -1692,7 +1695,7 @@ export function nativeRuntimeCheck(
   if (localPlayer !== undefined) {
     // A local binary does not erase a download that failed earlier, and the refusal that makes the
     // build impossible outranks both. One answer, nothing hidden behind another.
-    const recorded = recordedInstallFailure(snapshot, target);
+    const recorded = recordedFailure;
     if (hudRefusal !== undefined)
       return recorded === undefined
         ? hudRefusal
@@ -1705,7 +1708,9 @@ export function nativeRuntimeCheck(
     if (recorded !== undefined)
       return {
         detail: `unavailable — ${target.key}: ${recorded}`,
-        fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
+        // The build that failed is the one this override bypasses, so the retry has to say how to
+        // reach the downloader again.
+        fix: "Clear the local override and rerun `threenative build --target desktop` to download again, or run `node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs` to prefetch it.",
         name: "native runtime",
         status: "fail",
       };
@@ -1713,6 +1718,21 @@ export function nativeRuntimeCheck(
       detail: `available — ${localPlayer.path} (local build)`,
       name: "native runtime",
       status: "ok",
+    };
+  }
+
+  if (
+    target.legacy &&
+    process.env.THREENATIVE_RUNTIME_SOURCE !== undefined &&
+    process.env.THREENATIVE_RUNTIME_SOURCE.length > 0 &&
+    (process.env.THREENATIVE_RUNTIME_BINARY ?? "").length === 0
+  ) {
+    return {
+      detail:
+        "unavailable — THREENATIVE_RUNTIME_SOURCE is set but THREENATIVE_RUNTIME_BINARY is not, which the packager rejects before it would download anything.",
+      fix: "Point THREENATIVE_RUNTIME_BINARY at the binary that source build produced, or unset THREENATIVE_RUNTIME_SOURCE to download the release runtime.",
+      name: "native runtime",
+      status: "fail",
     };
   }
 

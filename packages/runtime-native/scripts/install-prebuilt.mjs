@@ -1018,7 +1018,7 @@ function unavailableNativeBinary(error, plan) {
   const wrapped = new Error(
     `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (${
       plan.key.endsWith('-engine-player')
-        ? 'for a Linux web HUD run node scripts/build-native-ui-overlay.mjs first (CMake needs that library before it accepts the flag), then cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON; on any other platform or with a "native" HUD use the same command without -DTN_ENGINE_PLAYER_UI_OVERLAY=ON (a web HUD there needs engine: \"threejs\"), then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8'
+        ? 'run node scripts/download-deps.mjs then node scripts/build-native-physics.mjs --desktop (every desktop preset enables native physics), and for a Linux web HUD node scripts/build-native-ui-overlay.mjs first (CMake needs that library before it accepts the flag); then cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON; on any other platform or with a "native" HUD use the same command without -DTN_ENGINE_PLAYER_UI_OVERLAY=ON (a web HUD there needs engine: \"threejs\"), then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8'
         : 'pnpm --filter @threenative/runtime-native native:build'
     }).`,
   );

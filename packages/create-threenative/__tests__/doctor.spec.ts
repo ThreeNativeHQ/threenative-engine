@@ -944,12 +944,17 @@ describe("threenative doctor", () => {
     expect(check(broken, "native runtime").status).toBe("fail");
     expect(check(broken, "native runtime").fix).toMatch(/build --target desktop/u);
 
-    // The legacy host keeps its own file, and an absent one is the same ordinary state.
-    const legacy = diagnoseProject(
-      snapshot({
-        config: { engine: "threejs", nativeEntry: "src/game.ts" },
-        readRuntimeText: () => undefined,
-      }),
+    // The legacy host keeps its own file, and an absent one is the same ordinary state. Both
+    // flags pin a published platform, where a download is what the build would do.
+    const legacy = withPlatform("linux", () =>
+      withArch("x64", () =>
+        diagnoseProject(
+          snapshot({
+            config: { engine: "threejs", nativeEntry: "src/game.ts" },
+            readRuntimeText: () => undefined,
+          }),
+        ),
+      ),
     );
     expect(check(legacy, "native runtime").status).toBe("ok");
     expect(check(legacy, "native runtime").detail).toMatch(/260 MiB/u);
@@ -1595,7 +1600,8 @@ describe("threenative doctor edge coverage", () => {
                 })
               : undefined,
           runtimeFileExists: (relative) =>
-            relative === `prebuilt/${process.platform}-${process.arch}/threenative-runtime`,
+            relative ===
+            `prebuilt/${process.platform}-${process.arch}/threenative-runtime${process.platform === "win32" ? ".exe" : ""}`,
         }),
       );
 
