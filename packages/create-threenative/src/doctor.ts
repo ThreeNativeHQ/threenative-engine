@@ -1360,13 +1360,16 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
-export function pinnedManifestCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+export function pinnedManifestCheck(
+  snapshot: IProjectSnapshot,
+  options: { readonly target?: DoctorTarget } = {},
+): IDoctorCheck | undefined {
   const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
   if (pinned === undefined) return undefined;
   const resolved = path.resolve(pinned);
   const target = nativePrebuiltTarget(snapshot.config);
   const fail = (reason: string): IDoctorCheck => ({
-    detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a native build fails before downloading.`,
+    detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a ${options.target ?? "native"} build fails before downloading.`,
     fix: "Restore the pinned manifest, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
     name: "prebuilt manifest",
     status: "fail",
@@ -1380,14 +1383,29 @@ export function pinnedManifestCheck(snapshot: IProjectSnapshot): IDoctorCheck | 
       `which is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
     );
   }
-  const artifact = record(record(manifest)?.artifacts)?.[target.key];
-  const url = record(artifact)?.url;
-  const checksum = record(artifact)?.sha256;
-  if (typeof url !== "string" || typeof checksum !== "string") {
-    return fail(`which records no artifact for ${target.key}`);
+  // Each target's packager reads its own keys, so the pin is judged against the target that was
+  // asked about: a desktop-only pin is not an Android pin, and vice versa.
+  const artifacts = record(manifest)?.artifacts;
+  const mobile = options.target === "android" || options.target === "ios";
+  const wanted = mobile
+    ? Object.keys(record(artifacts) ?? {}).filter((key) => key.startsWith(`${options.target}-`))
+    : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
+  const served = wanted.filter((key) => {
+    const artifact = record(record(artifacts)?.[key]);
+    return (
+      typeof artifact?.url === "string" &&
+      artifact.url.length > 0 &&
+      typeof artifact.sha256 === "string" &&
+      /^[a-f0-9]{64}$/u.test(artifact.sha256)
+    );
+  });
+  if (served.length === 0) {
+    return fail(
+      `which records no usable ${mobile ? `${options.target} artifact` : target.key} (a url and a sha256 are required)`,
+    );
   }
   return {
-    detail: `available — ${resolved} records ${target.key}`,
+    detail: `available — ${resolved} records ${served.length === 1 ? served[0] : `${served.length} ${options.target} artifacts`}`,
     name: "prebuilt manifest",
     status: "ok",
   };
@@ -2265,7 +2283,7 @@ export function diagnoseProject(
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const blender = modelConversionCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot, { target: options.target });
-  const pinnedManifest = pinnedManifestCheck(snapshot);
+  const pinnedManifest = pinnedManifestCheck(snapshot, { target: options.target });
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
   const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);

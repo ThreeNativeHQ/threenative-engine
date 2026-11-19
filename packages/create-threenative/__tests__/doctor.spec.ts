@@ -166,6 +166,26 @@ describe("threenative doctor", () => {
         expect(check(report, "prebuilt manifest").status).toBe("fail");
         expect(report.pass).toBe(false);
       }
+      // A pin that serves one target is not a pin for another: each packager reads its own keys.
+      writeFileSync(
+        pin,
+        `${JSON.stringify({
+          artifacts: {
+            "android-arm64-runtime": {
+              sha256: "0".repeat(64),
+              url: "https://example.invalid/android-arm64-runtime",
+            },
+          },
+        })}\n`,
+      );
+      const android = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
+        target: "android",
+      });
+      expect(check(android, "prebuilt manifest").status).toBe("ok");
+      const desktop = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
+        target: "desktop",
+      });
+      expect(check(desktop, "prebuilt manifest").status).toBe("fail");
     } finally {
       Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
     }

@@ -627,6 +627,12 @@ test('a packed consumer installs without a download, then fetches and verifies o
       `${JSON.stringify({ artifacts: {
         'linux-x64': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/runtime` },
         'linux-x64-tools': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/tools` },
+        // The prefetch command fills both binaries, so the fixture the consumer pins must carry
+        // both: a manifest with only the legacy pair now fails that command, by design.
+        'linux-x64-engine-player': {
+          sha256: sha256(runtime),
+          url: `http://127.0.0.1:${address.port}/player`,
+        },
       } })}\n`,
     );
     const consumer = join(root, 'consumer');

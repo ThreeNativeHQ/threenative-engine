@@ -502,7 +502,9 @@ async function downloadRanges(key, url, size, expectedSha256) {
         // The first non-abort failure is the diagnosis and is never overwritten: a queued 200 that
         // is aborted later, or a 404 that arrives after the 500, must not replace it. Once one is
         // recorded, the claim is bounded so a stalled body cannot hold the install lock.
-        const aborted = isAbortError(error);
+        // Cancellation is read from the request's own signal, not from the message: a formatted
+        // failure carries the asset URL, and a URL may contain "aborted".
+        const aborted = controllers[index].signal.aborted || isAbortError(error);
         if (!aborted && failure === undefined) {
           failure = error;
           if (claimed !== undefined && claimDeadline === undefined) {
@@ -531,7 +533,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
 }
 
 function isAbortError(error) {
-  return error instanceof Error && (error.name === 'AbortError' || /aborted/u.test(error.message));
+  return error instanceof Error && error.name === 'AbortError';
 }
 
 export async function downloadReleaseArtifact(key, options = {}) {
