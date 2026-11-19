@@ -1773,21 +1773,14 @@ export function nativeRuntimeCheck(
             // desktop-only refusal, and `--target desktop` is the question that makes it fatal.
             status: hudRefusal.status === "fail" && options.target === "desktop" ? "fail" : "warn",
           };
-    if (recorded !== undefined && options.target !== "desktop")
-      return {
-        detail: `${localPlayer.path} supplies the binary, but an earlier download did not finish (${recorded}). A desktop build still tries this binary first.`,
-        fix: retryHint,
-        name: "native runtime",
-        status: "warn",
-      };
     if (recorded !== undefined)
       return {
-        detail: `unavailable — ${target.key}: ${recorded}`,
-        // The build that failed is the one this override bypasses, so the retry has to say how to
-        // reach the downloader again.
-        fix: "Clear the local override and rerun `threenative build --target desktop` to download again, or run `node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs` to prefetch it.",
+        // The build selects this binary and never reaches the download, so an earlier failed
+        // download is history here, not a blocker — whatever target was asked about.
+        detail: `${localPlayer.path} supplies the binary, so the build skips the download; an earlier download did not finish (${recorded}).`,
+        fix: `Nothing to fix for this build. ${retryHint} to repair the cache.`,
         name: "native runtime",
-        status: "fail",
+        status: "warn",
       };
     return {
       detail: `available — ${localPlayer.path} (local build)`,

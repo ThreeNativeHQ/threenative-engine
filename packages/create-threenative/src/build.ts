@@ -1666,6 +1666,20 @@ export async function ensureEngineDesktopPlayer(
   return player();
 }
 
+/** The player a desktop build packages, and whether this build owns its private snapshot. */
+export async function ensureEngineDesktopPlayerForPackaging(
+  runtimeRoot: string,
+  cwd: string,
+): Promise<{ readonly player: string; readonly staged: boolean }> {
+  const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
+    stagePrivate: true,
+  });
+  // The runtime stages only its own cache entry; an override or a checkout player is the same
+  // path it would return without staging, and this build must never unlink it.
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  return { player, staged: path.basename(player) !== filename };
+}
+
 /**
  * Whether the engine player this platform downloads can attach a web-UI overlay.
  *
@@ -1709,9 +1723,10 @@ async function buildEngineDesktop(
   // download is a cheap failure rather than a full UI build thrown away (PRD-783).
   // The runtime takes the build-private snapshot while it holds the install lock, so the bytes
   // packaged are the bytes this build verified even if another install publishes over the cache.
-  const staged = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
-    stagePrivate: true,
-  });
+  const { player: staged, staged: ownsStage } = await ensureEngineDesktopPlayerForPackaging(
+    runtimeRoot,
+    cwd,
+  );
   try {
     const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
     const output = path.join(cwd, "dist-native", await projectName(cwd));
@@ -1739,13 +1754,8 @@ async function buildEngineDesktop(
     ]);
   } finally {
     // Only a snapshot this build took is deleted: an override or a checkout player came from the
-    // caller, and unlinking it would destroy the binary the next build needs. The name is the
-    // runtime's own `<player>.<pid>.<uuid>.stage` inside its cache, which nothing else writes.
-    if (
-      staged.startsWith(path.join(runtimeRoot, "prebuilt")) &&
-      /\.\d+\.[0-9a-f-]{36}\.stage$/u.test(staged)
-    )
-      rmSync(staged, { force: true });
+    // caller, so the runtime reports ownership rather than this code guessing from the path.
+    if (ownsStage) rmSync(staged, { force: true });
   }
 }
 
