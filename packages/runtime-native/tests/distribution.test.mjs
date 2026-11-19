@@ -2234,6 +2234,20 @@ test('a large release asset downloads as parallel byte ranges and assembles exac
   }
 });
 
+test('a whole body that verifies still fails when a sibling range answered 500', async () => {
+  // PRD-902: an unexpected status must fail and name its range. A mirror that serves one whole
+  // body while another request 500s is broken, and the next build would hit it again.
+  const release = await rangeRelease('stall-claimed');
+  try {
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /HTTP 500 for byte range/u,
+    );
+  } finally {
+    await release.close();
+  }
+});
+
 test('a server that ignores Range still yields the exact bytes from one body', async () => {
   const release = await rangeRelease('ignore');
   try {

@@ -639,11 +639,8 @@ async function downloadRanges(key, url, size, expectedSha256) {
     for (const controller of controllers) controller.abort();
   }
   if (claimDeadline !== undefined) clearTimeout(claimDeadline);
-  // A whole body supersedes a sibling's failure only when the lock's own checksum accepts it:
-  // a corrupt 200 must not hide the HTTP status that a range reported, and a verified asset needs
-  // no sibling at all.
-  if (failure !== undefined && whole !== undefined && expectedSha256 !== undefined &&
-      sha256(whole) === expectedSha256) return whole;
+  // PRD-902 requires an unexpected status to fail and name its range: a whole body that happens to
+  // verify does not mask a sibling mirror answering 500, because the next build would hit it again.
   if (failure !== undefined) throw failure;
   if (whole !== undefined) return whole;
   return contents;

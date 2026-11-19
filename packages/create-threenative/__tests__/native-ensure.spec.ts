@@ -93,7 +93,11 @@ export async function ensureNativeBinary() {
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
   await writeFile(
     path.join(root, "threenative.config.ts"),
-    engine === undefined ? "export default {};\n" : `export default { engine: "${engine}" };\n`,
+    // A native HUD: the default "web" renderer is refused on Windows and macOS before any
+    // download, which is the subject of its own test rather than of these fixtures.
+    engine === undefined
+      ? 'export default { ui: { renderer: "native" } };\n'
+      : `export default { engine: "${engine}", ui: { renderer: "native" } };\n`,
   );
   return calls;
 }

@@ -241,7 +241,7 @@ describe("packageEngineDesktop", () => {
       "game.js",
       "native/assets.tnpk",
       "ui/index.html",
-      "tn-native-engine-player-v8",
+      `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`,
       "midway",
     ])
       expect(existsSync(path.join(output, file)), file).toBe(true);
