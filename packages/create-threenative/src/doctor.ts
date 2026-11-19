@@ -1407,6 +1407,14 @@ export function pinnedManifestCheck(
   // An exported empty string means "unset": resolving it would read the working directory.
   const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
   if (pinned === undefined || pinned.length === 0) return undefined;
+  // A source checkout answers from its own build: the Android packager's `--allow-source-build`
+  // path never reads a prebuilt lock, so a stale pin cannot block it.
+  if (options.target === "android" && (process.env.THREENATIVE_RUNTIME_SOURCE ?? "").length > 0)
+    return {
+      detail: "not read — THREENATIVE_RUNTIME_SOURCE builds the Android runtime from the checkout",
+      name: "prebuilt manifest",
+      status: "ok",
+    };
   // The desktop packager resolves a relative pin from the game, the mobile ones from the runtime
   // package they run inside: resolving every pin from the game blessed one the build could not read.
   const mobile = options.target === "android" || options.target === "ios";

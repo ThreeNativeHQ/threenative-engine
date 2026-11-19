@@ -40,6 +40,12 @@ The error names the asset, the installed version, the URL and the reason. Three 
      is picked up with no variable set.
    - legacy host (`engine: "threejs"`): `pnpm --filter @threenative/runtime-native native:build`,
      then set `THREENATIVE_RUNTIME_BINARY`.
+   A Linux **ARM64** host has no preset: the `tn-linux` preset selects x86-64's Dawn backend and
+   physics archive, so override both —
+   `cmake --preset tn-linux -B build/tn-engine-ui -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON
+   -DTHREENATIVE_PHYSICS_LIBRARY=.runtime/physics-target/aarch64-unknown-linux-gnu/release/libthreenative_native_physics.a`
+   (`build-native-physics.mjs --desktop` builds the host's own archive; `-DTHREENATIVE_WGPU_ROOT`
+   points at a wgpu-native checkout when it is not a checked-in dependency).
    macOS publishes no desktop asset at all, so there the checkout build is the only route.
    The overlay option is Linux-only and the released Windows and macOS players are built without
    it: a `ui.renderer: "web"` desktop build on either is refused at `TN_ENGINE_PLAYER_UI_UNSUPPORTED`
