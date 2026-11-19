@@ -156,6 +156,12 @@ describe("native binaries download on first native use", () => {
     const root = await makeTempDir("threenative-native-ensure-desktop-");
     roots.push(root);
     const ensureCalls = await writeProject(root);
+    // A web HUD: only then does the build run `buildUi`, which is the step the order is measured
+    // against. Linux accepts it, and elsewhere the platform guard is the subject of its own test.
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { ui: { renderer: "web" } };\n',
+    );
     // The bundler and packager ship beside the runtime; without them the build stops before the
     // ensure call, which is a different test.
     for (const name of ["bundle-native-engine.mjs", "package-engine-desktop.mjs"])

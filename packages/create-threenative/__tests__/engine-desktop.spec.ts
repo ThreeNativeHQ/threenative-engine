@@ -249,7 +249,9 @@ describe("packageEngineDesktop", () => {
     const start = readFileSync(path.join(output, "midway"), "utf8");
     expect(start).toBe(launcher(1920, 1080));
     expect(start).toContain(':"${TN_PLAYER_WIDTH:=1920}"'.slice(1));
-    expect(start).toContain('exec "$DIR/tn-native-engine-player-v8" "$DIR/game.js" "$@"');
+    expect(start).toContain(
+      `exec "$DIR/tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}" "$DIR/game.js" "$@"`,
+    );
     expect(start).toContain(':"${TN_PLAYER_PRIORITY:=game}"'.slice(1));
   });
 

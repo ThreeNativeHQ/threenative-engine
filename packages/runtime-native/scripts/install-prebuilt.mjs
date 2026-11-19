@@ -621,7 +621,9 @@ async function downloadRanges(key, url, size, expectedSha256) {
         const aborted = controllers[index].signal.aborted || isAbortError(error);
         if (!aborted && failure === undefined) {
           failure = error;
-          if (claimed !== undefined) armClaimDeadline(claimed);
+          // Stop reading the whole-body fallback at once: the answer is the range failure, and a
+          // body that keeps arriving must not hold the install lock.
+          if (claimed !== undefined) controllers[claimed]?.abort();
         } else if (aborted && failure === undefined && (claimed === undefined || index === claimed)) {
           // A claim aborted by its own deadline is the diagnosis when no sibling named a better one.
           failure =

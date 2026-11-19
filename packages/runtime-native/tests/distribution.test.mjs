@@ -2173,6 +2173,29 @@ async function rangeRelease(behaviour = 'ranges') {
       response.end();
       return;
     }
+    if (behaviour === 'whole-beside-500') {
+      // The first range fails at once; a later request answers with the entire, valid asset, so a
+      // downloader that waits for the whole body before reporting the 500 passes unnoticed.
+      if (seen.length === 1) {
+        response.statusCode = 500;
+        response.end();
+        return;
+      }
+      response.writeHead(200, { 'content-length': String(payload.length) });
+      let offset = 0;
+      const step = () => {
+        if (offset >= payload.length || response.destroyed) {
+          response.end();
+          return;
+        }
+        const part = payload.subarray(offset, offset + 64 * 1024);
+        offset += part.length;
+        response.write(part);
+        setTimeout(step, 5);
+      };
+      step();
+      return;
+    }
     if (behaviour === 'stall-claimed') {
       // One request claims a whole body and never finishes it; every other range fails outright.
       // The downloader must report the range failure instead of waiting on the stalled claim.
@@ -2236,13 +2259,16 @@ test('a large release asset downloads as parallel byte ranges and assembles exac
 
 test('a whole body that verifies still fails when a sibling range answered 500', async () => {
   // PRD-902: an unexpected status must fail and name its range. A mirror that serves one whole
-  // body while another request 500s is broken, and the next build would hit it again.
-  const release = await rangeRelease('stall-claimed');
+  // body while another request 500s is broken, and the next build would hit it again. The body is
+  // complete and checksum-valid, so this only passes if the range failure wins.
+  const release = await rangeRelease('whole-beside-500');
   try {
+    const started = Date.now();
     await assert.rejects(
       downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
       /HTTP 500 for byte range/u,
     );
+    assert.ok(Date.now() - started < 15_000, 'the failure waited for the whole body');
   } finally {
     await release.close();
   }
