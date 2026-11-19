@@ -8,7 +8,9 @@ import { basename, join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
 
-const PLAYER = "tn-native-engine-player-v8";
+// A Windows build has to contain a runnable image: the same bytes under the `.exe` name the
+// operating system will spawn, and the path the playtest launcher resolver looks for there.
+const PLAYER = process.platform === "win32" ? "tn-native-engine-player-v8.exe" : "tn-native-engine-player-v8";
 
 /**
  * The launcher: the window opens with the game's title and size, the player takes the game's CPU priority
@@ -41,7 +43,7 @@ export async function packageEngineDesktop(
 ) {
   if (!player || !existsSync(player)) {
     throw new Error(
-      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout with \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON\` (the overlay flag is required when the game has a web UI), then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\` (the legacy host's \`native:build\` does not produce it), or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout with \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\` (add -DTN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux when the game has a web UI; elsewhere a web HUD needs engine: \"threejs\"), then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\` (the legacy host's \`native:build\` does not produce it), or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   rmSync(output, { force: true, recursive: true });

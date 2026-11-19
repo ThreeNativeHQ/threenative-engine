@@ -105,6 +105,15 @@ function releaseFromManifest(manifest, key) {
     throw error;
   }
   const release = manifest?.artifacts?.[key];
+  if (release !== undefined && (!release.url || !release.sha256)) {
+    // The lock advertises this asset and does not describe it: a broken release, not a platform
+    // that ships nothing, so the prefetch must fail rather than warn and leave the image short.
+    const error = new Error(
+      `The prebuilt release manifest records an incomplete entry for '${key}' (url and sha256 are required).`,
+    );
+    error.code = 'PREBUILT_RELEASE_INCOMPLETE';
+    throw error;
+  }
   if (!release?.url || !release?.sha256) {
     const error = new Error(`No prebuilt release asset is recorded for '${key}'.`);
     if (key.endsWith('-engine-player')) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
@@ -811,7 +820,7 @@ function unavailableNativeBinary(error, plan) {
   const wrapped = new Error(
     `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (${
       plan.key.endsWith('-engine-player')
-        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8; the overlay flag is what lets a web-UI kit draw its HUD'
+        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8; add -DTN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux when the game has a web UI (it is a Linux-only option, and elsewhere a web HUD needs engine: \"threejs\")'
         : 'pnpm --filter @threenative/runtime-native native:build'
     }).`,
   );

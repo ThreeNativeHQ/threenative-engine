@@ -172,7 +172,12 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
   const manifest = JSON.parse(readFileSync(path.join(project, "package.json"), "utf8"));
   const name = manifest.name.replace(/^@[^/]+\//u, "");
   const artifact = path.join(project, "dist-native", name);
-  for (const entry of [name, "tn-native-engine-player-v8", "game.js", "native/assets.tnpk"])
+  for (const entry of [
+    name,
+    `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`,
+    "game.js",
+    "native/assets.tnpk",
+  ])
     if (!existsSync(path.join(artifact, entry)) || statSync(path.join(artifact, entry)).size === 0)
       throw new Error(`TN_PACKED_DESKTOP_ARTIFACT_MISSING: ${entry}`);
   await run("pnpm", ["build:web"], project);
