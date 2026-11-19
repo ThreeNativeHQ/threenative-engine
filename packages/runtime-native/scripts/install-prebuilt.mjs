@@ -791,6 +791,12 @@ function reclaimAbandonedLock(lock, identity) {
  */
 function unavailableNativeBinary(error, plan) {
   const reason = error instanceof Error ? error.message : String(error);
+  // Two different facts share the UNPUBLISHED name: this platform publishes nothing (warn and move
+  // on) and a release that is missing an asset it promised (a real failure). `unpublished` keeps
+  // them apart for the prefetch command, which cannot see the plan.
+  const byDesign =
+    (error instanceof Error && error.code === 'PREBUILT_RELEASE_UNPUBLISHED') ||
+    /is not published for|No prebuilt release manifest exists|No prebuilt release asset is recorded/u.test(reason);
   const code =
     error instanceof Error &&
     (['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code) ||
@@ -805,11 +811,12 @@ function unavailableNativeBinary(error, plan) {
   const wrapped = new Error(
     `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (${
       plan.key.endsWith('-engine-player')
-        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8'
+        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8; the overlay flag is what lets a web-UI kit draw its HUD'
         : 'pnpm --filter @threenative/runtime-native native:build'
     }).`,
   );
   wrapped.code = code;
+  if (byDesign) wrapped.unpublished = true;
   return wrapped;
 }
 
@@ -855,10 +862,10 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
         const reason = error instanceof Error ? error.message : String(error);
         // A release that carries no asset for this platform is a packaging-state fact, not a
         // broken download: report it, and count it only as something this platform cannot fetch.
-        if (
-          error instanceof Error &&
-          ['TN_NATIVE_BINARY_UNPUBLISHED', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code)
-        ) {
+        // Only an absence this platform publishes nothing for is a warning. A published asset the
+        // release is missing (404, no manifest entry) must fail the prefetch: an offline image
+        // built on exit 0 would break at the game's first desktop build.
+        if (error instanceof Error && (error.unpublished === true || error.code === 'PREBUILT_RELEASE_UNPUBLISHED')) {
           console.warn(reason);
           continue;
         }

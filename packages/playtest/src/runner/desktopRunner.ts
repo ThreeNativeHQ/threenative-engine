@@ -50,7 +50,15 @@ export async function resolveDesktopExecutable(candidate: string): Promise<strin
   // A Windows build writes its launcher either as `<dir>.exe` (the `threejs` host) or as
   // `<dir>/<name>.exe` (the owned engine), and switching engines leaves the other form behind. The
   // newest artifact is the one the last build produced, so that is the one to launch.
-  const present = [`${candidate}.exe`, join(candidate, name), join(candidate, `${name}.exe`)]
+  // Windows cannot spawn the POSIX launcher script the engine packager writes as `<dir>/<name>`, so
+  // only executables are candidates there: the packaged player itself, or the `threejs` host.
+  const candidates = [
+    `${candidate}.exe`,
+    ...(process.platform === "win32"
+      ? [join(candidate, `${name}.exe`), join(candidate, "tn-native-engine-player-v8.exe")]
+      : [join(candidate, name), join(candidate, `${name}.exe`)]),
+  ];
+  const present = candidates
     .map((launcher) => ({ launcher, mtimeMs: statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1 }))
     .filter(({ mtimeMs }) => mtimeMs >= 0)
     .sort((left, right) => right.mtimeMs - left.mtimeMs);

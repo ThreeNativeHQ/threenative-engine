@@ -2407,7 +2407,10 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
           runtimeFileExists: (relative: string) => existsSync(path.join(runtimeRoot, relative)),
           // Only the `threejs` host answers `--version`. Probing it for a default-engine project
           // executed an unused binary and could spend its 20-second timeout doing it.
-          ...(record(config)?.engine === "threejs"
+          // The override wins over the cache, so a cached host is not probed when it is set: probing
+          // it spent its 20-second timeout before reporting a result the build never uses.
+          ...(record(config)?.engine === "threejs" &&
+          process.env.THREENATIVE_RUNTIME_BINARY === undefined
             ? {
                 nativeHost: probeNativeHost(
                   path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
