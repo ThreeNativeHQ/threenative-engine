@@ -47,6 +47,9 @@ export async function resolveDesktopExecutable(candidate: string): Promise<strin
   }
   if (!isDirectory) return candidate;
   const name = basename(candidate);
+  // A Windows build of the `threejs` host writes `<dir>.exe` beside a directory a previous build
+  // under the owned engine left behind: the sibling is the newer artifact, so it goes first.
+  if (existsSync(`${candidate}.exe`)) return `${candidate}.exe`;
   for (const launcher of [join(candidate, name), join(candidate, `${name}.exe`)]) {
     if (existsSync(launcher)) return launcher;
   }

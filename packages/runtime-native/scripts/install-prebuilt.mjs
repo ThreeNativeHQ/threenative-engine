@@ -77,7 +77,11 @@ export function toolsFilename(platform = process.platform) {
 
 export function platformKey(platform = process.platform, arch = process.arch) {
   const key = `${platform}-${arch}`;
-  if (!supported.has(key)) throw new Error(`Unsupported native runtime platform '${key}'.`);
+  if (!supported.has(key)) {
+    const error = new Error(`No prebuilt release is published for '${key}': this platform has no native runtime row.`);
+    error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    throw error;
+  }
   return key;
 }
 
@@ -372,6 +376,24 @@ async function fetchArtifact(url, key, init) {
 }
 
 /**
+ * Read one part's body, naming the asset, URL and interval when the connection dies mid-read.
+ *
+ * `response.arrayBuffer()` rejects with a bare `TypeError: terminated` on a dropped connection, and
+ * the caller cannot see which part failed: the requested-range and the server-ignored-Range paths
+ * both go through here so the failure reads the same either way.
+ */
+async function readRangeBody(response, { end, key, start, url }) {
+  try {
+    return Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    throw new Error(
+      `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} was interrupted (${error instanceof Error ? error.message : String(error)}).`,
+      { cause: error },
+    );
+  }
+}
+
+/**
  * One asset over parallel `Range` requests, assembled at each part's offset in one buffer.
  *
  * A `200` answer means the server ignored `Range`: the first part to see one claims the whole body
@@ -415,7 +437,7 @@ async function downloadRanges(key, url, size) {
           claimed = index;
           // The siblings are not aborted until this body is in memory: they may share its socket,
           // and aborting them mid-read truncated it (a checksum failure, observed).
-          whole = Buffer.from(await response.arrayBuffer());
+          whole = await readRangeBody(response, { end, key, start, url });
           abortOthers(index);
           return;
         }
@@ -426,17 +448,7 @@ async function downloadRanges(key, url, size) {
           if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
           throw error;
         }
-        let body;
-        try {
-          body = Buffer.from(await response.arrayBuffer());
-        } catch (error) {
-          // A connection dropped mid-range rejects with a bare `terminated`: name the request that
-          // failed, since the caller cannot see this part's URL or interval otherwise.
-          throw new Error(
-            `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} was interrupted (${error instanceof Error ? error.message : String(error)}).`,
-            { cause: error },
-          );
-        }
+        const body = await readRangeBody(response, { end, key, start, url });
         if (body.length !== end - start + 1) {
           throw new Error(
             `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
@@ -700,22 +712,38 @@ function abandonedLockOwner(lock, age) {
  */
 function reclaimAbandonedLock(lock, identity) {
   const reaper = `${lock}.reap`;
+  const token = `${randomUUID()}`;
   try {
     mkdirSync(reaper);
+    writeFileSync(join(reaper, 'owner'), token);
   } catch (error) {
-    if (error?.code === 'EEXIST') {
-      let age = 0;
-      try {
-        age = Date.now() - statSync(reaper).mtimeMs;
-      } catch {
-        return false;
-      }
-      if (age <= LOCK_STALE_MS) return false;
-      rmSync(reaper, { recursive: true, force: true });
+    if (error?.code !== 'EEXIST') throw error;
+    // Somebody else reaps. A guard left by a dead reaper is *renamed*, not deleted: the rename is
+    // atomic, so exactly one waiter can claim the stale guard and the rest see ENOENT. Deleting by
+    // path would let a waiter remove a guard another waiter had just created.
+    let age = 0;
+    try {
+      age = Date.now() - statSync(reaper).mtimeMs;
+    } catch {
       return false;
     }
-    throw error;
+    if (age <= LOCK_STALE_MS) return false;
+    const deadGuard = `${reaper}.${randomUUID()}.stale`;
+    try {
+      renameSync(reaper, deadGuard);
+    } catch {
+      return false;
+    }
+    rmSync(deadGuard, { recursive: true, force: true });
+    return false;
   }
+  const ownsReaper = () => {
+    try {
+      return readFileSync(join(reaper, 'owner'), 'utf8') === token;
+    } catch {
+      return false;
+    }
+  };
   try {
     let current;
     try {
@@ -733,6 +761,9 @@ function reclaimAbandonedLock(lock, identity) {
     } catch {
       return false;
     }
+    // The guard can be taken from a paused reaper, and the token is how it knows: if another
+    // waiter renamed this guard away, the destructive step below is not ours to take.
+    if (!ownsReaper()) return false;
     if (current !== identity || abandonedLockOwner(lock, age) !== identity) return false;
     const graveyard = `${lock}.${randomUUID()}.stale`;
     try {
@@ -745,7 +776,7 @@ function reclaimAbandonedLock(lock, identity) {
     rmSync(graveyard, { recursive: true, force: true });
     return true;
   } finally {
-    rmSync(reaper, { recursive: true, force: true });
+    if (ownsReaper()) rmSync(reaper, { recursive: true, force: true });
   }
 }
 
@@ -827,7 +858,10 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
         const reason = error instanceof Error ? error.message : String(error);
         // A release that carries no asset for this platform is a packaging-state fact, not a
         // broken download: report it, and count it only as something this platform cannot fetch.
-        if (error instanceof Error && error.code === 'TN_NATIVE_BINARY_UNPUBLISHED') {
+        if (
+          error instanceof Error &&
+          ['TN_NATIVE_BINARY_UNPUBLISHED', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code)
+        ) {
           console.warn(reason);
           continue;
         }

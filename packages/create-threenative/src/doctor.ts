@@ -1333,22 +1333,16 @@ function nativeEnginePlayerFilename(): string {
 }
 
 /**
- * Platforms whose engine player is built and verified on every release run but never published.
+ * Platforms this repository publishes a native binary for.
  *
- * Copied from `packages/runtime-native/scripts/install-prebuilt.mjs` `UNPUBLISHED_PREBUILT_KEYS`
- * rather than imported: doctor must answer in a project that has no native runtime package, and a
- * static import of one would make the whole report fail where this is the only fact it needs. Only
- * macOS today — an unsigned, un-notarized bundle is refused by Gatekeeper, so a released asset
- * would be a support ticket (PRD-262).
- */
-const UNPUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["darwin-arm64"]);
-
-/**
- * Platforms this repository publishes an engine player for.
- *
- * `nativeRuntimeKey()` answers for any host the types allow, so a platform absent from this list —
- * Linux arm64 today — has no downloadable player at all. The first build then fails asking for a
- * checkout player, which is the state doctor must report rather than promise a download.
+ * Copied from `packages/runtime-native/scripts/install-prebuilt.mjs` rather than imported: doctor
+ * must answer in a project that has no native runtime package, and a static import would make the
+ * whole report fail where this is the only fact it needs. `nativeRuntimeKey()` answers for any host
+ * the types allow, so a platform absent from this list — Linux arm64 today — has nothing to
+ * download: macOS is deliberately unpublished (an unsigned bundle is refused by Gatekeeper, so a
+ * released asset would be a support ticket, PRD-262) and arm64 Linux has no row at all. The first
+ * build then fails asking for a checkout binary, which is what doctor must report instead of
+ * promising a download.
  */
 const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x64", "win32-x64"]);
 
@@ -1362,6 +1356,8 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
 function nativePrebuiltTarget(config: unknown): {
   readonly absentDetail: string;
   readonly binary: string;
+  /** Whether this platform publishes no such binary, so a download promise would be false. */
+  readonly deprecated?: boolean;
   readonly key: string;
   /** Whether the prebuilt is the legacy host, whose own `--version` doctor can ask. */
   readonly legacy: boolean;
@@ -1369,9 +1365,16 @@ function nativePrebuiltTarget(config: unknown): {
 } {
   const platform = nativeRuntimeKey();
   if (record(config)?.engine === "threejs") {
+    // The legacy host is published for the same two platforms as the player: macOS builds it for
+    // the release census but never ships it, so promising a download there would be a promise the
+    // release cannot keep.
+    const legacyUnpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
     return {
-      absentDetail: `not downloaded yet — the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_RUNTIME_BINARY to a local file to stay offline.`,
+      absentDetail: legacyUnpublished
+        ? `no native runtime is published for ${platform}, so a desktop build with engine "threejs" needs a local one: run \`pnpm --filter @threenative/runtime-native native:build\` in an engine checkout and point THREENATIVE_RUNTIME_BINARY at the result. Web builds download nothing.`
+        : `not downloaded yet — the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_RUNTIME_BINARY to a local file to stay offline.`,
       binary: `prebuilt/${platform}/${nativeRuntimeFilename()}`,
+      ...(legacyUnpublished ? { deprecated: true } : {}),
       key: platform,
       legacy: true,
       statusFile: "prebuilt/install-status.json",
@@ -1385,6 +1388,7 @@ function nativePrebuiltTarget(config: unknown): {
       ? `no engine player is published for ${platform}, so a desktop build needs a local one: build it from an engine checkout (\`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`) and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
       : "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
+    ...(unpublished ? { deprecated: true } : {}),
     key: `${platform}-engine-player`,
     legacy: false,
     statusFile: "prebuilt/engine-player-install-status.json",
@@ -1500,8 +1504,9 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
     // A *recorded failure* still fails below, which is the fact doctor is for. On a platform whose
     // asset is never published, no build can create the record, so it warns: a native build there
     // needs an explicit checkout player, and a web-only project still passes.
-    const unpublished =
-      !target.legacy && UNPUBLISHED_ENGINE_PLAYER_PLATFORMS.has(nativeRuntimeKey());
+    // One predicate for the message and the verdict: the target already decided whether this
+    // platform publishes the binary a build would run, and the warning follows that decision.
+    const unpublished = target.deprecated === true;
     return {
       detail: target.absentDetail,
       ...(unpublished

@@ -60,6 +60,12 @@ test("--executable accepts the build output directory of either engine", async (
     await writeFile(flat, "");
     expect(await resolveDesktopExecutable(flat)).toBe(flat);
     expect(await resolveDesktopExecutable(join(root, "absent"))).toBe(join(root, "absent"));
+    // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory.
+    const stale = join(root, "switched");
+    await mkdir(stale, { recursive: true });
+    await writeFile(join(stale, "switched"), "");
+    await writeFile(`${stale}.exe`, "");
+    expect(await resolveDesktopExecutable(stale)).toBe(`${stale}.exe`);
     const empty = join(root, "empty");
     await mkdir(empty);
     await expect(resolveDesktopExecutable(empty)).rejects.toThrow("TN_PLAYTEST_EXECUTABLE_MISSING");

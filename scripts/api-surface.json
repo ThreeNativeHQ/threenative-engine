@@ -423,6 +423,7 @@
         "@threenative/playtest/runner#recordToScenario": "export function recordToScenario( value: unknown, scenarioPath = \"recording.json\", oracleValue?: unknown, ): IPlaytestScenario { … }",
         "@threenative/playtest/runner#requireAssertions": "export function requireAssertions( value: IPlaytestScenario[\"assert\"], scenarioPath: string, ): NonNullable<IPlaytestScenario[\"assert\"]> { … }",
         "@threenative/playtest/runner#resolveBrowserArguments": "export function resolveBrowserArguments(browserArgs: readonly string[] | undefined): string[] { … }",
+        "@threenative/playtest/runner#resolveDesktopExecutable": "export async function resolveDesktopExecutable(candidate: string): Promise<string> { … }",
         "@threenative/playtest/runner#resolveManagedServerCommand": "export function resolveManagedServerCommand( config: IStandalonePlaytestConfig, dynamicPort?: number, ): string { … }",
         "@threenative/playtest/runner#resolveManagedServerConfig": "export async function resolveManagedServerConfig( config: IStandalonePlaytestConfig, ): Promise<IStandalonePlaytestConfig> { … }",
         "@threenative/playtest/runner#rotatedTouchPosition": "export function rotatedTouchPosition(x: number, y: number, rotation: number): [number, number] { … }",
