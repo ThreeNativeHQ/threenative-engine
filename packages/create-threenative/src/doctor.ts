@@ -1592,10 +1592,17 @@ function localNativeBinary(
     // The legacy host dispatches desktop packaging to a `mystral-tools` helper beside itself
     // (`src/cli/tool_dispatch.cpp:52`), and an override skips the download that would install it:
     // a present host without that helper exits 127 on the first build.
-    const helper = path.join(
-      path.dirname(resolved),
-      process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
-    );
+    // The runtime's own lookup: `THREENATIVE_CLI_TOOLS` first
+    // (`packages/runtime-native/src/cli/tool_dispatch.cpp:22`), then the helper beside the
+    // executable it was dispatched from.
+    const configuredTools = process.env.THREENATIVE_CLI_TOOLS;
+    const helper =
+      configuredTools !== undefined && configuredTools.length > 0
+        ? path.resolve(configuredTools)
+        : path.join(
+            path.dirname(resolved),
+            process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
+          );
     if (!isFile(resolved))
       return {
         kind: "broken",

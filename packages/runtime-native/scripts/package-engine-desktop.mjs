@@ -71,6 +71,12 @@ export async function packageEngineDesktop(
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
   const start = join(output, basename(output));
+  // A Windows output directory named after the player would make the launcher and the packaged
+  // executable the same path, and writing the launcher would destroy the player.
+  if (resolve(start) === resolve(join(output, PLAYER)))
+    throw new Error(
+      `TN_ENGINE_LAUNCHER_COLLIDES: the output directory's name gives the launcher the same path as the packaged player (${PLAYER}). Rename the game or its desktop output directory.`,
+    );
   writeFileSync(start, launcher(width, height, title, priority, fullscreen));
   chmodSync(start, 0o755);
   if (buildReceipt) {

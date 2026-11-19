@@ -2340,3 +2340,25 @@ test('a range that answers 500 fails closed naming the key and the byte range', 
     await release.close();
   }
 });
+
+test('the engine packager refuses a launcher path that is the packaged player', async () => {
+  const { packageEngineDesktop } = await import('../scripts/package-engine-desktop.mjs');
+  const playerName = process.platform === 'win32' ? 'tn-native-engine-player-v8.exe' : 'tn-native-engine-player-v8';
+  const root = mkdtempSync(join(tmpdir(), 'tn-launcher-collision-'));
+  try {
+    const player = join(root, 'player');
+    writeFileSync(player, '');
+    // The output directory's own name becomes the launcher's, so this name collides with the
+    // player the packager copies beside it.
+    const output = join(root, playerName);
+    await assert.rejects(
+      packageEngineDesktop(
+        { output, player, project: join(root, 'project'), entry: join(root, 'project', 'game.ts') },
+        { bundle: async () => ({ engineCommit: 'a'.repeat(40) }), cook: async () => undefined },
+      ),
+      /TN_ENGINE_LAUNCHER_COLLIDES/u,
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
+});

@@ -351,6 +351,16 @@ describe("threenative doctor", () => {
       );
       expect(check(report, "native runtime").status).toBe("fail");
       expect(check(report, "native runtime").detail).toContain("mystral-tools");
+      // `THREENATIVE_CLI_TOOLS` is the runtime's first lookup, so a configured helper is enough.
+      const elsewhere = path.join(root, "tools", "mystral-tools");
+      mkdirSync(path.dirname(elsewhere), { recursive: true });
+      writeFileSync(elsewhere, "");
+      process.env.THREENATIVE_CLI_TOOLS = elsewhere;
+      const configured = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(configured, "native runtime").status).not.toBe("fail");
+      Reflect.deleteProperty(process.env, "THREENATIVE_CLI_TOOLS");
       // The helper beside it is a build that works, so doctor stops objecting.
       writeFileSync(
         path.join(root, process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"),
