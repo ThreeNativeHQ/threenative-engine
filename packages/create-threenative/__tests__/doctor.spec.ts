@@ -376,6 +376,35 @@ describe("threenative doctor", () => {
     }
   });
 
+  it("warns on a pin that no requested build would read", () => {
+    // AC-4: a plain `threenative doctor` on a healthy web-only install must not exit 1 because a
+    // pin exists that no desktop/Android build was asked to use.
+    const pin = path.join("/tmp", "offline-pin-plain", "lock.json");
+    // No checkout player either: the pin is the only thing that could answer.
+    const noCheckout = path.join("/tmp", "offline-pin-plain", "runtime");
+    mkdirSync(noCheckout, { recursive: true });
+    mkdirSync(path.dirname(pin), { recursive: true });
+    writeFileSync(pin, "{}\n");
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    const readRelease = () => {
+      throw new Error("the pin does not name this target");
+    };
+    try {
+      const plain = diagnoseProject(
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot: noCheckout }),
+      );
+      expect(check(plain, "prebuilt manifest").status).toBe("warn");
+      // The same pin is fatal when the desktop build is the question being asked.
+      const desktop = diagnoseProject(
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot: noCheckout }),
+        { target: "desktop" },
+      );
+      expect(check(desktop, "prebuilt manifest").status).toBe("fail");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
   it("names the compositor-less X11 blocker before a build", () => {
     const probe = probeDesktopOverlay({ DISPLAY: ":99" }, () => false);
     const report = diagnoseProject(

@@ -1460,11 +1460,13 @@ function pinnedManifestCheck(
       status: "ok",
     };
   }
+  // A plain `threenative doctor` requested no native build, so a pin that cannot serve one is a
+  // warning there and a failure only when the build being asked about would read it (AC-4).
   const fail = (reason: string): IDoctorCheck => ({
     detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a ${options.target ?? "native"} build fails before downloading.`,
     fix: "Restore the pinned manifest, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
     name: "prebuilt manifest",
-    status: "fail",
+    status: options.target === undefined ? "warn" : "fail",
   });
   // The downloader's own reader decides everything, existence included: a pin in a project whose
   // runtime package is absent cannot be judged here, and a web-only project must not fail on one.

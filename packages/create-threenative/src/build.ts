@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, readFileSync, rmSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -1694,30 +1694,57 @@ async function buildEngineDesktop(
   // The player every desktop package runs is fetched here, before the UI build, so a missing
   // download is a cheap failure rather than a full UI build thrown away (PRD-783).
   const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd);
-  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
-  const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await packageStaged(output, cwd, [
-    packager,
-    "--project",
-    cwd,
-    "--entry",
-    entry,
-    "--player",
-    player,
-    ...(ui === undefined ? [] : ["--ui", ui]),
-    "--width",
-    String(config.window.width),
-    "--height",
-    String(config.window.height),
-    "--title",
-    config.window.title,
-    "--priority",
-    config.display.priority,
-    "--fullscreen",
-    String(config.display.fullscreen),
-    "--output",
-    output,
-  ]);
+  // The cache path is shared, and another build with a different lock can replace it between the
+  // verification and the copy: package a build-private copy so the bytes shipped are the bytes
+  // this build verified.
+  const staged = stagePlayerCopy(player);
+  try {
+    const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+    const output = path.join(cwd, "dist-native", await projectName(cwd));
+    await packageStaged(output, cwd, [
+      packager,
+      "--project",
+      cwd,
+      "--entry",
+      entry,
+      "--player",
+      staged,
+      ...(ui === undefined ? [] : ["--ui", ui]),
+      "--width",
+      String(config.window.width),
+      "--height",
+      String(config.window.height),
+      "--title",
+      config.window.title,
+      "--priority",
+      config.display.priority,
+      "--fullscreen",
+      String(config.display.fullscreen),
+      "--output",
+      output,
+    ]);
+  } finally {
+    rmSync(staged, { force: true });
+  }
+}
+
+/**
+ * A build-private name for the verified player.
+ *
+ * The prebuilt cache is shared by every build on the machine, and an install under a different
+ * `THREENATIVE_PREBUILT_MANIFEST` publishes over that path after the verification this build just
+ * did. Publishing renames the new file into place, so a hard link taken now keeps pointing at the
+ * bytes this build verified, for the price of one directory entry. A filesystem that cannot link
+ * falls back to one copy.
+ */
+function stagePlayerCopy(player: string): string {
+  const staged = `${player}.${process.pid}.${randomUUID()}.stage`;
+  try {
+    linkSync(player, staged);
+  } catch {
+    copyFileSync(player, staged);
+  }
+  return staged;
 }
 
 async function buildNative(

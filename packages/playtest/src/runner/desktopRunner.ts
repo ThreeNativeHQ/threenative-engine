@@ -68,12 +68,17 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
   // newest artifact is the one the last build produced, so that is the one to launch.
   // Windows cannot spawn the POSIX launcher script the engine packager writes as `<dir>/<name>`, so
   // only executables are candidates there: the packaged player itself, or the `threejs` host.
+  const rawPlayerPath = join(candidate, "tn-native-engine-player-v8.exe");
   const candidates =
     process.platform === "win32"
-      ? [
-          `${candidate}.exe`,
-          join(candidate, `${name}.exe`),
-          join(candidate, "tn-native-engine-player-v8.exe"),
+      ? // Compared case-insensitively: on that filesystem a game named like the player IS the
+        // player's path, and the canonical spelling must be the one that survives, because the
+        // bundle argument is keyed on it.
+        [
+          ...[`${candidate}.exe`, join(candidate, `${name}.exe`)].filter(
+            (launcher) => launcher.toLowerCase() !== rawPlayerPath.toLowerCase(),
+          ),
+          rawPlayerPath,
         ]
       : // Only the launcher this build wrote: a `.exe` beside it is the other platform's
         // artifact, and a name that itself ends in `.exe` is still the POSIX script.
@@ -85,8 +90,7 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
   // The raw player is the exact packaged path, never a name prefix: a game called
   // `tn-native-engine-player-racer` is a launcher, and treating it as the player would rank it by
   // the bundle's clock and hand it `game.js` as an argument.
-  const rawPlayer =
-    process.platform === "win32" ? join(candidate, "tn-native-engine-player-v8.exe") : undefined;
+  const rawPlayer = process.platform === "win32" ? rawPlayerPath : undefined;
   const builtAt = (launcher: string): number => {
     const bundle = join(candidate, "game.js");
     if (launcher === rawPlayer && existsSync(bundle)) {

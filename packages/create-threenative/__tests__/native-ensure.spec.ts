@@ -1,3 +1,4 @@
+import { existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -229,7 +230,14 @@ export async function ensureNativeBinary() {
     expect(packager).toBeDefined();
     const index = packager?.args.indexOf("--player") ?? -1;
     expect(index).toBeGreaterThanOrEqual(0);
-    expect(packager?.args[index + 1]).toBe(player);
+    // The packager gets a build-private name for the verified bytes, so a concurrent install under
+    // another lock cannot swap the shared cache path between verification and packaging.
+    const handed = packager?.args[index + 1] ?? "";
+    expect(handed.startsWith(player)).toBe(true);
+    expect(handed).not.toBe(player);
+    expect(handed).toMatch(/[.]\d+[.][0-9a-f-]{36}[.]stage$/u);
+    // The stage is the build's own: it is gone once packaging returns.
+    expect(existsSync(handed)).toBe(false);
     // A second build in this process must not inherit the first game's player.
     expect(process.env.THREENATIVE_ENGINE_PLAYER).toBeUndefined();
   });
@@ -257,7 +265,9 @@ export async function installPrebuilt() {
     const packager = spawned.find(({ args }) =>
       args.some((arg) => arg.endsWith("package-engine-desktop.mjs")),
     );
-    expect(packager?.args[packager.args.indexOf("--player") + 1]).toBe(player);
+    const handed = packager?.args[packager.args.indexOf("--player") + 1] ?? "";
+    expect(handed.startsWith(player)).toBe(true);
+    expect(handed).not.toBe(player);
   });
 
   it("a cold default-engine build hands the download's player to the packager", async () => {
