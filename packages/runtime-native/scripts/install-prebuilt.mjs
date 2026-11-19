@@ -445,6 +445,49 @@ async function readRangeBody(response, { end, key, start, url }) {
  * install lock. The sha256 in the lock is still the only trust decision.
  */
 /**
+ * Copy one ranged response into its own slice of the output, refusing to exceed it.
+ *
+ * The check happens per chunk, so an over-long body is abandoned the moment it overruns rather
+ * than after it has all arrived.
+ */
+async function readRangeInto(response, contents, { end, key, start, url }) {
+  const expected = end - start + 1;
+  const reader = response.body?.getReader();
+  if (reader === undefined) {
+    const body = await readRangeBody(response, { end, key, start, url });
+    if (body.length > expected)
+      throw new Error(
+        `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered more than ${expected} bytes.`,
+      );
+    body.copy(contents, start);
+    return body.length;
+  }
+  let written = 0;
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value === undefined) continue;
+      written += value.length;
+      if (written > expected) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(
+          `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} exceeded its ${expected} bytes.`,
+        );
+      }
+      contents.set(value, start + written - value.length);
+    }
+  } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Prebuilt release fetch failed')) throw error;
+    throw new Error(
+      `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} was interrupted (${error instanceof Error ? error.message : String(error)}).`,
+      { cause: error },
+    );
+  }
+  return written;
+}
+
+/**
  * Read a claimed whole-body response, re-arming the inactivity deadline as bytes arrive.
  *
  * A sibling's HTTP error must not cap the fallback at a fixed wall time: a slow but progressing
@@ -537,13 +580,15 @@ async function downloadRanges(key, url, size, expectedSha256) {
           if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
           throw error;
         }
-        const body = await readRangeBody(response, { end, key, start, url });
-        if (body.length !== end - start + 1) {
+        // Stream straight into this part's slice: a mirror that answers every range with the whole
+        // asset would otherwise be buffered (144 MiB for a 16-part 9 MiB file) before the length
+        // check noticed.
+        const written = await readRangeInto(response, contents, { end, key, start, url });
+        if (written !== end - start + 1) {
           throw new Error(
-            `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
+            `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${written} bytes.`,
           );
         }
-        body.copy(contents, start);
       } catch (error) {
         // The claimed reader decides the result even when it fails: its error is the download's.
         // Any other failure is remembered only until a whole body wins, and cancels the siblings

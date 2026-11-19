@@ -1409,6 +1409,38 @@ function usable(artifacts: unknown, key: string, releaseLock = false): boolean {
 }
 
 /**
+ * The asset file each prebuilt key names, read from the installed downloader's own map.
+ *
+ * Doctor needs it to tell a lock that points the engine player at the legacy runtime from a
+ * correct one: the release tag alone matches either. Absent, the caller validates the tag only.
+ */
+function releasedAssetNames(
+  snapshot: IProjectSnapshot,
+): Readonly<Record<string, string>> | undefined {
+  if (snapshot.runtimeRoot === undefined) return undefined;
+  const source = (() => {
+    try {
+      return readFileSync(
+        path.join(snapshot.runtimeRoot, "scripts", "install-prebuilt.mjs"),
+        "utf8",
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+  if (source === undefined) return undefined;
+  const block = /export const PREBUILT_ASSET_NAMES = Object\.freeze\(\{([\s\S]*?)\n\}\);/u.exec(
+    source,
+  )?.[1];
+  if (block === undefined) return undefined;
+  const names: Record<string, string> = {};
+  for (const match of block.matchAll(/'([a-z0-9_-]+)':\s*'([^']+)'/gu)) {
+    names[match[1] as string] = match[2] as string;
+  }
+  return Object.keys(names).length === 0 ? undefined : names;
+}
+
+/**
  * The Android prebuilt keys the installed packager will ask this pin for.
  *
  * Read from `scripts/package-android.mjs` rather than mirrored: the V8 cohort is eleven keys, and a
@@ -1519,13 +1551,18 @@ export function pinnedManifestCheck(
     // The downloader only serves an artifact whose URL sits under this release's own tag, so a
     // lock pointing at another release is one the build cannot use.
     const prefix = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/runtime-native-v${record(manifest)?.version}/`;
-    const outside = Object.entries(record(artifacts) ?? {}).filter(([, artifact]) => {
+    const names = releasedAssetNames(snapshot);
+    const outside = Object.entries(record(artifacts) ?? {}).filter(([key, artifact]) => {
       const url = record(artifact)?.url;
-      return typeof url === "string" && !url.startsWith(prefix);
+      if (typeof url !== "string" || !url.startsWith(prefix)) return true;
+      // The tag alone is not enough: the file name is the key's own asset, and a lock that swaps
+      // two keys under the right tag is one the downloader rejects.
+      const expectedName = names?.[key];
+      return expectedName !== undefined && url !== `${prefix}${expectedName}`;
     });
     if (outside.length > 0)
       return fail(
-        `which records ${outside.length} artifact${outside.length === 1 ? "" : "s"} outside the runtime-native-v${record(manifest)?.version} release (${outside[0]?.[0]})`,
+        `which records ${outside.length} artifact${outside.length === 1 ? "" : "s"} that does not match its key inside the runtime-native-v${record(manifest)?.version} release (${outside[0]?.[0]})`,
       );
   }
   if (releaseLock && record(manifest)?.requiredKeys === undefined) {
