@@ -1367,7 +1367,12 @@ function usable(artifacts: unknown, key: string): boolean {
     typeof artifact?.url === "string" &&
     artifact.url.length > 0 &&
     typeof artifact.sha256 === "string" &&
-    /^[a-f0-9]{64}$/u.test(artifact.sha256)
+    /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
+    // A lock without a size still passes `readRelease` and then has nothing to range-split, which
+    // is a download that fails after the build has committed to it.
+    typeof artifact.size === "number" &&
+    Number.isSafeInteger(artifact.size) &&
+    artifact.size > 0
   );
 }
 
@@ -1393,7 +1398,7 @@ function androidPrebuiltCohort(snapshot: IProjectSnapshot): readonly string[] | 
   if (source === undefined) return undefined;
   const block = /export const ANDROID_PREBUILT_V8_ASSETS = \{([\s\S]*?)\n\};/u.exec(source)?.[1];
   if (block === undefined) return undefined;
-  const keys = [...block.matchAll(/'([a-z0-9-]+)':/gu)].map((match) => match[1] as string);
+  const keys = [...block.matchAll(/'([a-z0-9_-]+)':/gu)].map((match) => match[1] as string);
   return keys.length === 0 ? undefined : keys;
 }
 
@@ -1403,7 +1408,13 @@ export function pinnedManifestCheck(
 ): IDoctorCheck | undefined {
   const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
   if (pinned === undefined) return undefined;
-  const resolved = path.resolve(pinned);
+  // The desktop packager resolves a relative pin from the game, the mobile ones from the runtime
+  // package they run inside: resolving every pin from the game blessed one the build could not read.
+  const mobile = options.target === "android" || options.target === "ios";
+  const resolved =
+    mobile && snapshot.runtimeRoot !== undefined && !path.isAbsolute(pinned)
+      ? path.resolve(snapshot.runtimeRoot, pinned)
+      : path.resolve(pinned);
   const target = nativePrebuiltTarget(snapshot.config);
   // A build that already has a local binary reads no manifest at all: the checkout player and
   // `THREENATIVE_ENGINE_PLAYER` / `THREENATIVE_RUNTIME_BINARY` all return before the network.
@@ -1414,6 +1425,13 @@ export function pinnedManifestCheck(
   ) {
     return {
       detail: `not read — ${local.path} supplies the binary, so no prebuilt manifest is consulted`,
+      name: "prebuilt manifest",
+      status: "ok",
+    };
+  }
+  if (options.target === "ios" && process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE !== undefined) {
+    return {
+      detail: "not read — THREENATIVE_IOS_SIMULATOR_ARCHIVE supplies the simulator build",
       name: "prebuilt manifest",
       status: "ok",
     };
@@ -1436,7 +1454,6 @@ export function pinnedManifestCheck(
   // Each target's packager reads its own keys, so the pin is judged against the target that was
   // asked about: a desktop-only pin is not an Android pin, and vice versa.
   const artifacts = record(manifest)?.artifacts;
-  const mobile = options.target === "android" || options.target === "ios";
   const declaredVersion = record(manifest)?.version;
   const installedVersion = snapshot.installedVersions.get(RUNTIME_PACKAGE);
   if (
@@ -1469,9 +1486,10 @@ export function pinnedManifestCheck(
       status: "ok",
     };
   }
-  const wanted = mobile
-    ? Object.keys(record(artifacts) ?? {}).filter((key) => key.startsWith(`${options.target}-`))
-    : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
+  const wanted =
+    options.target === "ios"
+      ? ["ios-simulator-arm64"]
+      : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
   // Every key the target's packager reads must be served: a `threejs` desktop build needs the
   // runtime and the build tool helper, and one without the other is a download that fails.
   const missing = wanted.filter((key) => {

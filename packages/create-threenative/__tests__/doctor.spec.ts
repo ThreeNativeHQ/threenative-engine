@@ -204,6 +204,20 @@ describe("threenative doctor", () => {
       );
       // One SDL key is not the eleven-key cohort the packager reads.
       expect(check(android, "prebuilt manifest").status).toBe("fail");
+      // A relative pin resolves from the runtime package for a mobile target, not from the game.
+      process.env.THREENATIVE_PREBUILT_MANIFEST = "prebuilt-lock.json";
+      try {
+        const relative = diagnoseProject(
+          snapshot({
+            readRuntimeText: () => undefined,
+            runtimeRoot: path.resolve("packages/runtime-native"),
+          }),
+          { target: "android" },
+        );
+        expect(check(relative, "prebuilt manifest").status).toBe("fail");
+      } finally {
+        process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+      }
       const desktop = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
         target: "desktop",
       });
