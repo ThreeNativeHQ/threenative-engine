@@ -462,7 +462,7 @@ async function readRangeBody(response, { end, key, start, url }) {
  * The check happens per chunk, so an over-long body is abandoned the moment it overruns rather
  * than after it has all arrived.
  */
-async function readRangeInto(response, contents, { end, key, start, url }) {
+async function readRangeInto(response, contents, { end, key, onReader, start, url }) {
   const expected = end - start + 1;
   const reader = response.body?.getReader();
   if (reader === undefined) {
@@ -474,6 +474,7 @@ async function readRangeInto(response, contents, { end, key, start, url }) {
     body.copy(contents, start);
     return body.length;
   }
+  onReader?.(reader);
   let written = 0;
   try {
     for (;;) {
@@ -552,6 +553,14 @@ async function downloadRanges(key, url, size, expectedSha256) {
   // status it names is what the caller must see unless a complete body verifies against the lock.
   let failure;
   let claimDeadline;
+  // Range streams, so a claimed whole body can cancel them gracefully: aborting their fetches
+  // truncated the claim's own socket, and leaving them running copies the asset a second time.
+  const rangeReaders = new Map();
+  const cancelRangeReaders = (keep) => {
+    for (const [index, rangeReader] of rangeReaders) {
+      if (index !== keep) void rangeReader.cancel().catch(() => undefined);
+    }
+  };
   // A sibling's failure bounds how long the claim may keep the install lock, but the bound is
   // inactivity, not total time: a body that is still arriving reaches checksum verification.
   const armClaimDeadline = (index) => {
@@ -589,6 +598,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
           // and aborting them mid-read truncated it (a checksum failure, observed). A body that
           // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
           // imposed.
+          cancelRangeReaders(index);
           whole = await readClaimedBody(response, { arm: onClaimProgress, key, limit: size, url });
           abortOthers(index);
           return;
@@ -603,7 +613,13 @@ async function downloadRanges(key, url, size, expectedSha256) {
         // Stream straight into this part's slice: a mirror that answers every range with the whole
         // asset would otherwise be buffered (144 MiB for a 16-part 9 MiB file) before the length
         // check noticed.
-        const written = await readRangeInto(response, contents, { end, key, start, url });
+        const written = await readRangeInto(response, contents, {
+          end,
+          key,
+          onReader: (rangeReader) => rangeReaders.set(index, rangeReader),
+          start,
+          url,
+        });
         if (written !== end - start + 1) {
           throw new Error(
             `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${written} bytes.`,

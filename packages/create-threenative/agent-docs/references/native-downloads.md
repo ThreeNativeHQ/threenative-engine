@@ -25,10 +25,11 @@ The error names the asset, the installed version, the URL and the reason. Three 
    or `THREENATIVE_RUNTIME_BINARY=/path/to/runtime` (`engine: "threejs"`).
 3. Build the binary from an engine checkout. The engine player and the legacy host are different
    binaries with different recipes:
-   - engine player (default): `cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON
-     -DTN_ENGINE_PLAYER=ON`, plus `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux when the game has a
-     `ui.renderer: "web"` HUD, then `cmake --build build/tn-engine-ui --target
-     tn-native-engine-player-v8`. A checkout with `build/tn-engine-ui/tn-native-engine-player-v8`
+   - engine player (default): build the UI overlay first when the game has a `ui.renderer: "web"`
+     HUD on Linux (`node scripts/build-native-ui-overlay.mjs`, from `packages/runtime-native`; CMake
+     refuses the flag without that library), then `cmake --preset <platform> -B build/tn-engine-ui
+     -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON`, then
+     `cmake --build build/tn-engine-ui --target tn-native-engine-player-v8`. A checkout with `build/tn-engine-ui/tn-native-engine-player-v8`
      is picked up with no variable set.
    - legacy host (`engine: "threejs"`): `pnpm --filter @threenative/runtime-native native:build`,
      then set `THREENATIVE_RUNTIME_BINARY`.

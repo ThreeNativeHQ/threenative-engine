@@ -1719,15 +1719,19 @@ export function nativeRuntimeCheck(
   if (status.ok !== true) {
     const reason =
       typeof status.reason === "string" ? status.reason : "the install recorded no reason";
+    // A configuration the build refuses outranks the download it would never start, and the
+    // recorded failure stays visible rather than disappearing behind it.
+    if (hudRefusal !== undefined) {
+      return {
+        detail: `${hudRefusal.detail} A previous download also failed (${reason}).`,
+        ...(hudRefusal.fix === undefined ? {} : { fix: hudRefusal.fix }),
+        name: "native runtime",
+        status: hudRefusal.status,
+      };
+    }
     return {
       detail: `unavailable — ${key}: ${reason}`,
-      // The build is the downloader, but it refuses a web HUD on these platforms before fetching,
-      // so the retry that always reaches it is the downloader's own command.
-      fix: `${
-        hudRefusal === undefined
-          ? "Rerun `threenative build --target desktop`"
-          : `${hudRefusal.fix} Then run \`node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs\``
-      }: it downloads the binary again. A persistent failure names the URL and the way out.`,
+      fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
       name: "native runtime",
       status: "fail",
     };
