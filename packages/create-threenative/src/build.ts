@@ -1406,7 +1406,7 @@ export function runtimeHasWebAssembly(
   binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
   probe: typeof spawnSync = spawnSync,
 ): boolean {
-  return runtimeEngine(binary, probe) === "v8";
+  return runtimeEngine(desktopBinaryOverride(binary), probe) === "v8";
 }
 
 /**
@@ -1585,13 +1585,28 @@ async function assertArtifactBudget(
 }
 
 /** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
+/**
+ * A desktop binary override, or nothing.
+ *
+ * An exported empty string resolves to the project directory, which made a build skip the
+ * first-use download and then hand a directory to the packager. Doctor treats the same value as
+ * unset, and so does the build now: one reading of one variable.
+ */
+export function desktopBinaryOverride(
+  value: string | undefined,
+  cwd = process.cwd(),
+): string | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  return path.resolve(cwd, value);
+}
+
 export function engineDesktopPlayer(
   runtimeRoot: string,
   env: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
 ): string {
-  const explicit = env.THREENATIVE_ENGINE_PLAYER;
-  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const explicit = desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd);
+  if (explicit !== undefined) return explicit;
   const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
   const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
   return existsSync(checkout)
@@ -1616,7 +1631,7 @@ export async function ensureEngineDesktopPlayer(
   env: NodeJS.ProcessEnv = process.env,
 ): Promise<string> {
   const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
-  if (env.THREENATIVE_ENGINE_PLAYER !== undefined) return player();
+  if (desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd) !== undefined) return player();
   const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
   if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return player();
   const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
@@ -1735,10 +1750,8 @@ async function buildNative(
     const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
       resolveDesktopRuntime(explicit?: string): Promise<string>;
     };
-    const explicit = process.env.THREENATIVE_RUNTIME_BINARY;
-    selectedRuntime = await resolveDesktopRuntime(
-      explicit === undefined ? undefined : path.resolve(cwd, explicit),
-    );
+    const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
+    selectedRuntime = await resolveDesktopRuntime(explicit);
   }
   const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({

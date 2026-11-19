@@ -277,13 +277,19 @@ export function readRelease(manifestPath, key, options = {}) {
     // asked to fill must fail when it omits a published asset, exactly as the remote path does.
     validateReleaseManifest(manifest, options);
   }
-  const release = releaseFromManifest(manifest, key, options);
-  // An artifact-only pin skips the envelope validator, so a size it does state is judged here:
-  // `size: 0` is a pin the build refuses even when the bytes it downloads match the sha256.
-  if (release.size !== undefined && (!Number.isSafeInteger(release.size) || release.size <= 0)) {
-    throw new Error(`Prebuilt release size for '${key}' must be a positive integer.`);
+  // An artifact-only pin skips the envelope validator, so every size it states is judged here:
+  // a `size: 0` on any entry is a pin the build refuses, even when another entry is the one asked
+  // for. An omitted size stays valid — that is the legacy single-request shape.
+  const declaredArtifacts = manifest?.artifacts;
+  for (const [entryKey, entry] of Object.entries(
+    declaredArtifacts !== null && typeof declaredArtifacts === 'object' ? declaredArtifacts : {},
+  )) {
+    const size = entry !== null && typeof entry === 'object' ? entry.size : undefined;
+    if (size !== undefined && (!Number.isSafeInteger(size) || size <= 0)) {
+      throw new Error(`Prebuilt release size for '${entryKey}' must be a positive integer.`);
+    }
   }
-  return release;
+  return releaseFromManifest(manifest, key, options);
 }
 
 /** The pinned manifest, or nothing: an exported empty string means "unset", not the cwd. */
@@ -499,15 +505,23 @@ async function readRangeInto(response, contents, { end, key, start, url }) {
  * A sibling's HTTP error must not cap the fallback at a fixed wall time: a slow but progressing
  * body is a working download. A body that stops arriving is what the deadline is for.
  */
-async function readClaimedBody(response, { arm, key, url }) {
+async function readClaimedBody(response, { arm, key, limit, url }) {
   const reader = response.body?.getReader();
   if (reader === undefined) return readRangeBody(response, { end: 0, key, start: 0, url });
   const chunks = [];
+  let received = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
       if (value !== undefined) {
+        received += value.length;
+        if (limit !== undefined && received > limit) {
+          await reader.cancel().catch(() => undefined);
+          throw new Error(
+            `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response exceeded the ${limit} bytes the lock declares.`,
+          );
+        }
         arm();
         chunks.push(Buffer.from(value));
       }
@@ -575,7 +589,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
           // and aborting them mid-read truncated it (a checksum failure, observed). A body that
           // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
           // imposed.
-          whole = await readClaimedBody(response, { arm: onClaimProgress, key, url });
+          whole = await readClaimedBody(response, { arm: onClaimProgress, key, limit: size, url });
           abortOthers(index);
           return;
         }
