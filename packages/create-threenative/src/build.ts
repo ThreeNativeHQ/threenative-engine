@@ -1738,7 +1738,9 @@ async function buildEngineDesktop(
       output,
     ]);
   } finally {
-    rmSync(staged, { force: true });
+    // Only a snapshot this build took is deleted: an override or a checkout player came from the
+    // caller, and unlinking it would destroy the binary the next build needs.
+    if (staged.endsWith(".stage")) rmSync(staged, { force: true });
   }
 }
 

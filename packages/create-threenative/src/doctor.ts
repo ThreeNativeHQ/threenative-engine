@@ -1769,7 +1769,9 @@ export function nativeRuntimeCheck(
             detail: `${hudRefusal.detail} A previous download also failed (${recorded}).`,
             fix: `${hudRefusal.fix ?? ""} Then clear the local override and rerun \`threenative build --target desktop\`, or run \`node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs\`, to retry the download.`.trim(),
             name: "native runtime",
-            status: "fail",
+            // The refusal's own severity survives the added failure: a plain doctor warns about a
+            // desktop-only refusal, and `--target desktop` is the question that makes it fatal.
+            status: hudRefusal.status === "fail" && options.target === "desktop" ? "fail" : "warn",
           };
     if (recorded !== undefined && options.target !== "desktop")
       return {

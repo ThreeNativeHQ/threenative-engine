@@ -833,8 +833,9 @@ async function withInstallLock(plan, options, callback) {
       mkdirSync(lock);
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
-      // The winner may have published a verified binary while this caller waited: reuse it.
-      if (isVerifiedInstall(plan, options)) return plan.output;
+      // The winner may have published a verified binary while this caller waited: reuse it. A
+      // private-stage request still takes the lock, because the snapshot must be taken under it.
+      if (!options.stagePrivate && isVerifiedInstall(plan, options)) return plan.output;
       let age;
       try {
         age = Date.now() - statSync(lock).mtimeMs;
@@ -1075,10 +1076,15 @@ export async function ensureNativeBinary(options = {}) {
       }
       return staged;
     };
-    if (isVerifiedInstall(plan, options)) return stage(plan.output);
-    return await withInstallLock(plan, options, async () =>
-      stage(await installPrebuilt({ ...options, reuse: true })),
-    );
+    // Every private request verifies and stages under the same lock: a warm cache read outside it
+    // could be published over between the verification and the link.
+    if (options.stagePrivate)
+      return await withInstallLock(plan, options, async () => {
+        if (!isVerifiedInstall(plan, options)) await installPrebuilt({ ...options, reuse: true });
+        return stage(plan.output);
+      });
+    if (isVerifiedInstall(plan, options)) return plan.output;
+    return await withInstallLock(plan, options, () => installPrebuilt({ ...options, reuse: true }));
   } catch (error) {
     throw unavailableNativeBinary(error, plan);
   }
