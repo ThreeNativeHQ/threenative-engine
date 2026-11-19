@@ -491,6 +491,10 @@ async function downloadRanges(key, url, size, expectedSha256) {
     claimDeadline = setTimeout(() => controllers[index]?.abort(), CLAIM_GRACE_MS);
     claimDeadline.unref?.();
   };
+  // Chunk re-arming only matters once a sibling has failed: before that nothing is bounded.
+  const onClaimProgress = () => {
+    if (failure !== undefined && claimed !== undefined) armClaimDeadline(claimed);
+  };
   const abortOthers = (keep) => {
     controllers.forEach((controller, other) => {
       if (other !== keep && other !== claimed) controller.abort();
@@ -510,14 +514,14 @@ async function downloadRanges(key, url, size, expectedSha256) {
             return;
           }
           claimed = index;
-          // A body that sends headers and then goes silent is stalled like any other, so the
-          // deadline starts at the claim and every arriving chunk pushes it out again.
-          armClaimDeadline(index);
+          // The deadline exists to stop a claim from outliving a sibling's failure. With every
+          // request healthy a slow mirror is just slow, and the checksum still decides.
+          if (failure !== undefined) armClaimDeadline(index);
           // The siblings are not aborted until this body is in memory: they may share its socket,
           // and aborting them mid-read truncated it (a checksum failure, observed). A body that
           // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
           // imposed.
-          whole = await readClaimedBody(response, { arm: () => armClaimDeadline(index), key, url });
+          whole = await readClaimedBody(response, { arm: onClaimProgress, key, url });
           abortOthers(index);
           return;
         }

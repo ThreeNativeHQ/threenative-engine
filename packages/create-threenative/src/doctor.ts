@@ -1361,19 +1361,22 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
 /** Whether a pinned manifest's entry for one key can actually be fetched and verified. */
-function usable(artifacts: unknown, key: string): boolean {
+function usable(artifacts: unknown, key: string, releaseLock = false): boolean {
   const artifact = record(record(artifacts)?.[key]);
-  return (
+  const shaped =
     typeof artifact?.url === "string" &&
     artifact.url.length > 0 &&
     typeof artifact.sha256 === "string" &&
-    /^[a-f0-9]{64}$/u.test(artifact.sha256) &&
-    // A lock without a size still passes `readRelease` and then has nothing to range-split, which
-    // is a download that fails after the build has committed to it.
-    typeof artifact.size === "number" &&
-    Number.isSafeInteger(artifact.size) &&
-    artifact.size > 0
-  );
+    /^[a-f0-9]{64}$/u.test(artifact.sha256);
+  // A release lock carries the envelope `readRelease` validates, and that envelope requires a
+  // positive size. An artifact-only pin is the legacy shape PRD-902 still downloads in one request,
+  // so it is judged without one.
+  return releaseLock
+    ? shaped &&
+        typeof artifact.size === "number" &&
+        Number.isSafeInteger(artifact.size) &&
+        artifact.size > 0
+    : shaped;
 }
 
 /**
@@ -1429,7 +1432,8 @@ export function pinnedManifestCheck(
       status: "ok",
     };
   }
-  if (options.target === "ios" && process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE !== undefined) {
+  const suppliedArchive = process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE;
+  if (options.target === "ios" && suppliedArchive !== undefined && suppliedArchive.length > 0) {
     return {
       detail: "not read — THREENATIVE_IOS_SIMULATOR_ARCHIVE supplies the simulator build",
       name: "prebuilt manifest",
@@ -1454,6 +1458,9 @@ export function pinnedManifestCheck(
   // Each target's packager reads its own keys, so the pin is judged against the target that was
   // asked about: a desktop-only pin is not an Android pin, and vice versa.
   const artifacts = record(manifest)?.artifacts;
+  const releaseLock = ["schemaVersion", "version", "sourceSha"].some((field) =>
+    Object.hasOwn(record(manifest) ?? {}, field),
+  );
   const declaredVersion = record(manifest)?.version;
   const installedVersion = snapshot.installedVersions.get(RUNTIME_PACKAGE);
   if (
@@ -1475,7 +1482,7 @@ export function pinnedManifestCheck(
         name: "prebuilt manifest",
         status: "warn",
       };
-    const missing = cohort.filter((key) => !usable(artifacts, key));
+    const missing = cohort.filter((key) => !usable(artifacts, key, releaseLock));
     if (missing.length > 0)
       return fail(
         `which is missing ${missing.length} of ${cohort.length} Android prebuilt keys (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", …" : ""})`,
@@ -1492,15 +1499,7 @@ export function pinnedManifestCheck(
       : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
   // Every key the target's packager reads must be served: a `threejs` desktop build needs the
   // runtime and the build tool helper, and one without the other is a download that fails.
-  const missing = wanted.filter((key) => {
-    const artifact = record(record(artifacts)?.[key]);
-    return !(
-      typeof artifact?.url === "string" &&
-      artifact.url.length > 0 &&
-      typeof artifact.sha256 === "string" &&
-      /^[a-f0-9]{64}$/u.test(artifact.sha256)
-    );
-  });
+  const missing = wanted.filter((key) => !usable(artifacts, key, releaseLock));
   if (wanted.length === 0 || missing.length > 0) {
     return fail(
       `which records no usable ${wanted.length === 0 ? (mobile ? `${options.target} artifact` : target.key) : missing.join(", ")} (a url and a sha256 are required for every key the build reads)`,
