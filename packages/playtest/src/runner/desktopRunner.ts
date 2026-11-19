@@ -82,9 +82,14 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
   // copies the player out of the cache, and a copy can carry the cached file's time, which would
   // rank a days-old download above the build that just finished. `game.js` is written by that
   // build and sits beside the engine player, so it is the build's own clock.
+  // The raw player is the exact packaged path, never a name prefix: a game called
+  // `tn-native-engine-player-racer` is a launcher, and treating it as the player would rank it by
+  // the bundle's clock and hand it `game.js` as an argument.
+  const rawPlayer =
+    process.platform === "win32" ? join(candidate, "tn-native-engine-player-v8.exe") : undefined;
   const builtAt = (launcher: string): number => {
     const bundle = join(candidate, "game.js");
-    if (basename(launcher).startsWith("tn-native-engine-player") && existsSync(bundle)) {
+    if (launcher === rawPlayer && existsSync(bundle)) {
       return statSync(bundle, { throwIfNoEntry: false })?.mtimeMs ?? -1;
     }
     return statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1;
@@ -96,12 +101,8 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
   if (present[0] !== undefined) {
     // The raw engine player needs its bundle as an argument; the launcher scripts find it
     // themselves. Only Windows resolves to the raw player, because its launcher is a POSIX script.
-    const player = present[0].launcher.replace(/\\.exe$/u, "");
     const bundle = join(candidate, "game.js");
-    const args = process.platform === "win32" && basename(player).startsWith("tn-native-engine-player") &&
-        existsSync(bundle)
-      ? [bundle]
-      : undefined;
+    const args = present[0].launcher === rawPlayer && existsSync(bundle) ? [bundle] : undefined;
     return args === undefined ? { executable: present[0].launcher } : { args, executable: present[0].launcher };
   }
   throw new Error(
