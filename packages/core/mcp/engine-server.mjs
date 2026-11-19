@@ -608,6 +608,7 @@ var STOP_WORDS = /* @__PURE__ */ new Set([
 ]);
 var MAX_COMPLETE_REQUEST_RESULTS = 15;
 var MAX_SITUATION_RESULTS = 5;
+var MAX_NEAR_MATCHES = 3;
 var RELEVANCE_FLOOR = 0.27;
 var AUTHORING_INSTRUCTIONS = "Follow the Authoring flow in the game's AGENTS.md (the threenative-capabilities skill holds the detail): search capabilities and references before the first new src/ file, for a new game and for every change to an existing game. Follow binding capability constraints. Execute with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before mechanics playtests. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
 var GENERIC_GUIDANCE = "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
@@ -801,6 +802,13 @@ function isDistinctivePhrase(candidate) {
   return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
 }
 function scoreReadableSituations(situations, queryTokens, queryText, weights) {
+  if (queryTokens.size === 0)
+    return {
+      best: 0,
+      bestReadableScore: 0,
+      bestReadableSituation: situations[0] ?? "",
+      matchedSituation: ""
+    };
   let best = 0;
   let matchedSituation = "";
   let bestReadableScore = 0;
@@ -817,9 +825,10 @@ function scoreReadableSituations(situations, queryTokens, queryText, weights) {
       matchedSituation = situation;
     }
   }
-  return { best, bestReadableSituation, matchedSituation };
+  return { best, bestReadableScore, bestReadableSituation, matchedSituation };
 }
 function scoreAliases(aliases, queryTokens, queryText, weights) {
+  if (queryTokens.size === 0) return 0;
   let best = 0;
   for (const alias of aliases) {
     const candidate = scorePhrase(alias, queryTokens, queryText, weights);
@@ -827,14 +836,19 @@ function scoreAliases(aliases, queryTokens, queryText, weights) {
   }
   return best;
 }
+function answeredSituation(readable, aliasScore) {
+  const best = Math.max(readable.best, aliasScore);
+  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
+  return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
+}
 function situationScore(query, situations, aliases, weights) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
   const queryText = query.join(" ");
-  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
-  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
-  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
-  return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
+  return answeredSituation(
+    scoreReadableSituations(situations, queryTokens, queryText, weights),
+    scoreAliases(aliases, queryTokens, queryText, weights)
+  );
 }
 var EXACT_SYMBOL_LEAD = 4;
 var NAME_BASE_LEAD = 2;
@@ -962,7 +976,10 @@ function searchCapabilities(situation, manifestFile = defaultManifestPath(), sco
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
-  const response = withReferenceTools(situation, searchMechanics(situation, manifest, scope));
+  const response = withReferenceTools(
+    situation,
+    searchMechanics(situation, manifest, scope, starterKits.length === 0)
+  );
   if (starterKits.length === 0) return response;
   return {
     starterKits,
@@ -997,7 +1014,7 @@ function manifestWeights(entries) {
   }
   return cached;
 }
-function searchMechanics(situation, manifest, scope) {
+function searchMechanics(situation, manifest, scope, suggest = true) {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
   const { weights, nameWeights } = manifestWeights(manifest.entries);
@@ -1011,15 +1028,16 @@ function searchMechanics(situation, manifest, scope) {
     return { guidance: notOwned.entry.guidance, results: [], verdict: "none" };
   }
   const floor = optionalPackage === void 0 ? RELEVANCE_FLOOR : Number.MIN_VALUE;
-  const results = candidates.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(({ matchedSituation, score }) => matchedSituation.length > 0 && score >= floor).sort(
+  const scored = candidates.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(({ matchedSituation }) => matchedSituation.length > 0).sort(
     (left, right) => right.score - left.score || right.specificity - left.specificity || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
   ).filter(
-    (candidate, index, candidates2) => candidates2.findIndex(
+    (candidate, index, all) => all.findIndex(
       (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry)
     ) === index
-  ).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
+  );
+  const results = scored.filter(({ score }) => score >= floor).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
     constraints: entry.constraints,
     ...entry.deprecated === void 0 ? {} : { deprecated: entry.deprecated },
     example: entry.example,
@@ -1034,10 +1052,18 @@ function searchMechanics(situation, manifest, scope) {
   }));
   if (results.length > 0)
     return { guidance: specific ? notOwned.entry.guidance : "", results, verdict: "matched" };
+  const nearMatches = suggest && notOwned === void 0 ? scored.filter(({ score }) => score < floor).slice(0, MAX_NEAR_MATCHES).map(({ entry, matchedSituation, score }) => ({
+    importPath: entry.importPath,
+    matchedSituation,
+    score,
+    summary: entry.summary,
+    symbol: entry.symbol
+  })) : [];
   return {
     guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
     results: [],
-    verdict: "none"
+    verdict: "none",
+    ...nearMatches.length > 0 ? { nearMatches } : {}
   };
 }
 function capabilityDetails(symbol, manifestFile = defaultManifestPath(), importPath) {
@@ -1064,7 +1090,7 @@ var TOOL_DEFINITIONS = [
   {
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
-    description: 'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search.',
+    description: 'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search; its nearMatches are below-floor suggestions that are not binding capabilities.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -1098,7 +1124,7 @@ var TOOL_DEFINITIONS = [
   },
   {
     name: "engine_search_references",
-    description: "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+    description: "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art. An empty reply lists nearMatches: near misses that are suggestions, not capabilities.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -1251,19 +1277,44 @@ async function searchReferences(situation, limit = 5) {
   }));
   const weights = tokenWeights(phrases);
   const query = tokens(situation);
+  const querySet = new Set(query);
+  const queryText = query.join(" ");
+  const scored = candidates.map((stub, index) => {
+    const situations = phrases[index]?.situations ?? [];
+    const readable = scoreReadableSituations(situations, querySet, queryText, weights);
+    const content = answeredSituation(readable, 0);
+    const title = scoreAliases(phrases[index]?.aliases ?? [], querySet, queryText, weights);
+    return {
+      near: { score: readable.bestReadableScore, situation: readable.bestReadableSituation },
+      stub: { ...stub, ...content, score: content.score + title }
+    };
+  });
+  const results = scored.filter(({ stub }) => stub.score >= RELEVANCE_FLOOR).sort((a, b) => b.stub.score - a.stub.score || a.stub.id.localeCompare(b.stub.id)).slice(0, limit).map(({ stub }) => stub);
+  const nearMatches = results.length === 0 ? referenceSuggestions(scored) : [];
   return {
     guidance: "",
-    results: candidates.map((stub, index) => {
-      const content = situationScore(query, phrases[index]?.situations ?? [], [], weights);
-      const title = scoreAliases(
-        phrases[index]?.aliases ?? [],
-        new Set(query),
-        query.join(" "),
-        weights
-      );
-      return { ...stub, ...content, score: content.score + title };
-    }).filter((stub) => stub.score >= RELEVANCE_FLOOR).sort((a, b) => b.score - a.score || a.id.localeCompare(b.id)).slice(0, limit)
+    results,
+    // An empty reply still names what came close, with the ids engine_reference_detail takes, so a
+    // miss is not a dead end (PRD-063). The score is the one the phrase reached: a capability search
+    // drops a row for being under the floor, while a reference search also drops it for resting on a
+    // word too common to answer alone, so a suggestion here can outscore the floor and still not be
+    // a result. Reference rows carry no binding promise either way.
+    ...nearMatches.length > 0 ? { nearMatches } : {}
   };
+}
+function referenceSuggestions(scored) {
+  return scored.filter(({ near }) => near.score > 0 && near.situation.length > 0).sort((a, b) => b.near.score - a.near.score || a.stub.id.localeCompare(b.stub.id)).slice(0, MAX_NEAR_MATCHES).map(({ near, stub }) => ({
+    game: stub.game,
+    id: stub.id,
+    kind: stub.kind,
+    matchedSituation: near.situation,
+    // A tier-2 title is a repository, not a card: engine_reference_detail refuses kind "game", so
+    // the link is what makes the suggestion actionable.
+    ..."repo" in stub && typeof stub.repo === "string" && stub.repo.length > 0 ? { repo: stub.repo } : {},
+    score: near.score,
+    summary: stub.summary,
+    title: stub.title
+  }));
 }
 async function handleToolCall(params, manifestFile) {
   const name = params.name;

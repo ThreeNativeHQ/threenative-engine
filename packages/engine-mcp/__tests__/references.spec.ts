@@ -285,6 +285,31 @@ describe("reference MCP tools", () => {
     const result = await call("engine_search_references", { situation: "camera system" });
     expect(result.results[0]).toMatchObject({ id: "camera", kind: "node" });
   });
+  it("answers a query with no searchable word with nothing, not the whole index", async () => {
+    // An empty token set made the query text a substring of every phrase, so every reference earned
+    // the phrase bonus and the reply carried the whole fixture at score 1.
+    const result = await call("engine_search_references", { situation: "!!!" });
+    expect(result.results).toEqual([]);
+    expect(result.nearMatches).toBeUndefined();
+  });
+  it("names the near misses on an empty reference reply (PRD-063)", async () => {
+    const result = await call("engine_search_references", { situation: "player swimming" });
+    expect(result.results).toEqual([]);
+    expect(result.nearMatches.length).toBeGreaterThanOrEqual(1);
+    expect(result.nearMatches.length).toBeLessThanOrEqual(3);
+    expect(result.nearMatches[0]).toMatchObject({ game: "sm64", id: "player", kind: "node" });
+    expect(result.nearMatches[0].matchedSituation.length).toBeGreaterThan(0);
+    expect(result.nearMatches[0].score).toBeGreaterThan(0);
+    // Every suggestion names a card or node engine_reference_detail can open.
+    for (const row of result.nearMatches) {
+      expect(row.game.length).toBeGreaterThan(0);
+      expect(row.id.length).toBeGreaterThan(0);
+    }
+    // A reply with results carries no suggestions.
+    const hit = await call("engine_search_references", { situation: "triple jump" });
+    expect(hit.results[0]).toMatchObject({ id: "triple-jump", kind: "card" });
+    expect(hit.nearMatches).toBeUndefined();
+  });
   it("resolves a published detail absent from a partial local override", async () => {
     vi.spyOn(process, "cwd").mockReturnValue(project);
     (await refs()).saveReferenceGame(
