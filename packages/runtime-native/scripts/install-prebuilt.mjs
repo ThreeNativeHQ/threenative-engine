@@ -537,7 +537,12 @@ async function withInstallLock(plan, options, callback) {
   for (;;) {
     try {
       mkdirSync(lock);
-      writeFileSync(join(lock, 'pid'), `${process.pid}\n`, { flag: 'wx' });
+      // Best effort: a lock without a pid still serializes, it is only slower to reclaim.
+      try {
+        writeFileSync(join(lock, 'pid'), `${process.pid}\n`, { flag: 'wx' });
+      } catch {
+        // The owner pid is an optimisation for a killed build, never a precondition.
+      }
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
