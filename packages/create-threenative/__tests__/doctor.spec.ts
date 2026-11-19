@@ -161,11 +161,28 @@ describe("threenative doctor", () => {
     writeFileSync(pin, "{}\n");
     process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
     try {
-      for (const target of ["android", "desktop", "ios"] as const) {
-        const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), { target });
+      // Android answers through the packager's own cohort, which this fixture's snapshot has; a
+      // snapshot without the package root says `unknown` instead of guessing.
+      const androidReport = diagnoseProject(
+        snapshot({
+          readRuntimeText: () => undefined,
+          runtimeRoot: path.resolve("packages/runtime-native"),
+        }),
+        { target: "android" },
+      );
+      // A root with no checkout player: a local engine build would legitimately bypass the pin.
+      const emptyRoot = path.join("/tmp", "offline-pin-root");
+      mkdirSync(emptyRoot, { recursive: true });
+      for (const target of ["desktop", "ios"] as const) {
+        const report = diagnoseProject(
+          snapshot({ readRuntimeText: () => undefined, runtimeRoot: emptyRoot }),
+          { target },
+        );
         expect(check(report, "prebuilt manifest").status).toBe("fail");
         expect(report.pass).toBe(false);
       }
+      expect(check(androidReport, "prebuilt manifest").status).toBe("fail");
+      expect(androidReport.pass).toBe(false);
       // A pin that serves one target is not a pin for another: each packager reads its own keys.
       writeFileSync(
         pin,
@@ -178,10 +195,15 @@ describe("threenative doctor", () => {
           },
         })}\n`,
       );
-      const android = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
-        target: "android",
-      });
-      expect(check(android, "prebuilt manifest").status).toBe("ok");
+      const android = diagnoseProject(
+        snapshot({
+          readRuntimeText: () => undefined,
+          runtimeRoot: path.resolve("packages/runtime-native"),
+        }),
+        { target: "android" },
+      );
+      // One SDL key is not the eleven-key cohort the packager reads.
+      expect(check(android, "prebuilt manifest").status).toBe("fail");
       const desktop = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
         target: "desktop",
       });

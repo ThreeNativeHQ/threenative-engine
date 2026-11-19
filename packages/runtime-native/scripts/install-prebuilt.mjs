@@ -510,6 +510,9 @@ async function downloadRanges(key, url, size, expectedSha256) {
             return;
           }
           claimed = index;
+          // A body that sends headers and then goes silent is stalled like any other, so the
+          // deadline starts at the claim and every arriving chunk pushes it out again.
+          armClaimDeadline(index);
           // The siblings are not aborted until this body is in memory: they may share its socket,
           // and aborting them mid-read truncated it (a checksum failure, observed). A body that
           // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
@@ -545,8 +548,14 @@ async function downloadRanges(key, url, size, expectedSha256) {
         if (!aborted && failure === undefined) {
           failure = error;
           if (claimed !== undefined) armClaimDeadline(claimed);
-        } else if (aborted && claimed === undefined && failure === undefined) {
-          failure = error;
+        } else if (aborted && failure === undefined && (claimed === undefined || index === claimed)) {
+          // A claim aborted by its own deadline is the diagnosis when no sibling named a better one.
+          failure =
+            claimed === index && controllers[index].signal.aborted
+              ? new Error(
+                  `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response stopped arriving for ${Math.round(CLAIM_GRACE_MS / 1000)} s.`,
+                )
+              : error;
         }
         abortOthers(index);
         throw error;

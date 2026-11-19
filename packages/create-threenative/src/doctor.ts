@@ -1360,6 +1360,43 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
+/** Whether a pinned manifest's entry for one key can actually be fetched and verified. */
+function usable(artifacts: unknown, key: string): boolean {
+  const artifact = record(record(artifacts)?.[key]);
+  return (
+    typeof artifact?.url === "string" &&
+    artifact.url.length > 0 &&
+    typeof artifact.sha256 === "string" &&
+    /^[a-f0-9]{64}$/u.test(artifact.sha256)
+  );
+}
+
+/**
+ * The Android prebuilt keys the installed packager will ask this pin for.
+ *
+ * Read from `scripts/package-android.mjs` rather than mirrored: the V8 cohort is eleven keys, and a
+ * second copy here is a list that drifts into approving a lock the packager refuses. Absent or
+ * unreadable, the pin check says `unknown` instead of guessing.
+ */
+function androidPrebuiltCohort(snapshot: IProjectSnapshot): readonly string[] | undefined {
+  if (snapshot.runtimeRoot === undefined) return undefined;
+  const source = (() => {
+    try {
+      return readFileSync(
+        path.join(snapshot.runtimeRoot, "scripts", "package-android.mjs"),
+        "utf8",
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+  if (source === undefined) return undefined;
+  const block = /export const ANDROID_PREBUILT_V8_ASSETS = \{([\s\S]*?)\n\};/u.exec(source)?.[1];
+  if (block === undefined) return undefined;
+  const keys = [...block.matchAll(/'([a-z0-9-]+)':/gu)].map((match) => match[1] as string);
+  return keys.length === 0 ? undefined : keys;
+}
+
 export function pinnedManifestCheck(
   snapshot: IProjectSnapshot,
   options: { readonly target?: DoctorTarget } = {},
@@ -1400,6 +1437,38 @@ export function pinnedManifestCheck(
   // asked about: a desktop-only pin is not an Android pin, and vice versa.
   const artifacts = record(manifest)?.artifacts;
   const mobile = options.target === "android" || options.target === "ios";
+  const declaredVersion = record(manifest)?.version;
+  const installedVersion = snapshot.installedVersions.get(RUNTIME_PACKAGE);
+  if (
+    typeof declaredVersion === "string" &&
+    installedVersion !== undefined &&
+    declaredVersion !== installedVersion
+  ) {
+    return fail(
+      `which records release ${declaredVersion} but ${RUNTIME_PACKAGE} is ${installedVersion}; the packager rejects a lock from another release`,
+    );
+  }
+  if (options.target === "android") {
+    // The cohort is the installed packager's own list, read from its source: mirroring eleven keys
+    // here is how doctor approved an SDL-only lock that the packager refused.
+    const cohort = androidPrebuiltCohort(snapshot);
+    if (cohort === undefined)
+      return {
+        detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its Android prebuilt cohort, so this pin cannot be checked here; the packager still validates it.`,
+        name: "prebuilt manifest",
+        status: "warn",
+      };
+    const missing = cohort.filter((key) => !usable(artifacts, key));
+    if (missing.length > 0)
+      return fail(
+        `which is missing ${missing.length} of ${cohort.length} Android prebuilt keys (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", …" : ""})`,
+      );
+    return {
+      detail: `available — ${resolved} records all ${cohort.length} Android prebuilt keys`,
+      name: "prebuilt manifest",
+      status: "ok",
+    };
+  }
   const wanted = mobile
     ? Object.keys(record(artifacts) ?? {}).filter((key) => key.startsWith(`${options.target}-`))
     : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
@@ -1953,8 +2022,13 @@ function requestedBuildBlockers(
   snapshot: IProjectSnapshot,
   request: Required<Pick<IDoctorRequest, "target">> & IDoctorRequest,
   nativeRuntime: IDoctorCheck,
+  pinnedManifest?: IDoctorCheck,
 ): readonly string[] {
   const blockers: string[] = [];
+  // Every native packager reads the pin before the network, so its failure blocks the build the
+  // check above already reported.
+  if (request.target !== "web" && pinnedManifest?.status === "fail")
+    blockers.push(pinnedManifest.detail.replace(/^(?:unavailable|unknown) — /u, ""));
   if (request.target === "web") {
     if (!snapshot.files.has("src/main.ts")) blockers.push("src/main.ts is missing");
     return blockers;
@@ -2011,11 +2085,17 @@ function requestedBuildCheck(
   snapshot: IProjectSnapshot,
   request: IDoctorRequest,
   nativeRuntime: IDoctorCheck,
+  pinnedManifest?: IDoctorCheck,
 ): IDoctorCheck | undefined {
   const { target } = request;
   if (target === undefined) return undefined;
   const scope = `${target}${request.mode === undefined ? "" : ` ${request.mode}`}`;
-  const blockers = requestedBuildBlockers(snapshot, { ...request, target }, nativeRuntime);
+  const blockers = requestedBuildBlockers(
+    snapshot,
+    { ...request, target },
+    nativeRuntime,
+    pinnedManifest,
+  );
   if (blockers.length === 0)
     return { detail: `buildable — ${scope}`, name: "requested build", status: "ok" };
   const requiredSdk = requiredAndroidSdk(snapshot);
@@ -2301,7 +2381,7 @@ export function diagnoseProject(
   const pinnedManifest = pinnedManifestCheck(snapshot, { target: options.target });
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
-  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
+  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime, pinnedManifest);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
