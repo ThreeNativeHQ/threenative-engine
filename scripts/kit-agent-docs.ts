@@ -144,6 +144,11 @@ export async function kitFragments(templateDirectory: string): Promise<Map<strin
       `${"npx threenative doctor".padEnd(width)}# build, import, device or blank-frame failure`,
       `${"npx threenative doctor --fix".padEnd(width)}# refresh agent files`,
       "```",
+      "",
+      // PRD-783: the install downloads nothing, so a cold agent must know where the player comes
+      // from before it reads a failed desktop build as a broken project. The recipe is a reference
+      // page rather than prose here, because the kit payload has a measured word cap.
+      `Native downloads: first \`pnpm build --target desktop\`, once (~118 MiB); \`${REFERENCE_PREFIX}native-downloads.md\`.`,
     ].join("\n"),
   );
 

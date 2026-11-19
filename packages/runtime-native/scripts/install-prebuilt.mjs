@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -349,19 +349,93 @@ async function fetchRelease(manifestUrl, key) {
   return releaseFromManifest(validateReleaseManifest(await response.json()), key);
 }
 
+/**
+ * Above this size a release asset is fetched as parallel byte ranges (PRD-902).
+ *
+ * GitHub throttles one connection, not the host: a single 118 MiB engine player took about nine
+ * minutes on the day a downstream loop gave up. Small assets stay on one request because the
+ * per-request cost is the whole cost.
+ */
+export const PARALLEL_RANGE_THRESHOLD_BYTES = 8 * 1024 * 1024;
+
+/** How many byte ranges one large asset splits into. Measured against the real release in PRD-902. */
+export const PARALLEL_RANGE_COUNT = 16;
+
+async function fetchArtifact(url, key, init) {
+  try {
+    return await fetch(url, init);
+  } catch (error) {
+    throw new Error(
+      `Prebuilt release fetch failed for '${key}' at ${url}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+}
+
+/**
+ * One asset over parallel `Range` requests, assembled at each part's offset in one buffer.
+ *
+ * A `200` answer means the server ignored `Range`: that body is the whole file, so it is returned
+ * as-is and the remaining requests are cancelled. Any other status fails closed naming the key,
+ * the URL and the byte range — the sha256 in the lock is still the only trust decision.
+ */
+async function downloadRanges(key, url, size) {
+  const chunk = Math.ceil(size / PARALLEL_RANGE_COUNT);
+  const parts = Array.from({ length: PARALLEL_RANGE_COUNT }, (_, index) => {
+    const start = index * chunk;
+    return { end: Math.min(size, start + chunk) - 1, start };
+  }).filter(({ start }) => start < size);
+  const contents = Buffer.allocUnsafe(size);
+  const controller = new AbortController();
+  // Set by the first part that receives a whole body: the server ignored `Range`, so its body is
+  // the file and the siblings downloading the same bytes are cancelled.
+  let whole;
+  try {
+    const answers = await Promise.allSettled(parts.map(async ({ start, end }) => {
+      const response = await fetchArtifact(url, key, {
+        headers: { Range: `bytes=${start}-${end}` },
+        signal: controller.signal,
+      });
+      if (response.status === 200) {
+        whole = Buffer.from(await response.arrayBuffer());
+        controller.abort();
+        return;
+      }
+      if (response.status !== 206) {
+        throw new Error(
+          `Prebuilt release fetch failed for '${key}' at ${url}: HTTP ${response.status} for byte range ${start}-${end}.`,
+        );
+      }
+      const body = Buffer.from(await response.arrayBuffer());
+      if (body.length !== end - start + 1) {
+        throw new Error(
+          `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
+        );
+      }
+      body.copy(contents, start);
+    }));
+    // A whole body wins: the checksum still decides, and the aborted siblings explain themselves.
+    const failure = answers.find((answer) => answer.status === 'rejected');
+    if (whole === undefined && failure?.status === 'rejected') throw failure.reason;
+  } finally {
+    controller.abort();
+  }
+  return whole ?? contents;
+}
+
 export async function downloadReleaseArtifact(key, options = {}) {
   const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
   const release = manifestPath
     ? readRelease(resolve(manifestPath), key)
     : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key);
-  let response;
-  try {
-    response = await fetch(release.url);
-  } catch (error) {
-    throw new Error(
-      `Prebuilt release fetch failed for '${key}' at ${release.url}: ${error instanceof Error ? error.message : String(error)}`,
-    );
+  if (release.size > PARALLEL_RANGE_THRESHOLD_BYTES) {
+    const contents = await downloadRanges(key, release.url, release.size);
+    verifyChecksum(contents, release.sha256, key);
+    if (contents.length === 0 || contents.length !== release.size) {
+      throw new Error(`Prebuilt release size verification failed for '${key}': received ${contents.length} bytes.`);
+    }
+    return contents;
   }
+  const response = await fetchArtifact(release.url, key);
   if (!response.ok) {
     throw new Error(`Prebuilt release fetch failed for '${key}' at ${release.url}: HTTP ${response.status}.`);
   }
@@ -425,6 +499,96 @@ export async function installPrebuilt(options = {}) {
   } catch (error) {
     recordInstallFailure(plan, error);
     throw error;
+  }
+}
+
+/** How long a lock may outlive the process that made it. A killed install leaves one behind. */
+const LOCK_STALE_MS = 15 * 60 * 1000;
+
+/** How often a waiter asks whether the winner finished. */
+const LOCK_POLL_MS = 250;
+
+/**
+ * Hold the install lock for one plan.
+ *
+ * `mkdirSync` is the atomic primitive: exactly one caller creates the directory, every other
+ * caller sees `EEXIST` and waits. Two parallel commands used to race here, and the loser's
+ * `beginInstall` deleted the winner's output mid-download.
+ */
+async function withInstallLock(plan, callback) {
+  const lock = `${plan.statusPath}.lock`;
+  mkdirSync(dirname(lock), { recursive: true });
+  const deadline = Date.now() + LOCK_STALE_MS;
+  for (;;) {
+    try {
+      mkdirSync(lock);
+      break;
+    } catch (error) {
+      if (error?.code !== 'EEXIST') throw error;
+      let age = 0;
+      try {
+        age = Date.now() - statSync(lock).mtimeMs;
+      } catch {
+        continue;
+      }
+      if (age > LOCK_STALE_MS) {
+        rmSync(lock, { recursive: true, force: true });
+        continue;
+      }
+      if (Date.now() > deadline) {
+        throw new Error(
+          `Timed out waiting for another install of '${plan.key}' to finish (${lock} is ${Math.round(age / 1000)}s old). Delete it if that process is gone.`,
+        );
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
+    }
+  }
+  try {
+    return await callback();
+  } finally {
+    rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+/**
+ * Name a failed ensure, because the bare download error reads like an engine bug.
+ *
+ * Each message names the asset, the version, the URL, the underlying reason, and the only three
+ * fixes that work. `TN_NATIVE_BINARY_UNPUBLISHED` is a packaging fact and the release census
+ * already fails on it; `TN_NATIVE_BINARY_UNAVAILABLE` is a network, HTTP or checksum failure.
+ */
+function unavailableNativeBinary(error, plan) {
+  const reason = error instanceof Error ? error.message : String(error);
+  const unpublished = error instanceof Error &&
+    ['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code);
+  const code = unpublished ? 'TN_NATIVE_BINARY_UNPUBLISHED' : 'TN_NATIVE_BINARY_UNAVAILABLE';
+  const asset = PREBUILT_ASSET_NAMES[plan.key] ?? plan.key;
+  const env = plan.key.endsWith('-engine-player') ? 'THREENATIVE_ENGINE_PLAYER' : 'THREENATIVE_RUNTIME_BINARY';
+  const message = unpublished
+    ? `${code}: no ${asset} is published for @threenative/runtime-native ${packageVersion} at ${plan.status.url} (${reason}).`
+    : `${code}: ${asset} for @threenative/runtime-native ${packageVersion} could not be downloaded from ${plan.status.url} (${reason}).`;
+  const wrapped = new Error(
+    `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (pnpm --filter @threenative/runtime-native native:build).`,
+  );
+  wrapped.code = code;
+  return wrapped;
+}
+
+/**
+ * Download what a native build needs, once, at the moment it needs it (PRD-783).
+ *
+ * Nothing downloads during `pnpm install` any more, so a web game fetches no binary at all. The
+ * first `threenative build --target desktop` calls this: a verified cache returns with no network,
+ * one lock makes parallel callers download once, and a failure carries a name and three fixes.
+ */
+export async function ensureNativeBinary(options = {}) {
+  const plan = createInstallPlan(options);
+  platformKey(plan.platform, options.arch);
+  if (isVerifiedInstall(plan, options)) return plan.output;
+  try {
+    return await withInstallLock(plan, () => installPrebuilt({ ...options, reuse: true }));
+  } catch (error) {
+    throw unavailableNativeBinary(error, plan);
   }
 }
 

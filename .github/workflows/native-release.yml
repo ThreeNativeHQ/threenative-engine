@@ -900,14 +900,17 @@ jobs:
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
-          # Provenance the PRD-262 consumer gate asserts: the installed runtime must
-          # record a successful prebuilt install, never a source-checkout build.
-          test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
-          # `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to this helper. It arrives
-          # from the release the install just read, not from this run's artifacts: no step here
-          # places it, so a regression in what the release publishes fails the consumer build.
-          test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
+          # PRD-783: an install downloads no native binary any more. This row proves the released
+          # `threejs` host, whose runtime and build helper arrive at the first desktop build.
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json"
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          # Provenance the PRD-262 consumer gate asserts: the first desktop build must record a
+          # successful prebuilt install, never a source-checkout build, and it must have fetched
+          # the helper `src/cli/tool_dispatch.cpp:52` dispatches packaging to. No step here places
+          # either file, so a regression in what the release publishes fails this consumer.
+          test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
+          test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
@@ -1432,19 +1435,22 @@ jobs:
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
-          # Provenance the PRD-262 consumer gate asserts: the installed runtime must record a
-          # successful prebuilt install, never a source-checkout build.
+          # PRD-783: an install downloads no native binary any more. This row proves the released
+          # `threejs` host, whose runtime and build helper arrive at the first desktop build.
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json"
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          # Provenance the PRD-262 consumer gate asserts: the first desktop build must record a
+          # successful install, never a source-checkout build. Both binaries arrive from the
+          # release that build read; no step here places either, so a regression in what the
+          # release publishes fails this consumer.
           node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
           const status = JSON.parse(readFileSync(`${process.env.CONSUMER_TARGET}/node_modules/@threenative/runtime-native/prebuilt/install-status.json`, "utf8"));
           if (status.ok !== true) throw new Error(`prebuilt install-status.ok is ${status.ok}, not true`);
           NODE
-          # Both binaries arrive from the release the install just read; no step here places either,
-          # so a regression in what the release publishes fails this consumer. The helper is checked
-          # before the build: asserting it after would not prove the install produced it.
           test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/threenative-runtime.exe"
           test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
-          pnpm --dir "$CONSUMER_TARGET" build --target desktop
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Prove the mask shadows MSVC, then restore the positive path
         run: |

@@ -12,6 +12,7 @@ import { afterAll, afterEach, test, vi } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
+  PARALLEL_RANGE_COUNT,
   PREBUILT_ASSET_NAMES,
   PREBUILT_KEYS,
   PUBLISHED_PREBUILT_KEYS,
@@ -827,7 +828,10 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   const manifest = JSON.parse(
     readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   );
-  assert.equal(manifest.scripts.install, 'node scripts/install-prebuilt.mjs');
+  // PRD-783: an install downloads nothing. The script itself still ships as the explicit "fetch
+  // now" command, and the first native build calls `ensureNativeBinary` from it.
+  assert.equal(manifest.scripts.install, undefined);
+  assert.ok(packed.files.includes('scripts/install-prebuilt.mjs'));
 });
 
 test('the packed archive reaches the production profile command and evaluator', async () => {
@@ -2073,4 +2077,120 @@ test('engine player assets install and verify checksums on each desktop platform
     writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
     await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', enginePlayer: true, output: join(root, 'absent-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
   } finally { vi.unstubAllGlobals(); }
+});
+
+/**
+ * A loopback release that honours `Range`, and the three ways it can answer badly (PRD-902).
+ *
+ * GitHub throttles one connection, not the host: a 118 MiB player took about nine minutes on the
+ * day a downstream loop gave up, and 5.5 s through 32 parallel ranges. The sha256 in the lock is
+ * still the only trust decision, so every case below ends at the same verification.
+ */
+async function rangeRelease(behaviour = 'ranges') {
+  const payload = Buffer.alloc(9 * 1024 * 1024, 0x5a);
+  for (let index = 0; index < payload.length; index += 4096) payload[index] = index % 251;
+  const seen = [];
+  const server = createServer((request, response) => {
+    const range = request.headers.range ?? '';
+    seen.push(range);
+    if (behaviour === 'ignore') {
+      response.end(payload);
+      return;
+    }
+    const match = /^bytes=(\d+)-(\d+)$/u.exec(range);
+    if (match === null) {
+      response.statusCode = 416;
+      response.end();
+      return;
+    }
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    if (behaviour === 'fail-halfway' && seen.length === 3) {
+      response.statusCode = 500;
+      response.end();
+      return;
+    }
+    const part = Buffer.from(payload.subarray(start, end + 1));
+    if (behaviour === 'corrupt' && seen.length === 2) part[0] ^= 0xff;
+    response.statusCode = 206;
+    response.end(part);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const root = makeTempDirSync('threenative-ranges-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify({
+      artifacts: {
+        'linux-x64': {
+          sha256: sha256(payload),
+          size: payload.length,
+          url: `http://127.0.0.1:${address.port}/runtime`,
+        },
+      },
+    })}\n`,
+  );
+  process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+  return {
+    close: () => new Promise((resolve) => server.close(resolve)),
+    manifestPath,
+    payload,
+    root,
+    seen,
+  };
+}
+
+test('a large release asset downloads as parallel byte ranges and assembles exactly', async () => {
+  const release = await rangeRelease();
+  try {
+    const contents = await downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath });
+    assert.ok(contents.equals(release.payload), 'the assembled bytes differ from the release');
+    // Red before this PRD: one `fetch`, so `seen` held a single entry with no Range header.
+    assert.equal(release.seen.length, PARALLEL_RANGE_COUNT);
+    for (const range of release.seen) assert.match(range, /^bytes=\d+-\d+$/u);
+    assert.equal(new Set(release.seen).size, release.seen.length, 'ranges overlapped');
+  } finally {
+    await release.close();
+  }
+});
+
+test('a server that ignores Range still yields the exact bytes from one body', async () => {
+  const release = await rangeRelease('ignore');
+  try {
+    const contents = await downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath });
+    assert.ok(contents.equals(release.payload));
+  } finally {
+    await release.close();
+  }
+});
+
+test('a corrupt range fails at the checksum, and no binary or success status is left behind', async () => {
+  const release = await rangeRelease('corrupt');
+  try {
+    const output = join(release.root, 'linux-x64', 'threenative-runtime');
+    const statusPath = join(release.root, 'install-status.json');
+    await assert.rejects(
+      installPrebuilt({ arch: 'x64', manifestPath: release.manifestPath, output, platform: 'linux', statusPath }),
+      /Checksum verification failed/u,
+    );
+    assert.equal(existsSync(output), false);
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, false);
+  } finally {
+    await release.close();
+  }
+});
+
+test('a range that answers 500 fails closed naming the key and the byte range', async () => {
+  const release = await rangeRelease('fail-halfway');
+  try {
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /linux-x64.*HTTP 500 for byte range \d+-\d+/su,
+    );
+  } finally {
+    await release.close();
+  }
 });

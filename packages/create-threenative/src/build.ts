@@ -1599,6 +1599,30 @@ export function engineDesktopPlayer(
     : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
 }
 
+/**
+ * Fetch the engine player a desktop build needs, the first time it needs it (PRD-783).
+ *
+ * `pnpm install` downloads nothing any more, so this is the one place a default-engine desktop
+ * build acquires its player. A verified cached binary, an explicit `THREENATIVE_ENGINE_PLAYER`
+ * and a checkout build all return without touching the network.
+ */
+export async function ensureEngineDesktopPlayer(
+  runtimeRoot: string,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  if (env.THREENATIVE_ENGINE_PLAYER !== undefined) return;
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return;
+  const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
+  // An engine checkout build is selected by hand; the packager's own missing-player error names
+  // an installation that also lacks this script, so there is nothing better to say here.
+  if (!existsSync(module)) return;
+  const { ensureNativeBinary } = (await import(pathToFileURL(module).href)) as {
+    ensureNativeBinary(options: { enginePlayer: boolean }): Promise<string>;
+  };
+  env.THREENATIVE_ENGINE_PLAYER = await ensureNativeBinary({ enginePlayer: true });
+}
+
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
 async function buildEngineDesktop(
   cwd: string,
@@ -1618,6 +1642,9 @@ async function buildEngineDesktop(
       `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
+  // The player every desktop package runs is fetched here, before the UI build, so a missing
+  // download is a cheap failure rather than a full UI build thrown away (PRD-783).
+  await ensureEngineDesktopPlayer(runtimeRoot);
   const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
   const output = path.join(cwd, "dist-native", await projectName(cwd));
   await packageStaged(output, cwd, [

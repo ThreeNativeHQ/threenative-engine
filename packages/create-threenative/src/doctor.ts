@@ -1328,6 +1328,41 @@ function nativeRuntimeFilename(): string {
   return process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime";
 }
 
+function nativeEnginePlayerFilename(): string {
+  return `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+}
+
+/**
+ * Which prebuilt a native build actually runs, and where its install status is written.
+ *
+ * PRD-783 moved the download from `pnpm install` to the first native build, and the default engine
+ * (`engine: "threenative"`) runs the engine player, never the legacy runtime: reporting the legacy
+ * status told a reader about a binary that build does not start.
+ */
+function nativePrebuiltTarget(config: unknown): {
+  readonly binary: string;
+  readonly absentDetail: string;
+  readonly key: string;
+  readonly statusFile: string;
+} {
+  const platform = nativeRuntimeKey();
+  if (record(config)?.engine === "threejs") {
+    return {
+      absentDetail: `not downloaded yet — the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_RUNTIME_BINARY to a local file to stay offline.`,
+      binary: `prebuilt/${platform}/${nativeRuntimeFilename()}`,
+      key: platform,
+      statusFile: "prebuilt/install-status.json",
+    };
+  }
+  return {
+    absentDetail:
+      "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
+    binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
+    key: `${platform}-engine-player`,
+    statusFile: "prebuilt/engine-player-install-status.json",
+  };
+}
+
 /**
  * What the installed host binary says it is.
  *
@@ -1365,7 +1400,8 @@ export function probeNativeHost(binary: string): INativeHostProbe {
 }
 
 export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
-  const key = nativeRuntimeKey();
+  const target = nativePrebuiltTarget(snapshot.config);
+  const key = target.key;
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
     return snapshot.installedVersions.has(RUNTIME_PACKAGE)
       ? {
@@ -1375,21 +1411,18 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
           status: "fail",
         }
       : {
-          detail: "unknown — no install status recorded",
+          detail: `unknown — ${RUNTIME_PACKAGE} is not installed, so a native target has nothing to download with`,
           fix: "Install @threenative/runtime-native before building a native target.",
           name: "native runtime",
           status: "warn",
         };
   }
 
-  const statusText = snapshot.readRuntimeText("prebuilt/install-status.json");
+  const statusText = snapshot.readRuntimeText(target.statusFile);
   if (statusText === undefined) {
-    return {
-      detail: "unknown — no install status recorded",
-      fix: "Run npm install so the runtime install hook can record its result.",
-      name: "native runtime",
-      status: "warn",
-    };
+    // Nothing to report is the ordinary web-only state now: the first native build downloads it.
+    // A *recorded failure* still fails below, which is the fact doctor is for.
+    return { detail: target.absentDetail, name: "native runtime", status: "ok" };
   }
 
   let status: IInstallStatus;
@@ -1412,7 +1445,7 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       typeof status.reason === "string" ? status.reason : "the install hook recorded no reason";
     return {
       detail: `unavailable — ${key}: ${reason}`,
-      fix: "Fix the recorded prebuilt download failure, then run npm install again.",
+      fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
       name: "native runtime",
       status: "fail",
     };
@@ -1451,13 +1484,13 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
     };
   }
 
-  const binary = `prebuilt/${key}/${nativeRuntimeFilename()}`;
+  const binary = target.binary;
   const exists =
     snapshot.runtimeFileExists?.(binary) ?? existsSync(path.join(snapshot.runtimeRoot, binary));
   if (!exists) {
     return {
       detail: `unavailable — ${key} prebuilt binary is missing`,
-      fix: "Run npm install again to restore the native runtime prebuilt.",
+      fix: "Rerun `threenative build --target desktop` to download it again.",
       name: "native runtime",
       status: "fail",
     };

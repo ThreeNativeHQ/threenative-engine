@@ -79,10 +79,12 @@ const HEALTHY: IProjectSnapshot = {
       : relative === ".mcp.json"
         ? MCP_CONFIG
         : "",
+  // The default engine (`engine: "threenative"`) runs the engine player, so that is the binary and
+  // the install record doctor must read (PRD-783).
   readRuntimeText: (relative) =>
-    relative === "prebuilt/install-status.json"
+    relative === "prebuilt/engine-player-install-status.json"
       ? JSON.stringify({
-          key: `${process.platform}-${process.arch}`,
+          key: `${process.platform}-${process.arch}-engine-player`,
           ok: true,
           reason: "installed",
           url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -91,7 +93,7 @@ const HEALTHY: IProjectSnapshot = {
       : undefined,
   runtimeFileExists: (relative) =>
     relative ===
-      `prebuilt/${process.platform}-${process.arch}/${process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime"}` ||
+      `prebuilt/${process.platform}-${process.arch}/tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}` ||
     relative === "scripts/package-android.mjs" ||
     relative === "scripts/package-ios.mjs",
   runtimeManifestUrl:
@@ -694,10 +696,62 @@ describe("threenative doctor", () => {
     expect(check(report, "native runtime").detail).toMatch(/prebuilt binary.*gone|missing/u);
   });
 
-  it("reports an unknown native state when the install status file is deleted", () => {
+  it("reports an absent native download as ok, because the first native build fetches it", () => {
+    // PRD-783: nothing downloads at install time any more, so a web-only project fetching nothing
+    // is the ordinary state, not a warning. A recorded *failure* still fails, tested below.
     const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
-    expect(check(report, "native runtime")).toMatchObject({ status: "warn" });
-    expect(check(report, "native runtime").detail).toMatch(/unknown.*install status/u);
+    expect(report.pass).toBe(true);
+    expect(check(report, "native runtime")).toMatchObject({ status: "ok" });
+    expect(check(report, "native runtime").detail).toMatch(/^not downloaded yet/u);
+    expect(check(report, "native runtime").detail).toMatch(/118 MiB/u);
+    expect(check(report, "native runtime").detail).toMatch(/web builds download nothing/u);
+    expect(check(report, "target desktop")).toMatchObject({ status: "ok" });
+  });
+
+  it("reads the binary the default engine actually runs, not the legacy one", () => {
+    // M10: `engine: "threenative"` desktop builds package the engine player and never the legacy
+    // runtime, so a broken legacy record must not colour the default engine's verdict, and a
+    // broken engine-player record must not be hidden behind a healthy legacy one.
+    const legacyBroken = JSON.stringify({
+      key: `${process.platform}-${process.arch}`,
+      ok: false,
+      reason: "HTTP 404 downloading the legacy runtime",
+      url: HEALTHY.runtimeManifestUrl,
+      version: "0.4.0",
+    });
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json"
+            ? legacyBroken
+            : HEALTHY.readRuntimeText?.(relative),
+      }),
+    );
+    expect(check(report, "native runtime").status).toBe("ok");
+
+    const enginePlayerBroken = JSON.parse(legacyBroken) as Record<string, unknown>;
+    enginePlayerBroken.key = `${process.platform}-${process.arch}-engine-player`;
+    const broken = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/engine-player-install-status.json"
+            ? JSON.stringify(enginePlayerBroken)
+            : undefined,
+      }),
+    );
+    expect(check(broken, "native runtime").status).toBe("fail");
+    expect(check(broken, "native runtime").fix).toMatch(/build --target desktop/u);
+
+    // The legacy host keeps its own file, and an absent one is the same ordinary state.
+    const legacy = diagnoseProject(
+      snapshot({
+        config: { engine: "threejs", nativeEntry: "src/game.ts" },
+        readRuntimeText: () => undefined,
+      }),
+    );
+    expect(check(legacy, "native runtime").status).toBe("ok");
+    expect(check(legacy, "native runtime").detail).toMatch(/260 MiB/u);
+    expect(check(legacy, "native runtime").detail).toMatch(/THREENATIVE_RUNTIME_BINARY/u);
   });
 
   it("lists web, desktop, Android, and iOS target availability", () => {
@@ -720,7 +774,7 @@ describe("threenative doctor", () => {
       snapshot({
         readRuntimeText: () =>
           JSON.stringify({
-            key: `${process.platform}-${process.arch}`,
+            key: `${process.platform}-${process.arch}-engine-player`,
             ok: true,
             reason: "installed",
             url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.9/prebuilt-lock.json",
@@ -737,7 +791,7 @@ describe("threenative doctor", () => {
       snapshot({
         readRuntimeText: () =>
           JSON.stringify({
-            key: `${process.platform}-${process.arch}`,
+            key: `${process.platform}-${process.arch}-engine-player`,
             ok: true,
             reason: "installed",
             url: "https://example.invalid/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -1275,7 +1329,7 @@ describe("threenative doctor edge coverage", () => {
     expect(
       status(
         {
-          key: `${process.platform}-${process.arch}`,
+          key: `${process.platform}-${process.arch}-engine-player`,
           ok: true,
           url: HEALTHY.runtimeManifestUrl,
           version: "0.4.0",
@@ -1287,7 +1341,7 @@ describe("threenative doctor edge coverage", () => {
     const win32 = withPlatform("win32", () =>
       status(
         {
-          key: `win32-${process.arch}`,
+          key: `win32-${process.arch}-engine-player`,
           ok: true,
           url: HEALTHY.runtimeManifestUrl,
           version: "0.4.0",
@@ -1322,7 +1376,7 @@ describe("threenative doctor edge coverage", () => {
 
     // Equal or newer is the whole passing set, and the detail names the host it read.
     expect(host({ runtimeVersion: "0.4.0" })).toMatchObject({
-      detail: `available (${process.platform}-${process.arch}, host runtime v0.4.0)`,
+      detail: `available (${process.platform}-${process.arch}-engine-player, host runtime v0.4.0)`,
       status: "ok",
     });
     expect(host({ runtimeVersion: "0.5.1" })).toMatchObject({ status: "ok" });
@@ -1645,7 +1699,7 @@ describe("threenative doctor and editor activation", () => {
 
 describe("threenative doctor --target/--mode", () => {
   const BROKEN_RUNTIME_STATUS = JSON.stringify({
-    key: `${process.platform}-${process.arch}`,
+    key: `${process.platform}-${process.arch}-engine-player`,
     ok: false,
     reason: "HTTP 404 downloading the prebuilt runtime",
     url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -1804,7 +1858,9 @@ describe("threenative doctor --target/--mode", () => {
       snapshot({
         androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
         readRuntimeText: (relative) =>
-          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+          relative === "prebuilt/engine-player-install-status.json"
+            ? BROKEN_RUNTIME_STATUS
+            : undefined,
       }),
       { target: "android" },
     );
@@ -1904,7 +1960,9 @@ describe("threenative doctor --target/--mode", () => {
     const report = diagnoseProject(
       snapshot({
         readRuntimeText: (relative) =>
-          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+          relative === "prebuilt/engine-player-install-status.json"
+            ? BROKEN_RUNTIME_STATUS
+            : undefined,
       }),
       { target: "web" },
     );
