@@ -1676,8 +1676,9 @@ export async function ensureEngineDesktopPlayerForPackaging(
   });
   // The runtime stages only its own cache entry; an override or a checkout player is the same
   // path it would return without staging, and this build must never unlink it.
-  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
-  return { player, staged: path.basename(player) !== filename };
+  // Exact, not inferred: the path the runtime would have returned without staging is the same
+  // string in the override and checkout cases, and differs only for a snapshot it created.
+  return { player, staged: player !== (await ensureEngineDesktopPlayer(runtimeRoot, cwd)) };
 }
 
 /**

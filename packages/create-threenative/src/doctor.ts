@@ -2168,7 +2168,15 @@ function requestedBuildBlockers(
   // The download doctor reads is the desktop host's. Android and iOS fetch their own libraries at
   // package time, so a failed desktop download must not veto a mobile build; each mobile target's
   // own packager is checked below.
-  if (request.target === "desktop" && nativeRuntime.status !== "ok")
+  // A failure always blocks. A warning blocks only when no local binary answers the build: "nothing
+  // downloaded yet" still means a desktop build has no runtime, while a usable local player that
+  // bypasses a failed download is a build that runs.
+  const usableLocal =
+    localNativeBinary(snapshot, nativePrebuiltTarget(snapshot.config))?.kind === "available";
+  if (
+    request.target === "desktop" &&
+    (nativeRuntime.status === "fail" || (nativeRuntime.status === "warn" && !usableLocal))
+  )
     blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
   // The thing the native host actually starts. Left out, a project with no portable entry read
   // `buildable — android` on a supported JDK while the build it predicted cannot start at all.
