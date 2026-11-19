@@ -1077,12 +1077,21 @@ export async function ensureNativeBinary(options = {}) {
       return staged;
     };
     // Every private request verifies and stages under the same lock: a warm cache read outside it
-    // could be published over between the verification and the link.
-    if (options.stagePrivate)
-      return await withInstallLock(plan, options, async () => {
-        if (!isVerifiedInstall(plan, options)) await installPrebuilt({ ...options, reuse: true });
-        return stage(plan.output);
-      });
+    // could be published over between the verification and the link. A lock release that fails
+    // after the snapshot exists must not leave it behind, so the snapshot is tracked out here.
+    let snapshot;
+    if (options.stagePrivate) {
+      try {
+        return await withInstallLock(plan, options, async () => {
+          if (!isVerifiedInstall(plan, options)) await installPrebuilt({ ...options, reuse: true });
+          snapshot = stage(plan.output);
+          return snapshot;
+        });
+      } catch (error) {
+        if (snapshot !== undefined) rmSync(snapshot, { force: true });
+        throw error;
+      }
+    }
     if (isVerifiedInstall(plan, options)) return plan.output;
     return await withInstallLock(plan, options, () => installPrebuilt({ ...options, reuse: true }));
   } catch (error) {
