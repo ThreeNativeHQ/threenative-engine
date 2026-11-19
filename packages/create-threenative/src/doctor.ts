@@ -1353,6 +1353,46 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * (`engine: "threenative"`) runs the engine player, never the legacy runtime: reporting the legacy
  * status told a reader about a binary that build does not start.
  */
+/**
+ * Whether the locally pinned prebuilt manifest can actually serve a native build.
+ *
+ * The downloader reads `THREENATIVE_PREBUILT_MANIFEST` before the network, for every native target,
+ * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
+ * its own check because it answers for android and ios too, not only the desktop receipt.
+ */
+export function pinnedManifestCheck(snapshot: IProjectSnapshot): IDoctorCheck | undefined {
+  const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
+  if (pinned === undefined) return undefined;
+  const resolved = path.resolve(pinned);
+  const target = nativePrebuiltTarget(snapshot.config);
+  const fail = (reason: string): IDoctorCheck => ({
+    detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a native build fails before downloading.`,
+    fix: "Restore the pinned manifest, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
+    name: "prebuilt manifest",
+    status: "fail",
+  });
+  if (!existsSync(resolved)) return fail("which does not exist");
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(resolved, "utf8"));
+  } catch (error) {
+    return fail(
+      `which is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
+    );
+  }
+  const artifact = record(record(manifest)?.artifacts)?.[target.key];
+  const url = record(artifact)?.url;
+  const checksum = record(artifact)?.sha256;
+  if (typeof url !== "string" || typeof checksum !== "string") {
+    return fail(`which records no artifact for ${target.key}`);
+  }
+  return {
+    detail: `available — ${resolved} records ${target.key}`,
+    name: "prebuilt manifest",
+    status: "ok",
+  };
+}
+
 function nativePrebuiltTarget(config: unknown): {
   readonly absentDetail: string;
   readonly binary: string;
@@ -1535,18 +1575,6 @@ export function nativeRuntimeCheck(
       detail: `available — ${localPlayer.path} (local build)`,
       name: "native runtime",
       status: "ok",
-    };
-  }
-
-  // A pinned manifest is an input the build reads before anything else: a receipt that matches a
-  // pin whose file has since been deleted describes a download that will not run.
-  const pinnedManifest = process.env.THREENATIVE_PREBUILT_MANIFEST;
-  if (pinnedManifest !== undefined && !existsSync(path.resolve(pinnedManifest))) {
-    return {
-      detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${path.resolve(pinnedManifest)}, which does not exist, so the next desktop build fails before downloading.`,
-      fix: "Restore the pinned manifest file, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
-      name: "native runtime",
-      status: "fail",
     };
   }
 
@@ -1989,6 +2017,8 @@ const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[
     // The prebuilt this check reads is the desktop host's. Android and iOS fetch their own
     // libraries at package time from the same release, so their builds are not predicted by it.
     "native runtime": Object.freeze(["desktop"] as const),
+    // The pin is read by every native target's packager, ahead of the desktop receipt.
+    "prebuilt manifest": Object.freeze(["android", "desktop", "ios"] as const),
   },
 );
 
@@ -2235,6 +2265,7 @@ export function diagnoseProject(
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const blender = modelConversionCheck(snapshot);
   const nativeRuntime = nativeRuntimeCheck(snapshot, { target: options.target });
+  const pinnedManifest = pinnedManifestCheck(snapshot);
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
   const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
@@ -2242,6 +2273,7 @@ export function diagnoseProject(
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
     nativeEntryCheck(snapshot),
+    ...(pinnedManifest === undefined ? [] : [pinnedManifest]),
     nativeRuntime,
     assetPipelineCheck(snapshot),
     ...(apkSize === undefined ? [] : [apkSize]),

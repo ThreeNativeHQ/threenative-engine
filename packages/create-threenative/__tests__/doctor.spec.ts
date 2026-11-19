@@ -153,6 +153,24 @@ async function workspaceVersion(packageName: string): Promise<string> {
 }
 
 describe("threenative doctor", () => {
+  it("fails a pinned manifest that cannot serve the build, for every native target", () => {
+    // The packager reads the pin before the network for android too, so an empty pin must fail
+    // there rather than leave `--target android` reporting a buildable project.
+    const pin = path.join("/tmp", "offline-pin-empty", "prebuilt-lock.json");
+    mkdirSync(path.dirname(pin), { recursive: true });
+    writeFileSync(pin, "{}\n");
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    try {
+      for (const target of ["android", "desktop", "ios"] as const) {
+        const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), { target });
+        expect(check(report, "prebuilt manifest").status).toBe("fail");
+        expect(report.pass).toBe(false);
+      }
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
   it("fails when THREENATIVE_ENGINE_PLAYER names a file that is not there", () => {
     // The build hands this value to the packager, so a missing one is a failing build: doctor must
     // not report a download the build never reaches.
@@ -733,7 +751,18 @@ describe("threenative doctor", () => {
     // The pin must exist: a receipt that matches a deleted pin is a download the next build cannot
     // repeat, which the check below reports as a failure of its own.
     mkdirSync(path.dirname(pin), { recursive: true });
-    writeFileSync(pin, "{}\n");
+    // A pin is a real manifest: it must record the artifact the build asks it for.
+    writeFileSync(
+      pin,
+      `${JSON.stringify({
+        artifacts: {
+          [`${process.platform}-${process.arch}-engine-player`]: {
+            sha256: "0".repeat(64),
+            url: `https://example.invalid/${process.platform}-${process.arch}`,
+          },
+        },
+      })}\n`,
+    );
     process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
     try {
       const report = diagnoseProject(

@@ -439,7 +439,7 @@ async function readRangeBody(response, { end, key, start, url }) {
  * key, the URL and the byte range, and cancels the siblings so a stalled one cannot hold the
  * install lock. The sha256 in the lock is still the only trust decision.
  */
-async function downloadRanges(key, url, size) {
+async function downloadRanges(key, url, size, expectedSha256) {
   const chunk = Math.ceil(size / PARALLEL_RANGE_COUNT);
   const parts = Array.from({ length: PARALLEL_RANGE_COUNT }, (_, index) => {
     const start = index * chunk;
@@ -452,10 +452,9 @@ async function downloadRanges(key, url, size) {
   // by a sibling: its body is the download.
   let claimed;
   let whole;
+  // The first non-abort failure is the diagnosis: no later reader may overwrite it, and the HTTP
+  // status it names is what the caller must see unless a complete body verifies against the lock.
   let failure;
-  // A range that fails while the claim is in flight keeps its own error, and bounds how long the
-  // claim may still hold the install lock: a stalled body must not suppress a 500 for ever.
-  let rangeFailure;
   let claimDeadline;
   const abortOthers = (keep) => {
     controllers.forEach((controller, other) => {
@@ -500,17 +499,18 @@ async function downloadRanges(key, url, size) {
         // The claimed reader decides the result even when it fails: its error is the download's.
         // Any other failure is remembered only until a whole body wins, and cancels the siblings
         // so a stalled body cannot hold the install lock.
-        // The first real failure is the diagnosis and is never overwritten: a queued 200 that is
-        // aborted later must not replace the 500 that caused the abort.
+        // The first non-abort failure is the diagnosis and is never overwritten: a queued 200 that
+        // is aborted later, or a 404 that arrives after the 500, must not replace it. Once one is
+        // recorded, the claim is bounded so a stalled body cannot hold the install lock.
         const aborted = isAbortError(error);
-        if (index === claimed) {
-          if (failure === undefined) failure = error;
-        } else if (claimed === undefined) {
-          if (failure === undefined && !aborted) failure = error;
-        } else if (rangeFailure === undefined && !aborted) {
-          rangeFailure = error;
-          claimDeadline = setTimeout(() => controllers[claimed]?.abort(), CLAIM_GRACE_MS);
-          claimDeadline.unref?.();
+        if (!aborted && failure === undefined) {
+          failure = error;
+          if (claimed !== undefined && claimDeadline === undefined) {
+            claimDeadline = setTimeout(() => controllers[claimed]?.abort(), CLAIM_GRACE_MS);
+            claimDeadline.unref?.();
+          }
+        } else if (aborted && claimed === undefined && failure === undefined) {
+          failure = error;
         }
         abortOthers(index);
         throw error;
@@ -520,13 +520,13 @@ async function downloadRanges(key, url, size) {
     for (const controller of controllers) controller.abort();
   }
   if (claimDeadline !== undefined) clearTimeout(claimDeadline);
-  // A whole body wins over a sibling's failure: the sha256 still decides, and its bytes are the
-  // file. Only when no complete body arrived does the recorded failure become the answer.
-  if (whole !== undefined) return whole;
-  // The range failure is the diagnosis: when the claim is aborted because a sibling already failed,
-  // its own abort would name the abort instead of the HTTP status that caused it.
-  if (rangeFailure !== undefined) throw rangeFailure;
+  // A whole body supersedes a sibling's failure only when the lock's own checksum accepts it:
+  // a corrupt 200 must not hide the HTTP status that a range reported, and a verified asset needs
+  // no sibling at all.
+  if (failure !== undefined && whole !== undefined && expectedSha256 !== undefined &&
+      sha256(whole) === expectedSha256) return whole;
   if (failure !== undefined) throw failure;
+  if (whole !== undefined) return whole;
   return contents;
 }
 
@@ -549,7 +549,7 @@ export async function downloadReleaseArtifact(key, options = {}) {
     ? readRelease(resolve(manifestPath), key, options)
     : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key, options);
   if (release.size > PARALLEL_RANGE_THRESHOLD_BYTES) {
-    const contents = await downloadRanges(key, release.url, release.size);
+    const contents = await downloadRanges(key, release.url, release.size, release.sha256);
     verifyChecksum(contents, release.sha256, key);
     if (contents.length === 0 || contents.length !== release.size) {
       throw new Error(`Prebuilt release size verification failed for '${key}': received ${contents.length} bytes.`);
