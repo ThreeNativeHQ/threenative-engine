@@ -46,9 +46,10 @@ export async function packageEngineDesktop(
   // the reader to a recipe for a binary the release publishes.
   if (player && !existsSync(player) && !process.env.THREENATIVE_ENGINE_PLAYER &&
       basename(player) === PLAYER) {
-    const installer = join(dirname(fileURLToPath(import.meta.url)), 'install-prebuilt.mjs');
+    // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
+    const installer = new URL('./install-prebuilt.mjs', import.meta.url);
     if (existsSync(installer)) {
-      const { ensureNativeBinary } = await import(pathToFileURL(installer).href);
+      const { ensureNativeBinary } = await import(installer.href);
       if (typeof ensureNativeBinary === 'function') await ensureNativeBinary({ enginePlayer: true });
     }
   }

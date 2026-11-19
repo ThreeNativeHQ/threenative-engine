@@ -1413,8 +1413,11 @@ export function pinnedManifestCheck(
   // and an override pointing at a packed runtime does not.
   if (options.target === "android") {
     const source = process.env.THREENATIVE_RUNTIME_SOURCE;
+    // The packager resolves a relative source from the installed runtime root, not from the game.
     const root =
-      source !== undefined && source.length > 0 ? path.resolve(source) : snapshot.runtimeRoot;
+      source !== undefined && source.length > 0
+        ? path.resolve(snapshot.runtimeRoot ?? process.cwd(), source)
+        : snapshot.runtimeRoot;
     if (root !== undefined && existsSync(path.join(root, "CMakeLists.txt")))
       return {
         detail: `not read — ${root} is a source checkout, so the Android packager builds the runtime instead of reading a lock`,
