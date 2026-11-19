@@ -717,10 +717,12 @@ describe("threenative doctor", () => {
     const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
     expect(report.pass).toBe(true);
     expect(check(report, "native runtime")).toMatchObject({ status: "ok" });
-    expect(check(report, "native runtime").detail).toMatch(/^not downloaded yet/u);
+    expect(check(report, "native runtime").detail).toMatch(/^available — not downloaded yet/u);
     expect(check(report, "native runtime").detail).toMatch(/118 MiB/u);
-    expect(check(report, "native runtime").detail).toMatch(/web builds download nothing/u);
+    expect(check(report, "native runtime").detail).toMatch(/Web builds download nothing/u);
     expect(check(report, "target desktop")).toMatchObject({ status: "ok" });
+    // The post-publish registry gate greps this line for `available`/`unavailable`.
+    expect(check(report, "target desktop").detail).toMatch(/^(?:available|unavailable) — /u);
   });
 
   it("accepts a receipt recorded from a local prebuilt lock", () => {

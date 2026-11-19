@@ -1372,7 +1372,7 @@ function nativePrebuiltTarget(config: unknown): {
     return {
       absentDetail: legacyUnpublished
         ? `no native runtime is published for ${platform}, so a desktop build with engine "threejs" needs a local one: run \`pnpm --filter @threenative/runtime-native native:build\` in an engine checkout and point THREENATIVE_RUNTIME_BINARY at the result. Web builds download nothing.`
-        : `not downloaded yet — the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_RUNTIME_BINARY to a local file to stay offline.`,
+        : `available — not downloaded yet; the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_RUNTIME_BINARY pins a local file.`,
       binary: `prebuilt/${platform}/${nativeRuntimeFilename()}`,
       ...(legacyUnpublished ? { deprecated: true } : {}),
       key: platform,
@@ -1386,7 +1386,7 @@ function nativePrebuiltTarget(config: unknown): {
   return {
     absentDetail: unpublished
       ? `no engine player is published for ${platform}, so a desktop build needs a local one: build it from an engine checkout (\`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`) and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
-      : "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
+      : "available — not downloaded yet; the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_ENGINE_PLAYER pins a local file.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
     ...(unpublished ? { deprecated: true } : {}),
     key: `${platform}-engine-player`,
@@ -1485,19 +1485,6 @@ export function nativeRuntimeCheck(
 ): IDoctorCheck {
   const target = nativePrebuiltTarget(snapshot.config);
   const key = target.key;
-  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
-  // buildable that `threenative build` rejects before it downloads anything.
-  const renderer = record(record(snapshot.config)?.ui)?.renderer;
-  if (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()) {
-    // Blocking only when the desktop build is what the caller asked about: a web-only project on
-    // this platform is healthy, and a plain `threenative doctor` must not fail it (PRD-783 AC-4).
-    return {
-      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
-      fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
-      name: "native runtime",
-      status: options.target === "desktop" ? "fail" : "warn",
-    };
-  }
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
     return snapshot.installedVersions.has(RUNTIME_PACKAGE)
       ? {
@@ -1567,6 +1554,19 @@ export function nativeRuntimeCheck(
     };
   }
 
+  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
+  // buildable that `threenative build` rejects before it downloads anything.
+  const renderer = record(record(snapshot.config)?.ui)?.renderer;
+  if (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()) {
+    // Blocking only when the desktop build is what the caller asked about: a web-only project on
+    // this platform is healthy, and a plain `threenative doctor` must not fail it (PRD-783 AC-4).
+    return {
+      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
+      fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
+      name: "native runtime",
+      status: options.target === "desktop" ? "fail" : "warn",
+    };
+  }
   if (status.ok !== true) {
     const reason =
       typeof status.reason === "string" ? status.reason : "the install recorded no reason";

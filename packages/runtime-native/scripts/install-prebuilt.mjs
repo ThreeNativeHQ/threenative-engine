@@ -212,7 +212,7 @@ export function validateReleaseManifest(manifest, options = {}) {
   // non-iOS consumer, and a scoped local manifest is accepted for exactly the keys it names.
   const requiredKeys = options.requiredKeys ?? declaredRequiredKeys(manifest) ??
     PUBLISHED_PREBUILT_KEYS.filter((key) => !key.startsWith('ios-'));
-  for (const key of requiredKeys) releaseFromManifest(manifest, key);
+  for (const key of requiredKeys) releaseFromManifest(manifest, key, options);
   for (const key of Object.keys(manifest.artifacts)) validateManifestArtifact(manifest, key, version);
   return manifest;
 }
@@ -379,7 +379,7 @@ async function fetchRelease(manifestUrl, key, options = {}) {
     if (response.status === 404) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
-  return releaseFromManifest(validateReleaseManifest(await response.json()), key, options);
+  return releaseFromManifest(validateReleaseManifest(await response.json(), options), key, options);
 }
 
 /**
