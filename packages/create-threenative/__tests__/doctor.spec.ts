@@ -153,6 +153,21 @@ async function workspaceVersion(packageName: string): Promise<string> {
 }
 
 describe("threenative doctor", () => {
+  it("fails when THREENATIVE_ENGINE_PLAYER names a file that is not there", () => {
+    // The build hands this value to the packager, so a missing one is a failing build: doctor must
+    // not report a download the build never reaches.
+    const missing = path.join("no-such-player", "tn-native-engine-player-v8");
+    process.env.THREENATIVE_ENGINE_PLAYER = missing;
+    try {
+      const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(report.pass).toBe(false);
+      expect(check(report, "native runtime").status).toBe("fail");
+      expect(check(report, "native runtime").detail).toContain("does not exist");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+  });
+
   it("names the compositor-less X11 blocker before a build", () => {
     const probe = probeDesktopOverlay({ DISPLAY: ":99" }, () => false);
     const report = diagnoseProject(

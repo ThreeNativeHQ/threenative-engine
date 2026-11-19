@@ -426,7 +426,17 @@ async function downloadRanges(key, url, size) {
           if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
           throw error;
         }
-        const body = Buffer.from(await response.arrayBuffer());
+        let body;
+        try {
+          body = Buffer.from(await response.arrayBuffer());
+        } catch (error) {
+          // A connection dropped mid-range rejects with a bare `terminated`: name the request that
+          // failed, since the caller cannot see this part's URL or interval otherwise.
+          throw new Error(
+            `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} was interrupted (${error instanceof Error ? error.message : String(error)}).`,
+            { cause: error },
+          );
+        }
         if (body.length !== end - start + 1) {
           throw new Error(
             `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
@@ -714,7 +724,16 @@ function reclaimAbandonedLock(lock, identity) {
       if (error?.code !== 'ENOENT') throw error;
       current = '';
     }
-    if (current !== identity) return false;
+    // Re-informed, not trusted: the lock a paused waiter saw may have been replaced by a live one
+    // since, so ownership and staleness are judged again while `.reap` keeps this the only reaper.
+    // A fresh lock is younger than `LOCK_STALE_MS` and survives even before its owner writes a pid.
+    let age = 0;
+    try {
+      age = Date.now() - statSync(lock).mtimeMs;
+    } catch {
+      return false;
+    }
+    if (current !== identity || abandonedLockOwner(lock, age) !== identity) return false;
     const graveyard = `${lock}.${randomUUID()}.stale`;
     try {
       renameSync(lock, graveyard);
@@ -793,17 +812,30 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
   if (sourceCheckout) {
     console.log('ThreeNative runtime source checkout detected; prebuilt install is deferred to package testing.');
   } else {
-    ensureNativeBinary().then(() => ensureNativeBinary({ enginePlayer: true }))
-      .catch((error) => {
+    // Both targets are attempted independently: a manifest that carries the engine player but no
+    // legacy runtime must still fill the cache, and one that omits either must not hide the other.
+    Promise.allSettled([ensureNativeBinary(), ensureNativeBinary({ enginePlayer: true })]).then((results) => {
+      let cached = 0;
+      let published = 0;
+      for (const result of results) {
+        if (result.status === 'fulfilled') {
+          cached += 1;
+          published += 1;
+          continue;
+        }
+        const error = result.reason;
         const reason = error instanceof Error ? error.message : String(error);
         // A release that carries no asset for this platform is a packaging-state fact, not a
-        // broken download: report it and keep the exit code for a real failure.
+        // broken download: report it, and count it only as something this platform cannot fetch.
         if (error instanceof Error && error.code === 'TN_NATIVE_BINARY_UNPUBLISHED') {
           console.warn(reason);
-          return;
+          continue;
         }
+        published += 1;
         console.error(reason);
-        process.exitCode = 1;
-      });
+      }
+      // Nothing cached and something was fetchable: the prefetch the caller asked for did not happen.
+      if (cached === 0 && published > 0) process.exitCode = 1;
+    });
   }
 }

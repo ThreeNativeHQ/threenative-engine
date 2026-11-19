@@ -1344,6 +1344,15 @@ function nativeEnginePlayerFilename(): string {
 const UNPUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["darwin-arm64"]);
 
 /**
+ * Platforms this repository publishes an engine player for.
+ *
+ * `nativeRuntimeKey()` answers for any host the types allow, so a platform absent from this list —
+ * Linux arm64 today — has no downloadable player at all. The first build then fails asking for a
+ * checkout player, which is the state doctor must report rather than promise a download.
+ */
+const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x64", "win32-x64"]);
+
+/**
  * Which prebuilt a native build actually runs, and where its install status is written.
  *
  * PRD-783 moved the download from `pnpm install` to the first native build, and the default engine
@@ -1370,7 +1379,7 @@ function nativePrebuiltTarget(config: unknown): {
   }
   // macOS has no published engine player, so "the first build downloads it" would be a promise
   // that platform cannot keep: the release census refuses an unsigned bundle instead.
-  const unpublished = UNPUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
+  const unpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
   return {
     absentDetail: unpublished
       ? `no engine player is published for ${platform}, so a desktop build needs a local one: build it from an engine checkout (\`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`) and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
@@ -1392,17 +1401,23 @@ function nativePrebuiltTarget(config: unknown): {
 function localEnginePlayer(
   snapshot: IProjectSnapshot,
   target: { readonly legacy: boolean; readonly key: string },
-): string | undefined {
+): { readonly kind: "available" | "broken"; readonly path: string } | undefined {
   if (target.legacy) return undefined;
   const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
-  const filename = nativeEnginePlayerFilename();
   if (explicit !== undefined) {
+    // An exported path beats every download, so a missing one is a build that will fail: doctor
+    // reports it instead of promising the cache or a download the build never reaches.
     const resolved = path.resolve(explicit);
-    return existsSync(resolved) ? resolved : undefined;
+    return { kind: existsSync(resolved) ? "available" : "broken", path: resolved };
   }
   if (snapshot.runtimeRoot === undefined) return undefined;
-  const checkout = path.join(snapshot.runtimeRoot, "build", "tn-engine-ui", filename);
-  return existsSync(checkout) ? checkout : undefined;
+  const checkout = path.join(
+    snapshot.runtimeRoot,
+    "build",
+    "tn-engine-ui",
+    nativeEnginePlayerFilename(),
+  );
+  return existsSync(checkout) ? { kind: "available", path: checkout } : undefined;
 }
 
 /**
@@ -1463,9 +1478,17 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   // The build selects a local player before it would download one: an explicit variable, then a
   // checkout build. Doctor must read the same order, or it blocks a valid local build.
   const localPlayer = localEnginePlayer(snapshot, target);
+  if (localPlayer?.kind === "broken") {
+    return {
+      detail: `THREENATIVE_ENGINE_PLAYER names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.`,
+      fix: "Point THREENATIVE_ENGINE_PLAYER at a built engine player, or unset it to download on the first desktop build.",
+      name: "native runtime",
+      status: "fail",
+    };
+  }
   if (localPlayer !== undefined) {
     return {
-      detail: `available — ${localPlayer} (local build)`,
+      detail: `available — ${localPlayer.path} (local build)`,
       name: "native runtime",
       status: "ok",
     };

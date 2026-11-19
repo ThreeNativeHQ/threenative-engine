@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -19,7 +20,7 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
-import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import { resolveDesktopExecutable, runDesktopPlaytest } from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
@@ -41,6 +42,29 @@ test.each([undefined, false])("desktop counted run refuses an inherited clock wi
       { driverFactory },
     )).rejects.toThrow("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
     expect(driverFactory).not.toHaveBeenCalled();
+  }
+});
+
+test("--executable accepts the build output directory of either engine", async () => {
+  // The owned engine player writes `dist-native/<name>/<name>` beside its assets; the `threejs`
+  // host writes one flat `dist-native/<name>`. A kit's `test:native` names the directory, so the
+  // same command proves a game after it flips `engine: "threejs"`.
+  const root = await mkdtemp(join(tmpdir(), "threenative-executable-"));
+  try {
+    const player = join(root, "racing");
+    await mkdir(player, { recursive: true });
+    await writeFile(join(player, "racing"), "");
+    await writeFile(join(player, "game.js"), "");
+    expect(await resolveDesktopExecutable(player)).toBe(join(player, "racing"));
+    const flat = join(root, "flat");
+    await writeFile(flat, "");
+    expect(await resolveDesktopExecutable(flat)).toBe(flat);
+    expect(await resolveDesktopExecutable(join(root, "absent"))).toBe(join(root, "absent"));
+    const empty = join(root, "empty");
+    await mkdir(empty);
+    await expect(resolveDesktopExecutable(empty)).rejects.toThrow("TN_PLAYTEST_EXECUTABLE_MISSING");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

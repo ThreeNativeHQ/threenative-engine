@@ -1,7 +1,8 @@
 import { completionWindowEnvironment } from "./steps.js";
-import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { isAbsolute, join, resolve } from "node:path";
+import { basename, isAbsolute, join, resolve } from "node:path";
 
 import { runDevicePlaytest, type IDevicePlaytestDriver } from "./deviceRunner.js";
 import { provideDisplay, type IProvidedDisplay } from "./captureEnvironment.js";
@@ -28,6 +29,33 @@ export interface IDesktopPlaytestDependencies {
 }
 
 /**
+ * The binary inside a desktop build output directory, when `--executable` names the directory.
+ *
+ * The two engines write different shapes there: the owned engine player puts its launcher and its
+ * assets under `dist-native/<name>/`, while the `threejs` host writes one flat binary. Accepting the
+ * directory for both keeps a kit's `test:native` independent of the chosen engine, which is what a
+ * game that flips `engine: "threejs"` needs.
+ */
+export async function resolveDesktopExecutable(candidate: string): Promise<string> {
+  let isDirectory = false;
+  try {
+    isDirectory = (await stat(candidate)).isDirectory();
+  } catch {
+    // A path the runner cannot stat is passed through unchanged: the driver reports the missing
+    // binary with the platform's own message, and a test fixture may name one it never writes.
+    return candidate;
+  }
+  if (!isDirectory) return candidate;
+  const name = basename(candidate);
+  for (const launcher of [join(candidate, name), join(candidate, `${name}.exe`)]) {
+    if (existsSync(launcher)) return launcher;
+  }
+  throw new Error(
+    `TN_PLAYTEST_EXECUTABLE_MISSING: ${candidate} is a directory with no ${name} launcher in it; build the game's desktop target again.`,
+  );
+}
+
+/**
  * Arguments the native desktop host is launched with, from repeatable `--host-arg`.
  * A host that needs none still launches, so an absent list is empty rather than undefined.
  * `--cpu-prof` rides along as the host's own flag (PRD-444).
@@ -45,10 +73,13 @@ export async function runDesktopPlaytest(
     throw new Error("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
   }
   if (process.env.TN_PLAYTEST_COMPLETION_WINDOW_LABEL !== undefined) completionWindowEnvironment("desktop", config.headless);
-  const executable = config.desktop?.executable;
-  if (executable === undefined) {
+  const declaredExecutable = config.desktop?.executable;
+  if (declaredExecutable === undefined) {
     throw new Error("Desktop playtest requires --executable <native-game-executable>.");
   }
+  const executable = dependencies.driver === undefined
+    ? await resolveDesktopExecutable(declaredExecutable)
+    : declaredExecutable;
   const abortController = new AbortController();
   const handleSignal = (): void => {
     abortController.abort();
