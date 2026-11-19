@@ -1629,6 +1629,11 @@ export async function ensureEngineDesktopPlayer(
   runtimeRoot: string,
   cwd: string,
   env: NodeJS.ProcessEnv = process.env,
+  // A packaging caller asks for a build-private name for the verified bytes: the runtime takes it
+  // while it holds the install lock, so a concurrent install cannot swap the shared cache path
+  // between verification and packaging. Overrides and checkout builds are the caller's own files
+  // and are returned untouched.
+  options: { readonly stagePrivate?: boolean } = {},
 ): Promise<string> {
   const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
   if (desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd) !== undefined) return player();
@@ -1639,14 +1644,23 @@ export async function ensureEngineDesktopPlayer(
   // an installation that also lacks this script, so there is nothing better to say here.
   if (!existsSync(module)) return player();
   const runtime = (await import(pathToFileURL(module).href)) as {
-    ensureNativeBinary?: (options: { enginePlayer: boolean }) => Promise<string>;
+    ensureNativeBinary?: (options: {
+      enginePlayer: boolean;
+      stagePrivate?: boolean;
+    }) => Promise<string>;
     installPrebuilt?: (options: { enginePlayer: boolean; reuse: boolean }) => Promise<string>;
   };
   // A runtime older than this CLI has no ensure entry point: fall back to its verified install so
   // a CLI-only upgrade still builds, rather than calling an undefined function.
   if (typeof runtime.ensureNativeBinary === "function") {
-    await runtime.ensureNativeBinary({ enginePlayer: true });
-  } else if (typeof runtime.installPrebuilt === "function") {
+    const ensured = await runtime.ensureNativeBinary({
+      enginePlayer: true,
+      ...(options.stagePrivate ? { stagePrivate: true } : {}),
+    });
+    return options.stagePrivate && typeof ensured === "string" ? ensured : player();
+  }
+  if (typeof runtime.installPrebuilt === "function") {
+    // The older runtime cannot stage; its verified cache path is what it has.
     await runtime.installPrebuilt({ enginePlayer: true, reuse: true });
   }
   return player();
@@ -1693,11 +1707,11 @@ async function buildEngineDesktop(
   }
   // The player every desktop package runs is fetched here, before the UI build, so a missing
   // download is a cheap failure rather than a full UI build thrown away (PRD-783).
-  const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd);
-  // The cache path is shared, and another build with a different lock can replace it between the
-  // verification and the copy: package a build-private copy so the bytes shipped are the bytes
-  // this build verified.
-  const staged = stagePlayerCopy(player);
+  // The runtime takes the build-private snapshot while it holds the install lock, so the bytes
+  // packaged are the bytes this build verified even if another install publishes over the cache.
+  const staged = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
+    stagePrivate: true,
+  });
   try {
     const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
     const output = path.join(cwd, "dist-native", await projectName(cwd));
@@ -1726,25 +1740,6 @@ async function buildEngineDesktop(
   } finally {
     rmSync(staged, { force: true });
   }
-}
-
-/**
- * A build-private name for the verified player.
- *
- * The prebuilt cache is shared by every build on the machine, and an install under a different
- * `THREENATIVE_PREBUILT_MANIFEST` publishes over that path after the verification this build just
- * did. Publishing renames the new file into place, so a hard link taken now keeps pointing at the
- * bytes this build verified, for the price of one directory entry. A filesystem that cannot link
- * falls back to one copy.
- */
-function stagePlayerCopy(player: string): string {
-  const staged = `${player}.${process.pid}.${randomUUID()}.stage`;
-  try {
-    linkSync(player, staged);
-  } catch {
-    copyFileSync(player, staged);
-  }
-  return staged;
 }
 
 async function buildNative(

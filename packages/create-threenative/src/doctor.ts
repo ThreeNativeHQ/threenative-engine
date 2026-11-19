@@ -1771,6 +1771,13 @@ export function nativeRuntimeCheck(
             name: "native runtime",
             status: "fail",
           };
+    if (recorded !== undefined && options.target !== "desktop")
+      return {
+        detail: `${localPlayer.path} supplies the binary, but an earlier download did not finish (${recorded}). A desktop build still tries this binary first.`,
+        fix: retryHint,
+        name: "native runtime",
+        status: "warn",
+      };
     if (recorded !== undefined)
       return {
         detail: `unavailable — ${target.key}: ${recorded}`,

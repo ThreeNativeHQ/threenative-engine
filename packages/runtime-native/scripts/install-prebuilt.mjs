@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1062,8 +1062,23 @@ export async function ensureNativeBinary(options = {}) {
     // Inside the wrapper: an unsupported platform must read like every other absent binary, with
     // its name and the local-binary recipes, not as a bare platform error.
     platformKey(plan.platform, options.arch);
-    if (isVerifiedInstall(plan, options)) return plan.output;
-    return await withInstallLock(plan, options, () => installPrebuilt({ ...options, reuse: true }));
+    // A caller that packages the binary can ask for a build-private name taken while the lock is
+    // held: publishing renames a new file into place, so a link made here keeps pointing at the
+    // bytes this call verified even if another install with a different lock replaces the cache.
+    const stage = (path) => {
+      if (!options.stagePrivate) return path;
+      const staged = `${path}.${process.pid}.${randomUUID()}.stage`;
+      try {
+        linkSync(path, staged);
+      } catch {
+        copyFileSync(path, staged);
+      }
+      return staged;
+    };
+    if (isVerifiedInstall(plan, options)) return stage(plan.output);
+    return await withInstallLock(plan, options, async () =>
+      stage(await installPrebuilt({ ...options, reuse: true })),
+    );
   } catch (error) {
     throw unavailableNativeBinary(error, plan);
   }
