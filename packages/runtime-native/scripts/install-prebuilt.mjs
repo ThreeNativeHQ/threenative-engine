@@ -96,7 +96,7 @@ export function verifyChecksum(contents, expected, key) {
   }
 }
 
-function releaseFromManifest(manifest, key) {
+function releaseFromManifest(manifest, key, options = {}) {
   if (UNPUBLISHED_PREBUILT_KEYS.includes(key)) {
     const error = new Error(
       `No prebuilt release is published for '${key}'. This platform builds from an engine checkout until its release credentials exist; see PRD-262.`,
@@ -109,7 +109,11 @@ function releaseFromManifest(manifest, key) {
   // ships nothing: warn-and-continue here leaves an offline image that cannot build. Only an
   // explicit `requiredKeys` is a promise; without one, a partial manifest is a fixture (or a local
   // lock), and an absent key stays the pre-existing by-design absence.
-  const required = declaredRequiredKeys(manifest) ?? [];
+  // An official release lock omits `requiredKeys` and promises the whole published cohort; a
+  // caller that is preparing an offline image says so with `requireComplete`. A test or local
+  // fixture stays permissive, which is how a partial manifest has always behaved.
+  const required = declaredRequiredKeys(manifest) ??
+    (options.requireComplete === true ? PUBLISHED_PREBUILT_KEYS : []);
   if (release === undefined && required.includes(key)) {
     const error = new Error(
       `The prebuilt release manifest requires '${key}' and records no artifact for it.`,
@@ -254,7 +258,7 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha,
   );
 }
 
-export function readRelease(manifestPath, key) {
+export function readRelease(manifestPath, key, options = {}) {
   if (!existsSync(manifestPath)) {
     const error = new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
     error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
@@ -351,7 +355,7 @@ function recordInstallFailure(plan, error) {
   }
 }
 
-async function fetchRelease(manifestUrl, key) {
+async function fetchRelease(manifestUrl, key, options = {}) {
   const url = new URL(manifestUrl);
   if (url.protocol !== 'https:' && process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT !== '1') {
     throw new Error(`Prebuilt release manifest for '${key}' must use HTTPS.`);
@@ -375,7 +379,7 @@ async function fetchRelease(manifestUrl, key) {
     if (response.status === 404) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
-  return releaseFromManifest(validateReleaseManifest(await response.json()), key);
+  return releaseFromManifest(validateReleaseManifest(await response.json()), key, options);
 }
 
 /**
@@ -516,8 +520,8 @@ export async function downloadReleaseArtifact(key, options = {}) {
   }
   const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
   const release = manifestPath
-    ? readRelease(resolve(manifestPath), key)
-    : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key);
+    ? readRelease(resolve(manifestPath), key, options)
+    : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key, options);
   if (release.size > PARALLEL_RANGE_THRESHOLD_BYTES) {
     const contents = await downloadRanges(key, release.url, release.size);
     verifyChecksum(contents, release.sha256, key);
@@ -555,7 +559,7 @@ function isVerifiedInstall(plan, options) {
     // A caller can replace a local lock without changing its path. That explicit pin must
     // still authorize these bytes, and a missing/invalid pin must never be bypassed by cache.
     const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
-    const pinned = manifestPath ? readRelease(resolve(manifestPath), plan.key) : undefined;
+    const pinned = manifestPath ? readRelease(resolve(manifestPath), plan.key, options) : undefined;
     if (pinned && pinned.sha256 !== status.sha256) return false;
     const contents = readFileSync(plan.output);
     if (contents.length === 0 || (pinned?.size !== undefined && contents.length !== pinned.size)) return false;
@@ -563,7 +567,7 @@ function isVerifiedInstall(plan, options) {
     if (!plan.toolsKey) return true;
     // A cached runtime without its verified helper is not a reusable desktop install.
     if (typeof status.toolsSha256 !== 'string') return false;
-    const pinnedTools = manifestPath ? readRelease(resolve(manifestPath), plan.toolsKey) : undefined;
+    const pinnedTools = manifestPath ? readRelease(resolve(manifestPath), plan.toolsKey, options) : undefined;
     if (pinnedTools && pinnedTools.sha256 !== status.toolsSha256) return false;
     const tools = readFileSync(plan.toolsOutput);
     if (tools.length === 0 || (pinnedTools?.size !== undefined && tools.length !== pinnedTools.size)) return false;
@@ -879,7 +883,10 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
   } else {
     // Both targets are attempted independently: a manifest that carries the engine player but no
     // legacy runtime must still fill the cache, and one that omits either must not hide the other.
-    Promise.allSettled([ensureNativeBinary(), ensureNativeBinary({ enginePlayer: true })]).then((results) => {
+    Promise.allSettled([
+      ensureNativeBinary({ requireComplete: true }),
+      ensureNativeBinary({ enginePlayer: true, requireComplete: true }),
+    ]).then((results) => {
       let failures = 0;
       for (const result of results) {
         if (result.status === 'fulfilled') continue;

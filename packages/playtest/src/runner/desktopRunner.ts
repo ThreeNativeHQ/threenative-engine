@@ -74,9 +74,20 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
       ? [join(candidate, `${name}.exe`), join(candidate, "tn-native-engine-player-v8.exe")]
       : [join(candidate, name), join(candidate, `${name}.exe`)]),
   ];
+  // Rank by when the *package* was written, not by the copied binary's own timestamp: the packager
+  // copies the player out of the cache, and a copy can carry the cached file's time, which would
+  // rank a days-old download above the build that just finished. `game.js` is written by that
+  // build and sits beside the engine player, so it is the build's own clock.
+  const builtAt = (launcher: string): number => {
+    const bundle = join(candidate, "game.js");
+    if (basename(launcher).startsWith("tn-native-engine-player") && existsSync(bundle)) {
+      return statSync(bundle, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+    }
+    return statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1;
+  };
   const present = candidates
-    .map((launcher) => ({ launcher, mtimeMs: statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1 }))
-    .filter(({ mtimeMs }) => mtimeMs >= 0)
+    .filter((launcher) => existsSync(launcher))
+    .map((launcher) => ({ launcher, mtimeMs: builtAt(launcher) }))
     .sort((left, right) => right.mtimeMs - left.mtimeMs);
   if (present[0] !== undefined) {
     // The raw engine player needs its bundle as an argument; the launcher scripts find it

@@ -1479,18 +1479,23 @@ export function probeNativeHost(binary: string): INativeHostProbe {
   }
 }
 
-export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
+export function nativeRuntimeCheck(
+  snapshot: IProjectSnapshot,
+  options: { readonly target?: DoctorTarget } = {},
+): IDoctorCheck {
   const target = nativePrebuiltTarget(snapshot.config);
   const key = target.key;
   // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
   // buildable that `threenative build` rejects before it downloads anything.
   const renderer = record(record(snapshot.config)?.ui)?.renderer;
   if (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()) {
+    // Blocking only when the desktop build is what the caller asked about: a web-only project on
+    // this platform is healthy, and a plain `threenative doctor` must not fail it (PRD-783 AC-4).
     return {
-      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a "web" HUD fails at TN_UI_LOAD_FAILED and a desktop build refuses this configuration (TN_ENGINE_PLAYER_UI_UNSUPPORTED).`,
+      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
       fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
       name: "native runtime",
-      status: "fail",
+      status: options.target === "desktop" ? "fail" : "warn",
     };
   }
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
@@ -2204,7 +2209,7 @@ export function diagnoseProject(
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const blender = modelConversionCheck(snapshot);
-  const nativeRuntime = nativeRuntimeCheck(snapshot);
+  const nativeRuntime = nativeRuntimeCheck(snapshot, { target: options.target });
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
   const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
