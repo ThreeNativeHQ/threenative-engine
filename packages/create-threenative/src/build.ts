@@ -1739,8 +1739,13 @@ async function buildEngineDesktop(
     ]);
   } finally {
     // Only a snapshot this build took is deleted: an override or a checkout player came from the
-    // caller, and unlinking it would destroy the binary the next build needs.
-    if (staged.endsWith(".stage")) rmSync(staged, { force: true });
+    // caller, and unlinking it would destroy the binary the next build needs. The name is the
+    // runtime's own `<player>.<pid>.<uuid>.stage` inside its cache, which nothing else writes.
+    if (
+      staged.startsWith(path.join(runtimeRoot, "prebuilt")) &&
+      /\.\d+\.[0-9a-f-]{36}\.stage$/u.test(staged)
+    )
+      rmSync(staged, { force: true });
   }
 }
 
