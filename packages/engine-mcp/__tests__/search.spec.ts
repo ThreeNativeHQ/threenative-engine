@@ -5,6 +5,7 @@ import * as ts from "typescript";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
+  RELEVANCE_FLOOR,
   capabilityDetail,
   capabilitySituationTokens,
   defaultManifestPath,
@@ -125,6 +126,42 @@ describe("threenative-engine-mcp", () => {
     expect(response.guidance).toContain("ctx.state");
     expect(response.guidance).not.toContain("Area3D");
     expect(response.guidance).not.toContain("Heightfield");
+  });
+
+  it("shows near matches on a generic miss, and never a not-owned one (PRD-063)", () => {
+    const miss = searchCapabilities("procedural wildlife migration", workspaceManifest, "request");
+    expect(miss.verdict).toBe("none");
+    expect(miss.results).toEqual([]);
+    const near = miss.nearMatches ?? [];
+    expect(near.length).toBeGreaterThanOrEqual(1);
+    expect(near.length).toBeLessThanOrEqual(3);
+    for (const row of near) {
+      // A suggestion sits under the floor by definition; a row at or above it is a result.
+      expect(row.score).toBeGreaterThan(0);
+      expect(row.score).toBeLessThan(RELEVANCE_FLOOR);
+      expect(row.matchedSituation.length).toBeGreaterThan(0);
+      expect(row.symbol.length).toBeGreaterThan(0);
+      expect(row.importPath.length).toBeGreaterThan(0);
+      expect(row.summary.length).toBeGreaterThan(0);
+      // A suggestion is not a result row: it carries none of the detail a hit is used for.
+      expect(row).not.toHaveProperty("signature");
+      expect(row).not.toHaveProperty("example");
+      expect(row).not.toHaveProperty("constraints");
+    }
+    // "write it in src/" is the whole answer for a not-owned request; a near symbol there misleads.
+    for (const query of ["save the player progress", "make an inventory system"]) {
+      const notOwned = searchCapabilities(query, workspaceManifest, "request");
+      expect(notOwned.verdict, query).toBe("none");
+      expect(notOwned.nearMatches, query).toBeUndefined();
+    }
+    // A matched search is not a miss and carries no suggestions.
+    expect(
+      searchCapabilities("enemy walks around a wall", workspaceManifest).nearMatches,
+    ).toBeUndefined();
+    // Neither is a starter kit: the kit is the answer, and a suggestion beside it reads as a second.
+    const kit = searchCapabilities("action-rpg", workspaceManifest, "request");
+    expect(kit.verdict).toBe("starterKit");
+    expect(kit.nearMatches).toBeUndefined();
   });
 
   it("returns actionable guidance for measured not-owned requests", () => {

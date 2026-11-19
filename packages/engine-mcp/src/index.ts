@@ -94,6 +94,21 @@ export interface ICapabilitySearchResponse {
   readonly verdict: "matched" | "none" | "starterKit";
   readonly results: readonly ICapabilitySearchResult[];
   readonly guidance: string;
+  /**
+   * Suggestions under the relevance floor, on a generic `none` only (PRD-063). They share a
+   * situation word but are not binding capabilities, and a not-owned request never carries them:
+   * "write it in src/" is then the whole answer, and a near symbol would send the author elsewhere.
+   */
+  readonly nearMatches?: readonly ICapabilityNearMatch[];
+}
+
+/** One row of `nearMatches`: enough to recognise the capability, none of the detail a hit carries. */
+export interface ICapabilityNearMatch {
+  readonly symbol: string;
+  readonly importPath: string;
+  readonly summary: string;
+  readonly matchedSituation: string;
+  readonly score: number;
 }
 
 export interface ICapabilityDetail extends ICapabilityEntry {}
@@ -261,6 +276,8 @@ const STOP_WORDS = new Set([
 ]);
 const MAX_COMPLETE_REQUEST_RESULTS = 15;
 const MAX_SITUATION_RESULTS = 5;
+/** A miss still shows this many rows that shared a situation word, so the author sees what is near. */
+const MAX_NEAR_MATCHES = 3;
 /** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
 export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
@@ -658,6 +675,8 @@ function isDistinctivePhrase(candidate: IPhraseScore): boolean {
 
 interface IReadabilityScore {
   readonly best: number;
+  /** The best score any phrase reached, before the distinctive-word gate judged it. */
+  readonly bestReadableScore: number;
   readonly matchedSituation: string;
   readonly bestReadableSituation: string;
 }
@@ -668,6 +687,15 @@ function scoreReadableSituations(
   queryText: string,
   weights: ReadonlyMap<string, number>,
 ): IReadabilityScore {
+  // An empty query text is a substring of every phrase, so it would earn every situation the
+  // phrase bonus. A request of nothing but stop words shares no word with anything.
+  if (queryTokens.size === 0)
+    return {
+      best: 0,
+      bestReadableScore: 0,
+      bestReadableSituation: situations[0] ?? "",
+      matchedSituation: "",
+    };
   let best = 0;
   let matchedSituation = "";
   let bestReadableScore = 0;
@@ -684,7 +712,7 @@ function scoreReadableSituations(
       matchedSituation = situation;
     }
   }
-  return { best, bestReadableSituation, matchedSituation };
+  return { best, bestReadableScore, bestReadableSituation, matchedSituation };
 }
 
 function scoreAliases(
@@ -693,12 +721,36 @@ function scoreAliases(
   queryText: string,
   weights: ReadonlyMap<string, number>,
 ): number {
+  // An empty query text is a substring of every alias and would earn every one the phrase bonus,
+  // so a request of nothing but stop words or punctuation used to answer with the whole index.
+  if (queryTokens.size === 0) return 0;
   let best = 0;
   for (const alias of aliases) {
     const candidate = scorePhrase(alias, queryTokens, queryText, weights);
     if (candidate !== undefined) best = Math.max(best, candidate.score);
   }
   return best;
+}
+
+/**
+ * The answer one phrase set gives, from a readability pass that a caller can reuse. `situationScore`
+ * is this plus the pass; the reference search needs the pass itself, so the derivation lives here
+ * once instead of being scored twice per candidate.
+ */
+function answeredSituation(
+  readable: IReadabilityScore,
+  aliasScore: number,
+): { readonly matchedSituation: string; readonly score: number } {
+  const best = Math.max(readable.best, aliasScore);
+  const matchedSituation =
+    readable.matchedSituation.length > 0
+      ? readable.matchedSituation
+      : best >= RELEVANCE_FLOOR
+        ? readable.bestReadableSituation
+        : "";
+  return matchedSituation.length > 0
+    ? { matchedSituation, score: best }
+    : { matchedSituation: "", score: 0 };
 }
 
 function situationScore(
@@ -710,17 +762,10 @@ function situationScore(
   if (query.length === 0) return { matchedSituation: "", score: 0 };
   const queryTokens = new Set(query);
   const queryText = query.join(" ");
-  const readable = scoreReadableSituations(situations, queryTokens, queryText, weights);
-  const best = Math.max(readable.best, scoreAliases(aliases, queryTokens, queryText, weights));
-  const matchedSituation =
-    readable.matchedSituation.length > 0
-      ? readable.matchedSituation
-      : best >= RELEVANCE_FLOOR
-        ? readable.bestReadableSituation
-        : "";
-  return matchedSituation.length > 0
-    ? { matchedSituation, score: best }
-    : { matchedSituation: "", score: 0 };
+  return answeredSituation(
+    scoreReadableSituations(situations, queryTokens, queryText, weights),
+    scoreAliases(aliases, queryTokens, queryText, weights),
+  );
 }
 
 /**
@@ -976,7 +1021,12 @@ export function searchCapabilities(
     throw new Error("engine_search_capabilities requires a non-empty situation string.");
   const manifest = loadCapabilityManifest(manifestFile);
   const starterKits = matchedStarterKits(situation, manifest.starterKits ?? []);
-  const response = withReferenceTools(situation, searchMechanics(situation, manifest, scope));
+  // A kit that answers ends the search, so the suggestion column is not built for it either: the
+  // response would otherwise carry nearMatches beside a verdict that is not a miss at all.
+  const response = withReferenceTools(
+    situation,
+    searchMechanics(situation, manifest, scope, starterKits.length === 0),
+  );
   if (starterKits.length === 0) return response;
   // The kit leads the response; the mechanics it does not cover follow unchanged.
   return {
@@ -1030,6 +1080,8 @@ function searchMechanics(
   situation: string,
   manifest: ICapabilityManifest,
   scope: "mechanic" | "request",
+  /** False when a starter kit already answers: a suggestion beside a definite kit is noise. */
+  suggest = true,
 ): ICapabilitySearchResponse {
   const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
@@ -1055,9 +1107,11 @@ function searchMechanics(
   // The not-owned match already tied the query to the package, so any export of it that matches at
   // all is relevant: "swaying trees" shares only "tree" with bakeVegetation, under the general floor.
   const floor = optionalPackage === undefined ? RELEVANCE_FLOOR : Number.MIN_VALUE;
-  const results = candidates
+  // Scored once and split by the floor afterwards: the rows an author is shown as suggestions are
+  // the ones this search already computed and used to throw away (PRD-063).
+  const scored = candidates
     .map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) }))
-    .filter(({ matchedSituation, score }) => matchedSituation.length > 0 && score >= floor)
+    .filter(({ matchedSituation }) => matchedSituation.length > 0)
     .sort(
       (left, right) =>
         right.score - left.score ||
@@ -1067,11 +1121,13 @@ function searchMechanics(
         ),
     )
     .filter(
-      (candidate, index, candidates) =>
-        candidates.findIndex(
+      (candidate, index, all) =>
+        all.findIndex(
           (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry),
         ) === index,
-    )
+    );
+  const results = scored
+    .filter(({ score }) => score >= floor)
     .slice(0, limit)
     .map(({ entry, matchedSituation, score }) => ({
       constraints: entry.constraints,
@@ -1088,10 +1144,26 @@ function searchMechanics(
     }));
   if (results.length > 0)
     return { guidance: specific ? notOwned.entry.guidance : "", results, verdict: "matched" };
+  // Only a generic miss suggests anything: "write it in src/" is the whole answer for a not-owned
+  // request, and an empty list is noise beside a definite one.
+  const nearMatches =
+    suggest && notOwned === undefined
+      ? scored
+          .filter(({ score }) => score < floor)
+          .slice(0, MAX_NEAR_MATCHES)
+          .map(({ entry, matchedSituation, score }) => ({
+            importPath: entry.importPath,
+            matchedSituation,
+            score,
+            summary: entry.summary,
+            symbol: entry.symbol,
+          }))
+      : [];
   return {
     guidance: notOwned?.entry.guidance ?? GENERIC_GUIDANCE,
     results: [],
     verdict: "none",
+    ...(nearMatches.length > 0 ? { nearMatches } : {}),
   };
 }
 
@@ -1140,7 +1212,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
     annotations: { destructiveHint: false, openWorldHint: false, readOnlyHint: true },
     name: "engine_search_capabilities",
     description:
-      'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search.',
+      'Search the installed engine by concrete gameplay mechanic or by an exact exported symbol name. Decompose genres first. Use scope "request" for the mechanically explicit full request and "mechanic" for each focused search; matchedSituation and score explain every result. A row carries the answer (importPath, signature, example, constraints, overrides, deprecations), so call engine_capability_detail only for a symbol the search did not return. The response verdict "none" is an actionable answer with guidance, not a failed search; its nearMatches are below-floor suggestions that are not binding capabilities.',
     inputSchema: {
       additionalProperties: false,
       properties: {
@@ -1178,7 +1250,7 @@ const TOOL_DEFINITIONS: readonly IEngineTool[] = [
   {
     name: "engine_search_references",
     description:
-      "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art.",
+      "Reverse engineer classic games: search mechanic cards and repository map nodes from their decomps. Tier-2 titles link to repos to explore and save. References describe feel only; borrow algorithms, cite pinned sources, copy no code or art. An empty reply lists nearMatches: near misses that are suggestions, not capabilities.",
     annotations: { destructiveHint: false, openWorldHint: true, readOnlyHint: true },
     inputSchema: {
       type: "object",
@@ -1355,24 +1427,72 @@ async function searchReferences(situation: string, limit = 5) {
   }));
   const weights = tokenWeights(phrases);
   const query = tokens(situation);
+  const querySet = new Set(query);
+  const queryText = query.join(" ");
+  // The readable score is kept beside the result because it survives a miss: `situationScore`
+  // empties `matchedSituation` for a phrase that no distinctive word carried, which is exactly the
+  // row a suggestion needs, and the score it reached is what ranks it (PRD-063).
+  const scored = candidates.map((stub, index) => {
+    const situations = phrases[index]?.situations ?? [];
+    const readable = scoreReadableSituations(situations, querySet, queryText, weights);
+    const content = answeredSituation(readable, 0);
+    // A shared game title must not erase agreement with the requested mechanic.
+    const title = scoreAliases(phrases[index]?.aliases ?? [], querySet, queryText, weights);
+    return {
+      near: { score: readable.bestReadableScore, situation: readable.bestReadableSituation },
+      stub: { ...stub, ...content, score: content.score + title },
+    };
+  });
+  const results = scored
+    .filter(({ stub }) => stub.score >= RELEVANCE_FLOOR)
+    .sort((a, b) => b.stub.score - a.stub.score || a.stub.id.localeCompare(b.stub.id))
+    .slice(0, limit)
+    .map(({ stub }) => stub);
+  // Built only on a miss, so a full reply pays nothing for a column it does not show.
+  const nearMatches = results.length === 0 ? referenceSuggestions(scored) : [];
   return {
     guidance: "",
-    results: candidates
-      .map((stub, index) => {
-        const content = situationScore(query, phrases[index]?.situations ?? [], [], weights);
-        // A shared game title must not erase agreement with the requested mechanic.
-        const title = scoreAliases(
-          phrases[index]?.aliases ?? [],
-          new Set(query),
-          query.join(" "),
-          weights,
-        );
-        return { ...stub, ...content, score: content.score + title };
-      })
-      .filter((stub) => stub.score >= RELEVANCE_FLOOR)
-      .sort((a, b) => b.score - a.score || a.id.localeCompare(b.id))
-      .slice(0, limit),
+    results,
+    // An empty reply still names what came close, with the ids engine_reference_detail takes, so a
+    // miss is not a dead end (PRD-063). The score is the one the phrase reached: a capability search
+    // drops a row for being under the floor, while a reference search also drops it for resting on a
+    // word too common to answer alone, so a suggestion here can outscore the floor and still not be
+    // a result. Reference rows carry no binding promise either way.
+    ...(nearMatches.length > 0 ? { nearMatches } : {}),
   };
+}
+
+/** The near misses of a reference search, in the shape engine_reference_detail can open. */
+function referenceSuggestions(
+  scored: readonly {
+    near: { score: number; situation: string };
+    stub: Record<string, unknown> & {
+      game: string;
+      id: string;
+      kind: string;
+      summary: string;
+      title: string;
+    };
+  }[],
+): readonly Record<string, unknown>[] {
+  return scored
+    .filter(({ near }) => near.score > 0 && near.situation.length > 0)
+    .sort((a, b) => b.near.score - a.near.score || a.stub.id.localeCompare(b.stub.id))
+    .slice(0, MAX_NEAR_MATCHES)
+    .map(({ near, stub }) => ({
+      game: stub.game,
+      id: stub.id,
+      kind: stub.kind,
+      matchedSituation: near.situation,
+      // A tier-2 title is a repository, not a card: engine_reference_detail refuses kind "game", so
+      // the link is what makes the suggestion actionable.
+      ...("repo" in stub && typeof stub.repo === "string" && stub.repo.length > 0
+        ? { repo: stub.repo }
+        : {}),
+      score: near.score,
+      summary: stub.summary,
+      title: stub.title,
+    }));
 }
 
 async function handleToolCall(
