@@ -822,9 +822,11 @@ function unavailableNativeBinary(error, plan) {
  */
 export async function ensureNativeBinary(options = {}) {
   const plan = createInstallPlan(options);
-  platformKey(plan.platform, options.arch);
-  if (isVerifiedInstall(plan, options)) return plan.output;
   try {
+    // Inside the wrapper: an unsupported platform must read like every other absent binary, with
+    // its name and the local-binary recipes, not as a bare platform error.
+    platformKey(plan.platform, options.arch);
+    if (isVerifiedInstall(plan, options)) return plan.output;
     return await withInstallLock(plan, options, () => installPrebuilt({ ...options, reuse: true }));
   } catch (error) {
     throw unavailableNativeBinary(error, plan);
@@ -846,14 +848,9 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
     // Both targets are attempted independently: a manifest that carries the engine player but no
     // legacy runtime must still fill the cache, and one that omits either must not hide the other.
     Promise.allSettled([ensureNativeBinary(), ensureNativeBinary({ enginePlayer: true })]).then((results) => {
-      let cached = 0;
-      let published = 0;
+      let failures = 0;
       for (const result of results) {
-        if (result.status === 'fulfilled') {
-          cached += 1;
-          published += 1;
-          continue;
-        }
+        if (result.status === 'fulfilled') continue;
         const error = result.reason;
         const reason = error instanceof Error ? error.message : String(error);
         // A release that carries no asset for this platform is a packaging-state fact, not a
@@ -865,11 +862,12 @@ if (process.argv[1] && existsSync(process.argv[1]) &&
           console.warn(reason);
           continue;
         }
-        published += 1;
+        failures += 1;
         console.error(reason);
       }
-      // Nothing cached and something was fetchable: the prefetch the caller asked for did not happen.
-      if (cached === 0 && published > 0) process.exitCode = 1;
+      // Any target this platform publishes that was not cached is a prefetch that did not happen:
+      // an offline image built on exit 0 would fail at the game's first desktop build instead.
+      if (failures > 0) process.exitCode = 1;
     });
   }
 }

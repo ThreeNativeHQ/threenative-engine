@@ -41,7 +41,7 @@ export async function packageEngineDesktop(
 ) {
   if (!player || !existsSync(player)) {
     throw new Error(
-      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout with \`pnpm --filter @threenative/runtime-native native:build\`, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout with \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\` (the legacy host's \`native:build\` does not produce it), or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   rmSync(output, { force: true, recursive: true });

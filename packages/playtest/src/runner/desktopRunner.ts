@@ -1,5 +1,5 @@
 import { completionWindowEnvironment } from "./steps.js";
-import { existsSync } from "node:fs";
+import { statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -47,12 +47,14 @@ export async function resolveDesktopExecutable(candidate: string): Promise<strin
   }
   if (!isDirectory) return candidate;
   const name = basename(candidate);
-  // A Windows build of the `threejs` host writes `<dir>.exe` beside a directory a previous build
-  // under the owned engine left behind: the sibling is the newer artifact, so it goes first.
-  if (existsSync(`${candidate}.exe`)) return `${candidate}.exe`;
-  for (const launcher of [join(candidate, name), join(candidate, `${name}.exe`)]) {
-    if (existsSync(launcher)) return launcher;
-  }
+  // A Windows build writes its launcher either as `<dir>.exe` (the `threejs` host) or as
+  // `<dir>/<name>.exe` (the owned engine), and switching engines leaves the other form behind. The
+  // newest artifact is the one the last build produced, so that is the one to launch.
+  const present = [`${candidate}.exe`, join(candidate, name), join(candidate, `${name}.exe`)]
+    .map((launcher) => ({ launcher, mtimeMs: statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1 }))
+    .filter(({ mtimeMs }) => mtimeMs >= 0)
+    .sort((left, right) => right.mtimeMs - left.mtimeMs);
+  if (present[0] !== undefined) return present[0].launcher;
   throw new Error(
     `TN_PLAYTEST_EXECUTABLE_MISSING: ${candidate} is a directory with no ${name} launcher in it; build the game's desktop target again.`,
   );

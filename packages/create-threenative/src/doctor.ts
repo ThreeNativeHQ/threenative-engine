@@ -1402,17 +1402,34 @@ function nativePrebuiltTarget(config: unknown): {
  * The path is only reported when it exists: an exported variable pointing at nothing is not a
  * local build, and the download path is what will really run.
  */
-function localEnginePlayer(
+function localNativeBinary(
   snapshot: IProjectSnapshot,
   target: { readonly legacy: boolean; readonly key: string },
-): { readonly kind: "available" | "broken"; readonly path: string } | undefined {
-  if (target.legacy) return undefined;
+):
+  | { readonly kind: "available" | "broken"; readonly path: string; readonly variable: string }
+  | undefined {
+  if (target.legacy) {
+    // The legacy host has the same override, and the build hands it to the same packager: a missing
+    // one fails the build exactly like a missing player, so doctor answers it the same way.
+    const explicitRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
+    if (explicitRuntime === undefined) return undefined;
+    const resolved = path.resolve(explicitRuntime);
+    return {
+      kind: existsSync(resolved) ? "available" : "broken",
+      path: resolved,
+      variable: "THREENATIVE_RUNTIME_BINARY",
+    };
+  }
   const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
   if (explicit !== undefined) {
     // An exported path beats every download, so a missing one is a build that will fail: doctor
     // reports it instead of promising the cache or a download the build never reaches.
     const resolved = path.resolve(explicit);
-    return { kind: existsSync(resolved) ? "available" : "broken", path: resolved };
+    return {
+      kind: existsSync(resolved) ? "available" : "broken",
+      path: resolved,
+      variable: "THREENATIVE_ENGINE_PLAYER",
+    };
   }
   if (snapshot.runtimeRoot === undefined) return undefined;
   const checkout = path.join(
@@ -1421,7 +1438,9 @@ function localEnginePlayer(
     "tn-engine-ui",
     nativeEnginePlayerFilename(),
   );
-  return existsSync(checkout) ? { kind: "available", path: checkout } : undefined;
+  return existsSync(checkout)
+    ? { kind: "available", path: checkout, variable: "THREENATIVE_ENGINE_PLAYER" }
+    : undefined;
 }
 
 /**
@@ -1481,11 +1500,11 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
 
   // The build selects a local player before it would download one: an explicit variable, then a
   // checkout build. Doctor must read the same order, or it blocks a valid local build.
-  const localPlayer = localEnginePlayer(snapshot, target);
+  const localPlayer = localNativeBinary(snapshot, target);
   if (localPlayer?.kind === "broken") {
     return {
-      detail: `THREENATIVE_ENGINE_PLAYER names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.`,
-      fix: "Point THREENATIVE_ENGINE_PLAYER at a built engine player, or unset it to download on the first desktop build.",
+      detail: `${localPlayer.variable} names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.`,
+      fix: `Point ${localPlayer.variable} at a built binary, or unset it to download on the first desktop build.`,
       name: "native runtime",
       status: "fail",
     };
