@@ -10,7 +10,7 @@
     "build:desktop": "threenative build --target desktop",
     "build:android": "threenative build --target android",
     "build:ios": "threenative build --target ios",
-    "test:native": "pnpm build:desktop && threenative-playtest --scenario native-playtests/snow-physics.playtest.json --scenario native-playtests/survives.playtest.json --target desktop --executable dist-native/__PROJECT_NAME__",
+    "test:native": "pnpm build:desktop && threenative-playtest --scenario native-playtests/snow-physics.playtest.json --scenario native-playtests/survives.playtest.json --target desktop --executable dist-native/__PROJECT_NAME__/__PROJECT_NAME__",
     "pretest": "playwright install chromium",
     "test": "pnpm check && pnpm build:web && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort\"",
     "typecheck": "tsc --noEmit -p tsconfig.json",

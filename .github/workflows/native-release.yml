@@ -1509,6 +1509,26 @@ jobs:
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Scaffold a default-engine consumer for the engine player's own first-build fetch
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-player-proof
+          template: minimal
+      - name: Install and build the default-engine consumer on Windows (PRD-783 AC-7)
+        run: |
+          target="$RUNNER_TEMP/threenative-player-proof"
+          pnpm --dir "$target" install
+          # The install downloads nothing, the first desktop build fetches the engine player only,
+          # and the legacy runtime and its helper are never requested by this host.
+          runtime="$target/node_modules/@threenative/runtime-native/prebuilt"
+          test ! -e "$runtime/engine-player-install-status.json"
+          pnpm --dir "$target" build --target desktop
+          test -s "$runtime/win32-x64/tn-native-engine-player-v8.exe"
+          test ! -e "$runtime/win32-x64/threenative-runtime.exe"
+          test ! -e "$runtime/win32-x64/mystral-tools.exe"
+          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Prove a renderer that never presents fails the launch assertions
         run: |
           # Phase 2 observed-red, measured by run 34746542857: with the entry replaced by one that

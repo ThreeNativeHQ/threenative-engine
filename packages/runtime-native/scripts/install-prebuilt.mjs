@@ -388,16 +388,17 @@ async function downloadRanges(key, url, size) {
   }).filter(({ start }) => start < size);
   const contents = Buffer.allocUnsafe(size);
   const controllers = parts.map(() => new AbortController());
-  const abortOthers = (keep) => {
-    controllers.forEach((controller, other) => {
-      if (other !== keep) controller.abort();
-    });
-  };
   // The first part to see a `200` claims the whole body synchronously, before any other handler
-  // can claim it too (two claims aborted both readers and returned nothing).
-  let claimed = false;
+  // can claim it too (two claims would cancel both readers). The claimed reader is never aborted
+  // by a sibling: its body is the download.
+  let claimed;
   let whole;
   let failure;
+  const abortOthers = (keep) => {
+    controllers.forEach((controller, other) => {
+      if (other !== keep && other !== claimed) controller.abort();
+    });
+  };
   try {
     await Promise.allSettled(parts.map(async ({ start, end, index }) => {
       try {
@@ -406,22 +407,24 @@ async function downloadRanges(key, url, size) {
           signal: controllers[index].signal,
         });
         if (response.status === 200) {
-          if (claimed) {
+          if (claimed !== undefined) {
             // A sibling already has the whole file: drop this body instead of reading a second one.
             await response.body?.cancel().catch(() => undefined);
             return;
           }
-          claimed = true;
-          // The siblings are not aborted here: they may share this response's socket, and aborting
-          // them truncated the body being read (a checksum failure, observed). Each of them cancels
-          // its own body instead, so the asset is still read once.
+          claimed = index;
+          // The siblings are not aborted until this body is in memory: they may share its socket,
+          // and aborting them mid-read truncated it (a checksum failure, observed).
           whole = Buffer.from(await response.arrayBuffer());
+          abortOthers(index);
           return;
         }
         if (response.status !== 206) {
-          throw new Error(
+          const error = new Error(
             `Prebuilt release fetch failed for '${key}' at ${url}: HTTP ${response.status} for byte range ${start}-${end}.`,
           );
+          if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
+          throw error;
         }
         const body = Buffer.from(await response.arrayBuffer());
         if (body.length !== end - start + 1) {
@@ -431,10 +434,11 @@ async function downloadRanges(key, url, size) {
         }
         body.copy(contents, start);
       } catch (error) {
-        // The first real failure decides the message and cancels the siblings, so a stalled body
-        // cannot hold the install lock. A sibling truncated by that cancel merely fails too: the
-        // checksum decides, and this path never returns bytes.
-        if (claimed === false && failure === undefined && !isAbortError(error)) failure = error;
+        // The claimed reader decides the result even when it fails: its error is the download's.
+        // Any other failure is remembered only until a whole body wins, and cancels the siblings
+        // so a stalled body cannot hold the install lock.
+        if (index === claimed || (claimed === undefined && failure === undefined && !isAbortError(error)))
+          failure = error;
         abortOthers(index);
         throw error;
       }
@@ -442,6 +446,8 @@ async function downloadRanges(key, url, size) {
   } finally {
     for (const controller of controllers) controller.abort();
   }
+  // A whole body wins over a sibling's failure: the sha256 still decides, and its bytes are the
+  // file. Only when no complete body arrived does the recorded failure become the answer.
   if (whole !== undefined) return whole;
   if (failure !== undefined) throw failure;
   return contents;
@@ -452,6 +458,15 @@ function isAbortError(error) {
 }
 
 export async function downloadReleaseArtifact(key, options = {}) {
+  // A platform this repository deliberately does not publish is a fact, not a download: answering
+  // it before the manifest fetch keeps the diagnosis identical online and offline.
+  if (UNPUBLISHED_PREBUILT_KEYS.includes(key)) {
+    const error = new Error(
+      `No prebuilt release is published for '${key}'. This platform builds from an engine checkout until its release credentials exist; see PRD-262.`,
+    );
+    error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    throw error;
+  }
   const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
   const release = manifestPath
     ? readRelease(resolve(manifestPath), key)
@@ -582,7 +597,9 @@ async function withInstallLock(plan, options, callback) {
       }
       const abandoned = abandonedLockOwner(lock, age);
       if (abandoned !== undefined) {
-        reclaimAbandonedLock(lock, abandoned);
+        // A declined reclaim (another waiter is reaping) still polls, so this cannot spin.
+        if (reclaimAbandonedLock(lock, abandoned)) continue;
+        await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
         continue;
       }
       const now = Date.now();
@@ -663,26 +680,54 @@ function abandonedLockOwner(lock, age) {
   }
 }
 
-/** Move one dead lock aside. Only the caller that still sees that owner may, and only once. */
+/**
+ * Move one dead lock aside, with exactly one reaper at a time.
+ *
+ * The reaper lock is what makes the claim atomic against a *second waiter*: without it, a waiter
+ * paused between its pid check and its `rename` could come back and move a lock a faster waiter
+ * had already created, leaving two installers in the same directory. A reaper that dies only
+ * blocks reclaiming for its own stale window, and never installs anything.
+ */
 function reclaimAbandonedLock(lock, identity) {
-  let current;
+  const reaper = `${lock}.reap`;
   try {
-    current = readFileSync(join(lock, 'pid'), 'utf8').trim();
+    mkdirSync(reaper);
   } catch (error) {
-    if (error?.code !== 'ENOENT') throw error;
-    current = '';
-  }
-  if (current !== identity) return false;
-  const graveyard = `${lock}.${randomUUID()}.stale`;
-  try {
-    renameSync(lock, graveyard);
-  } catch (error) {
-    // Another waiter moved it first, which is the outcome this branch wants anyway.
-    if (error?.code === 'ENOENT' || error?.code === 'ENOTEMPTY') return false;
+    if (error?.code === 'EEXIST') {
+      let age = 0;
+      try {
+        age = Date.now() - statSync(reaper).mtimeMs;
+      } catch {
+        return false;
+      }
+      if (age <= LOCK_STALE_MS) return false;
+      rmSync(reaper, { recursive: true, force: true });
+      return false;
+    }
     throw error;
   }
-  rmSync(graveyard, { recursive: true, force: true });
-  return true;
+  try {
+    let current;
+    try {
+      current = readFileSync(join(lock, 'pid'), 'utf8').trim();
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+      current = '';
+    }
+    if (current !== identity) return false;
+    const graveyard = `${lock}.${randomUUID()}.stale`;
+    try {
+      renameSync(lock, graveyard);
+    } catch (error) {
+      // The lock is already gone: the next `mkdir` decides who owns it.
+      if (error?.code === 'ENOENT' || error?.code === 'ENOTEMPTY') return false;
+      throw error;
+    }
+    rmSync(graveyard, { recursive: true, force: true });
+    return true;
+  } finally {
+    rmSync(reaper, { recursive: true, force: true });
+  }
 }
 
 /**

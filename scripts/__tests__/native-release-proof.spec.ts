@@ -864,6 +864,20 @@ test("the Linux proof lane ignores the simulator zip a proof run now downloads",
   assert.match(consumer, /name\.startsWith\("threenative-ios-"\)/u);
 });
 
+test("the Windows lane also builds a default-engine consumer, which is AC-7's host (PRD-783)", () => {
+  const consumer = job("clean-consumer-windows");
+  const scaffold = windowStep(
+    "Scaffold a default-engine consumer for the engine player's own first-build fetch",
+  );
+  assert.match(scaffold, /template: minimal/u);
+  assert.doesNotMatch(scaffold, /engine: threejs/u);
+  const run = windowStep("Install and build the default-engine consumer on Windows (PRD-783 AC-7)");
+  assert.match(run, /test ! -e "\$runtime\/engine-player-install-status\.json"/u);
+  assert.match(run, /pnpm --dir "\$target" build --target desktop/u);
+  assert.match(run, /win32-x64\/tn-native-engine-player-v8\.exe/u);
+  assert.match(run, /test ! -e "\$runtime\/win32-x64\/threenative-runtime\.exe"/u);
+});
+
 test("the Windows consumer serves only the Windows row it installs", () => {
   // Run 34725179598: `build-android`'s V8 source build hit its 2h cap and uploaded nothing, so the
   // Windows lane died demanding Android assets it never needed and never depended on. It now serves

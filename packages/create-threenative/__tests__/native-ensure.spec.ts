@@ -1,4 +1,4 @@
-import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
@@ -12,24 +12,50 @@ vi.mock("@threenative/assets", () => ({
   compileAssets: async () => ({ skipped: 0, written: 0 }),
 }));
 
+const { spawned } = vi.hoisted(() => ({ spawned: [] as { args: string[]; command: string }[] }));
+
 vi.mock("node:child_process", async (importOriginal) => {
   const actual = await importOriginal<typeof import("node:child_process")>();
   const { EventEmitter } = await import("node:events");
-  const spawn = ((_command: string, args: readonly string[]) => {
+  const spawn = ((command: string, args: readonly string[], options?: { cwd?: string }) => {
+    spawned.push({ args: [...args], command });
+    const cwd = options?.cwd ?? process.cwd();
     const child = new EventEmitter();
     queueMicrotask(async () => {
       const index = args.indexOf("--outDir");
       const out = args[index + 1];
-      if (index >= 0 && out !== undefined) await mkdir(path.resolve(out), { recursive: true });
+      if (index >= 0 && out !== undefined) {
+        await mkdir(path.resolve(cwd, out), { recursive: true });
+        await writeFile(path.join(path.resolve(cwd, out), "index.html"), "<html></html>");
+      }
+      // `buildUi` writes a staged `.threenative-ui-<uuid>.html` beside the project, spawns its own
+      // driver, then renames the page Vite emitted. Emitting that exact name makes the rename find
+      // it without reproducing Vite.
+      if (args.some((arg) => String(arg).endsWith("build-ui.mjs"))) {
+        const page = (await readdir(cwd)).find((name) => /\.threenative-ui-.+\.html$/u.test(name));
+        if (page !== undefined) {
+          const output = path.join(cwd, ".threenative", "build", "ui");
+          await mkdir(output, { recursive: true });
+          await writeFile(path.join(output, page), "<html></html>");
+        }
+      }
+      // The packager's own output directory: `packageStaged` renames it into place afterwards.
+      const outIndex = args.indexOf("--output");
+      if (outIndex >= 0) {
+        const target = path.resolve(cwd, args[outIndex + 1] as string);
+        await mkdir(target, { recursive: true });
+        await writeFile(path.join(target, "tn-native-engine-player-v8"), "player");
+      }
       child.emit("exit", 0);
     });
     return child;
-  }) as typeof actual.spawn;
+  }) as unknown as typeof actual.spawn;
   return { ...actual, spawn };
 });
 
 const roots: string[] = [];
 afterEach(async () => {
+  spawned.splice(0);
   Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
   await Promise.all(roots.splice(0).map((root) => rm(root, { force: true, recursive: true })));
 });
@@ -60,6 +86,9 @@ export async function ensureNativeBinary() {
 }
 `,
   );
+  // The default `ui.renderer` is "web", so a desktop build needs this entry beside the game.
+  await mkdir(path.join(root, "src/ui"), { recursive: true });
+  await writeFile(path.join(root, "src/ui/main.tsx"), "export const ui = null;\n");
   await writeFile(path.join(root, "package.json"), JSON.stringify({ name: "ensure-game" }));
   await writeFile(path.join(root, "src/game.ts"), "export default { start: async () => {} };\n");
   await writeFile(
@@ -159,6 +188,63 @@ describe("native binaries download on first native use", () => {
     );
     expect(checkout).toEqual({});
     expect(await calls(ensureCalls)).toBe(0);
+  });
+
+  it("hands the ensured player to the packager through --player, never the shared env", async () => {
+    const root = await makeTempDir("threenative-native-ensure-handoff-");
+    roots.push(root);
+    await writeProject(root);
+    const runtime = path.join(root, "node_modules/@threenative/runtime-native");
+    const player = path.join(runtime, "prebuilt", `${process.platform}-${process.arch}`, PLAYER);
+    for (const name of ["bundle-native-engine.mjs", "package-engine-desktop.mjs"])
+      await writeFile(path.join(runtime, "scripts", name), "export default {};\n");
+    await writeFile(
+      path.join(runtime, "scripts/install-prebuilt.mjs"),
+      `import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+export async function ensureNativeBinary() {
+  mkdirSync(dirname(${JSON.stringify(player)}), { recursive: true });
+  writeFileSync(${JSON.stringify(player)}, "downloaded player");
+  return ${JSON.stringify(player)};
+}
+`,
+    );
+    await build({ cwd: root, target: "desktop" });
+    const packager = spawned.find(({ args }) =>
+      args.some((arg) => arg.endsWith("package-engine-desktop.mjs")),
+    );
+    expect(packager).toBeDefined();
+    const index = packager?.args.indexOf("--player") ?? -1;
+    expect(index).toBeGreaterThanOrEqual(0);
+    expect(packager?.args[index + 1]).toBe(player);
+    // A second build in this process must not inherit the first game's player.
+    expect(process.env.THREENATIVE_ENGINE_PLAYER).toBeUndefined();
+  });
+
+  it("builds with a runtime older than this CLI, which has no ensure entry point", async () => {
+    const root = await makeTempDir("threenative-native-ensure-old-runtime-");
+    roots.push(root);
+    await writeProject(root);
+    const runtime = path.join(root, "node_modules/@threenative/runtime-native");
+    const player = path.join(runtime, "prebuilt", `${process.platform}-${process.arch}`, PLAYER);
+    for (const name of ["bundle-native-engine.mjs", "package-engine-desktop.mjs"])
+      await writeFile(path.join(runtime, "scripts", name), "export default {};\n");
+    await writeFile(
+      path.join(runtime, "scripts/install-prebuilt.mjs"),
+      `import { mkdirSync, writeFileSync } from "node:fs";
+import { dirname } from "node:path";
+export async function installPrebuilt() {
+  mkdirSync(dirname(${JSON.stringify(player)}), { recursive: true });
+  writeFileSync(${JSON.stringify(player)}, "legacy runtime player");
+  return ${JSON.stringify(player)};
+}
+`,
+    );
+    await build({ cwd: root, target: "desktop" });
+    const packager = spawned.find(({ args }) =>
+      args.some((arg) => arg.endsWith("package-engine-desktop.mjs")),
+    );
+    expect(packager?.args[packager.args.indexOf("--player") + 1]).toBe(player);
   });
 
   it("a cold default-engine build hands the download's player to the packager", async () => {

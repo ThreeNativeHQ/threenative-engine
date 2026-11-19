@@ -202,3 +202,23 @@ test('a lock held by a live install does not block a caller once the binary veri
     await fixture.close();
   }
 });
+
+test('two callers seeing the same dead lock download once', async () => {
+  const payload = Buffer.from('engine player bytes');
+  const fixture = await serve(payload);
+  try {
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    const lock = `${fixture.options.statusPath}.lock`;
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, 'pid'), `${dead.pid}\n`);
+    // Both waiters start from the same abandoned lock: exactly one may reap it and install, and
+    // the other must reuse the verified result rather than race into `beginInstall`.
+    await Promise.all([ensureNativeBinary(fixture.options), ensureNativeBinary(fixture.options)]);
+    assert.equal(fixture.requests(), 1);
+    assert.deepEqual(readFileSync(fixture.options.output), payload);
+    assert.equal(existsSync(lock), false);
+    assert.equal(existsSync(`${lock}.reap`), false);
+  } finally {
+    await fixture.close();
+  }
+});

@@ -1383,6 +1383,29 @@ function nativePrebuiltTarget(config: unknown): {
 }
 
 /**
+ * The player a desktop build would use instead of downloading one, in the build's own order:
+ * `THREENATIVE_ENGINE_PLAYER`, then a checkout build under `build/tn-engine-ui/`.
+ *
+ * The path is only reported when it exists: an exported variable pointing at nothing is not a
+ * local build, and the download path is what will really run.
+ */
+function localEnginePlayer(
+  snapshot: IProjectSnapshot,
+  target: { readonly legacy: boolean; readonly key: string },
+): string | undefined {
+  if (target.legacy) return undefined;
+  const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
+  const filename = nativeEnginePlayerFilename();
+  if (explicit !== undefined) {
+    const resolved = path.resolve(explicit);
+    return existsSync(resolved) ? resolved : undefined;
+  }
+  if (snapshot.runtimeRoot === undefined) return undefined;
+  const checkout = path.join(snapshot.runtimeRoot, "build", "tn-engine-ui", filename);
+  return existsSync(checkout) ? checkout : undefined;
+}
+
+/**
  * What the installed host binary says it is.
  *
  * The prebuilt is not the package: a release tarball can ship a host older than the version on its
@@ -1435,6 +1458,17 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
           name: "native runtime",
           status: "warn",
         };
+  }
+
+  // The build selects a local player before it would download one: an explicit variable, then a
+  // checkout build. Doctor must read the same order, or it blocks a valid local build.
+  const localPlayer = localEnginePlayer(snapshot, target);
+  if (localPlayer !== undefined) {
+    return {
+      detail: `available — ${localPlayer} (local build)`,
+      name: "native runtime",
+      status: "ok",
+    };
   }
 
   const statusText = snapshot.readRuntimeText(target.statusFile);
@@ -2324,9 +2358,15 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
             }
           },
           runtimeFileExists: (relative: string) => existsSync(path.join(runtimeRoot, relative)),
-          nativeHost: probeNativeHost(
-            path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
-          ),
+          // Only the `threejs` host answers `--version`. Probing it for a default-engine project
+          // executed an unused binary and could spend its 20-second timeout doing it.
+          ...(record(config)?.engine === "threejs"
+            ? {
+                nativeHost: probeNativeHost(
+                  path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
+                ),
+              }
+            : {}),
           ...(runtimeManifestUrl === undefined ? {} : { runtimeManifestUrl }),
           runtimeRoot,
         }),

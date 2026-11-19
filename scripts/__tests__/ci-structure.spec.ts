@@ -3719,8 +3719,8 @@ describe("CI pipeline structure", () => {
       expect(source, relative).not.toContain("unsupported workspace package");
       callers += occurrences(source, /uses: \.\/\.github\/actions\/scaffold-from-tarballs/gu);
     }
-    // 12 since PRD-783 AC-8 added the default-engine racing consumer to `clean-consumer`.
-    expect(callers).toBe(12);
+    // 13 since PRD-783 AC-7 added the default-engine Windows consumer beside AC-8's racing one.
+    expect(callers).toBe(13);
   });
 
   it("selects QuickJS for the packaged fallback without changing native features", async () => {
