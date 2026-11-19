@@ -1513,7 +1513,7 @@ function nativePrebuiltTarget(config: unknown): {
   const unpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
   return {
     absentDetail: unpublished
-      ? `no engine player is published for ${platform}, so a desktop build needs a local one: in an engine checkout run \`node scripts/download-deps.mjs\` and \`node scripts/build-native-physics.mjs --desktop\` (every desktop preset enables native physics), then \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\` and \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`, and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
+      ? `no engine player is published for ${platform}, so a desktop build needs one from an engine checkout: the recipe per platform, including the physics archive and wgpu-native overrides an ARM64 host needs, is node_modules/create-threenative/agent-docs/references/native-downloads.md — build it there and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
       : "available — not downloaded yet; the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_ENGINE_PLAYER pins a local file.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
     ...(unpublished ? { deprecated: true } : {}),

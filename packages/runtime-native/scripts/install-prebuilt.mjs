@@ -515,7 +515,7 @@ async function readWholeInto(response, contents, { arm, key, limit, url }) {
         `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response exceeded the ${limit} bytes the lock declares.`,
       );
     body.copy(contents, 0);
-    return;
+    return body.length;
   }
   let received = 0;
   try {
@@ -540,6 +540,7 @@ async function readWholeInto(response, contents, { arm, key, limit, url }) {
       { cause: error },
     );
   }
+  return received;
 }
 
 async function downloadRanges(key, url, size, expectedSha256) {
@@ -610,7 +611,19 @@ async function downloadRanges(key, url, size, expectedSha256) {
           cancelRangeReaders(index);
           // Straight into the assembly buffer: a second copy of a 118 MiB asset is the memory
           // PRD-902 exists not to spend. `whole` is that same buffer.
-          await readWholeInto(response, contents, { arm: onClaimProgress, key, limit: size, url });
+          const wholeBytes = await readWholeInto(response, contents, {
+            arm: onClaimProgress,
+            key,
+            limit: size,
+            url,
+          });
+          // A short body would otherwise borrow the suffix the ranges already wrote: the fallback
+          // has to be the whole asset, not the tail of one.
+          if (size !== undefined && wholeBytes !== size) {
+            throw new Error(
+              `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response carried ${wholeBytes} bytes, not the ${size} the lock declares.`,
+            );
+          }
           whole = contents;
           abortOthers(index);
           return;
