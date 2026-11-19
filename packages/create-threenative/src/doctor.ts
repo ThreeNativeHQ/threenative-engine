@@ -1637,8 +1637,20 @@ export function nativeRuntimeCheck(
   // The build's default renderer is "web" when the config is absent or silent, so an unreadable
   // config cannot be an exemption from the refusal either.
   const renderer = record(record(snapshot.config)?.ui)?.renderer ?? "web";
+  // The default engine draws "web" through the player's overlay and nothing else: "native-css"
+  // is the legacy host's renderer, and the build refuses it for this engine.
+  const nativeCssRefusal: IDoctorCheck | undefined =
+    !target.legacy && renderer === "native-css"
+      ? {
+          detail: `unavailable — engine "threenative" on desktop draws a "web" UI through the engine player's overlay, so ui.renderer "native-css" is refused with TN_ENGINE_NATIVE_UI_UNSUPPORTED before anything downloads.`,
+          fix: 'Set ui.renderer to "web" or "native", or set engine: "threejs" to keep the native-css host.',
+          name: "native runtime",
+          status: options.target === "desktop" ? "fail" : "warn",
+        }
+      : undefined;
   const hudRefusal: IDoctorCheck | undefined =
-    !target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()
+    nativeCssRefusal ??
+    (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()
       ? {
           detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
           fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
@@ -1647,7 +1659,7 @@ export function nativeRuntimeCheck(
           // on this platform is healthy and a plain `threenative doctor` must not fail it (AC-4).
           status: options.target === "desktop" ? "fail" : "warn",
         }
-      : undefined;
+      : undefined);
 
   // The build selects a local player before it would download one: an explicit variable, then a
   // checkout build. Doctor must read the same order, or it blocks a valid local build.

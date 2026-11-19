@@ -2174,26 +2174,29 @@ async function rangeRelease(behaviour = 'ranges') {
       return;
     }
     if (behaviour === 'whole-beside-500') {
-      // The first range fails at once; a later request answers with the entire, valid asset, so a
-      // downloader that waits for the whole body before reporting the 500 passes unnoticed.
+      // One request claims the whole, valid asset and starts delivering it; the next range fails
+      // while that body is still streaming. A downloader that reports the 500 only after the body
+      // has been drained passes the old code, so the server stops early once the client hangs up
+      // and the test checks how much it managed to send.
       if (seen.length === 1) {
-        response.statusCode = 500;
-        response.end();
+        response.writeHead(200, { 'content-length': String(payload.length) });
+        let offset = 0;
+        const step = () => {
+          if (offset >= payload.length || response.destroyed) {
+            response.end();
+            return;
+          }
+          const part = payload.subarray(offset, offset + 64 * 1024);
+          offset += part.length;
+          streamed += part.length;
+          response.write(part);
+          setTimeout(step, 5);
+        };
+        step();
         return;
       }
-      response.writeHead(200, { 'content-length': String(payload.length) });
-      let offset = 0;
-      const step = () => {
-        if (offset >= payload.length || response.destroyed) {
-          response.end();
-          return;
-        }
-        const part = payload.subarray(offset, offset + 64 * 1024);
-        offset += part.length;
-        response.write(part);
-        setTimeout(step, 5);
-      };
-      step();
+      response.statusCode = 500;
+      response.end();
       return;
     }
     if (behaviour === 'stall-claimed') {
@@ -2263,12 +2266,16 @@ test('a whole body that verifies still fails when a sibling range answered 500',
   // complete and checksum-valid, so this only passes if the range failure wins.
   const release = await rangeRelease('whole-beside-500');
   try {
-    const started = Date.now();
     await assert.rejects(
       downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
       /HTTP 500 for byte range/u,
     );
-    assert.ok(Date.now() - started < 15_000, 'the failure waited for the whole body');
+    // The stream was abandoned mid-flight: a downloader that drained it first would have the
+    // server push the whole asset.
+    assert.ok(
+      release.streamed() < release.payload.length,
+      `the body was drained before the range failure was reported (${release.streamed()} bytes)`,
+    );
   } finally {
     await release.close();
   }
