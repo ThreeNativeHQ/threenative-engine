@@ -506,34 +506,40 @@ async function readRangeInto(response, contents, { end, key, onReader, start, ur
  * A sibling's HTTP error must not cap the fallback at a fixed wall time: a slow but progressing
  * body is a working download. A body that stops arriving is what the deadline is for.
  */
-async function readClaimedBody(response, { arm, key, limit, url }) {
+async function readWholeInto(response, contents, { arm, key, limit, url }) {
   const reader = response.body?.getReader();
-  if (reader === undefined) return readRangeBody(response, { end: 0, key, start: 0, url });
-  const chunks = [];
+  if (reader === undefined) {
+    const body = await readRangeBody(response, { end: 0, key, start: 0, url });
+    if (limit !== undefined && body.length > limit)
+      throw new Error(
+        `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response exceeded the ${limit} bytes the lock declares.`,
+      );
+    body.copy(contents, 0);
+    return;
+  }
   let received = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) break;
-      if (value !== undefined) {
-        received += value.length;
-        if (limit !== undefined && received > limit) {
-          await reader.cancel().catch(() => undefined);
-          throw new Error(
-            `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response exceeded the ${limit} bytes the lock declares.`,
-          );
-        }
-        arm();
-        chunks.push(Buffer.from(value));
+      if (value === undefined) continue;
+      received += value.length;
+      if (limit !== undefined && received > limit) {
+        await reader.cancel().catch(() => undefined);
+        throw new Error(
+          `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response exceeded the ${limit} bytes the lock declares.`,
+        );
       }
+      contents.set(value, received - value.length);
+      arm();
     }
   } catch (error) {
+    if (error instanceof Error && error.message.startsWith('Prebuilt release fetch failed')) throw error;
     throw new Error(
       `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response was interrupted (${error instanceof Error ? error.message : String(error)}).`,
       { cause: error },
     );
   }
-  return Buffer.concat(chunks);
 }
 
 async function downloadRanges(key, url, size, expectedSha256) {
@@ -602,7 +608,10 @@ async function downloadRanges(key, url, size, expectedSha256) {
           // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
           // imposed.
           cancelRangeReaders(index);
-          whole = await readClaimedBody(response, { arm: onClaimProgress, key, limit: size, url });
+          // Straight into the assembly buffer: a second copy of a 118 MiB asset is the memory
+          // PRD-902 exists not to spend. `whole` is that same buffer.
+          await readWholeInto(response, contents, { arm: onClaimProgress, key, limit: size, url });
+          whole = contents;
           abortOthers(index);
           return;
         }

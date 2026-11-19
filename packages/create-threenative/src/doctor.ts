@@ -1513,7 +1513,7 @@ function nativePrebuiltTarget(config: unknown): {
   const unpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
   return {
     absentDetail: unpublished
-      ? `no engine player is published for ${platform}, so a desktop build needs a local one: build it from an engine checkout (\`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`) and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
+      ? `no engine player is published for ${platform}, so a desktop build needs a local one: in an engine checkout run \`node scripts/download-deps.mjs\` and \`node scripts/build-native-physics.mjs --desktop\` (every desktop preset enables native physics), then \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\` and \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`, and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
       : "available — not downloaded yet; the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_ENGINE_PLAYER pins a local file.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
     ...(unpublished ? { deprecated: true } : {}),
@@ -1701,7 +1701,7 @@ export function nativeRuntimeCheck(
         ? hudRefusal
         : {
             detail: `${hudRefusal.detail} A previous download also failed (${recorded}).`,
-            fix: `${hudRefusal.fix ?? ""} Then rerun \`threenative build --target desktop\` to retry the download.`.trim(),
+            fix: `${hudRefusal.fix ?? ""} Then clear the local override and rerun \`threenative build --target desktop\`, or run \`node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs\`, to retry the download.`.trim(),
             name: "native runtime",
             status: "fail",
           };

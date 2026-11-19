@@ -25,9 +25,13 @@ The error names the asset, the installed version, the URL and the reason. Three 
    or `THREENATIVE_RUNTIME_BINARY=/path/to/runtime` (`engine: "threejs"`).
 3. Build the binary from an engine checkout. The engine player and the legacy host are different
    binaries with different recipes:
-   - engine player (default), Linux with a `ui.renderer: "web"` HUD: run
-     `node scripts/build-native-ui-overlay.mjs` from `packages/runtime-native` first (CMake refuses
-     the overlay flag without that library), then `cmake --preset <platform> -B build/tn-engine-ui
+   - every desktop build needs its dependencies and the native physics archive first, from
+     `packages/runtime-native`: `node scripts/download-deps.mjs` and
+     `node scripts/build-native-physics.mjs --desktop`. A fresh checkout stops at CMake without
+     them, because every desktop preset enables native physics.
+   - engine player (default), Linux with a `ui.renderer: "web"` HUD: additionally run
+     `node scripts/build-native-ui-overlay.mjs` first (CMake refuses the overlay flag without that
+     library), then `cmake --preset <platform> -B build/tn-engine-ui
      -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON`, then
      `cmake --build build/tn-engine-ui --target tn-native-engine-player-v8`.
    - engine player (default), any other platform or a `"native"` HUD: the same command without

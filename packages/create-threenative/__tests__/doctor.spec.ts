@@ -56,7 +56,9 @@ const MCP_CONFIG = JSON.stringify({
 });
 
 const HEALTHY: IProjectSnapshot = {
-  config: { nativeEntry: "src/game.ts" },
+  // A native HUD: a web HUD is refused on Windows and macOS by the player's own profile, and the
+  // shared fixture is about the receipt checks, not that refusal (which has its own tests).
+  config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
   files: new Set([
     ".mcp.json",
     "package.json",
