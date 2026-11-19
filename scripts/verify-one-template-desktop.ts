@@ -161,17 +161,11 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
     throw new Error(
       `TN_PACKED_ENGINE_PLAYER_MISSING: the first desktop build fetched no ${player}`,
     );
-  for (const [key, filename] of [
-    [
-      process.platform === "win32" ? "win32-x64" : "linux-x64",
-      process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime",
-    ],
-    [
-      process.platform === "win32" ? "win32-x64-tools" : "linux-x64-tools",
-      process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
-    ],
-  ] as const) {
-    const legacy = path.join(prebuilt, key.replace("-tools", ""), filename);
+  for (const filename of [
+    process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime",
+    process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
+  ]) {
+    const legacy = path.join(prebuilt, `${process.platform}-${process.arch}`, filename);
     if (existsSync(legacy))
       throw new Error(`TN_PACKED_LEGACY_BINARY: the default-engine build downloaded ${legacy}`);
   }
