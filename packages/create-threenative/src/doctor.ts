@@ -1723,10 +1723,12 @@ export function nativeRuntimeCheck(
     // recorded failure stays visible rather than disappearing behind it.
     if (hudRefusal !== undefined) {
       return {
+        // The refusal leads, the recorded failure stays *a failure* (AC-4), and the retry that
+        // reaches the downloader comes after the renderer is fixed.
         detail: `${hudRefusal.detail} A previous download also failed (${reason}).`,
-        ...(hudRefusal.fix === undefined ? {} : { fix: hudRefusal.fix }),
+        fix: `${hudRefusal.fix ?? ""} Then rerun \`threenative build --target desktop\` to retry the download.`.trim(),
         name: "native runtime",
-        status: hudRefusal.status,
+        status: "fail",
       };
     }
     return {

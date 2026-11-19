@@ -834,11 +834,15 @@ describe("threenative doctor", () => {
   it("reports an absent native download as ok, because the first native build fetches it", () => {
     // PRD-783: nothing downloads at install time any more, so a web-only project fetching nothing
     // is the ordinary state, not a warning. A recorded *failure* still fails, tested below.
-    const report = diagnoseProject(
-      snapshot({
-        config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
-        readRuntimeText: () => undefined,
-      }),
+    // A published desktop platform: on darwin-arm64, and on arm64 Linux, nothing is published and
+    // the same fixture warns, which is the subject of its own test.
+    const report = withPlatform("linux", () =>
+      diagnoseProject(
+        snapshot({
+          config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
+          readRuntimeText: () => undefined,
+        }),
+      ),
     );
     expect(report.pass).toBe(true);
     expect(check(report, "native runtime")).toMatchObject({ status: "ok" });

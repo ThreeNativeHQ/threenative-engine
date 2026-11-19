@@ -556,9 +556,12 @@ async function downloadRanges(key, url, size, expectedSha256) {
   // Range streams, so a claimed whole body can cancel them gracefully: aborting their fetches
   // truncated the claim's own socket, and leaving them running copies the asset a second time.
   const rangeReaders = new Map();
+  const cancelled = new Set();
   const cancelRangeReaders = (keep) => {
     for (const [index, rangeReader] of rangeReaders) {
-      if (index !== keep) void rangeReader.cancel().catch(() => undefined);
+      if (index === keep) continue;
+      cancelled.add(index);
+      void rangeReader.cancel().catch(() => undefined);
     }
   };
   // A sibling's failure bounds how long the claim may keep the install lock, but the bound is
@@ -610,6 +613,13 @@ async function downloadRanges(key, url, size, expectedSha256) {
           if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
           throw error;
         }
+        if (claimed !== undefined) {
+          // A range that answers after the whole file is already claimed is not needed: cancel its
+          // body and record it as intentional so its short read is not a failure.
+          cancelled.add(index);
+          await response.body?.cancel().catch(() => undefined);
+          return;
+        }
         // Stream straight into this part's slice: a mirror that answers every range with the whole
         // asset would otherwise be buffered (144 MiB for a 16-part 9 MiB file) before the length
         // check noticed.
@@ -620,6 +630,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
           start,
           url,
         });
+        if (cancelled.has(index)) return;
         if (written !== end - start + 1) {
           throw new Error(
             `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${written} bytes.`,
@@ -634,6 +645,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
         // recorded, the claim is bounded so a stalled body cannot hold the install lock.
         // Cancellation is read from the request's own signal, not from the message: a formatted
         // failure carries the asset URL, and a URL may contain "aborted".
+        if (cancelled.has(index)) return;
         const aborted = controllers[index].signal.aborted || isAbortError(error);
         if (!aborted && failure === undefined) {
           failure = error;
