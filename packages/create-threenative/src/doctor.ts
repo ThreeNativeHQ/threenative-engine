@@ -1575,7 +1575,13 @@ function localNativeBinary(
   snapshot: IProjectSnapshot,
   target: { readonly legacy: boolean; readonly key: string },
 ):
-  | { readonly kind: "available" | "broken"; readonly path: string; readonly variable: string }
+  | {
+      readonly kind: "available" | "broken";
+      /** What the build will not find, when the override is broken. */
+      readonly missing?: string;
+      readonly path: string;
+      readonly variable: string;
+    }
   | undefined {
   if (target.legacy) {
     // The legacy host has the same override, and the build hands it to the same packager: a missing
@@ -1583,11 +1589,28 @@ function localNativeBinary(
     const explicitRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
     if (explicitRuntime === undefined || explicitRuntime.length === 0) return undefined;
     const resolved = path.resolve(explicitRuntime);
-    return {
-      kind: isFile(resolved) ? "available" : "broken",
-      path: resolved,
-      variable: "THREENATIVE_RUNTIME_BINARY",
-    };
+    // The legacy host dispatches desktop packaging to a `mystral-tools` helper beside itself
+    // (`src/cli/tool_dispatch.cpp:52`), and an override skips the download that would install it:
+    // a present host without that helper exits 127 on the first build.
+    const helper = path.join(
+      path.dirname(resolved),
+      process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
+    );
+    if (!isFile(resolved))
+      return {
+        kind: "broken",
+        missing: "which does not exist",
+        path: resolved,
+        variable: "THREENATIVE_RUNTIME_BINARY",
+      };
+    return isFile(helper)
+      ? { kind: "available", path: resolved, variable: "THREENATIVE_RUNTIME_BINARY" }
+      : {
+          kind: "broken",
+          missing: `which exists, but the ${path.basename(helper)} helper it packages through is not beside it`,
+          path: resolved,
+          variable: "THREENATIVE_RUNTIME_BINARY",
+        };
   }
   const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
   // An exported empty string means "unset": resolving it would name the project directory, which
@@ -1597,11 +1620,16 @@ function localNativeBinary(
     // reports it instead of promising the cache or a download the build never reaches. A directory
     // is not a player either.
     const resolved = path.resolve(explicit);
-    return {
-      kind: isFile(resolved) ? "available" : "broken",
-      path: resolved,
-      variable: "THREENATIVE_ENGINE_PLAYER",
-    };
+    return isFile(resolved)
+      ? { kind: "available", path: resolved, variable: "THREENATIVE_ENGINE_PLAYER" }
+      : {
+          kind: "broken",
+          missing: existsSync(resolved)
+            ? "which is a directory, not a player"
+            : "which does not exist",
+          path: resolved,
+          variable: "THREENATIVE_ENGINE_PLAYER",
+        };
   }
   if (snapshot.runtimeRoot === undefined) return undefined;
   const checkout = path.join(
@@ -1710,8 +1738,8 @@ export function nativeRuntimeCheck(
     "unset the override (or prefetch explicitly with `node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs`) to retry the download";
   if (localPlayer?.kind === "broken") {
     return {
-      detail: `${localPlayer.variable} names ${localPlayer.path}, which does not exist, so a desktop build fails before it would download anything.${recordedFailure === undefined ? "" : ` A previous download also failed (${recordedFailure}).`}`,
-      fix: `Point ${localPlayer.variable} at a built binary, or ${retryHint}.`,
+      detail: `${localPlayer.variable} names ${localPlayer.path}, ${localPlayer.missing ?? "which the build cannot use"}, so a desktop build fails before it would download anything.${recordedFailure === undefined ? "" : ` A previous download also failed (${recordedFailure}).`}`,
+      fix: `Point ${localPlayer.variable} at a built binary beside its ${process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"} helper, or ${retryHint}.`,
       name: "native runtime",
       status: "fail",
     };

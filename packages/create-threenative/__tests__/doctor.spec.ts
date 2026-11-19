@@ -1,5 +1,14 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -308,7 +317,7 @@ describe("threenative doctor", () => {
     try {
       const broken = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
       expect(check(broken, "native runtime").status).toBe("fail");
-      expect(check(broken, "native runtime").detail).toContain("does not exist");
+      expect(check(broken, "native runtime").detail).toContain("is a directory, not a player");
     } finally {
       Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
     }
@@ -326,6 +335,34 @@ describe("threenative doctor", () => {
       expect(check(report, "native runtime").detail).toContain("does not exist");
     } finally {
       Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+  });
+
+  it("fails a legacy runtime override that has no packaging helper beside it", () => {
+    // The legacy host dispatches desktop packaging to `mystral-tools` beside itself, and an
+    // override skips the download that installs it: the first build would exit 127.
+    const root = mkdtempSync(path.join(tmpdir(), "tn-doctor-helper-"));
+    const host = path.join(root, "tn-native-host");
+    writeFileSync(host, "");
+    process.env.THREENATIVE_RUNTIME_BINARY = host;
+    try {
+      const report = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(report, "native runtime").status).toBe("fail");
+      expect(check(report, "native runtime").detail).toContain("mystral-tools");
+      // The helper beside it is a build that works, so doctor stops objecting.
+      writeFileSync(
+        path.join(root, process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"),
+        "",
+      );
+      const complete = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(complete, "native runtime").status).not.toBe("fail");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_RUNTIME_BINARY");
+      rmSync(root, { force: true, recursive: true });
     }
   });
 

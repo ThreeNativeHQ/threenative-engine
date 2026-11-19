@@ -75,11 +75,9 @@ export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopL
           join(candidate, `${name}.exe`),
           join(candidate, "tn-native-engine-player-v8.exe"),
         ]
-      : // A `.exe` beside the build is the other platform's artifact: on Linux it must never
-        // outrank the launcher this build wrote.
-        [join(candidate, name), join(candidate, `${name}.exe`)].filter(
-          (launcher) => !launcher.endsWith(".exe"),
-        );
+      : // Only the launcher this build wrote: a `.exe` beside it is the other platform's
+        // artifact, and a name that itself ends in `.exe` is still the POSIX script.
+        [join(candidate, name)];
   // Rank by when the *package* was written, not by the copied binary's own timestamp: the packager
   // copies the player out of the cache, and a copy can carry the cached file's time, which would
   // rank a days-old download above the build that just finished. `game.js` is written by that
