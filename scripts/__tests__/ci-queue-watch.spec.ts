@@ -11,7 +11,9 @@ const {
   isInfraFailure,
   janitorSignatures,
   jobLog,
+  promotionCommentBody,
   queuePullNumber,
+  showsEveryRed,
 } = await import(new URL("../ci-queue-watch.mjs", import.meta.url).href);
 const script = new URL("../ci-queue-watch.mjs", import.meta.url).pathname;
 
@@ -27,6 +29,63 @@ const job = (name: string, conclusion: string | null, completed = "2026-10-23T00
   completed_at: conclusion === null ? null : completed,
   html_url: `https://example.invalid/jobs/${name}`,
 });
+
+/**
+ * Runs the watcher against a stub `gh` and returns what it called, in order, plus the exit status.
+ * `options.baseRef` is `github.base_ref`: `main` is a promotion board (PRD-901).
+ */
+function runWatcher(
+  jobs: unknown[],
+  log: string,
+  queueRef = `refs/heads/gh-readonly-queue/develop/pr-541-${"a".repeat(40)}`,
+  options: { baseRef?: string; failComment?: boolean } = {},
+) {
+  const root = makeTempDirSync("threenative-queue-watch-");
+  const bin = path.join(root, "bin");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(path.join(root, "jobs.json"), JSON.stringify([{ jobs }]));
+  writeFileSync(path.join(root, "job.log"), log);
+  writeFileSync(
+    path.join(bin, "gh"),
+    `#!/bin/sh
+echo "$*" >> "${root}/calls.log"
+case "$*" in
+*actions/runs/99/jobs*) cat "${root}/jobs.json" ;;
+*actions/jobs/*/logs*) cat "${root}/job.log" ;;
+*issues/*/comments*) if [ "$TN_STUB_FAIL_COMMENT" = "1" ]; then exit 1; fi ;;
+*) ;;
+esac
+`,
+  );
+  chmodSync(path.join(bin, "gh"), 0o755);
+  const result = spawnSync(process.execPath, [script], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      GITHUB_REPOSITORY: "o/r",
+      GITHUB_RUN_ID: "99",
+      TN_CI_QUEUE_REF: queueRef,
+      TN_CI_BASE_REF: options.baseRef ?? "",
+      TN_CI_PULL_NUMBER: options.baseRef === "main" ? "689" : "",
+      TN_QUEUE_WATCH_SECONDS: "0",
+      TN_STUB_FAIL_COMMENT: options.failComment ? "1" : "0",
+    },
+  });
+  return { calls: readFileSync(path.join(root, "calls.log"), "utf8"), status: result.status };
+}
+
+/** The calls of a run the watcher had to survive. */
+function watch(
+  jobs: unknown[],
+  log: string,
+  queueRef = `refs/heads/gh-readonly-queue/develop/pr-541-${"a".repeat(40)}`,
+  options: { baseRef?: string } = {},
+) {
+  const result = runWatcher(jobs, log, queueRef, options);
+  expect(result.status).toBe(0);
+  return result.calls;
+}
 
 describe("PRD-782 job logs survive gh's escape-sequence guard", () => {
   const LOG = "ERR_CONNECTION_REFUSED while waiting for the dev server";
@@ -124,44 +183,6 @@ describe("PRD-731 queue watcher", () => {
     expect(body).toContain("Fix, push, re-enqueue.");
   });
 
-  /** Runs the watcher against a stub `gh` and returns what it called, in order. */
-  function watch(
-    jobs: unknown[],
-    log: string,
-    queueRef = `refs/heads/gh-readonly-queue/develop/pr-541-${"a".repeat(40)}`,
-  ) {
-    const root = makeTempDirSync("threenative-queue-watch-");
-    const bin = path.join(root, "bin");
-    mkdirSync(bin, { recursive: true });
-    writeFileSync(path.join(root, "jobs.json"), JSON.stringify([{ jobs }]));
-    writeFileSync(path.join(root, "job.log"), log);
-    writeFileSync(
-      path.join(bin, "gh"),
-      `#!/bin/sh
-echo "$*" >> "${root}/calls.log"
-case "$*" in
-  *actions/runs/99/jobs*) cat "${root}/jobs.json" ;;
-  *actions/jobs/*/logs*) cat "${root}/job.log" ;;
-  *) ;;
-esac
-`,
-    );
-    chmodSync(path.join(bin, "gh"), 0o755);
-    const result = spawnSync(process.execPath, [script], {
-      encoding: "utf8",
-      env: {
-        ...process.env,
-        PATH: `${bin}:${process.env.PATH}`,
-        GITHUB_REPOSITORY: "o/r",
-        GITHUB_RUN_ID: "99",
-        TN_CI_QUEUE_REF: queueRef,
-        TN_QUEUE_WATCH_SECONDS: "0",
-      },
-    });
-    expect(result.status, result.stderr).toBe(0);
-    return readFileSync(path.join(root, "calls.log"), "utf8");
-  }
-
   it("comments on the pull request first, then cancels the run, on a real test red", () => {
     const log = watch(
       [job("lint", "success"), job("typecheck", "failure"), job("test", null)],
@@ -241,5 +262,183 @@ esac
     });
     expect(result.status).toBe(2);
     expect(result.stderr).toContain("CI_QUEUE_WATCH_INPUT");
+  });
+});
+
+// PRD-901: release 0.3.16 spent 22 promotion boards and 5,419 machine minutes on rounds that each
+// showed one red leg. A pull request into `main` is the one board that must show every leg at once.
+describe("PRD-901 a promotion board shows every red in one round", () => {
+  const REDS = [
+    "budgets",
+    "test-unit (1/4)",
+    "native-platforms / Windows desktop core",
+    "template-engine-cost (racing)",
+  ];
+  const board = () => [
+    job("scope", "success"),
+    ...REDS.map((name) => job(name, "failure")),
+    job("test", "success"),
+  ];
+
+  it("names every red leg and cancels nothing", () => {
+    const result = runWatcher(board(), "AssertionError", "", { baseRef: "main" });
+    expect(result.status).toBe(0);
+    const calls = result.calls;
+    expect(calls).not.toContain("run cancel");
+    // One comment, and it carries every leg: the round is the unit a fix set answers to.
+    expect(calls.match(/issues\/689\/comments/gu)).toHaveLength(1);
+    for (const name of REDS) expect(calls).toContain(name);
+  });
+
+  it("names only the reds, not the legs that passed or the aggregates that echo them", () => {
+    const calls = runWatcher(
+      [...board(), job("ci-required", "failure"), job("typecheck", "success")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(calls).toContain("budgets");
+    expect(calls).not.toContain("(failure)\n- [ci-required]");
+    expect(calls).not.toContain("- [typecheck]");
+  });
+
+  it("still comments when one leg timed out and another failed", () => {
+    // A leg killed by `timeout-minutes` concludes `cancelled` inside a run that concluded
+    // `failure` (ci.yml run 43858835585: `template-engine-cost (rain)`). Reading that as a
+    // supersede would silence a red board, which is the one thing AC-4 forbids.
+    const result = runWatcher(
+      [job("budgets", "failure"), job("test", "cancelled"), job("scope", "success")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    );
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("issues/689/comments");
+    expect(result.calls).toContain("`budgets`");
+    // A timed-out leg did not pass, so the round's list carries it too. It is not counted on the
+    // cancelling paths: a superseded run has cancelled legs and is not red.
+    expect(result.calls).toContain("`test`");
+    expect(result.calls).not.toContain("run cancel");
+  });
+
+  it("names a receipt aggregate only when it is the only red of its workflow", () => {
+    // `integration / Verify required integration receipts` repeats a leg of `integration`. A board
+    // that lists every red would name both; a missing receipt on its own is the failure.
+    const both = runWatcher(
+      [
+        job("integration / Linux native decal correctness", "failure"),
+        job("integration / Verify required integration receipts", "failure"),
+      ],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(both).toContain("`integration / Linux native decal correctness`");
+    expect(both).not.toContain("Verify required integration receipts");
+
+    const alone = runWatcher(
+      [job("native-platforms / Native required coverage receipt", "failure")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(alone).toContain("Native required coverage receipt");
+  });
+
+  it("comments when the only leg that did not pass timed out", () => {
+    // A board whose single red leg hit its `timeout-minutes` concludes `failure` with one
+    // `cancelled` leg. Reporting "none red" there is the outcome AC-4 forbids.
+    const result = runWatcher(
+      [job("scope", "success"), job("test-native", "cancelled"), job("lint", "success")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    );
+    expect(result.status).toBe(0);
+    expect(result.calls).toContain("issues/689/comments");
+    expect(result.calls).toContain("`test-native`");
+  });
+
+  it("names a standalone verdict failure, and only then an aggregate", () => {
+    // `ci-required` echoes another job's failure, so it is dropped while a leg is red. On its own
+    // it is the cause — a missing or stale receipt no leg names.
+    const withLeg = runWatcher(
+      [job("budgets", "failure"), job("ci-required", "failure")],
+      "AssertionError",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(withLeg).toContain("`budgets`");
+    expect(withLeg).not.toContain("`ci-required`");
+
+    const alone = runWatcher([job("ci-required", "failure")], "AssertionError", "", {
+      baseRef: "main",
+    }).calls;
+    expect(alone).toContain("`ci-required`");
+  });
+
+  it("comments nothing when every leg concluded green", () => {
+    const calls = runWatcher([job("scope", "success"), job("budgets", "success")], "", "", {
+      baseRef: "main",
+    }).calls;
+    expect(calls).not.toContain("/comments");
+    expect(calls).not.toContain("run cancel");
+  });
+
+  it("does not chase a leg that cannot fail the board", () => {
+    const calls = runWatcher(
+      [
+        job("native-platforms / iOS simulator runtime and no-Xcode consumer handoff", "failure"),
+        job("budgets", "success"),
+      ],
+      "",
+      "",
+      { baseRef: "main" },
+    ).calls;
+    expect(calls).not.toContain("/comments");
+  });
+
+  it("fails the job when it could not write the comment", () => {
+    // A promotion board that stayed red and told nobody is the failure this cannot hide.
+    const result = runWatcher(board(), "AssertionError", "", {
+      baseRef: "main",
+      failComment: true,
+    });
+    expect(result.status).not.toBe(0);
+    expect(result.calls).toContain("issues/689/comments");
+  });
+
+  it.each([
+    ["develop pull request", "", "develop"],
+    ["merge group", `refs/heads/gh-readonly-queue/develop/pr-541-${"a".repeat(40)}`, ""],
+  ])("still cancels at the first red on a %s", (_what, queueRef, baseRef) => {
+    const calls = watch(
+      [job("budgets", "failure"), job("test", null)],
+      "AssertionError",
+      queueRef,
+      {
+        baseRef,
+      },
+    );
+    expect(calls).toContain("run cancel 99 --repo o/r");
+  });
+
+  it("reads `main` and nothing else as a promotion", () => {
+    expect(showsEveryRed("main")).toBe(true);
+    expect(showsEveryRed("develop")).toBe(false);
+    expect(showsEveryRed("")).toBe(false);
+    expect(showsEveryRed(undefined)).toBe(false);
+  });
+
+  it("states the round, every leg and the run in the comment", () => {
+    const body = promotionCommentBody({
+      jobs: [job("budgets", "failure"), job("test-unit (1/4)", "failure")],
+      runId: 99,
+      repository: "o/r",
+    });
+    expect(body).toContain("`budgets`");
+    expect(body).toContain("`test-unit (1/4)`");
+    expect(body).toContain("https://github.com/o/r/actions/runs/99");
+    expect(body).not.toContain("cancelled");
   });
 });

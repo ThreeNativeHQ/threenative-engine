@@ -30,6 +30,8 @@ Goal (PRD-782): the whole road from a merge to npm costs half or less. `record` 
 | Full-board minutes after the first red leg | ≤ 10% |
 | Step minutes spent on setup | ≤ 6% |
 | First promotion PR to npm publish, newest release, open release included | ≤ 120 min |
+| Promotion boards the newest release needed (one board per fix set, PRD-901) | ≤ 4 |
+| Newest release's merge to the end of the `ship` job (PRD-901) | ≤ 45 min |
 
 ```sh
 node scripts/ci-merge-latency.mjs --since 2026-10-09          # measure only, prints the table
