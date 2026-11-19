@@ -1460,7 +1460,16 @@ cpSync("public", out, { recursive: true });
   });
 
   it("ships the CLI and native runtime pins in every template", async () => {
-    for (const template of ["minimal", "starter", "platformer"] as const) {
+    // Every shipped template, read off the directory: the three this test used to name left
+    // thirteen manifests able to regress unseen (PRD-783 AC-5).
+    const templates = readdirSync(path.resolve("packages/create-threenative/templates"), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(templates.length).toBe(16);
+    for (const template of templates) {
       const manifest = JSON.parse(
         await readFile(
           path.resolve("packages/create-threenative/templates", template, "package.json"),
@@ -1469,7 +1478,10 @@ cpSync("public", out, { recursive: true });
       ) as {
         devDependencies?: Record<string, string>;
         optionalDependencies?: Record<string, string>;
-        pnpm?: { onlyBuiltDependencies?: string[] };
+        pnpm?: {
+          onlyBuiltDependencies?: string[];
+          supportedArchitectures?: { libc?: string[] };
+        };
         scripts?: Record<string, string>;
         threenative?: { nativeEntry?: string };
       };
@@ -1497,9 +1509,12 @@ cpSync("public", out, { recursive: true });
       expect(manifest.optionalDependencies?.["@threenative/runtime-native"], template).toBe(
         `>=${await published("runtime-native")}`,
       );
-      expect(manifest.pnpm?.onlyBuiltDependencies, template).toContain(
+      // PRD-783: the runtime no longer has an install script to approve, and a glibc host must
+      // not install the musl packages it can never load (-60 MiB measured).
+      expect(manifest.pnpm?.onlyBuiltDependencies, template).not.toContain(
         "@threenative/runtime-native",
       );
+      expect(manifest.pnpm?.supportedArchitectures?.libc, template).toEqual(["current"]);
       expect(manifest.threenative, template).toBeUndefined();
       await expect(
         readFile(`packages/create-threenative/templates/${template}/threenative.config.ts`, "utf8"),

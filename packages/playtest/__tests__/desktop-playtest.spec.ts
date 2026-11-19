@@ -19,7 +19,11 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
-import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import {
+  resolveDesktopExecutable,
+  resolveDesktopLaunch,
+  runDesktopPlaytest,
+} from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
@@ -41,6 +45,53 @@ test.each([undefined, false])("desktop counted run refuses an inherited clock wi
       { driverFactory },
     )).rejects.toThrow("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
     expect(driverFactory).not.toHaveBeenCalled();
+  }
+});
+
+test("--executable accepts the build output directory of either engine", async () => {
+  // The owned engine player writes `dist-native/<name>/<name>` beside its assets; the `threejs`
+  // host writes one flat `dist-native/<name>`. A kit's `test:native` names the directory, so the
+  // same command proves a game after it flips `engine: "threejs"`.
+  const root = await makeTempDir("threenative-executable-");
+  try {
+    const player = join(root, "racing");
+    await mkdir(player, { recursive: true });
+    // Each platform's own layout: Windows cannot spawn the POSIX launcher the engine packager
+    // writes as `<dir>/<name>`, so its artifact is an `.exe`.
+    const launcher = process.platform === "win32" ? join(player, "racing.exe") : join(player, "racing");
+    await writeFile(launcher, "");
+    await writeFile(join(player, "game.js"), "");
+    expect(await resolveDesktopExecutable(player)).toBe(launcher);
+    const flat = join(root, "flat");
+    await writeFile(flat, "");
+    expect(await resolveDesktopExecutable(flat)).toBe(flat);
+    expect(await resolveDesktopExecutable(join(root, "absent"))).toBe(join(root, "absent"));
+    // A Windows default-engine build resolves to the raw player, which takes the bundle it sits
+    // beside; the resolver hands that argument to the driver instead of launching a bare binary.
+    if (process.platform === "win32") {
+      const native = join(root, "native");
+      await mkdir(native, { recursive: true });
+      await writeFile(join(native, "tn-native-engine-player-v8.exe"), "");
+      await writeFile(join(native, "game.js"), "");
+      expect(await resolveDesktopLaunch(native)).toEqual({
+        args: [join(native, "game.js")],
+        executable: join(native, "tn-native-engine-player-v8.exe"),
+      });
+    }
+    // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory; on
+    // another host that `.exe` is the other platform's artifact and must not outrank the launcher.
+    const stale = join(root, "switched");
+    await mkdir(stale, { recursive: true });
+    await writeFile(join(stale, "switched"), "");
+    await writeFile(`${stale}.exe`, "");
+    expect(await resolveDesktopExecutable(stale)).toBe(
+      process.platform === "win32" ? `${stale}.exe` : join(stale, "switched"),
+    );
+    const empty = join(root, "empty");
+    await mkdir(empty);
+    await expect(resolveDesktopExecutable(empty)).rejects.toThrow("TN_PLAYTEST_EXECUTABLE_MISSING");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 

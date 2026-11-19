@@ -59,6 +59,8 @@ pnpm studio                  # open the game in Studio
 npx threenative doctor       # build, import, device or blank-frame failure
 npx threenative doctor --fix # refresh agent files
 ```
+
+Native downloads: first `pnpm build --target desktop`, once (~118 MiB); `node_modules/create-threenative/agent-docs/references/native-downloads.md`.
 <!-- /shared -->
 
 <!-- shared: kit-conventions -->

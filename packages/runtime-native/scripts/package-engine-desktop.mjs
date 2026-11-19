@@ -5,10 +5,12 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
 
-const PLAYER = "tn-native-engine-player-v8";
+// A Windows build has to contain a runnable image: the same bytes under the `.exe` name the
+// operating system will spawn, and the path the playtest launcher resolver looks for there.
+const PLAYER = process.platform === "win32" ? "tn-native-engine-player-v8.exe" : "tn-native-engine-player-v8";
 
 /**
  * The launcher: the window opens with the game's title and size, the player takes the game's CPU priority
@@ -39,9 +41,28 @@ export async function packageEngineDesktop(
   { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority, fullscreen },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
+  // An older CLI passes the canonical cache path without ever downloading it: this packager can
+  // fill that cache itself, through the same locked entry point a build uses, instead of sending
+  // the reader to a recipe for a binary the release publishes.
+  // Only the package's own cache path: an explicit `--player` elsewhere is the caller's file, and
+  // downloading a player into a different directory would still leave packaging to fail.
+  const canonicalPlayer = join(
+    fileURLToPath(new URL('../prebuilt/', import.meta.url)),
+    `${process.platform}-${process.arch}`,
+    PLAYER,
+  );
+  if (player && !existsSync(player) && !process.env.THREENATIVE_ENGINE_PLAYER &&
+      resolve(player) === resolve(canonicalPlayer)) {
+    // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
+    const installer = new URL('./install-prebuilt.mjs', import.meta.url);
+    if (existsSync(installer)) {
+      const { ensureNativeBinary } = await import(installer.href);
+      if (typeof ensureNativeBinary === 'function') await ensureNativeBinary({ enginePlayer: true });
+    }
+  }
   if (!player || !existsSync(player)) {
     throw new Error(
-      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}.Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout: run \`node scripts/download-deps.mjs\` and \`node scripts/build-native-physics.mjs --desktop\` first (every desktop preset enables native physics), and for a Linux web HUD \`node scripts/build-native-ui-overlay.mjs\` (CMake needs that library before it accepts the flag), then \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON\`; on any other platform or with a \"native\" HUD use the same command without the overlay flag (a web HUD there needs engine: \"threejs\"), then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\` (the legacy host's \`native:build\` does not produce it), or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   rmSync(output, { force: true, recursive: true });
@@ -57,7 +78,18 @@ export async function packageEngineDesktop(
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
   const start = join(output, basename(output));
-  writeFileSync(start, launcher(width, height, title, priority, fullscreen));
+  // Write the launcher exclusively: on a case-insensitive filesystem a name that differs only in
+  // case is the packaged player, and opening it for writing would destroy the binary. Existence is
+  // the question the filesystem answers, not a string comparison.
+  try {
+    writeFileSync(start, launcher(width, height, title, priority, fullscreen), { flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST')
+      throw new Error(
+        `TN_ENGINE_LAUNCHER_COLLIDES: the launcher path ${start} is already taken by the packaged player (${PLAYER}). Rename the game or its desktop output directory.`,
+      );
+    throw error;
+  }
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));

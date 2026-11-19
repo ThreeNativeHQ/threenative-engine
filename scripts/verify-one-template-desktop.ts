@@ -18,6 +18,11 @@ function files(root: string): string[] {
   });
 }
 
+/** Total bytes under a directory. `du` is not on every lane this script's claims travel to. */
+function treeBytes(root: string): number {
+  return files(root).reduce((total, file) => total + statSync(file).size, 0);
+}
+
 /** Check literal relative imports without executing platform-specific scripts. */
 export function assertPackedImportClosure(root: string, required: readonly string[]): void {
   for (const entry of required) {
@@ -123,11 +128,56 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
   if (brand.resolveId("three") !== "\0threenative:web-engine")
     throw new Error("TN_PACKED_ENGINE_NOT_NATIVE: installed scaffold resolved to legacy");
   console.info("installed scaffold resolved engine=threenative (no engine pin)");
+  // PRD-783: the install this consumer just ran downloads no native binary, and a glibc host must
+  // not install the musl packages it can never load. Both are measured before the first desktop
+  // build, so "nothing downloaded yet" is an observation rather than a promise.
+  const installedRuntime = path.join(project, "node_modules", "@threenative/runtime-native");
+  const prebuilt = path.join(installedRuntime, "prebuilt");
+  const fetched = existsSync(prebuilt)
+    ? files(prebuilt).filter((file) => statSync(file).size > 0)
+    : [];
+  if (fetched.length > 0)
+    throw new Error(
+      `TN_PACKED_PREBUILT_DOWNLOADED: the install fetched ${fetched.length} native file(s): ${fetched.slice(0, 3).join(", ")}`,
+    );
+  const installedBytes = treeBytes(path.join(project, "node_modules"));
+  const ceiling = 450 * 1024 * 1024;
+  if (installedBytes > ceiling)
+    throw new Error(
+      `TN_PACKED_INSTALL_TOO_LARGE: node_modules is ${Math.round(installedBytes / 1024 / 1024)} MiB, over the ${ceiling / 1024 / 1024} MiB ceiling PRD-783 measured`,
+    );
+  console.info(
+    `install fetched no native binary; node_modules ${Math.round(installedBytes / 1024 / 1024)} MiB`,
+  );
   await run("pnpm", ["build:desktop"], project);
+  // The default engine's desktop build needs the engine player and nothing else: the legacy runtime
+  // and its build helper belong to the `threejs` host and must not have been downloaded here.
+  const player = path.join(
+    prebuilt,
+    `${process.platform}-${process.arch}`,
+    `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`,
+  );
+  if (!existsSync(player) || statSync(player).size === 0)
+    throw new Error(
+      `TN_PACKED_ENGINE_PLAYER_MISSING: the first desktop build fetched no ${player}`,
+    );
+  for (const filename of [
+    process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime",
+    process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
+  ]) {
+    const legacy = path.join(prebuilt, `${process.platform}-${process.arch}`, filename);
+    if (existsSync(legacy))
+      throw new Error(`TN_PACKED_LEGACY_BINARY: the default-engine build downloaded ${legacy}`);
+  }
   const manifest = JSON.parse(readFileSync(path.join(project, "package.json"), "utf8"));
   const name = manifest.name.replace(/^@[^/]+\//u, "");
   const artifact = path.join(project, "dist-native", name);
-  for (const entry of [name, "tn-native-engine-player-v8", "game.js", "native/assets.tnpk"])
+  for (const entry of [
+    name,
+    `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`,
+    "game.js",
+    "native/assets.tnpk",
+  ])
     if (!existsSync(path.join(artifact, entry)) || statSync(path.join(artifact, entry)).size === 0)
       throw new Error(`TN_PACKED_DESKTOP_ARTIFACT_MISSING: ${entry}`);
   await run("pnpm", ["build:web"], project);

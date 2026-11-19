@@ -1,6 +1,6 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import { copyFileSync, existsSync, linkSync, readFileSync, rmSync, statSync } from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -1406,7 +1406,7 @@ export function runtimeHasWebAssembly(
   binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
   probe: typeof spawnSync = spawnSync,
 ): boolean {
-  return runtimeEngine(binary, probe) === "v8";
+  return runtimeEngine(desktopBinaryOverride(binary), probe) === "v8";
 }
 
 /**
@@ -1585,18 +1585,118 @@ async function assertArtifactBudget(
 }
 
 /** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
+/**
+ * A desktop binary override, or nothing.
+ *
+ * An exported empty string resolves to the project directory, which made a build skip the
+ * first-use download and then hand a directory to the packager. Doctor treats the same value as
+ * unset, and so does the build now: one reading of one variable.
+ */
+export function desktopBinaryOverride(
+  value: string | undefined,
+  cwd = process.cwd(),
+): string | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  return path.resolve(cwd, value);
+}
+
 export function engineDesktopPlayer(
   runtimeRoot: string,
   env: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
 ): string {
-  const explicit = env.THREENATIVE_ENGINE_PLAYER;
-  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const explicit = desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd);
+  if (explicit !== undefined) return explicit;
   const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
   const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
   return existsSync(checkout)
     ? checkout
     : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
+}
+
+/**
+ * Fetch the engine player a desktop build needs, the first time it needs it (PRD-783).
+ *
+ * `pnpm install` downloads nothing any more, so this is the one place a default-engine desktop
+ * build acquires its player. A verified cached binary, an explicit `THREENATIVE_ENGINE_PLAYER`
+ * and a checkout build all return the path without touching the network.
+ *
+ * The path is returned rather than written to `THREENATIVE_ENGINE_PLAYER`: that variable is
+ * process-wide, and a second build in the same process would otherwise package the first game's
+ * player.
+ */
+export async function ensureEngineDesktopPlayer(
+  runtimeRoot: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  // A packaging caller asks for a build-private name for the verified bytes: the runtime takes it
+  // while it holds the install lock, so a concurrent install cannot swap the shared cache path
+  // between verification and packaging. Overrides and checkout builds are the caller's own files
+  // and are returned untouched.
+  options: { readonly report?: { staged?: boolean }; readonly stagePrivate?: boolean } = {},
+): Promise<string> {
+  const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
+  if (desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd) !== undefined) return player();
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return player();
+  const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
+  // An engine checkout build is selected by hand; the packager's own missing-player error names
+  // an installation that also lacks this script, so there is nothing better to say here.
+  if (!existsSync(module)) return player();
+  const runtime = (await import(pathToFileURL(module).href)) as {
+    ensureNativeBinary?: (options: {
+      enginePlayer: boolean;
+      stagePrivate?: boolean;
+    }) => Promise<string>;
+    installPrebuilt?: (options: { enginePlayer: boolean; reuse: boolean }) => Promise<string>;
+  };
+  // A runtime older than this CLI has no ensure entry point: fall back to its verified install so
+  // a CLI-only upgrade still builds, rather than calling an undefined function.
+  if (typeof runtime.ensureNativeBinary === "function") {
+    const ensured = await runtime.ensureNativeBinary({
+      enginePlayer: true,
+      ...(options.stagePrivate ? { stagePrivate: true } : {}),
+    });
+    if (options.stagePrivate && typeof ensured === "string") {
+      // One ensure, no second read of the cache: the runtime returned the snapshot, and the cache
+      // path is what it would have returned otherwise.
+      if (options.report !== undefined) options.report.staged = ensured !== player();
+      return ensured;
+    }
+    return player();
+  }
+  if (typeof runtime.installPrebuilt === "function") {
+    // The older runtime cannot stage; its verified cache path is what it has.
+    await runtime.installPrebuilt({ enginePlayer: true, reuse: true });
+  }
+  return player();
+}
+
+/** The player a desktop build packages, and whether this build owns its private snapshot. */
+export async function ensureEngineDesktopPlayerForPackaging(
+  runtimeRoot: string,
+  cwd: string,
+): Promise<{ readonly player: string; readonly staged: boolean }> {
+  const report: { staged?: boolean } = {};
+  // The runtime answers both questions in one call: the path to package, and whether it created a
+  // snapshot this build owns. Nothing re-reads the cache afterwards.
+  const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
+    report,
+    stagePrivate: true,
+  });
+  return { player, staged: report.staged === true };
+}
+
+/**
+ * Whether the engine player this platform downloads can attach a web-UI overlay.
+ *
+ * The release builds the player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux only: the option
+ * pulls in WebKitGTK, and the Windows and macOS rows ship without it. A desktop build with a "web"
+ * HUD on either platform would download 118 MiB and then die at `TN_UI_LOAD_FAILED`, so the build
+ * refuses before the download and names the two working configurations.
+ */
+export function enginePlayerSupportsWebUi(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "linux";
 }
 
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
@@ -1618,30 +1718,52 @@ async function buildEngineDesktop(
       `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
-  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
-  const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await packageStaged(output, cwd, [
-    packager,
-    "--project",
+  // The released player carries the web-UI overlay on Linux only; on Windows and macOS it is built
+  // without one, so a web HUD there attaches nothing and the game dies at TN_UI_LOAD_FAILED after
+  // the download. Refuse before fetching, when the fix costs nothing.
+  if (config.ui.renderer === "web" && !enginePlayerSupportsWebUi()) {
+    throw new Error(
+      `TN_ENGINE_PLAYER_UI_UNSUPPORTED: the engine player published for ${process.platform}-${process.arch} has no web-UI overlay, so a "web" HUD would fail at TN_UI_LOAD_FAILED. Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host, which renders the web UI.`,
+    );
+  }
+  // The player every desktop package runs is fetched here, before the UI build, so a missing
+  // download is a cheap failure rather than a full UI build thrown away (PRD-783).
+  // The runtime takes the build-private snapshot while it holds the install lock, so the bytes
+  // packaged are the bytes this build verified even if another install publishes over the cache.
+  const { player: staged, staged: ownsStage } = await ensureEngineDesktopPlayerForPackaging(
+    runtimeRoot,
     cwd,
-    "--entry",
-    entry,
-    "--player",
-    engineDesktopPlayer(runtimeRoot, process.env, cwd),
-    ...(ui === undefined ? [] : ["--ui", ui]),
-    "--width",
-    String(config.window.width),
-    "--height",
-    String(config.window.height),
-    "--title",
-    config.window.title,
-    "--priority",
-    config.display.priority,
-    "--fullscreen",
-    String(config.display.fullscreen),
-    "--output",
-    output,
-  ]);
+  );
+  try {
+    const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+    const output = path.join(cwd, "dist-native", await projectName(cwd));
+    await packageStaged(output, cwd, [
+      packager,
+      "--project",
+      cwd,
+      "--entry",
+      entry,
+      "--player",
+      staged,
+      ...(ui === undefined ? [] : ["--ui", ui]),
+      "--width",
+      String(config.window.width),
+      "--height",
+      String(config.window.height),
+      "--title",
+      config.window.title,
+      "--priority",
+      config.display.priority,
+      "--fullscreen",
+      String(config.display.fullscreen),
+      "--output",
+      output,
+    ]);
+  } finally {
+    // Only a snapshot this build took is deleted: an override or a checkout player came from the
+    // caller, so the runtime reports ownership rather than this code guessing from the path.
+    if (ownsStage) rmSync(staged, { force: true });
+  }
 }
 
 async function buildNative(
@@ -1674,10 +1796,8 @@ async function buildNative(
     const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
       resolveDesktopRuntime(explicit?: string): Promise<string>;
     };
-    const explicit = process.env.THREENATIVE_RUNTIME_BINARY;
-    selectedRuntime = await resolveDesktopRuntime(
-      explicit === undefined ? undefined : path.resolve(cwd, explicit),
-    );
+    const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
+    selectedRuntime = await resolveDesktopRuntime(explicit);
   }
   const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({

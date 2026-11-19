@@ -7790,6 +7790,40 @@
     },
     {
       "aliases": [],
+      "constraints": ["the desktop host must be built before launching"],
+      "example": "await runDesktopPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function resolveDesktopExecutable(candidate: string): Promise<string> { … }",
+      "situations": [
+        "execute a scenario against the desktop host",
+        "verify native desktop behavior from the same scenario"
+      ],
+      "summary": "Run a desktop playtest and collect its report.",
+      "supersedes": [],
+      "symbol": "resolveDesktopExecutable"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the desktop host must be built before launching"],
+      "example": "await runDesktopPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopLaunchTarget> { … }",
+      "situations": [
+        "execute a scenario against the desktop host",
+        "verify native desktop behavior from the same scenario"
+      ],
+      "summary": "Run a desktop playtest and collect its report.",
+      "supersedes": [],
+      "symbol": "resolveDesktopLaunch"
+    },
+    {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",

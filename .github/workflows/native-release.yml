@@ -900,14 +900,17 @@ jobs:
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
-          # Provenance the PRD-262 consumer gate asserts: the installed runtime must
-          # record a successful prebuilt install, never a source-checkout build.
-          test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
-          # `src/cli/tool_dispatch.cpp:52` dispatches desktop packaging to this helper. It arrives
-          # from the release the install just read, not from this run's artifacts: no step here
-          # places it, so a regression in what the release publishes fails the consumer build.
-          test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
+          # PRD-783: an install downloads no native binary any more. This row proves the released
+          # `threejs` host, whose runtime and build helper arrive at the first desktop build.
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json"
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          # Provenance the PRD-262 consumer gate asserts: the first desktop build must record a
+          # successful prebuilt install, never a source-checkout build, and it must have fetched
+          # the helper `src/cli/tool_dispatch.cpp:52` dispatches packaging to. No step here places
+          # either file, so a regression in what the release publishes fails this consumer.
+          test "$(node -p "require('$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json').ok")" = "true"
+          test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Launch the packed desktop game for 300 frames
         run: |
@@ -927,6 +930,27 @@ jobs:
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
           trap - ERR
+      # PRD-783 AC-8: a packed default-engine consumer, whose player the *build* fetched, runs its
+      # own native proof. This is the only lane that exercises a lazily downloaded player through a
+      # shipped kit command (`pnpm test:native`) rather than a hand-written playtest invocation.
+      - name: Scaffold the default-engine racing consumer from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-racing-proof
+          template: racing
+      - name: Install and run the racing kit's own native proof
+        run: |
+          set -euo pipefail
+          RACING_TARGET="$RUNNER_TEMP/threenative-racing-proof"
+          pnpm --dir "$RACING_TARGET" install
+          # The install still downloads nothing; the kit's `test:native` starts with
+          # `pnpm build:desktop`, which is where the player arrives.
+          test ! -e "$RACING_TARGET/node_modules/@threenative/runtime-native/prebuilt/engine-player-install-status.json"
+          TN_PLAYTEST_ALLOW_SOFTWARE=1 sh scripts/xvfb.sh pnpm --dir "$RACING_TARGET" test:native
+          test -s "$RACING_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/tn-native-engine-player-v8"
+          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Enable KVM for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \
@@ -1432,19 +1456,22 @@ jobs:
       - name: Install and build without a native toolchain
         run: |
           pnpm --dir "$CONSUMER_TARGET" install
-          # Provenance the PRD-262 consumer gate asserts: the installed runtime must record a
-          # successful prebuilt install, never a source-checkout build.
+          # PRD-783: an install downloads no native binary any more. This row proves the released
+          # `threejs` host, whose runtime and build helper arrive at the first desktop build.
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json"
+          test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
+          pnpm --dir "$CONSUMER_TARGET" build --target desktop
+          # Provenance the PRD-262 consumer gate asserts: the first desktop build must record a
+          # successful install, never a source-checkout build. Both binaries arrive from the
+          # release that build read; no step here places either, so a regression in what the
+          # release publishes fails this consumer.
           node --input-type=module <<'NODE'
           import { readFileSync } from "node:fs";
           const status = JSON.parse(readFileSync(`${process.env.CONSUMER_TARGET}/node_modules/@threenative/runtime-native/prebuilt/install-status.json`, "utf8"));
           if (status.ok !== true) throw new Error(`prebuilt install-status.ok is ${status.ok}, not true`);
           NODE
-          # Both binaries arrive from the release the install just read; no step here places either,
-          # so a regression in what the release publishes fails this consumer. The helper is checked
-          # before the build: asserting it after would not prove the install produced it.
           test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/threenative-runtime.exe"
           test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"
-          pnpm --dir "$CONSUMER_TARGET" build --target desktop
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Prove the mask shadows MSVC, then restore the positive path
         run: |
@@ -1481,6 +1508,26 @@ jobs:
           import { inspectScreenshot } from "./packages/runtime-native/scripts/verify-desktop-core.mjs";
           console.log(inspectScreenshot(process.env.SCREENSHOT));
           NODE
+          test ! -e "$TN_TOOLCHAIN_LOG"
+      - name: Scaffold a default-engine consumer for the engine player's own first-build fetch
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-player-proof
+          template: minimal
+      - name: Install and build the default-engine consumer on Windows (PRD-783 AC-7)
+        run: |
+          target="$RUNNER_TEMP/threenative-player-proof"
+          pnpm --dir "$target" install
+          # The install downloads nothing, the first desktop build fetches the engine player only,
+          # and the legacy runtime and its helper are never requested by this host.
+          runtime="$target/node_modules/@threenative/runtime-native/prebuilt"
+          test ! -e "$runtime/engine-player-install-status.json"
+          pnpm --dir "$target" build --target desktop
+          test -s "$runtime/win32-x64/tn-native-engine-player-v8.exe"
+          test ! -e "$runtime/win32-x64/threenative-runtime.exe"
+          test ! -e "$runtime/win32-x64/mystral-tools.exe"
           test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Prove a renderer that never presents fails the launch assertions
         run: |

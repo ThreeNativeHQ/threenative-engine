@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +13,9 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { readRelease } from "../../runtime-native/scripts/install-prebuilt.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   ANDROID_RELEASE_SIGNING_ENV,
@@ -55,7 +57,9 @@ const MCP_CONFIG = JSON.stringify({
 });
 
 const HEALTHY: IProjectSnapshot = {
-  config: { nativeEntry: "src/game.ts" },
+  // A native HUD: a web HUD is refused on Windows and macOS by the player's own profile, and the
+  // shared fixture is about the receipt checks, not that refusal (which has its own tests).
+  config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
   files: new Set([
     ".mcp.json",
     "package.json",
@@ -79,10 +83,12 @@ const HEALTHY: IProjectSnapshot = {
       : relative === ".mcp.json"
         ? MCP_CONFIG
         : "",
+  // The default engine (`engine: "threenative"`) runs the engine player, so that is the binary and
+  // the install record doctor must read (PRD-783).
   readRuntimeText: (relative) =>
-    relative === "prebuilt/install-status.json"
+    relative === "prebuilt/engine-player-install-status.json"
       ? JSON.stringify({
-          key: `${process.platform}-${process.arch}`,
+          key: `${process.platform}-${process.arch}-engine-player`,
           ok: true,
           reason: "installed",
           url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -91,7 +97,7 @@ const HEALTHY: IProjectSnapshot = {
       : undefined,
   runtimeFileExists: (relative) =>
     relative ===
-      `prebuilt/${process.platform}-${process.arch}/${process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime"}` ||
+      `prebuilt/${process.platform}-${process.arch}/tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}` ||
     relative === "scripts/package-android.mjs" ||
     relative === "scripts/package-ios.mjs",
   runtimeManifestUrl:
@@ -113,6 +119,17 @@ function check(report: ReturnType<typeof diagnoseProject>, name: string) {
   if (found === undefined)
     throw new Error(`no check named '${name}' in ${report.checks.map((c) => c.name).join(", ")}`);
   return found;
+}
+
+function withArch<T>(arch: NodeJS.Architecture, callback: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "arch");
+  if (descriptor === undefined) throw new Error("process.arch descriptor is missing");
+  Object.defineProperty(process, "arch", { ...descriptor, value: arch });
+  try {
+    return callback();
+  } finally {
+    Object.defineProperty(process, "arch", descriptor);
+  }
 }
 
 function withPlatform<T>(platform: NodeJS.Platform, callback: () => T): T {
@@ -151,6 +168,236 @@ async function workspaceVersion(packageName: string): Promise<string> {
 }
 
 describe("threenative doctor", () => {
+  it("fails a pinned manifest that cannot serve the build, for every native target", () => {
+    // The packager reads the pin before the network for android too, so an empty pin must fail
+    // there rather than leave `--target android` reporting a buildable project.
+    const pin = path.join("/tmp", "offline-pin-empty", "prebuilt-lock.json");
+    mkdirSync(path.dirname(pin), { recursive: true });
+    writeFileSync(pin, "{}\n");
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    try {
+      // Android answers through the packager's own cohort and the downloader's reader, both of
+      // which this fixture's snapshot loads; a snapshot without them says `unknown`.
+      const runtimeRoot = path.resolve("packages/runtime-native");
+      const withReader = (overrides: Partial<IProjectSnapshot> = {}) =>
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot, ...overrides });
+      // A root with no checkout player: a local engine build would legitimately bypass the pin.
+      const emptyRoot = path.join("/tmp", "offline-pin-root");
+      mkdirSync(emptyRoot, { recursive: true });
+      // A packed runtime root — the scripts, no CMakeLists.txt — is the case where Android does
+      // read the pin. The real checkout here has CMakeLists, so it counts as a source build.
+      const packedRoot = path.join("/tmp", "offline-pin-packed");
+      mkdirSync(path.join(packedRoot, "scripts"), { recursive: true });
+      copyFileSync(
+        path.join(runtimeRoot, "scripts", "package-android.mjs"),
+        path.join(packedRoot, "scripts", "package-android.mjs"),
+      );
+      const androidReport = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+        target: "android",
+      });
+      for (const target of ["desktop", "ios"] as const) {
+        const report = diagnoseProject(
+          snapshot({
+            readRelease,
+            readRuntimeText: () => undefined,
+            runtimeRoot: emptyRoot,
+          }),
+          { target },
+        );
+        expect(
+          check(report, "prebuilt manifest").status,
+          check(report, "prebuilt manifest").detail,
+        ).toBe("fail");
+        expect(report.pass).toBe(false);
+      }
+      expect(check(androidReport, "prebuilt manifest").status).toBe("fail");
+      expect(androidReport.pass).toBe(false);
+      // A pin that serves one target is not a pin for another: each packager reads its own keys.
+      writeFileSync(
+        pin,
+        `${JSON.stringify({
+          artifacts: {
+            "android-arm64-runtime": {
+              sha256: "0".repeat(64),
+              url: "https://example.invalid/android-arm64-runtime",
+            },
+          },
+        })}\n`,
+      );
+      const android = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+        target: "android",
+      });
+      // A source checkout never reads the pin, so the same empty one does not block it.
+      const checkoutRoot = path.resolve("packages/runtime-native");
+      expect(existsSync(path.join(checkoutRoot, "CMakeLists.txt"))).toBe(true);
+      const checkout = diagnoseProject(withReader({ runtimeRoot: checkoutRoot }), {
+        target: "android",
+      });
+      expect(check(checkout, "prebuilt manifest")).toMatchObject({ status: "ok" });
+      expect(check(checkout, "prebuilt manifest").detail).toContain("source checkout");
+      // The build itself needs the flag: doctor names it instead of predicting a build that
+      // fails on the unread lock.
+      expect(JSON.stringify(checkout)).toContain("--allow-source-build");
+      // One SDL key is not the eleven-key cohort the packager reads.
+      expect(check(android, "prebuilt manifest").status).toBe("fail");
+      // A relative pin resolves from the runtime package for a mobile target, not from the game.
+      process.env.THREENATIVE_PREBUILT_MANIFEST = "prebuilt-lock.json";
+      try {
+        const relative = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+          target: "android",
+        });
+        expect(check(relative, "prebuilt manifest").status).toBe("fail");
+      } finally {
+        process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+      }
+      const desktop = diagnoseProject(withReader({ runtimeRoot: emptyRoot }), {
+        target: "desktop",
+      });
+      expect(check(desktop, "prebuilt manifest").status).toBe("fail");
+      // The reader's own rules decide, not a copy: an unsupported schema and a loopback lock the
+      // insecure allowance permits are both judged the way the build judges them.
+      writeFileSync(
+        pin,
+        `${JSON.stringify({
+          artifacts: {
+            [`${process.platform}-${process.arch}-engine-player`]: {
+              sha256: "0".repeat(64),
+              url: "https://example.invalid/player",
+            },
+          },
+          schemaVersion: 2,
+        })}\n`,
+      );
+      const future = diagnoseProject(withReader({ runtimeRoot: emptyRoot }), {
+        target: "desktop",
+      });
+      expect(check(future, "prebuilt manifest").status).toBe("fail");
+      expect(check(future, "prebuilt manifest").detail).toContain("schemaVersion");
+      // A build that already has a local player reads no manifest at all, so a stale pin is not
+      // its blocker.
+      const player = path.join("/tmp", "offline-pin-local", "tn-native-engine-player-v8");
+      mkdirSync(path.dirname(player), { recursive: true });
+      writeFileSync(player, "");
+      process.env.THREENATIVE_ENGINE_PLAYER = player;
+      try {
+        const local = diagnoseProject(withReader(), { target: "desktop" });
+        expect(check(local, "prebuilt manifest")).toMatchObject({ status: "ok" });
+        expect(check(local, "prebuilt manifest").detail).toContain("not read");
+      } finally {
+        Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+      }
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
+  it("treats an empty or directory-valued desktop override as unset or broken", () => {
+    // An exported empty string resolves to the project directory, which the packager would try to
+    // copy as a binary: it means unset here, exactly as it does for the pinned manifest.
+    process.env.THREENATIVE_ENGINE_PLAYER = "";
+    try {
+      const unset = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(check(unset, "native runtime").detail).not.toContain(
+        "THREENATIVE_ENGINE_PLAYER names",
+      );
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+    const directory = path.join("/tmp", "offline-pin-local");
+    mkdirSync(directory, { recursive: true });
+    process.env.THREENATIVE_ENGINE_PLAYER = directory;
+    try {
+      const broken = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(check(broken, "native runtime").status).toBe("fail");
+      expect(check(broken, "native runtime").detail).toContain("is a directory, not a player");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+  });
+
+  it("fails when THREENATIVE_ENGINE_PLAYER names a file that is not there", () => {
+    // The build hands this value to the packager, so a missing one is a failing build: doctor must
+    // not report a download the build never reaches.
+    const missing = path.join("no-such-player", "tn-native-engine-player-v8");
+    process.env.THREENATIVE_ENGINE_PLAYER = missing;
+    try {
+      const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(report.pass).toBe(false);
+      expect(check(report, "native runtime").status).toBe("fail");
+      expect(check(report, "native runtime").detail).toContain("does not exist");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+  });
+
+  it("fails a legacy runtime override that has no packaging helper beside it", () => {
+    // The legacy host dispatches desktop packaging to `mystral-tools` beside itself, and an
+    // override skips the download that installs it: the first build would exit 127.
+    // Registered, so the repo guard sees its cleanup as the shared helper's job.
+    const root = makeTempDirSync("tn-doctor-helper-");
+    const host = path.join(root, "tn-native-host");
+    writeFileSync(host, "");
+    process.env.THREENATIVE_RUNTIME_BINARY = host;
+    try {
+      const report = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(report, "native runtime").status).toBe("fail");
+      expect(check(report, "native runtime").detail).toContain("mystral-tools");
+      // `THREENATIVE_CLI_TOOLS` is the runtime's first lookup, so a configured helper is enough.
+      const elsewhere = path.join(root, "tools", "mystral-tools");
+      mkdirSync(path.dirname(elsewhere), { recursive: true });
+      writeFileSync(elsewhere, "");
+      process.env.THREENATIVE_CLI_TOOLS = elsewhere;
+      const configured = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(configured, "native runtime").status).not.toBe("fail");
+      Reflect.deleteProperty(process.env, "THREENATIVE_CLI_TOOLS");
+      // The helper beside it is a build that works, so doctor stops objecting.
+      writeFileSync(
+        path.join(root, process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"),
+        "",
+      );
+      const complete = diagnoseProject(
+        snapshot({ config: { engine: "threejs", nativeEntry: "src/game.ts" } }),
+      );
+      expect(check(complete, "native runtime").status).not.toBe("fail");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_RUNTIME_BINARY");
+      rmSync(root, { force: true, recursive: true });
+    }
+  });
+
+  it("warns on a pin that no requested build would read", () => {
+    // AC-4: a plain `threenative doctor` on a healthy web-only install must not exit 1 because a
+    // pin exists that no desktop/Android build was asked to use.
+    const pin = path.join("/tmp", "offline-pin-plain", "lock.json");
+    // No checkout player either: the pin is the only thing that could answer.
+    const noCheckout = path.join("/tmp", "offline-pin-plain", "runtime");
+    mkdirSync(noCheckout, { recursive: true });
+    mkdirSync(path.dirname(pin), { recursive: true });
+    writeFileSync(pin, "{}\n");
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    const readRelease = () => {
+      throw new Error("the pin does not name this target");
+    };
+    try {
+      const plain = diagnoseProject(
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot: noCheckout }),
+      );
+      expect(check(plain, "prebuilt manifest").status).toBe("warn");
+      // The same pin is fatal when the desktop build is the question being asked.
+      const desktop = diagnoseProject(
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot: noCheckout }),
+        { target: "desktop" },
+      );
+      expect(check(desktop, "prebuilt manifest").status).toBe("fail");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
   it("names the compositor-less X11 blocker before a build", () => {
     const probe = probeDesktopOverlay({ DISPLAY: ":99" }, () => false);
     const report = diagnoseProject(
@@ -694,10 +941,123 @@ describe("threenative doctor", () => {
     expect(check(report, "native runtime").detail).toMatch(/prebuilt binary.*gone|missing/u);
   });
 
-  it("reports an unknown native state when the install status file is deleted", () => {
-    const report = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
-    expect(check(report, "native runtime")).toMatchObject({ status: "warn" });
-    expect(check(report, "native runtime").detail).toMatch(/unknown.*install status/u);
+  it("reports an absent native download as ok, because the first native build fetches it", () => {
+    // PRD-783: nothing downloads at install time any more, so a web-only project fetching nothing
+    // is the ordinary state, not a warning. A recorded *failure* still fails, tested below.
+    // A published desktop platform: on darwin-arm64, and on arm64 Linux, nothing is published and
+    // the same fixture warns, which is the subject of its own test.
+    const report = withPlatform("linux", () =>
+      withArch("x64", () =>
+        diagnoseProject(
+          snapshot({
+            config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
+            readRuntimeText: () => undefined,
+          }),
+        ),
+      ),
+    );
+    expect(report.pass).toBe(true);
+    expect(check(report, "native runtime")).toMatchObject({ status: "ok" });
+    expect(check(report, "native runtime").detail).toMatch(/^available — not downloaded yet/u);
+    expect(check(report, "native runtime").detail).toMatch(/118 MiB/u);
+    expect(check(report, "native runtime").detail).toMatch(/Web builds download nothing/u);
+    expect(check(report, "target desktop")).toMatchObject({ status: "ok" });
+    // The post-publish registry gate greps this line for `available`/`unavailable`.
+    expect(check(report, "target desktop").detail).toMatch(/^(?:available|unavailable) — /u);
+  });
+
+  it("accepts a receipt recorded from a local prebuilt lock", () => {
+    // The documented offline path is `THREENATIVE_PREBUILT_MANIFEST`. A build that used it records
+    // the local lock as its source; comparing that to the public URL told the user to reinstall,
+    // which would fetch nothing and change nothing.
+    const pin = path.join("/tmp", "offline-pin", "prebuilt-lock.json");
+    // The pin must exist: a receipt that matches a deleted pin is a download the next build cannot
+    // repeat, which the check below reports as a failure of its own.
+    mkdirSync(path.dirname(pin), { recursive: true });
+    // A pin is a real manifest: it must record the artifact the build asks it for.
+    writeFileSync(
+      pin,
+      `${JSON.stringify({
+        artifacts: {
+          [`${process.platform}-${process.arch}-engine-player`]: {
+            sha256: "0".repeat(64),
+            url: `https://example.invalid/${process.platform}-${process.arch}`,
+          },
+        },
+      })}\n`,
+    );
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    try {
+      const report = diagnoseProject(
+        snapshot({
+          readRuntimeText: (relative) =>
+            relative === "prebuilt/engine-player-install-status.json"
+              ? JSON.stringify({
+                  key: `${process.platform}-${process.arch}-engine-player`,
+                  ok: true,
+                  reason: "installed",
+                  url: pin,
+                  version: "0.4.0",
+                })
+              : undefined,
+        }),
+      );
+      expect(check(report, "native runtime").status).toBe("ok");
+      expect(report.pass).toBe(true);
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
+  it("reads the binary the default engine actually runs, not the legacy one", () => {
+    // M10: `engine: "threenative"` desktop builds package the engine player and never the legacy
+    // runtime, so a broken legacy record must not colour the default engine's verdict, and a
+    // broken engine-player record must not be hidden behind a healthy legacy one.
+    const legacyBroken = JSON.stringify({
+      key: `${process.platform}-${process.arch}`,
+      ok: false,
+      reason: "HTTP 404 downloading the legacy runtime",
+      url: HEALTHY.runtimeManifestUrl,
+      version: "0.4.0",
+    });
+    const report = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/install-status.json"
+            ? legacyBroken
+            : HEALTHY.readRuntimeText?.(relative),
+      }),
+    );
+    expect(check(report, "native runtime").status).toBe("ok");
+
+    const enginePlayerBroken = JSON.parse(legacyBroken) as Record<string, unknown>;
+    enginePlayerBroken.key = `${process.platform}-${process.arch}-engine-player`;
+    const broken = diagnoseProject(
+      snapshot({
+        readRuntimeText: (relative) =>
+          relative === "prebuilt/engine-player-install-status.json"
+            ? JSON.stringify(enginePlayerBroken)
+            : undefined,
+      }),
+    );
+    expect(check(broken, "native runtime").status).toBe("fail");
+    expect(check(broken, "native runtime").fix).toMatch(/build --target desktop/u);
+
+    // The legacy host keeps its own file, and an absent one is the same ordinary state. Both
+    // flags pin a published platform, where a download is what the build would do.
+    const legacy = withPlatform("linux", () =>
+      withArch("x64", () =>
+        diagnoseProject(
+          snapshot({
+            config: { engine: "threejs", nativeEntry: "src/game.ts" },
+            readRuntimeText: () => undefined,
+          }),
+        ),
+      ),
+    );
+    expect(check(legacy, "native runtime").status).toBe("ok");
+    expect(check(legacy, "native runtime").detail).toMatch(/260 MiB/u);
+    expect(check(legacy, "native runtime").detail).toMatch(/THREENATIVE_RUNTIME_BINARY/u);
   });
 
   it("lists web, desktop, Android, and iOS target availability", () => {
@@ -720,7 +1080,7 @@ describe("threenative doctor", () => {
       snapshot({
         readRuntimeText: () =>
           JSON.stringify({
-            key: `${process.platform}-${process.arch}`,
+            key: `${process.platform}-${process.arch}-engine-player`,
             ok: true,
             reason: "installed",
             url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.3.9/prebuilt-lock.json",
@@ -737,7 +1097,7 @@ describe("threenative doctor", () => {
       snapshot({
         readRuntimeText: () =>
           JSON.stringify({
-            key: `${process.platform}-${process.arch}`,
+            key: `${process.platform}-${process.arch}-engine-player`,
             ok: true,
             reason: "installed",
             url: "https://example.invalid/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -1275,7 +1635,7 @@ describe("threenative doctor edge coverage", () => {
     expect(
       status(
         {
-          key: `${process.platform}-${process.arch}`,
+          key: `${process.platform}-${process.arch}-engine-player`,
           ok: true,
           url: HEALTHY.runtimeManifestUrl,
           version: "0.4.0",
@@ -1287,20 +1647,62 @@ describe("threenative doctor edge coverage", () => {
     const win32 = withPlatform("win32", () =>
       status(
         {
-          key: `win32-${process.arch}`,
+          key: `win32-${process.arch}-engine-player`,
           ok: true,
           url: HEALTHY.runtimeManifestUrl,
           version: "0.4.0",
         },
-        { runtimeFileExists: (relative) => relative.endsWith(".exe") },
+        {
+          config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
+          runtimeFileExists: (relative) => relative.endsWith(".exe"),
+        },
       ),
     );
     expect(win32).toMatchObject({ status: "ok" });
+    // The same healthy receipt is not buildable for a web HUD on a platform whose player ships
+    // without the overlay, which is what the build itself refuses.
+    const win32Web = withPlatform("win32", () =>
+      status(
+        {
+          key: `win32-${process.arch}-engine-player`,
+          ok: true,
+          url: HEALTHY.runtimeManifestUrl,
+          version: "0.4.0",
+        },
+        {
+          config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+          runtimeFileExists: (relative) => relative.endsWith(".exe"),
+        },
+      ),
+    );
+    expect(win32Web).toMatchObject({ status: "warn" });
   });
 
   it("fails closed when the installed host is older than the engine it must satisfy", () => {
+    // The version probe belongs to the legacy host, which answers `--version`. The default engine
+    // runs the engine player, whose receipt is its proof (PRD-783), so this test pins the `threejs`
+    // host explicitly.
+    const legacyConfig = { engine: "threejs", nativeEntry: "src/game.ts" };
     const host = (nativeHost: { readonly reason?: string; readonly runtimeVersion?: string }) =>
-      nativeRuntimeCheck(snapshot({ nativeHost }));
+      nativeRuntimeCheck(
+        snapshot({
+          config: legacyConfig,
+          nativeHost,
+          readRuntimeText: (relative) =>
+            relative === "prebuilt/install-status.json"
+              ? JSON.stringify({
+                  key: `${process.platform}-${process.arch}`,
+                  ok: true,
+                  reason: "installed",
+                  url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+                  version: "0.4.0",
+                })
+              : undefined,
+          runtimeFileExists: (relative) =>
+            relative ===
+            `prebuilt/${process.platform}-${process.arch}/threenative-runtime${process.platform === "win32" ? ".exe" : ""}`,
+        }),
+      );
 
     // The published `runtime-native-v0.3.2` prebuilt answered exactly this, under a package whose
     // own version said 0.4.0, and every desktop binary built with it showed no UI.
@@ -1325,6 +1727,12 @@ describe("threenative doctor edge coverage", () => {
       detail: `available (${process.platform}-${process.arch}, host runtime v0.4.0)`,
       status: "ok",
     });
+
+    // The default engine never asks the legacy host: an injected answer must not change a verdict
+    // about the engine player, in either direction.
+    const player = nativeRuntimeCheck(snapshot({ nativeHost: { runtimeVersion: "0.1.0" } }));
+    expect(player).toMatchObject({ status: "ok" });
+    expect(player.detail).not.toContain("runtime v0.1.0");
     expect(host({ runtimeVersion: "0.5.1" })).toMatchObject({ status: "ok" });
 
     // A version string that cannot be compared is not a pass: the string it has to protect against
@@ -1645,7 +2053,7 @@ describe("threenative doctor and editor activation", () => {
 
 describe("threenative doctor --target/--mode", () => {
   const BROKEN_RUNTIME_STATUS = JSON.stringify({
-    key: `${process.platform}-${process.arch}`,
+    key: `${process.platform}-${process.arch}-engine-player`,
     ok: false,
     reason: "HTTP 404 downloading the prebuilt runtime",
     url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
@@ -1799,19 +2207,25 @@ describe("threenative doctor --target/--mode", () => {
     expect(target.status).toBe("fail");
   });
 
-  it("should fail the requested Android build when the runtime artifact never downloaded", () => {
+  it("should not veto an Android build on a failed desktop download", () => {
+    // Android fetches its own libraries at package time; the record doctor reads is the desktop
+    // host's. A broken desktop download used to fail `--target android`, which is a red on a build
+    // that never touches it (PRD-783 moved that record to the engine player, making it clearer).
     const report = diagnoseProject(
       snapshot({
         androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
         readRuntimeText: (relative) =>
-          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+          relative === "prebuilt/engine-player-install-status.json"
+            ? BROKEN_RUNTIME_STATUS
+            : undefined,
       }),
       { target: "android" },
     );
-    const requested = check(report, "requested build");
-    expect(requested.status).toBe("fail");
-    expect(requested.detail).toMatch(/HTTP 404/u);
-    expect(report.pass).toBe(false);
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target android").status).toBe("ok");
+    // The desktop fact stays in the report, demoted like every unrequested target's.
+    expect(check(report, "target desktop").status).toBe("warn");
+    expect(report.pass).toBe(true);
   });
 
   it("should block a native build on a runtime that only warns, not just one that fails", () => {
@@ -1904,7 +2318,9 @@ describe("threenative doctor --target/--mode", () => {
     const report = diagnoseProject(
       snapshot({
         readRuntimeText: (relative) =>
-          relative === "prebuilt/install-status.json" ? BROKEN_RUNTIME_STATUS : undefined,
+          relative === "prebuilt/engine-player-install-status.json"
+            ? BROKEN_RUNTIME_STATUS
+            : undefined,
       }),
       { target: "web" },
     );
@@ -1985,23 +2401,23 @@ describe("threenative doctor --target/--mode", () => {
     expect(unscoped.pass).toBe(false);
   });
 
-  it("should let every native target own the native runtime, and only web demote it", () => {
+  it("should let desktop own the native runtime, and every other target demote it", () => {
     // The sibling of the `desktop overlay` owners bug, and only visible on a runtime that actually
-    // fails: dropping "ios" from TARGET_PREREQUISITE_OWNERS["native runtime"] is severity drift -
-    // the requested build still fails and the exit code is still 1 - but it is the same shape, and
-    // it survived the suite. A resolved package with no runtime root is the failing case.
+    // fails. PRD-783 made the record this check reads the *desktop host's* prebuilt; Android and
+    // iOS download their own libraries at package time from the same release, so a failed desktop
+    // prebuilt cannot predict their build and must not decide their exit code.
     const broken = snapshot({
       runtimeRoot: undefined,
       readRuntimeText: undefined,
       installedVersions: new Map([["@threenative/runtime-native", "0.4.0"]]),
     });
     expect(check(diagnoseProject(broken), "native runtime").status).toBe("fail");
-    // Web does not start it, so it is demoted and cannot decide a web request's exit code.
-    expect(check(diagnoseProject(broken, { target: "web" }), "native runtime").status).toBe("warn");
-    // Every native target does start it, so none of them demote it.
-    for (const target of ["android", "desktop", "ios"] as const) {
-      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("fail");
+    for (const target of ["web", "android", "ios"] as const) {
+      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("warn");
     }
+    expect(check(diagnoseProject(broken, { target: "desktop" }), "native runtime").status).toBe(
+      "fail",
+    );
   });
 
   it("should fail a requested web build with no web entry", () => {

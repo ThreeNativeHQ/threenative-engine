@@ -487,9 +487,11 @@ for (const change of ["missing", "different-checksum", "different-size"]) {
         }
         await writeFile(fixture.install.manifestPath, JSON.stringify(manifest));
       }
+      // PRD-783: the legacy desktop host goes through `ensureNativeBinary` too, so its failures
+      // carry the named code and the three fixes instead of a bare download error.
       await assert.rejects(
         probe("package-desktop.mjs", call),
-        /No prebuilt release manifest|Checksum verification failed|size verification failed/u,
+        /TN_NATIVE_BINARY_(?:UNAVAILABLE|UNPUBLISHED).*(?:prebuilt release manifest .* does not exist|Checksum verification failed|size verification failed)/su,
       );
       await assert.rejects(readFile(fixture.install.output));
       assert.equal(
