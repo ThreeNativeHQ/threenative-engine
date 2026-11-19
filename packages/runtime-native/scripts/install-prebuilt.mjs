@@ -110,11 +110,13 @@ function releaseFromManifest(manifest, key, options = {}) {
   // explicit `requiredKeys` is a promise; without one, a partial manifest is a fixture (or a local
   // lock), and an absent key stays the pre-existing by-design absence.
   // An official release lock omits `requiredKeys` and promises the whole published cohort; a
-  // caller that is preparing an offline image says so with `requireComplete`. A test or local
-  // fixture stays permissive, which is how a partial manifest has always behaved.
-  const required = declaredRequiredKeys(manifest) ??
-    (options.requireComplete === true ? PUBLISHED_PREBUILT_KEYS : []);
-  if (release === undefined && required.includes(key)) {
+  // caller preparing an offline image says so with `requireComplete`, which also covers a scoped
+  // lock that forgets a published key it was asked for. A test or local fixture stays permissive.
+  const required = declaredRequiredKeys(manifest) ?? [];
+  const promised =
+    required.includes(key) ||
+    (options.requireComplete === true && PUBLISHED_PREBUILT_KEYS.includes(key));
+  if (release === undefined && promised) {
     const error = new Error(
       `The prebuilt release manifest requires '${key}' and records no artifact for it.`,
     );

@@ -1505,12 +1505,27 @@ export function pinnedManifestCheck(
   // A scoped lock names the keys it promises, and the installer validates every one of them
   // before it serves any: a lock that omits one of its own keys is refused there too.
   const declaredKeys = record(manifest)?.requiredKeys;
+  if (Array.isArray(declaredKeys) && declaredKeys.length === 0)
+    return fail("which declares an empty requiredKeys, which the downloader refuses");
   if (Array.isArray(declaredKeys)) {
     const declared = declaredKeys.filter((key): key is string => typeof key === "string");
     const missingDeclared = declared.filter((key) => !usable(artifacts, key, releaseLock));
     if (missingDeclared.length > 0)
       return fail(
         `which declares ${missingDeclared.join(", ")} in requiredKeys and records no usable artifact for it`,
+      );
+  }
+  if (releaseLock && typeof record(manifest)?.version === "string") {
+    // The downloader only serves an artifact whose URL sits under this release's own tag, so a
+    // lock pointing at another release is one the build cannot use.
+    const prefix = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/runtime-native-v${record(manifest)?.version}/`;
+    const outside = Object.entries(record(artifacts) ?? {}).filter(([, artifact]) => {
+      const url = record(artifact)?.url;
+      return typeof url === "string" && !url.startsWith(prefix);
+    });
+    if (outside.length > 0)
+      return fail(
+        `which records ${outside.length} artifact${outside.length === 1 ? "" : "s"} outside the runtime-native-v${record(manifest)?.version} release (${outside[0]?.[0]})`,
       );
   }
   if (releaseLock && record(manifest)?.requiredKeys === undefined) {
