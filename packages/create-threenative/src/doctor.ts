@@ -109,6 +109,11 @@ export interface IProjectSnapshot {
   readonly runtimeManifestUrl?: string;
   readonly runtimeRoot?: string;
   /**
+   * The installed downloader's own lock reader, so the pin check applies the rules the build
+   * applies instead of a second copy that drifts.
+   */
+  readonly readRelease?: (manifestPath: string, key: string) => unknown;
+  /**
    * What the installed native host binary reports about itself, injected so the check is testable
    * on a machine either way. Absent means doctor runs the host's own `--version` itself.
    */
@@ -1361,86 +1366,6 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
 /**
- * The keys this release publishes, mirrored from `PREBUILT_ASSET_NAMES` minus the unpublished rows.
- *
- * Only used to judge a release lock that declares no `requiredKeys`: such a lock is the official
- * full-cohort lock, so a partial one is a lock the downloader refuses.
- */
-export const PUBLISHED_COHORT: readonly string[] = Object.freeze([
-  "android-arm64-v8a-libcxx",
-  "android-arm64-v8a-runtime",
-  "android-arm64-v8a-runtime-v8",
-  "android-arm64-v8a-sdl3",
-  "android-arm64-v8a-v8",
-  "android-arm64-v8a-v8-snapshot",
-  "android-sdl3-aar",
-  "android-x86_64-libcxx",
-  "android-x86_64-runtime",
-  "android-x86_64-runtime-v8",
-  "android-x86_64-sdl3",
-  "android-x86_64-v8",
-  "android-x86_64-v8-snapshot",
-  "ios-simulator-arm64",
-  "linux-x64",
-  "linux-x64-engine-player",
-  "linux-x64-tools",
-  "win32-x64",
-  "win32-x64-engine-player",
-  "win32-x64-tools",
-]);
-
-/** Whether a pinned manifest's entry for one key can actually be fetched and verified. */
-function usable(artifacts: unknown, key: string, releaseLock = false): boolean {
-  const artifact = record(record(artifacts)?.[key]);
-  const shaped =
-    typeof artifact?.url === "string" &&
-    artifact.url.length > 0 &&
-    typeof artifact.sha256 === "string" &&
-    /^[a-f0-9]{64}$/u.test(artifact.sha256);
-  // A release lock carries the envelope `readRelease` validates, and that envelope requires a
-  // positive size. An artifact-only pin is the legacy shape PRD-902 still downloads in one request,
-  // so it is judged without one.
-  return releaseLock
-    ? shaped &&
-        typeof artifact.size === "number" &&
-        Number.isSafeInteger(artifact.size) &&
-        artifact.size > 0
-    : shaped;
-}
-
-/**
- * The asset file each prebuilt key names, read from the installed downloader's own map.
- *
- * Doctor needs it to tell a lock that points the engine player at the legacy runtime from a
- * correct one: the release tag alone matches either. Absent, the caller validates the tag only.
- */
-function releasedAssetNames(
-  snapshot: IProjectSnapshot,
-): Readonly<Record<string, string>> | undefined {
-  if (snapshot.runtimeRoot === undefined) return undefined;
-  const source = (() => {
-    try {
-      return readFileSync(
-        path.join(snapshot.runtimeRoot, "scripts", "install-prebuilt.mjs"),
-        "utf8",
-      );
-    } catch {
-      return undefined;
-    }
-  })();
-  if (source === undefined) return undefined;
-  const block = /export const PREBUILT_ASSET_NAMES = Object\.freeze\(\{([\s\S]*?)\n\}\);/u.exec(
-    source,
-  )?.[1];
-  if (block === undefined) return undefined;
-  const names: Record<string, string> = {};
-  for (const match of block.matchAll(/'([a-z0-9_-]+)':\s*'([^']+)'/gu)) {
-    names[match[1] as string] = match[2] as string;
-  }
-  return Object.keys(names).length === 0 ? undefined : names;
-}
-
-/**
  * The Android prebuilt keys the installed packager will ask this pin for.
  *
  * Read from `scripts/package-android.mjs` rather than mirrored: the V8 cohort is eleven keys, and a
@@ -1509,108 +1434,40 @@ export function pinnedManifestCheck(
     status: "fail",
   });
   if (!existsSync(resolved)) return fail("which does not exist");
-  let manifest: unknown;
-  try {
-    manifest = JSON.parse(readFileSync(resolved, "utf8"));
-  } catch (error) {
-    return fail(
-      `which is not valid JSON (${error instanceof Error ? error.message : String(error)})`,
-    );
-  }
-  // Each target's packager reads its own keys, so the pin is judged against the target that was
-  // asked about: a desktop-only pin is not an Android pin, and vice versa.
-  const artifacts = record(manifest)?.artifacts;
-  const releaseLock = ["schemaVersion", "version", "sourceSha"].some((field) =>
-    Object.hasOwn(record(manifest) ?? {}, field),
-  );
-  const declaredVersion = record(manifest)?.version;
-  const installedVersion = snapshot.installedVersions.get(RUNTIME_PACKAGE);
-  if (
-    typeof declaredVersion === "string" &&
-    installedVersion !== undefined &&
-    declaredVersion !== installedVersion
-  ) {
-    return fail(
-      `which records release ${declaredVersion} but ${RUNTIME_PACKAGE} is ${installedVersion}; the packager rejects a lock from another release`,
-    );
-  }
-  // A scoped lock names the keys it promises, and the installer validates every one of them
-  // before it serves any: a lock that omits one of its own keys is refused there too.
-  const declaredKeys = record(manifest)?.requiredKeys;
-  if (Array.isArray(declaredKeys) && declaredKeys.length === 0)
-    return fail("which declares an empty requiredKeys, which the downloader refuses");
-  if (Array.isArray(declaredKeys)) {
-    const declared = declaredKeys.filter((key): key is string => typeof key === "string");
-    const missingDeclared = declared.filter((key) => !usable(artifacts, key, releaseLock));
-    if (missingDeclared.length > 0)
-      return fail(
-        `which declares ${missingDeclared.join(", ")} in requiredKeys and records no usable artifact for it`,
-      );
-  }
-  if (releaseLock && typeof record(manifest)?.version === "string") {
-    // The downloader only serves an artifact whose URL sits under this release's own tag, so a
-    // lock pointing at another release is one the build cannot use.
-    const prefix = `https://github.com/ThreeNativeHQ/threenative-engine/releases/download/runtime-native-v${record(manifest)?.version}/`;
-    const names = releasedAssetNames(snapshot);
-    const outside = Object.entries(record(artifacts) ?? {}).filter(([key, artifact]) => {
-      const url = record(artifact)?.url;
-      if (typeof url !== "string" || !url.startsWith(prefix)) return true;
-      // The tag alone is not enough: the file name is the key's own asset, and a lock that swaps
-      // two keys under the right tag is one the downloader rejects.
-      const expectedName = names?.[key];
-      return expectedName !== undefined && url !== `${prefix}${expectedName}`;
-    });
-    if (outside.length > 0)
-      return fail(
-        `which records ${outside.length} artifact${outside.length === 1 ? "" : "s"} that does not match its key inside the runtime-native-v${record(manifest)?.version} release (${outside[0]?.[0]})`,
-      );
-  }
-  if (releaseLock && record(manifest)?.requiredKeys === undefined) {
-    // The official lock omits `requiredKeys` because it always carries the whole published cohort,
-    // and a lock with one artifact and no scope is one the downloader refuses. These are the keys
-    // `PREBUILT_ASSET_NAMES` publishes today; a new one is never demanded here.
-    const cohort = PUBLISHED_COHORT.filter((key) => !key.startsWith("ios-"));
-    const missingCohort = cohort.filter((key) => !usable(artifacts, key, true));
-    if (missingCohort.length > 0)
-      return fail(
-        `which is a release lock without requiredKeys and is missing ${missingCohort.length} published keys (${missingCohort.slice(0, 3).join(", ")}${missingCohort.length > 3 ? ", …" : ""}); scope it with requiredKeys or ship the full cohort`,
-      );
-  }
-  if (options.target === "android") {
-    // The cohort is the installed packager's own list, read from its source: mirroring eleven keys
-    // here is how doctor approved an SDL-only lock that the packager refused.
-    const cohort = androidPrebuiltCohort(snapshot);
-    if (cohort === undefined)
-      return {
-        detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its Android prebuilt cohort, so this pin cannot be checked here; the packager still validates it.`,
-        name: "prebuilt manifest",
-        status: "warn",
-      };
-    const missing = cohort.filter((key) => !usable(artifacts, key, releaseLock));
-    if (missing.length > 0)
-      return fail(
-        `which is missing ${missing.length} of ${cohort.length} Android prebuilt keys (${missing.slice(0, 3).join(", ")}${missing.length > 3 ? ", …" : ""})`,
-      );
+  // The downloader's own reader, so `schemaVersion`, the release's URL contract, the declared
+  // cohort and the loopback allowance are all judged exactly as the build judges them.
+  const readRelease = snapshot.readRelease;
+  if (readRelease === undefined) {
     return {
-      detail: `available — ${resolved} records all ${cohort.length} Android prebuilt keys`,
+      detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its lock reader, so this pin cannot be checked here; the packager still validates it.`,
       name: "prebuilt manifest",
-      status: "ok",
+      status: "warn",
     };
   }
   const wanted =
-    options.target === "ios"
-      ? ["ios-simulator-arm64"]
-      : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
-  // Every key the target's packager reads must be served: a `threejs` desktop build needs the
-  // runtime and the build tool helper, and one without the other is a download that fails.
-  const missing = wanted.filter((key) => !usable(artifacts, key, releaseLock));
-  if (wanted.length === 0 || missing.length > 0) {
-    return fail(
-      `which records no usable ${wanted.length === 0 ? (mobile ? `${options.target} artifact` : target.key) : missing.join(", ")} (a url and a sha256 are required for every key the build reads)`,
-    );
+    options.target === "android"
+      ? androidPrebuiltCohort(snapshot)
+      : options.target === "ios"
+        ? ["ios-simulator-arm64"]
+        : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
+  if (wanted === undefined) {
+    return {
+      detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its Android prebuilt cohort, so this pin cannot be checked here; the packager still validates it.`,
+      name: "prebuilt manifest",
+      status: "warn",
+    };
+  }
+  for (const key of wanted) {
+    try {
+      readRelease(resolved, key);
+    } catch (error) {
+      return fail(
+        `which the downloader refuses for ${key}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
   }
   return {
-    detail: `available — ${resolved} records ${wanted.length === 1 ? wanted[0] : `${wanted.length} ${options.target} artifacts`}`,
+    detail: `available — ${resolved} serves all ${wanted.length} ${options.target ?? "desktop"} key${wanted.length === 1 ? "" : "s"} the downloader reads`,
     name: "prebuilt manifest",
     status: "ok",
   };
@@ -2617,6 +2474,27 @@ async function runtimeReleaseManifestUrl(
   }
 }
 
+/**
+ * The installed downloader's `readRelease`, when the runtime package is resolvable.
+ *
+ * Doctor answers in projects whose runtime package may be absent, so this is a load rather than an
+ * import: no package, no reader, and the pin check says `unknown` instead of guessing.
+ */
+async function loadRuntimeReadRelease(
+  runtimeRoot: string,
+): Promise<((manifestPath: string, key: string) => unknown) | undefined> {
+  const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
+  if (!existsSync(module)) return undefined;
+  try {
+    const loaded = (await import(pathToFileURL(module).href)) as {
+      readRelease?: (manifestPath: string, key: string) => unknown;
+    };
+    return typeof loaded.readRelease === "function" ? loaded.readRelease : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function readProject(root: string): Promise<IProjectSnapshot> {
   const projectRoot = path.resolve(root);
   const packageJson = await readJson(path.join(projectRoot, "package.json"));
@@ -2646,6 +2524,8 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
     runtimeRoot === undefined || runtimeVersion === undefined
       ? undefined
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
+  const readReleaseFromRuntime =
+    runtimeRoot === undefined ? undefined : await loadRuntimeReadRelease(runtimeRoot);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   const authoringLayer = await authoringLayerStatus(projectRoot).catch(
     (error: unknown): IAuthoringLayerStatus => ({
@@ -2712,6 +2592,7 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
             }
           },
           runtimeFileExists: (relative: string) => existsSync(path.join(runtimeRoot, relative)),
+          ...(readReleaseFromRuntime === undefined ? {} : { readRelease: readReleaseFromRuntime }),
           // Only the `threejs` host answers `--version`. Probing it for a default-engine project
           // executed an unused binary and could spend its 20-second timeout doing it.
           // The override wins over the cache, so a cached host is not probed when it is set: probing

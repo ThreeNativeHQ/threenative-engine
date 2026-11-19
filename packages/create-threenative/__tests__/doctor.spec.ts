@@ -14,12 +14,12 @@ vi.mock("node:child_process", async (importOriginal) => {
 });
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
+import { readRelease } from "../../runtime-native/scripts/install-prebuilt.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
 import {
   ANDROID_RELEASE_SIGNING_ENV,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
-  PUBLISHED_COHORT,
   detectX11Compositor,
   diagnoseProject,
   formatDoctorReport,
@@ -154,23 +154,6 @@ async function workspaceVersion(packageName: string): Promise<string> {
 }
 
 describe("threenative doctor", () => {
-  it("mirrors the release's published cohort exactly", () => {
-    // One source of truth for what a release publishes: the runtime's own map. A key added there
-    // and not here would let a partial release lock pass doctor.
-    const source = readFileSync(
-      path.resolve("packages/runtime-native/scripts/install-prebuilt.mjs"),
-      "utf8",
-    );
-    const block = /export const PREBUILT_ASSET_NAMES = Object\.freeze\(\{([\s\S]*?)\n\}\);/u.exec(
-      source,
-    )?.[1];
-    expect(block).toBeDefined();
-    const published = [...(block as string).matchAll(/'([a-z0-9_-]+)':/gu)]
-      .map((match) => match[1] as string)
-      .filter((key) => !key.startsWith("darwin-"));
-    expect([...PUBLISHED_COHORT].sort()).toEqual(published.sort());
-  });
-
   it("fails a pinned manifest that cannot serve the build, for every native target", () => {
     // The packager reads the pin before the network for android too, so an empty pin must fail
     // there rather than leave `--target android` reporting a buildable project.
@@ -179,21 +162,22 @@ describe("threenative doctor", () => {
     writeFileSync(pin, "{}\n");
     process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
     try {
-      // Android answers through the packager's own cohort, which this fixture's snapshot has; a
-      // snapshot without the package root says `unknown` instead of guessing.
-      const androidReport = diagnoseProject(
-        snapshot({
-          readRuntimeText: () => undefined,
-          runtimeRoot: path.resolve("packages/runtime-native"),
-        }),
-        { target: "android" },
-      );
+      // Android answers through the packager's own cohort and the downloader's reader, both of
+      // which this fixture's snapshot loads; a snapshot without them says `unknown`.
+      const runtimeRoot = path.resolve("packages/runtime-native");
+      const withReader = (overrides: Partial<IProjectSnapshot> = {}) =>
+        snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot, ...overrides });
+      const androidReport = diagnoseProject(withReader(), { target: "android" });
       // A root with no checkout player: a local engine build would legitimately bypass the pin.
       const emptyRoot = path.join("/tmp", "offline-pin-root");
       mkdirSync(emptyRoot, { recursive: true });
       for (const target of ["desktop", "ios"] as const) {
         const report = diagnoseProject(
-          snapshot({ readRuntimeText: () => undefined, runtimeRoot: emptyRoot }),
+          snapshot({
+            readRelease,
+            readRuntimeText: () => undefined,
+            runtimeRoot: emptyRoot,
+          }),
           { target },
         );
         expect(check(report, "prebuilt manifest").status).toBe("fail");
@@ -213,33 +197,40 @@ describe("threenative doctor", () => {
           },
         })}\n`,
       );
-      const android = diagnoseProject(
-        snapshot({
-          readRuntimeText: () => undefined,
-          runtimeRoot: path.resolve("packages/runtime-native"),
-        }),
-        { target: "android" },
-      );
+      const android = diagnoseProject(withReader(), { target: "android" });
       // One SDL key is not the eleven-key cohort the packager reads.
       expect(check(android, "prebuilt manifest").status).toBe("fail");
       // A relative pin resolves from the runtime package for a mobile target, not from the game.
       process.env.THREENATIVE_PREBUILT_MANIFEST = "prebuilt-lock.json";
       try {
-        const relative = diagnoseProject(
-          snapshot({
-            readRuntimeText: () => undefined,
-            runtimeRoot: path.resolve("packages/runtime-native"),
-          }),
-          { target: "android" },
-        );
+        const relative = diagnoseProject(withReader(), { target: "android" });
         expect(check(relative, "prebuilt manifest").status).toBe("fail");
       } finally {
         process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
       }
-      const desktop = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
+      const desktop = diagnoseProject(withReader({ runtimeRoot: emptyRoot }), {
         target: "desktop",
       });
       expect(check(desktop, "prebuilt manifest").status).toBe("fail");
+      // The reader's own rules decide, not a copy: an unsupported schema and a loopback lock the
+      // insecure allowance permits are both judged the way the build judges them.
+      writeFileSync(
+        pin,
+        `${JSON.stringify({
+          artifacts: {
+            [`${process.platform}-${process.arch}-engine-player`]: {
+              sha256: "0".repeat(64),
+              url: "https://example.invalid/player",
+            },
+          },
+          schemaVersion: 2,
+        })}\n`,
+      );
+      const future = diagnoseProject(withReader({ runtimeRoot: emptyRoot }), {
+        target: "desktop",
+      });
+      expect(check(future, "prebuilt manifest").status).toBe("fail");
+      expect(check(future, "prebuilt manifest").detail).toContain("schemaVersion");
       // A build that already has a local player reads no manifest at all, so a stale pin is not
       // its blocker.
       const player = path.join("/tmp", "offline-pin-local", "tn-native-engine-player-v8");
@@ -247,9 +238,7 @@ describe("threenative doctor", () => {
       writeFileSync(player, "");
       process.env.THREENATIVE_ENGINE_PLAYER = player;
       try {
-        const local = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
-          target: "desktop",
-        });
+        const local = diagnoseProject(withReader(), { target: "desktop" });
         expect(check(local, "prebuilt manifest")).toMatchObject({ status: "ok" });
         expect(check(local, "prebuilt manifest").detail).toContain("not read");
       } finally {
