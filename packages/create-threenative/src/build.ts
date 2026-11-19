@@ -1637,6 +1637,18 @@ export async function ensureEngineDesktopPlayer(
   return player();
 }
 
+/**
+ * Whether the engine player this platform downloads can attach a web-UI overlay.
+ *
+ * The release builds the player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux only: the option
+ * pulls in WebKitGTK, and the Windows and macOS rows ship without it. A desktop build with a "web"
+ * HUD on either platform would download 118 MiB and then die at `TN_UI_LOAD_FAILED`, so the build
+ * refuses before the download and names the two working configurations.
+ */
+export function enginePlayerSupportsWebUi(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "linux";
+}
+
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
 async function buildEngineDesktop(
   cwd: string,
@@ -1654,6 +1666,14 @@ async function buildEngineDesktop(
   if (!existsSync(packager) || !existsSync(bundler)) {
     throw new Error(
       `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+    );
+  }
+  // The released player carries the web-UI overlay on Linux only; on Windows and macOS it is built
+  // without one, so a web HUD there attaches nothing and the game dies at TN_UI_LOAD_FAILED after
+  // the download. Refuse before fetching, when the fix costs nothing.
+  if (config.ui.renderer === "web" && !enginePlayerSupportsWebUi()) {
+    throw new Error(
+      `TN_ENGINE_PLAYER_UI_UNSUPPORTED: the engine player published for ${process.platform}-${process.arch} has no web-UI overlay, so a "web" HUD would fail at TN_UI_LOAD_FAILED. Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host, which renders the web UI.`,
     );
   }
   // The player every desktop package runs is fetched here, before the UI build, so a missing

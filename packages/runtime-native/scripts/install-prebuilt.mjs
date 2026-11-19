@@ -105,6 +105,18 @@ function releaseFromManifest(manifest, key) {
     throw error;
   }
   const release = manifest?.artifacts?.[key];
+  // A key the manifest itself promises and does not carry is a broken release, not a platform that
+  // ships nothing: warn-and-continue here leaves an offline image that cannot build. Only an
+  // explicit `requiredKeys` is a promise; without one, a partial manifest is a fixture (or a local
+  // lock), and an absent key stays the pre-existing by-design absence.
+  const required = declaredRequiredKeys(manifest) ?? [];
+  if (release === undefined && required.includes(key)) {
+    const error = new Error(
+      `The prebuilt release manifest requires '${key}' and records no artifact for it.`,
+    );
+    error.code = 'PREBUILT_RELEASE_MISSING';
+    throw error;
+  }
   if (release !== undefined && (!release.url || !release.sha256)) {
     // The lock advertises this asset and does not describe it: a broken release, not a platform
     // that ships nothing, so the prefetch must fail rather than warn and leave the image short.

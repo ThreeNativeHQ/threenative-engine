@@ -10,7 +10,7 @@ import {
   packageEngineDesktop,
   // @ts-expect-error The packager is a plain .mjs script with no declaration file.
 } from "../../runtime-native/scripts/package-engine-desktop.mjs";
-import { build, engineDesktopPlayer } from "../src/build.js";
+import { build, engineDesktopPlayer, enginePlayerSupportsWebUi } from "../src/build.js";
 
 const roots: string[] = [];
 afterEach(async () => {
@@ -22,6 +22,17 @@ async function temp(prefix: string): Promise<string> {
   roots.push(root);
   return root;
 }
+
+describe("engine player web-UI support", () => {
+  it("is Linux only, matching the release matrix's player_ui flags", () => {
+    // `native-release.yml` builds the player with TN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux and OFF
+    // on darwin and win32. A "web" HUD elsewhere would download the player and die at
+    // TN_UI_LOAD_FAILED, so the build refuses first.
+    expect(enginePlayerSupportsWebUi("linux")).toBe(true);
+    expect(enginePlayerSupportsWebUi("win32")).toBe(false);
+    expect(enginePlayerSupportsWebUi("darwin")).toBe(false);
+  });
+});
 
 describe("engine: native on desktop", () => {
   it.each(["no-git", "no-repo", "consumer-git", "dirty-engine"])(

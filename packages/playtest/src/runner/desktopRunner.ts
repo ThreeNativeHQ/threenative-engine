@@ -1,5 +1,5 @@
 import { completionWindowEnvironment } from "./steps.js";
-import { statSync } from "node:fs";
+import { existsSync, statSync } from "node:fs";
 import { mkdir, mkdtemp, rm, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join, resolve } from "node:path";
@@ -36,16 +36,32 @@ export interface IDesktopPlaytestDependencies {
  * directory for both keeps a kit's `test:native` independent of the chosen engine, which is what a
  * game that flips `engine: "threejs"` needs.
  */
+export interface IDesktopLaunchTarget {
+  /** Optional arguments that belong to the artifact itself, before any `--host-arg`. */
+  readonly args?: readonly string[];
+  readonly executable: string;
+}
+
+/**
+ * The path a desktop playtest launches for an `--executable` argument.
+ *
+ * Kept as the string-returning entry point it always was; `resolveDesktopLaunch` is the form the
+ * runner needs, because the raw Windows player also takes its bundle as an argument.
+ */
 export async function resolveDesktopExecutable(candidate: string): Promise<string> {
+  return (await resolveDesktopLaunch(candidate)).executable;
+}
+
+export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopLaunchTarget> {
   let isDirectory = false;
   try {
     isDirectory = (await stat(candidate)).isDirectory();
   } catch {
     // A path the runner cannot stat is passed through unchanged: the driver reports the missing
     // binary with the platform's own message, and a test fixture may name one it never writes.
-    return candidate;
+    return { executable: candidate };
   }
-  if (!isDirectory) return candidate;
+  if (!isDirectory) return { executable: candidate };
   const name = basename(candidate);
   // A Windows build writes its launcher either as `<dir>.exe` (the `threejs` host) or as
   // `<dir>/<name>.exe` (the owned engine), and switching engines leaves the other form behind. The
@@ -62,7 +78,17 @@ export async function resolveDesktopExecutable(candidate: string): Promise<strin
     .map((launcher) => ({ launcher, mtimeMs: statSync(launcher, { throwIfNoEntry: false })?.mtimeMs ?? -1 }))
     .filter(({ mtimeMs }) => mtimeMs >= 0)
     .sort((left, right) => right.mtimeMs - left.mtimeMs);
-  if (present[0] !== undefined) return present[0].launcher;
+  if (present[0] !== undefined) {
+    // The raw engine player needs its bundle as an argument; the launcher scripts find it
+    // themselves. Only Windows resolves to the raw player, because its launcher is a POSIX script.
+    const player = present[0].launcher.replace(/\\.exe$/u, "");
+    const bundle = join(candidate, "game.js");
+    const args = process.platform === "win32" && basename(player).startsWith("tn-native-engine-player") &&
+        existsSync(bundle)
+      ? [bundle]
+      : undefined;
+    return args === undefined ? { executable: present[0].launcher } : { args, executable: present[0].launcher };
+  }
   throw new Error(
     `TN_PLAYTEST_EXECUTABLE_MISSING: ${candidate} is a directory with no ${name} launcher in it; build the game's desktop target again.`,
   );
@@ -90,9 +116,10 @@ export async function runDesktopPlaytest(
   if (declaredExecutable === undefined) {
     throw new Error("Desktop playtest requires --executable <native-game-executable>.");
   }
-  const executable = dependencies.driver === undefined
-    ? await resolveDesktopExecutable(declaredExecutable)
-    : declaredExecutable;
+  const launch = dependencies.driver === undefined
+    ? await resolveDesktopLaunch(declaredExecutable)
+    : { executable: declaredExecutable };
+  const executable = launch.executable;
   const abortController = new AbortController();
   const handleSignal = (): void => {
     abortController.abort();
@@ -145,7 +172,7 @@ export async function runDesktopPlaytest(
     const makeDriver =
       dependencies.driverFactory ?? ((options) => new DesktopPlaytestDriver(options));
     driver = dependencies.driver ?? makeDriver({
-      args: desktopHostArgs(config),
+      args: [...(launch.args ?? []), ...desktopHostArgs(config)],
       cwd: config.projectPath,
       ...(providedDisplay === undefined ? {} : { env: providedDisplay.env }),
       executable,

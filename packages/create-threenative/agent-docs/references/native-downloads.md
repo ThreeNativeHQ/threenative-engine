@@ -24,12 +24,17 @@ The error names the asset, the installed version, the URL and the reason. Three 
 3. Build the binary from an engine checkout. The engine player and the legacy host are different
    binaries with different recipes:
    - engine player (default): `cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON
-     -DTN_ENGINE_PLAYER=ON`, then `cmake --build build/tn-engine-ui --target
+     -DTN_ENGINE_PLAYER=ON`, plus `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux when the game has a
+     `ui.renderer: "web"` HUD, then `cmake --build build/tn-engine-ui --target
      tn-native-engine-player-v8`. A checkout with `build/tn-engine-ui/tn-native-engine-player-v8`
      is picked up with no variable set.
    - legacy host (`engine: "threejs"`): `pnpm --filter @threenative/runtime-native native:build`,
      then set `THREENATIVE_RUNTIME_BINARY`.
    macOS publishes no desktop asset at all, so there the checkout build is the only route.
+   The overlay option is Linux-only and the released Windows and macOS players are built without
+   it: a `ui.renderer: "web"` desktop build on either is refused at `TN_ENGINE_PLAYER_UI_UNSUPPORTED`
+   before the download, so set `ui.renderer: "native"` (draw the HUD in the game) or
+   `engine: "threejs"` (the legacy host renders the web UI) there.
 
 `TN_NATIVE_BINARY_UNAVAILABLE` is a network, HTTP or checksum failure.
 `TN_NATIVE_BINARY_UNPUBLISHED` means the release carries no asset for that platform or this

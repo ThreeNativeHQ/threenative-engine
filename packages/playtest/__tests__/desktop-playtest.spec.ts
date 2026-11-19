@@ -20,7 +20,11 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
-import { resolveDesktopExecutable, runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import {
+  resolveDesktopExecutable,
+  resolveDesktopLaunch,
+  runDesktopPlaytest,
+} from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
@@ -60,6 +64,18 @@ test("--executable accepts the build output directory of either engine", async (
     await writeFile(flat, "");
     expect(await resolveDesktopExecutable(flat)).toBe(flat);
     expect(await resolveDesktopExecutable(join(root, "absent"))).toBe(join(root, "absent"));
+    // A Windows default-engine build resolves to the raw player, which takes the bundle it sits
+    // beside; the resolver hands that argument to the driver instead of launching a bare binary.
+    if (process.platform === "win32") {
+      const native = join(root, "native");
+      await mkdir(native, { recursive: true });
+      await writeFile(join(native, "tn-native-engine-player-v8.exe"), "");
+      await writeFile(join(native, "game.js"), "");
+      expect(await resolveDesktopLaunch(native)).toEqual({
+        args: [join(native, "game.js")],
+        executable: join(native, "tn-native-engine-player-v8.exe"),
+      });
+    }
     // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory.
     const stale = join(root, "switched");
     await mkdir(stale, { recursive: true });
