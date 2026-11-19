@@ -1736,7 +1736,10 @@ jobs:
     # Hosted on purpose: it waits for the whole run, and a local light slot held for an hour would
     # queue the small joins behind it.
     runs-on: ubuntu-24.04
-    timeout-minutes: 120
+    # PRD-901: a promotion board now waits for every leg instead of stopping at the first red, so
+    # this is the whole board's ceiling. The reported worst board is 65 min, and 0.3.16 ran on a
+    # loaded pool; 120 is too close, so `main` gets double.
+    timeout-minutes: ${{ github.base_ref == 'main' && 240 || 120 }}
     permissions:
       actions: write
       contents: read
@@ -1746,10 +1749,14 @@ jobs:
       - uses: actions/checkout@v7
         with:
           ref: ${{ needs.scope.outputs.candidate_sha || github.sha }}
-      - name: Comment on the pull request and cancel the run at the first red job
+      - name: Name the red legs on the pull request and cancel the run at the first red job
         env:
           GH_TOKEN: ${{ github.token }}
           TN_CI_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+          # PRD-901: a pull request into `main` is a promotion board. It runs to its end and names
+          # every red leg in one comment, instead of hiding the others behind a cancel.
+          TN_CI_BASE_REF: ${{ github.base_ref }}
+          TN_CI_PULL_NUMBER: ${{ github.event.pull_request.number }}
         run: node scripts/ci-queue-watch.mjs
 
   # The only required context after protected-develop cutover. Explicit exemptions are not passes.

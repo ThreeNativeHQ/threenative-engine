@@ -55,6 +55,7 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    deprecations, so call `engine_capability_detail` only for a symbol the search did not return.
    Record installed capabilities and binding constraints. A
    `verdict: "none"` means game-owned behavior in `src/`; do not rephrase until something matches.
+   Its `nearMatches` are under-floor suggestions only, never binding capabilities.
    These role names add no servers.
 4. **Plan** — hand **Kit**, **Mechanics** and **References** to `prd-creator`. Plan the core loop
    from both discovery passes, with controls, camera, state, acceptance checks, target platforms

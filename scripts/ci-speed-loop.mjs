@@ -150,6 +150,24 @@ export const GOALS = [
     goal: 120,
     better: "lower",
   },
+  // PRD-901: 0.3.16 took 22 promotion boards and 40.7 hours. A round is a fix set, so its count is
+  // how many rounds the owner waited through; the tail is what the publish costs after the merge.
+  {
+    key: "promotionBoardsLatest",
+    short: "Boards/release",
+    label: "Promotion boards the newest release needed (one board per fix set)",
+    unit: "boards",
+    goal: 4,
+    better: "lower",
+  },
+  {
+    key: "mergeToShipEndMin",
+    short: "Merge→ship end",
+    label: "Newest release's merge to the end of the `ship` job",
+    unit: "min",
+    goal: 45,
+    better: "lower",
+  },
 ];
 
 export const emptyLedger = () => ({ schemaVersion: 1, goals: GOALS, iterations: [] });
@@ -202,6 +220,7 @@ export function appendIteration(
       enqueueToMergeMedianMin: measurement.summary.enqueueToMergeMedianMin,
       queueWaitJobs: measurement.summary.queueWaitJobs,
       fullBoardQueueSumMedianMin: measurement.summary.fullBoardQueueSumMedianMin ?? null,
+      releaseRoad: measurement.summary.releaseRoad ?? [],
     },
     prs: measurement.prs,
     firstFailingJobs: measurement.firstFailingJobs,

@@ -1547,6 +1547,8 @@ describe("verifyNativeFramesOnSoftware", () => {
     );
     expect(proof).toMatch(/300 rendered frames/u);
     const call = calls[0] as string[];
+    expect(call).toContain("TN_PLAYER_PRIORITY=normal");
+    expect(call).toContain("SDL_AUDIODRIVER=dummy");
     expect(call).toContain("--executable");
     expect(call[call.indexOf("--executable") + 1]).toBe(
       path.join(project, "dist-native", "my-game", "my-game"),

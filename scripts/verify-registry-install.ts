@@ -1115,6 +1115,9 @@ export function verifyNativeFramesOnSoftware(
       path.join(packages, "runtime-native", "scripts", "xvfb.sh"),
       "env",
       "TN_PLAYTEST_HOST_DISPLAY=1",
+      // Headless runners need neither scheduling privileges nor a physical audio device.
+      "TN_PLAYER_PRIORITY=normal",
+      "SDL_AUDIODRIVER=dummy",
       process.execPath,
       path.join(packages, "playtest", "dist", "runner", "cli.js"),
       scenario,

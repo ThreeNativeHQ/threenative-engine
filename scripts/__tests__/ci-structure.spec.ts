@@ -2011,6 +2011,18 @@ describe("CI pipeline structure", () => {
     }
   });
 
+  // PRD-901. The promotion path is inert unless the workflow hands the watcher its base ref and the
+  // pull request number; a later edit that drops either turns a promotion board back into a
+  // first-red cancel with no comment, and no unit spec would notice.
+  it("hands the promotion board its base ref, its pull request and a longer ceiling", async () => {
+    const ci = await readFile(path.join(repo, ".github/workflows/ci.yml"), "utf8");
+    const watch = requiredJob(ci, "queue-watch");
+    expect(watch).toContain("TN_CI_BASE_REF: ${{ github.base_ref }}");
+    expect(watch).toContain("TN_CI_PULL_NUMBER: ${{ github.event.pull_request.number }}");
+    // It waits for every leg now, so 120 minutes is the board's ceiling rather than the first red's.
+    expect(watch).toContain("timeout-minutes: ${{ github.base_ref == 'main' && 240 || 120 }}");
+  });
+
   // A draft PR spends no runner: every job needs `scope`, so skipping it and the always() gate
   // skips the board, and `ready_for_review` starts it once the draft is marked ready.
   it("runs nothing on draft pull requests until they are marked ready", async () => {

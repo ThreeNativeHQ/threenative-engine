@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-const { releaseLead, releaseLeadTimes, summarizeBoards } = await import(
+const { releaseLead, releaseLeadTimes, releaseRoad, summarizeBoards } = await import(
   new URL("../ci-board-kpis.mjs", import.meta.url).href
 );
 
@@ -240,5 +240,192 @@ describe("releaseLeadTimes", () => {
       promotions: [{ createdAt: T(200) }],
     });
     expect(leads).toEqual([]);
+  });
+});
+
+/** A ci.yml run. `head`/`event` are what make it a promotion board (PRD-901). */
+const run = (
+  createdAt: number,
+  options: { event?: string; head?: string; red?: boolean; minutes?: number } = {},
+) => {
+  const minutes = options.minutes ?? 10;
+  return {
+    event: options.event ?? "pull_request",
+    headBranch: options.head ?? "develop",
+    conclusion: options.red === true ? "failure" : "success",
+    createdAt: T(createdAt),
+    jobs: [job("leg", options.red === true ? "failure" : "success", 0, 0, minutes)],
+  };
+};
+const promotion = (
+  number: number,
+  title: string,
+  opened: number,
+  merged: number | null,
+  closed: number | null = null,
+) => ({
+  number,
+  title,
+  createdAt: T(opened),
+  mergedAt: merged === null ? null : T(merged),
+  closedAt: closed === null ? null : T(closed),
+  mergeSha: `sha-${String(number)}`,
+});
+
+/** The module is JS, so the row shape is spelled once for the callbacks below. */
+type RoadRow = { version: string; boards: number; mergeToShipEndMin: number | null };
+
+describe("releaseRoad (PRD-901)", () => {
+  it("counts the promotion boards between the open and the merge of each release", () => {
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 109)],
+      runs: [
+        run(10, { minutes: 38 }),
+        run(40, { red: true, minutes: 43 }),
+        run(70, { minutes: 51 }),
+        // Outside the promotion window: a feature PR and a develop push are not releases.
+        run(5, { head: "feat/x" }),
+        run(20, { event: "push" }),
+        run(200),
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.promotionBoardsLatest).toBe(3);
+    expect(road.releaseRoad).toEqual([
+      {
+        version: "0.3.15",
+        pr: 687,
+        opened: T(0),
+        merged: T(109),
+        boards: 3,
+        machineMinutes: 132,
+        mergeToShipEndMin: null,
+      },
+    ]);
+  });
+
+  it("reads merge to the end of the ship job, and n/a when that job did not finish", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(687, "Release 0.3.15", 0, 100),
+        promotion(689, "Release 0.3.16", 120, 900),
+      ],
+      runs: [run(10), run(130)],
+      ships: [
+        { sha: "sha-687", completedAt: T(159) },
+        { sha: "sha-689", completedAt: null },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.mergeToShipEndMin).toBe(null);
+    expect(road.releaseRoad.map((row: RoadRow) => [row.version, row.mergeToShipEndMin])).toEqual([
+      ["0.3.15", 59],
+      ["0.3.16", null],
+    ]);
+  });
+
+  it("counts a ship job that concluded red: 0.3.15's ship failed after its publish", () => {
+    // Its `ship` ended `failure` in the clean-room `npm:native` step (PRD-897) after publishing,
+    // and AC-3 still measures 59.5 minutes to that end. A successful-only rule would read n/a.
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 100)],
+      runs: [run(10)],
+      ships: [{ sha: "sha-687", completedAt: T(159), conclusion: "failure" }],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
+  it("ignores a skipped ship: a scheduled main run carries one on the same commit", () => {
+    // `ship` is gated on a successful main push, so a nightly run on main has a `ship` job that is
+    // skipped and still carries a completion. Taking it would read minutes for a one-hour release.
+    const road = releaseRoad({
+      promotions: [promotion(689, "Release 0.3.16", 0, 100)],
+      runs: [run(10)],
+      ships: [
+        { sha: "sha-689", completedAt: T(105), conclusion: "skipped" },
+        { sha: "sha-689", completedAt: T(159), conclusion: "failure" },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
+  it("keeps the earliest finished ship when a release has more than one run", () => {
+    // The API lists runs newest first, and a re-dispatched clean room runs a second time on the
+    // same merge commit. The road ends at the first one that finished.
+    const road = releaseRoad({
+      promotions: [promotion(689, "Release 0.3.16", 0, 100)],
+      runs: [run(10)],
+      ships: [
+        { sha: "sha-689", completedAt: T(400) },
+        { sha: "sha-689", completedAt: T(159) },
+        { sha: "sha-689", completedAt: null },
+      ],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.mergeToShipEndMin).toBe(59);
+  });
+
+  it("reports the newest release in the window, not the one that moved most", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(687, "Release 0.3.15", 0, 100),
+        promotion(689, "Release 0.3.16", 300, 600),
+      ],
+      runs: [run(10), run(20), run(30), run(310)],
+      ships: [{ sha: "sha-687", completedAt: T(159) }],
+      since: T(0),
+      until: T(2000),
+    });
+
+    expect(road.promotionBoardsLatest).toBe(1);
+    expect(road.releaseRoad.map((row: RoadRow) => row.boards)).toEqual([3, 1]);
+  });
+
+  it("ends a promotion closed without merging at its close, not at now", () => {
+    // A superseded promotion spent the boards up to its close. Counting from September to now
+    // read 25 boards and 7,293 machine minutes for each of three closed promotion PRs.
+    const road = releaseRoad({
+      promotions: [promotion(400, "Release 0.2.8", 0, null, 40)],
+      runs: [run(10), run(30), run(60)],
+      since: T(0),
+      until: T(1000),
+    });
+    expect(road.releaseRoad[0]?.boards).toBe(2);
+    expect(road.releaseRoad[0]?.merged).toBe(null);
+  });
+
+  it("names a release by its PR when the title carries no version", () => {
+    const road = releaseRoad({
+      promotions: [
+        promotion(671, "Promote develop to main: new games install the newest engine", 0, 10),
+      ],
+      runs: [run(5)],
+      since: T(0),
+      until: T(2000),
+    });
+    expect(road.releaseRoad[0]?.version).toBe("pr-671");
+  });
+
+  it("leaves a release the window did not reach out, and is n/a when nothing did", () => {
+    const road = releaseRoad({
+      promotions: [promotion(687, "Release 0.3.15", 0, 100)],
+      runs: [run(10)],
+      since: T(500),
+      until: T(2000),
+    });
+    expect(road).toEqual({
+      promotionBoardsLatest: null,
+      mergeToShipEndMin: null,
+      releaseRoad: [],
+    });
   });
 });

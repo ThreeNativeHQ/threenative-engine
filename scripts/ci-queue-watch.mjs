@@ -4,6 +4,9 @@
 // the rest, so a red costs minutes of runners and the author does not read a wall of cancelled
 // checks. The failed job keeps its own conclusion: only jobs still in flight are cancelled.
 // PRD-782: a full board on a pull request or a manual run stops the same way, with no comment.
+// PRD-901: a pull request into `main` is a release promotion, and one round is all a fix set may
+// cost. It runs to its end and one comment names every red leg: 0.3.16 spent 22 boards, each
+// showing one red, on the release that took 40.7 hours.
 import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { gh } from "./lib/gh.mjs";
@@ -14,10 +17,23 @@ const QUEUE_REF = /^(?:refs\/heads\/)?gh-readonly-queue\/[^/]+\/pr-(\d+)-[0-9a-f
 const RED = new Set(["failure", "timed_out", "startup_failure"]);
 // `continue-on-error` in native-platforms.yml: its red does not fail the board, so it stops nothing.
 const NON_BLOCKING = /^native-platforms \/ iOS simulator/u;
+// A called workflow reports its own verdict as a receipt job that only repeats a leg of that
+// workflow. On a board that lists every red it would double every failure; it stays when it is the
+// only red of its workflow, because then a missing or stale receipt is the failure.
+const RECEIPT = /(?:Verify required integration receipts|Native required coverage receipt)$/u;
 
 /** The pull request a queue ref names, or null. */
 export function queuePullNumber(queueRef) {
   return QUEUE_REF.exec(queueRef ?? "")?.[1] ?? null;
+}
+
+/**
+ * PRD-901: a pull request into `main` is the promotion board of a release. Cancelling it at its
+ * first red hides the other reds behind a cancelled run, so it shows them all in one round. Every
+ * other run keeps the first-red cancel: a fix on a feature branch pays for one leg, not a board.
+ */
+export function showsEveryRed(baseRef) {
+  return baseRef === "main";
 }
 
 /**
@@ -42,17 +58,39 @@ export function isInfraFailure(job, log, signatures) {
   return signatures !== "" && new RegExp(signatures, "u").test(log);
 }
 
+/**
+ * Every red job that is not an aggregate, in the order they concluded.
+ *
+ * `cancelled` counts on a promotion board only. A leg killed by `timeout-minutes` concludes
+ * `cancelled` inside a run that concluded `failure` (ci.yml run 43858835585), so leaving it out
+ * would let a board whose only red leg timed out report "none red". It cannot be counted on the
+ * cancelling paths: a superseded run has cancelled legs and is not red.
+ */
+export function redJobs(jobs, includeCancelled = false) {
+  const failed = (job) =>
+    RED.has(job?.conclusion) || (includeCancelled && job?.conclusion === "cancelled");
+  const candidates = jobs.filter((job) => failed(job) && !NON_BLOCKING.test(job?.name ?? ""));
+  const legs = candidates.filter((job) => !ECHOES.has(job.name));
+  // A promotion board lists every leg. When it has none, an aggregate is the cause — a standalone
+  // `ci-required` failure is a missing or stale receipt, which no leg names.
+  const red = includeCancelled && legs.length === 0 ? candidates : legs;
+  // Only a board that lists every red needs this; a first-red cancel stops before the echo matters.
+  const kept = includeCancelled
+    ? red.filter(
+        (job) =>
+          !RECEIPT.test(job.name) ||
+          !red.some(
+            (other) => other !== job && other.name.startsWith(`${job.name.split(" / ")[0]} / `),
+          ),
+      )
+    : red;
+  kept.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
+  return kept;
+}
+
 /** The earliest-completed red job that is not an aggregate, or null while nothing is red. */
 export function firstRedJob(jobs, ignore = new Set()) {
-  const red = jobs.filter(
-    (job) =>
-      RED.has(job?.conclusion) &&
-      !ECHOES.has(job?.name) &&
-      !NON_BLOCKING.test(job?.name ?? "") &&
-      !ignore.has(job?.id),
-  );
-  red.sort((a, b) => String(a.completed_at).localeCompare(String(b.completed_at)));
-  return red[0] ?? null;
+  return redJobs(jobs).find((job) => !ignore.has(job?.id)) ?? null;
 }
 
 /** True once every job other than the watcher has finished. */
@@ -69,6 +107,21 @@ export function commentBody({ job, runId, repository }) {
     `- Merge-group run: [${runId}](${run}) (the rest of its jobs were cancelled)`,
     "",
     "Fix, push, re-enqueue.",
+  ].join("\n");
+}
+
+/** One comment for a whole promotion round: every red leg, so one fix set answers all of them. */
+export function promotionCommentBody({ jobs, runId, repository }) {
+  const run = `https://github.com/${repository}/actions/runs/${runId}`;
+  return [
+    `This promotion board ended with ${String(jobs.length)} red ${jobs.length === 1 ? "leg" : "legs"}.`,
+    "The board ran to its end, so this list is every leg of the round that did not pass.",
+    "",
+    ...jobs.map((job) => `- [\`${job.name}\`](${job.html_url ?? run}) (${job.conclusion})`),
+    "",
+    `Board: [${runId}](${run})`,
+    "",
+    "Fix them together, push once, and the next board carries the next fix set.",
   ].join("\n");
 }
 
@@ -108,40 +161,85 @@ function sleep(seconds) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  const { GITHUB_REPOSITORY: repository, GITHUB_RUN_ID: runId, TN_CI_QUEUE_REF } = process.env;
+  const {
+    GITHUB_REPOSITORY: repository,
+    GITHUB_RUN_ID: runId,
+    TN_CI_QUEUE_REF,
+    TN_CI_BASE_REF: baseRef,
+    TN_CI_PULL_NUMBER: pullNumber,
+  } = process.env;
   const number = queuePullNumber(TN_CI_QUEUE_REF);
+  const promotion = showsEveryRed(baseRef) ? Number(pullNumber) || null : null;
   const interval = Number(process.env.TN_QUEUE_WATCH_SECONDS ?? 30);
-  // Only a merge group has a queue ref and a pull request to tell.
-  if ((number === null && TN_CI_QUEUE_REF) || !repository || !runId) {
-    console.error("CI_QUEUE_WATCH_INPUT: the queue ref, repository or run id is missing");
+  // Only a merge group has a queue ref, and only a promotion has a pull request to tell.
+  if (
+    (number === null && TN_CI_QUEUE_REF) ||
+    (showsEveryRed(baseRef) && promotion === null) ||
+    !repository ||
+    !runId
+  ) {
+    console.error(
+      "CI_QUEUE_WATCH_INPUT: the queue ref, base ref, pull number or run id is missing",
+    );
     process.exit(2);
   }
   const signatures = janitorSignatures(
     readFileSync(new URL("../.github/workflows/ci-janitor.yml", import.meta.url), "utf8"),
   );
-  const infra = new Set();
-  for (;;) {
-    const jobs = runJobs(repository, runId);
-    const red = firstRedJob(jobs, infra);
-    if (red !== null && isInfraFailure(red, jobLog(repository, red.id), signatures)) {
-      // The janitor reruns this job once; cancelling here would end the run as cancelled and skip it.
-      console.log(`red job ${red.name} is an infra failure: left to the janitor`);
-      infra.add(red.id);
-    } else if (red !== null) {
-      // The comment first: a cancel that fails must not hide the cause.
-      if (number !== null) {
-        gh([
-          "api",
-          `repos/${repository}/issues/${number}/comments`,
-          "-f",
-          `body=${commentBody({ job: red, runId, repository })}`,
-        ]);
+  if (promotion !== null) {
+    // PRD-901: the round is the unit of a fix set, so wait for every leg and name them together.
+    for (;;) {
+      const jobs = runJobs(repository, runId);
+      if (allFinished(jobs)) {
+        const red = redJobs(jobs, true);
+        if (red.length === 0) {
+          console.log(`promotion board ${runId}: every leg concluded, none red`);
+          break;
+        }
+        try {
+          gh([
+            "api",
+            `repos/${repository}/issues/${promotion}/comments`,
+            "-f",
+            `body=${promotionCommentBody({ jobs: red, runId, repository })}`,
+          ]);
+        } catch (error) {
+          // A board that stayed red and told nobody is the failure this cannot hide.
+          console.error(error instanceof Error ? error.message : error);
+          process.exit(1);
+        }
+        console.log(
+          `promotion board ${runId}: ${String(red.length)} red leg(s) named on #${String(promotion)}`,
+        );
+        break;
       }
-      gh(["run", "cancel", runId, "--repo", repository]);
-      console.log(`first red job ${red.name}: cancelled run ${runId}`);
-      break;
+      sleep(interval);
     }
-    if (allFinished(jobs)) break;
-    sleep(interval);
+  } else {
+    const infra = new Set();
+    for (;;) {
+      const jobs = runJobs(repository, runId);
+      const red = firstRedJob(jobs, infra);
+      if (red !== null && isInfraFailure(red, jobLog(repository, red.id), signatures)) {
+        // The janitor reruns this job once; cancelling here would end the run as cancelled and skip it.
+        console.log(`red job ${red.name} is an infra failure: left to the janitor`);
+        infra.add(red.id);
+      } else if (red !== null) {
+        // The comment first: a cancel that fails must not hide the cause.
+        if (number !== null) {
+          gh([
+            "api",
+            `repos/${repository}/issues/${number}/comments`,
+            "-f",
+            `body=${commentBody({ job: red, runId, repository })}`,
+          ]);
+        }
+        gh(["run", "cancel", runId, "--repo", repository]);
+        console.log(`first red job ${red.name}: cancelled run ${runId}`);
+        break;
+      }
+      if (allFinished(jobs)) break;
+      sleep(interval);
+    }
   }
 }
