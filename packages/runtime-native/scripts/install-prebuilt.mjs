@@ -500,10 +500,14 @@ async function downloadRanges(key, url, size) {
         // The claimed reader decides the result even when it fails: its error is the download's.
         // Any other failure is remembered only until a whole body wins, and cancels the siblings
         // so a stalled body cannot hold the install lock.
-        if (index === claimed) failure = error;
-        else if (claimed === undefined) {
-          if (failure === undefined && !isAbortError(error)) failure = error;
-        } else if (rangeFailure === undefined && !isAbortError(error)) {
+        // The first real failure is the diagnosis and is never overwritten: a queued 200 that is
+        // aborted later must not replace the 500 that caused the abort.
+        const aborted = isAbortError(error);
+        if (index === claimed) {
+          if (failure === undefined) failure = error;
+        } else if (claimed === undefined) {
+          if (failure === undefined && !aborted) failure = error;
+        } else if (rangeFailure === undefined && !aborted) {
           rangeFailure = error;
           claimDeadline = setTimeout(() => controllers[claimed]?.abort(), CLAIM_GRACE_MS);
           claimDeadline.unref?.();

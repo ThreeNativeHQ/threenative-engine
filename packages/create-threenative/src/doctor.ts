@@ -1538,6 +1538,18 @@ export function nativeRuntimeCheck(
     };
   }
 
+  // A pinned manifest is an input the build reads before anything else: a receipt that matches a
+  // pin whose file has since been deleted describes a download that will not run.
+  const pinnedManifest = process.env.THREENATIVE_PREBUILT_MANIFEST;
+  if (pinnedManifest !== undefined && !existsSync(path.resolve(pinnedManifest))) {
+    return {
+      detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${path.resolve(pinnedManifest)}, which does not exist, so the next desktop build fails before downloading.`,
+      fix: "Restore the pinned manifest file, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
+      name: "native runtime",
+      status: "fail",
+    };
+  }
+
   const statusText = snapshot.readRuntimeText(target.statusFile);
   if (statusText === undefined) {
     // Nothing to report is the ordinary web-only state now: the first native build downloads it.

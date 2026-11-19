@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -730,6 +730,10 @@ describe("threenative doctor", () => {
     // the local lock as its source; comparing that to the public URL told the user to reinstall,
     // which would fetch nothing and change nothing.
     const pin = path.join("/tmp", "offline-pin", "prebuilt-lock.json");
+    // The pin must exist: a receipt that matches a deleted pin is a download the next build cannot
+    // repeat, which the check below reports as a failure of its own.
+    mkdirSync(path.dirname(pin), { recursive: true });
+    writeFileSync(pin, "{}\n");
     process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
     try {
       const report = diagnoseProject(

@@ -1,11 +1,13 @@
 # Native binaries arrive at the first native build
 
-PRD-783. `pnpm install` downloads **no** native binary. The web engine already ships as Wasm inside
-`@threenative/core`, so a web game installs and runs without fetching anything.
+PRD-783. `pnpm install` downloads **no** native binary and runs no install script. The web engine
+ships as Wasm in the `@threenative/runtime-native` npm package, which the templates already depend
+on, so a web game installs from the registry and runs without fetching anything — and a project
+that drops that dependency fails the web build with `TN_WASM_ENGINE_MISSING`.
 
 | Command | What it downloads |
 | --- | --- |
-| `pnpm dev`, `pnpm build`, `threenative build --target web`, `pnpm test` | nothing |
+| `pnpm dev`, `pnpm build`, `threenative build --target web`, `pnpm test` | nothing (the Wasm engine is already in `node_modules`, not downloaded) |
 | `pnpm build --target desktop` (default engine) | the engine player, about 118 MiB, once per install |
 | `pnpm build --target desktop` (`engine: "threejs"`) | the legacy runtime and its build tool helper, about 260 MiB, once per install |
 | `pnpm build --target android` / `ios` | that platform's libraries, at package time |

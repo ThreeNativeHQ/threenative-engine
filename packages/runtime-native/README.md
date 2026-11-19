@@ -37,7 +37,7 @@ recorded in the release's `prebuilt-lock.json`:
 
 | Command | Downloads |
 | --- | --- |
-| `build --target web`, `dev`, `test` | nothing — the web engine (Wasm) already ships in `@threenative/core` |
+| `build --target web`, `dev`, `test` | nothing — the Wasm engine is a file in this npm package (`build/web/`), so it arrives with the registry tarball |
 | `build --target desktop` (default engine) | the engine player, about 118 MiB, once per install |
 | `build --target desktop` (`engine: "threejs"`) | the legacy runtime and its build tool helper, about 260 MiB, once per install |
 | `build --target android` / `ios` | that platform's libraries, at package time |
