@@ -1503,7 +1503,9 @@ export function nativeRuntimeCheck(
 
   // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
   // buildable that `threenative build` rejects before it downloads anything.
-  const renderer = record(record(snapshot.config)?.ui)?.renderer;
+  // The build's default renderer is "web" when the config is absent or silent, so an unreadable
+  // config cannot be an exemption from the refusal either.
+  const renderer = record(record(snapshot.config)?.ui)?.renderer ?? "web";
   const hudRefusal: IDoctorCheck | undefined =
     !target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()
       ? {
@@ -1528,6 +1530,7 @@ export function nativeRuntimeCheck(
     };
   }
   if (localPlayer !== undefined) {
+    if (hudRefusal !== undefined) return hudRefusal;
     return {
       detail: `available — ${localPlayer.path} (local build)`,
       name: "native runtime",
@@ -1575,7 +1578,13 @@ export function nativeRuntimeCheck(
       typeof status.reason === "string" ? status.reason : "the install recorded no reason";
     return {
       detail: `unavailable — ${key}: ${reason}`,
-      fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
+      // The build is the downloader, but it refuses a web HUD on these platforms before fetching,
+      // so the retry that always reaches it is the downloader's own command.
+      fix: `${
+        hudRefusal === undefined
+          ? "Rerun `threenative build --target desktop`"
+          : `${hudRefusal.fix} Then run \`node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs\``
+      }: it downloads the binary again. A persistent failure names the URL and the way out.`,
       name: "native runtime",
       status: "fail",
     };

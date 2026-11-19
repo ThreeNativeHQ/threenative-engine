@@ -172,7 +172,11 @@ test('unsupported platforms fail closed with the platform-arch string', () => {
 test('a missing release lock and a missing platform asset both fail closed', () => {
   const root = makeTempDirSync('threenative-prebuilt-');
   roots.push(root);
-  assert.throws(() => readRelease(join(root, 'missing.json'), 'linux-x64'), /linux-x64.*OPEN/);
+  // A local manifest is an explicit input: missing is a broken pin, not a release that is pending.
+  assert.throws(
+    () => readRelease(join(root, 'missing.json'), 'linux-x64'),
+    (error) => error.code === 'PREBUILT_RELEASE_MISSING' && /linux-x64/u.test(error.message),
+  );
   const manifest = join(root, 'lock.json');
   writeFileSync(manifest, '{"artifacts":{}}\n');
   assert.throws(() => readRelease(manifest, 'linux-x64'), /linux-x64/);
@@ -244,7 +248,7 @@ test('a 404 release manifest is recognised as a missing release, not a generic f
   }
 });
 
-test('an unpublished release records the gap and finishes the consumer install', async () => {
+test('an absent explicit lock fails closed instead of baking an empty image', async () => {
   const root = makeTempDirSync('threenative-prebuilt-missing-');
   roots.push(root);
   mkdirSync(join(root, 'scripts'), { recursive: true });
@@ -261,13 +265,16 @@ test('an unpublished release records the gap and finishes the consumer install',
   const result = await run(process.execPath, [join(root, 'scripts', 'install-prebuilt.mjs')], {
     cwd: root,
     env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: manifestPath },
-  });
-  // `run` rejects on a non-zero exit — the pre-fix install aborts here, which is the red.
+  }).then(
+    (value) => ({ ...value, code: 0 }),
+    (error) => ({ code: 1, stderr: String(error.stderr ?? error.message) }),
+  );
+  // A missing explicit lock is a broken input: an offline image must not bake with neither binary.
+  assert.equal(result.code, 1);
   const status = JSON.parse(readFileSync(join(root, 'prebuilt', 'install-status.json'), 'utf8'));
   assert.equal(status.ok, false);
   assert.match(status.reason, /linux-x64/);
-  // PRD-783: the command now reports the named, offline-stable diagnosis.
-  assert.match(result.stderr, /TN_NATIVE_BINARY_UNPUBLISHED: no threenative-runtime-linux-x64 is published/iu);
+  assert.match(result.stderr, /does not exist/u);
 });
 
 test('the install hook runs when invoked through a symlinked package path', async () => {
@@ -291,12 +298,12 @@ test('the install hook runs when invoked through a symlinked package path', asyn
   await run(process.execPath, [join(linked, 'scripts', 'install-prebuilt.mjs')], {
     cwd: root,
     env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: join(root, 'absent-lock.json') },
-  });
+  }).catch(() => undefined);
   // The pre-fix guard compared the symlinked argv path with the real module URL, skipped the
   // install entirely and wrote no status: that missing file is the red.
   const status = JSON.parse(readFileSync(join(real, 'prebuilt', 'install-status.json'), 'utf8'));
   assert.equal(status.ok, false);
-  assert.match(status.reason, /no prebuilt release manifest exists/iu);
+  assert.match(status.reason, /does not exist|no prebuilt release manifest/iu);
 });
 
 test('exports the complete prebuilt key table consumed by release packaging', () => {
@@ -536,7 +543,7 @@ test('the clean-room Android build fails loudly on a corrupt fixture manifest', 
 
     await assert.rejects(
       prepareAndroidPrebuilts({ manifestPath: join(root, 'absent-lock.json'), outputRoot }),
-      /No prebuilt release manifest exists/u,
+      /does not exist \(requested for/u,
       'an absent manifest must fail closed rather than fetch the network',
     );
   } finally {
@@ -2103,7 +2110,7 @@ test('engine player assets install and verify checksums on each desktop platform
     assert.ok(UNPUBLISHED_PREBUILT_KEYS.includes('darwin-arm64-engine-player'));
     assert.equal(PREBUILT_ASSET_NAMES['darwin-arm64-engine-player'], 'threenative-engine-player-darwin-arm64');
     await assert.rejects(installPrebuilt({ platform: 'darwin', arch: 'arm64', enginePlayer: true, output: join(root, 'mac-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
-    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_MISSING');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
     await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
     writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
@@ -2154,6 +2161,19 @@ async function rangeRelease(behaviour = 'ranges') {
     const start = Number(match[1]);
     const end = Number(match[2]);
     if (behaviour === 'fail-halfway' && seen.length === 3) {
+      response.statusCode = 500;
+      response.end();
+      return;
+    }
+    if (behaviour === 'stall-claimed') {
+      // One request claims a whole body and never finishes it; every other range fails outright.
+      // The downloader must report the range failure instead of waiting on the stalled claim.
+      if (seen.length === 1) {
+        response.statusCode = 200;
+        response.writeHead(200, { 'content-length': String(payload.length) });
+        response.write(payload.subarray(0, 64 * 1024));
+        return;
+      }
       response.statusCode = 500;
       response.end();
       return;
@@ -2217,6 +2237,22 @@ test('a server that ignores Range still yields the exact bytes from one body', a
       release.streamed() < release.payload.length * 3,
       `the server pushed ${release.streamed()} bytes; the siblings were not cancelled`,
     );
+  } finally {
+    await release.close();
+  }
+});
+
+test('a claimed whole-body read that stalls does not hide a sibling range failure', async () => {
+  const release = await rangeRelease('stall-claimed');
+  try {
+    const started = Date.now();
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /HTTP 500 for byte range/u,
+    );
+    // The claim is aborted after its grace period, so the failure surfaces in seconds rather than
+    // holding the install lock until the socket times out.
+    assert.ok(Date.now() - started < 20_000, 'the stalled claim outlived its sibling failure');
   } finally {
     await release.close();
   }

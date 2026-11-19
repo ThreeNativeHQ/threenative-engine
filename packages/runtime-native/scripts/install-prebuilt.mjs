@@ -260,8 +260,11 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha,
 
 export function readRelease(manifestPath, key, options = {}) {
   if (!existsSync(manifestPath)) {
-    const error = new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
-    error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    // A local manifest is always an explicit input (`THREENATIVE_PREBUILT_MANIFEST` or a caller's
+    // path): a file that is not there is a broken pin, and a prefetch that warns about it bakes an
+    // image with nothing in it.
+    const error = new Error(`The prebuilt release manifest ${manifestPath} does not exist (requested for '${key}').`);
+    error.code = 'PREBUILT_RELEASE_MISSING';
     throw error;
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -396,6 +399,9 @@ export const PARALLEL_RANGE_THRESHOLD_BYTES = 8 * 1024 * 1024;
 /** How many byte ranges one large asset splits into. Measured against the real release in PRD-902. */
 export const PARALLEL_RANGE_COUNT = 16;
 
+/** How long a claimed whole-body read may outlive a sibling range's own failure. */
+const CLAIM_GRACE_MS = 5_000;
+
 async function fetchArtifact(url, key, init) {
   try {
     return await fetch(url, init);
@@ -447,6 +453,10 @@ async function downloadRanges(key, url, size) {
   let claimed;
   let whole;
   let failure;
+  // A range that fails while the claim is in flight keeps its own error, and bounds how long the
+  // claim may still hold the install lock: a stalled body must not suppress a 500 for ever.
+  let rangeFailure;
+  let claimDeadline;
   const abortOthers = (keep) => {
     controllers.forEach((controller, other) => {
       if (other !== keep && other !== claimed) controller.abort();
@@ -490,8 +500,14 @@ async function downloadRanges(key, url, size) {
         // The claimed reader decides the result even when it fails: its error is the download's.
         // Any other failure is remembered only until a whole body wins, and cancels the siblings
         // so a stalled body cannot hold the install lock.
-        if (index === claimed || (claimed === undefined && failure === undefined && !isAbortError(error)))
-          failure = error;
+        if (index === claimed) failure = error;
+        else if (claimed === undefined) {
+          if (failure === undefined && !isAbortError(error)) failure = error;
+        } else if (rangeFailure === undefined && !isAbortError(error)) {
+          rangeFailure = error;
+          claimDeadline = setTimeout(() => controllers[claimed]?.abort(), CLAIM_GRACE_MS);
+          claimDeadline.unref?.();
+        }
         abortOthers(index);
         throw error;
       }
@@ -499,9 +515,13 @@ async function downloadRanges(key, url, size) {
   } finally {
     for (const controller of controllers) controller.abort();
   }
+  if (claimDeadline !== undefined) clearTimeout(claimDeadline);
   // A whole body wins over a sibling's failure: the sha256 still decides, and its bytes are the
   // file. Only when no complete body arrived does the recorded failure become the answer.
   if (whole !== undefined) return whole;
+  // The range failure is the diagnosis: when the claim is aborted because a sibling already failed,
+  // its own abort would name the abort instead of the HTTP status that caused it.
+  if (rangeFailure !== undefined) throw rangeFailure;
   if (failure !== undefined) throw failure;
   return contents;
 }

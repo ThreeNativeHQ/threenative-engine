@@ -491,7 +491,7 @@ for (const change of ["missing", "different-checksum", "different-size"]) {
       // carry the named code and the three fixes instead of a bare download error.
       await assert.rejects(
         probe("package-desktop.mjs", call),
-        /TN_NATIVE_BINARY_(?:UNAVAILABLE|UNPUBLISHED).*(?:No prebuilt release manifest|Checksum verification failed|size verification failed)/su,
+        /TN_NATIVE_BINARY_(?:UNAVAILABLE|UNPUBLISHED).*(?:prebuilt release manifest .* does not exist|Checksum verification failed|size verification failed)/su,
       );
       await assert.rejects(readFile(fixture.install.output));
       assert.equal(
