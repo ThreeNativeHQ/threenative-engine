@@ -239,7 +239,7 @@ test('a 404 release manifest is recognised as a missing release, not a generic f
       downloadReleaseArtifact('linux-x64', {
         manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
       }),
-      (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED',
+      (error) => error.code === 'PREBUILT_RELEASE_ABSENT',
     );
   } finally {
     await new Promise((resolve, reject) =>
@@ -2118,7 +2118,9 @@ test('engine player assets install and verify checksums on each desktop platform
     await assert.rejects(installPrebuilt({ platform: 'darwin', arch: 'arm64', enginePlayer: true, output: join(root, 'mac-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
     assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_MISSING');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
-    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+    // A tag with no release is diagnosed as unpublished but is not the by-design class: the
+    // prefetch must fail on it, which its own test asserts.
+    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_ABSENT' && error.message.includes('linux-x64-engine-player'));
     writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
     await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', enginePlayer: true, output: join(root, 'absent-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
   } finally { vi.unstubAllGlobals(); }

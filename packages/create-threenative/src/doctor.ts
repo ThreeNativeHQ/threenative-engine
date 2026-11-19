@@ -1502,6 +1502,17 @@ export function pinnedManifestCheck(
       `which records release ${declaredVersion} but ${RUNTIME_PACKAGE} is ${installedVersion}; the packager rejects a lock from another release`,
     );
   }
+  // A scoped lock names the keys it promises, and the installer validates every one of them
+  // before it serves any: a lock that omits one of its own keys is refused there too.
+  const declaredKeys = record(manifest)?.requiredKeys;
+  if (Array.isArray(declaredKeys)) {
+    const declared = declaredKeys.filter((key): key is string => typeof key === "string");
+    const missingDeclared = declared.filter((key) => !usable(artifacts, key, releaseLock));
+    if (missingDeclared.length > 0)
+      return fail(
+        `which declares ${missingDeclared.join(", ")} in requiredKeys and records no usable artifact for it`,
+      );
+  }
   if (releaseLock && record(manifest)?.requiredKeys === undefined) {
     // The official lock omits `requiredKeys` because it always carries the whole published cohort,
     // and a lock with one artifact and no scope is one the downloader refuses. These are the keys

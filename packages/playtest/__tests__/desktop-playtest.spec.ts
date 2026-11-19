@@ -1,7 +1,6 @@
 import { existsSync } from "node:fs";
-import { chmod, mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { PNG } from "pngjs";
 import { afterEach, beforeEach, expect, test, vi } from "vitest";
@@ -53,7 +52,7 @@ test("--executable accepts the build output directory of either engine", async (
   // The owned engine player writes `dist-native/<name>/<name>` beside its assets; the `threejs`
   // host writes one flat `dist-native/<name>`. A kit's `test:native` names the directory, so the
   // same command proves a game after it flips `engine: "threejs"`.
-  const root = await mkdtemp(join(tmpdir(), "threenative-executable-"));
+  const root = await makeTempDir("threenative-executable-");
   try {
     const player = join(root, "racing");
     await mkdir(player, { recursive: true });

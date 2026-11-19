@@ -384,7 +384,7 @@ async function fetchRelease(manifestUrl, key, options = {}) {
     );
     // No manifest at this tag: the diagnosis is "not published yet", but a prefetch that was asked
     // to fill an offline image must not exit zero on it, so it is not the by-design class.
-    if (response.status === 404) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
+    if (response.status === 404) error.code = 'PREBUILT_RELEASE_ABSENT';
     throw error;
   }
   return releaseFromManifest(validateReleaseManifest(await response.json(), options), key, options);
@@ -908,7 +908,7 @@ function unavailableNativeBinary(error, plan) {
     /is not published for/u.test(reason);
   const code =
     error instanceof Error &&
-    (['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code) ||
+    (['PREBUILT_RELEASE_ABSENT', 'PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code) ||
       /No prebuilt release (?:asset|manifest)|is not published for/u.test(reason))
       ? 'TN_NATIVE_BINARY_UNPUBLISHED'
       : 'TN_NATIVE_BINARY_UNAVAILABLE';
