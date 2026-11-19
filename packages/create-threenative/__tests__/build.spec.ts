@@ -1460,7 +1460,16 @@ cpSync("public", out, { recursive: true });
   });
 
   it("ships the CLI and native runtime pins in every template", async () => {
-    for (const template of ["minimal", "starter", "platformer"] as const) {
+    // Every shipped template, read off the directory: the three this test used to name left
+    // thirteen manifests able to regress unseen (PRD-783 AC-5).
+    const templates = readdirSync(path.resolve("packages/create-threenative/templates"), {
+      withFileTypes: true,
+    })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name)
+      .sort();
+    expect(templates.length).toBe(16);
+    for (const template of templates) {
       const manifest = JSON.parse(
         await readFile(
           path.resolve("packages/create-threenative/templates", template, "package.json"),

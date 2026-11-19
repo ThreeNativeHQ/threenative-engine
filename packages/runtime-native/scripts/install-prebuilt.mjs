@@ -382,22 +382,25 @@ async function downloadRanges(key, url, size) {
   const chunk = Math.ceil(size / PARALLEL_RANGE_COUNT);
   const parts = Array.from({ length: PARALLEL_RANGE_COUNT }, (_, index) => {
     const start = index * chunk;
-    return { end: Math.min(size, start + chunk) - 1, start };
+    return { end: Math.min(size, start + chunk) - 1, index, start };
   }).filter(({ start }) => start < size);
   const contents = Buffer.allocUnsafe(size);
-  const controller = new AbortController();
-  // Set by the first part that receives a whole body: the server ignored `Range`, so its body is
-  // the file and the siblings downloading the same bytes are cancelled.
+  const controllers = parts.map(() => new AbortController());
+  // Set by the first part that sees a `200`: the server ignored `Range`, so its body is the file.
   let whole;
   try {
-    const answers = await Promise.allSettled(parts.map(async ({ start, end }) => {
+    const answers = await Promise.allSettled(parts.map(async ({ start, end, index }) => {
       const response = await fetchArtifact(url, key, {
         headers: { Range: `bytes=${start}-${end}` },
-        signal: controller.signal,
+        signal: controllers[index].signal,
       });
       if (response.status === 200) {
+        // Cancel the siblings before reading the body: they are downloading the same bytes, and a
+        // whole asset each in memory is what this path must not cost.
+        controllers.forEach((controller, other) => {
+          if (other !== index) controller.abort();
+        });
         whole = Buffer.from(await response.arrayBuffer());
-        controller.abort();
         return;
       }
       if (response.status !== 206) {
@@ -417,7 +420,7 @@ async function downloadRanges(key, url, size) {
     const failure = answers.find((answer) => answer.status === 'rejected');
     if (whole === undefined && failure?.status === 'rejected') throw failure.reason;
   } finally {
-    controller.abort();
+    for (const controller of controllers) controller.abort();
   }
   return whole ?? contents;
 }
@@ -505,8 +508,11 @@ export async function installPrebuilt(options = {}) {
 /** How long a lock may outlive the process that made it. A killed install leaves one behind. */
 const LOCK_STALE_MS = 15 * 60 * 1000;
 
-/** How often a waiter asks whether the winner finished. */
+/** How often a waiter re-checks the winner, and the lock. */
 const LOCK_POLL_MS = 250;
+
+/** How often a waiting caller says so, so a slow install is never a silent hang. */
+const LOCK_NOTICE_MS = 30 * 1000;
 
 /**
  * Hold the install lock for one plan.
@@ -514,31 +520,56 @@ const LOCK_POLL_MS = 250;
  * `mkdirSync` is the atomic primitive: exactly one caller creates the directory, every other
  * caller sees `EEXIST` and waits. Two parallel commands used to race here, and the loser's
  * `beginInstall` deleted the winner's output mid-download.
+ *
+ * Waiting ends three ways, and none of them spins: the winner publishes a verified binary (the
+ * waiter reuses it immediately), the lock's owner is gone (a killed build — its pid no longer
+ * exists — is stolen at once), or the lock is 15 minutes old and therefore stale. A steal is one
+ * `rename`, so two waiters cannot both take the same stale lock and resurrect the race.
  */
-async function withInstallLock(plan, callback) {
+async function withInstallLock(plan, options, callback) {
   const lock = `${plan.statusPath}.lock`;
   mkdirSync(dirname(lock), { recursive: true });
   const deadline = Date.now() + LOCK_STALE_MS;
+  let announcedAt = 0;
+  const notice = (suffix) => {
+    process.stderr.write(`Waiting for another install of '${plan.key}' to finish (${lock}${suffix}).\n`);
+  };
   for (;;) {
     try {
       mkdirSync(lock);
+      writeFileSync(join(lock, 'pid'), `${process.pid}\n`, { flag: 'wx' });
       break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
+      // The winner may have published a verified binary while this caller waited: reuse it.
+      if (isVerifiedInstall(plan, options)) return plan.output;
       let age = 0;
       try {
         age = Date.now() - statSync(lock).mtimeMs;
       } catch {
+        // Released between the `mkdir` and the `stat`: try again without sleeping.
         continue;
       }
-      if (age > LOCK_STALE_MS) {
-        rmSync(lock, { recursive: true, force: true });
+      const abandoned = lockOwnerIsGone(lock);
+      if (abandoned || age > LOCK_STALE_MS) {
+        const stale = `${lock}.${randomUUID()}.stale`;
+        try {
+          renameSync(lock, stale);
+          rmSync(stale, { recursive: true, force: true });
+        } catch {
+          // Another waiter stole it first, which is the outcome this branch wants anyway.
+        }
         continue;
       }
-      if (Date.now() > deadline) {
+      const now = Date.now();
+      if (now > deadline) {
         throw new Error(
-          `Timed out waiting for another install of '${plan.key}' to finish (${lock} is ${Math.round(age / 1000)}s old). Delete it if that process is gone.`,
+          `Gave up waiting for another install of '${plan.key}' (${lock} is ${Math.round(age / 1000)}s old). Delete that lock if the process that made it is gone, then rerun.`,
         );
+      }
+      if (announcedAt === 0 || now - announcedAt >= LOCK_NOTICE_MS) {
+        announcedAt = now;
+        notice(` is ${Math.round(age / 1000)}s old`);
       }
       await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
     }
@@ -547,6 +578,25 @@ async function withInstallLock(plan, callback) {
     return await callback();
   } finally {
     rmSync(lock, { recursive: true, force: true });
+  }
+}
+
+/** Whether the pid recorded in a lock no longer runs, which is how a killed install is detected. */
+function lockOwnerIsGone(lock) {
+  let pid;
+  try {
+    pid = Number(readFileSync(join(lock, 'pid'), 'utf8').trim());
+  } catch {
+    // No pid yet: the owner may be between `mkdir` and the write, so treat it as alive.
+    return false;
+  }
+  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  try {
+    process.kill(pid, 0);
+    return false;
+  } catch (error) {
+    // EPERM means it exists under another user; anything else means the process is gone.
+    return error?.code === 'ESRCH';
   }
 }
 
@@ -586,7 +636,7 @@ export async function ensureNativeBinary(options = {}) {
   platformKey(plan.platform, options.arch);
   if (isVerifiedInstall(plan, options)) return plan.output;
   try {
-    return await withInstallLock(plan, () => installPrebuilt({ ...options, reuse: true }));
+    return await withInstallLock(plan, options, () => installPrebuilt({ ...options, reuse: true }));
   } catch (error) {
     throw unavailableNativeBinary(error, plan);
   }

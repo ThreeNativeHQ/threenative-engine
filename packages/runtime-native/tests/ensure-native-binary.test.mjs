@@ -1,5 +1,6 @@
 import { makeTempDirSync } from '../../../test-support/temp-dir.js';
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { createServer } from 'node:http';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -155,6 +156,48 @@ test('a release that does not carry the asset fails closed as unpublished', asyn
     );
     assert.equal(error.code, 'TN_NATIVE_BINARY_UNPUBLISHED');
     assert.match(error.message, /no threenative-engine-player-linux-x64 is published/u);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a lock left by a killed install is taken over at once, not waited out', async () => {
+  const payload = Buffer.from('engine player bytes');
+  const fixture = await serve(payload);
+  try {
+    // A killed build leaves exactly this: a lock directory whose owner no longer exists. A pid
+    // this test spawns and lets exit is guaranteed dead for the rest of the run.
+    const dead = spawnSync(process.execPath, ['-e', '']);
+    const lock = `${fixture.options.statusPath}.lock`;
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, 'pid'), `${dead.pid}\n`);
+    const started = performance.now();
+    await ensureNativeBinary(fixture.options);
+    const seconds = (performance.now() - started) / 1000;
+    assert.ok(seconds < 5, `waited ${seconds.toFixed(1)}s on a dead owner's lock`);
+    assert.equal(fixture.requests(), 1);
+    assert.equal(existsSync(lock), false);
+  } finally {
+    await fixture.close();
+  }
+});
+
+test('a lock held by a live install does not block a caller once the binary verifies', async () => {
+  const payload = Buffer.from('engine player bytes');
+  const fixture = await serve(payload);
+  try {
+    await ensureNativeBinary(fixture.options);
+    const before = fixture.requests();
+    // The lock of a peer that is still running, over a binary that is already good: the waiter
+    // must reuse it rather than sit behind the lock for its whole life.
+    const lock = `${fixture.options.statusPath}.lock`;
+    mkdirSync(lock, { recursive: true });
+    writeFileSync(join(lock, 'pid'), `${process.pid}\n`);
+    const started = performance.now();
+    assert.equal(await ensureNativeBinary(fixture.options), fixture.options.output);
+    assert.ok((performance.now() - started) / 1000 < 2, 'a verified peer install must not be waited on');
+    assert.equal(fixture.requests(), before);
+    assert.equal(existsSync(lock), true, 'a peer lock must not be removed by a caller that never took it');
   } finally {
     await fixture.close();
   }

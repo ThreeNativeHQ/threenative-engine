@@ -602,7 +602,7 @@ test('corrupted downloads fail checksum verification and are never installed', a
   }
 });
 
-test('a packed consumer runs the allowlisted install hook and verifies its download', async () => {
+test('a packed consumer installs without a download, then fetches and verifies on demand', async () => {
   const root = makeTempDirSync('threenative-consumer-');
   roots.push(root);
   const runtime = Buffer.from('#!/bin/sh\nexit 0\n');
@@ -641,6 +641,19 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
         THREENATIVE_PREBUILT_MANIFEST: manifest,
       },
     });
+    const installedRuntime = join(consumer, 'node_modules/@threenative/runtime-native');
+    // PRD-783 AC-1, on the published shape: the install of the packed runtime downloads nothing.
+    assert.equal(existsSync(join(installedRuntime, 'prebuilt/linux-x64/threenative-runtime')), false);
+    assert.equal(existsSync(join(installedRuntime, 'prebuilt/install-status.json')), false);
+    // The explicit command stays as the "fetch now" path an offline image uses.
+    await run(process.execPath, [join(installedRuntime, 'scripts/install-prebuilt.mjs')], {
+      cwd: consumer,
+      env: {
+        ...process.env,
+        THREENATIVE_ALLOW_INSECURE_PREBUILT: '1',
+        THREENATIVE_PREBUILT_MANIFEST: manifest,
+      },
+    });
     assert.deepEqual(
       readFileSync(
         join(
@@ -650,7 +663,7 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
       ),
       runtime,
     );
-    // A packed consumer's desktop build dispatches to this helper; the postinstall must place it.
+    // A packed consumer's desktop build dispatches to this helper, so the fetch must place both.
     assert.deepEqual(
       readFileSync(
         join(consumer, 'node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools'),
@@ -743,7 +756,7 @@ test.runIf(process.platform === 'linux')('an installed runtime verifier uses pac
   );
 });
 
-test('a corrupted download fails the packed consumer install lifecycle', async () => {
+test('a corrupted download fails the packed consumer fetch, not the install', async () => {
   const root = makeTempDirSync('threenative-consumer-corrupt-');
   roots.push(root);
   const expected = Buffer.from('verified runtime');
@@ -769,8 +782,24 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
         private: true,
       })}\n`,
     );
+    // PRD-783: the install downloads nothing, so it must succeed even when the release is corrupt.
+    await run('pnpm', ['install', '--config.side-effects-cache=false'], {
+      cwd: consumer,
+      env: {
+        ...process.env,
+        THREENATIVE_ALLOW_INSECURE_PREBUILT: '1',
+        THREENATIVE_PREBUILT_MANIFEST: manifest,
+      },
+    });
+    const installedRuntime = join(consumer, 'node_modules/@threenative/runtime-native');
+    assert.equal(
+      existsSync(join(installedRuntime, 'prebuilt/linux-x64/threenative-runtime')),
+      false,
+      'a plain install must not download a native binary',
+    );
+    // The failure belongs to the fetch, which is what the first native build runs.
     await assert.rejects(
-      run('pnpm', ['install', '--config.side-effects-cache=false'], {
+      run(process.execPath, [join(installedRuntime, 'scripts/install-prebuilt.mjs')], {
         cwd: consumer,
         env: {
           ...process.env,
@@ -2090,11 +2119,27 @@ async function rangeRelease(behaviour = 'ranges') {
   const payload = Buffer.alloc(9 * 1024 * 1024, 0x5a);
   for (let index = 0; index < payload.length; index += 4096) payload[index] = index % 251;
   const seen = [];
+  // Bytes a range-ignoring server actually managed to push. The client aborts the siblings as
+  // soon as it sees a `200`, so this stays near one asset; without that abort it is one asset per
+  // request, which is the memory cost PRD-902 must not pay.
+  let streamed = 0;
   const server = createServer((request, response) => {
     const range = request.headers.range ?? '';
     seen.push(range);
     if (behaviour === 'ignore') {
-      response.end(payload);
+      let offset = 0;
+      const step = () => {
+        if (offset >= payload.length || response.destroyed) {
+          response.end();
+          return;
+        }
+        const part = payload.subarray(offset, offset + 64 * 1024);
+        offset += part.length;
+        streamed += part.length;
+        response.write(part);
+        setImmediate(step);
+      };
+      step();
       return;
     }
     const match = /^bytes=(\d+)-(\d+)$/u.exec(range);
@@ -2140,6 +2185,7 @@ async function rangeRelease(behaviour = 'ranges') {
     payload,
     root,
     seen,
+    streamed: () => streamed,
   };
 }
 
@@ -2162,6 +2208,12 @@ test('a server that ignores Range still yields the exact bytes from one body', a
   try {
     const contents = await downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath });
     assert.ok(contents.equals(release.payload));
+    // The whole point of cancelling siblings on a `200`: sixteen readers of a 9 MiB asset would
+    // otherwise stream 144 MiB and hold it all in memory. Red: remove the abort and this passes 144.
+    assert.ok(
+      release.streamed() < release.payload.length * 3,
+      `the server pushed ${release.streamed()} bytes; the siblings were not cancelled`,
+    );
   } finally {
     await release.close();
   }

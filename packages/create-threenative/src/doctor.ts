@@ -1333,6 +1333,17 @@ function nativeEnginePlayerFilename(): string {
 }
 
 /**
+ * Platforms whose engine player is built and verified on every release run but never published.
+ *
+ * Copied from `packages/runtime-native/scripts/install-prebuilt.mjs` `UNPUBLISHED_PREBUILT_KEYS`
+ * rather than imported: doctor must answer in a project that has no native runtime package, and a
+ * static import of one would make the whole report fail where this is the only fact it needs. Only
+ * macOS today — an unsigned, un-notarized bundle is refused by Gatekeeper, so a released asset
+ * would be a support ticket (PRD-262).
+ */
+const UNPUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["darwin-arm64"]);
+
+/**
  * Which prebuilt a native build actually runs, and where its install status is written.
  *
  * PRD-783 moved the download from `pnpm install` to the first native build, and the default engine
@@ -1354,9 +1365,13 @@ function nativePrebuiltTarget(config: unknown): {
       statusFile: "prebuilt/install-status.json",
     };
   }
+  // macOS has no published engine player, so "the first build downloads it" would be a promise
+  // that platform cannot keep: the release census refuses an unsigned bundle instead.
+  const unpublished = UNPUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
   return {
-    absentDetail:
-      "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
+    absentDetail: unpublished
+      ? `not downloaded yet, and no engine player is published for ${platform} — build one from an engine checkout (\`pnpm --filter @threenative/runtime-native native:build\`) and set THREENATIVE_ENGINE_PLAYER. Web builds download nothing.`
+      : "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
     key: `${platform}-engine-player`,
     statusFile: "prebuilt/engine-player-install-status.json",
@@ -1442,7 +1457,7 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
 
   if (status.ok !== true) {
     const reason =
-      typeof status.reason === "string" ? status.reason : "the install hook recorded no reason";
+      typeof status.reason === "string" ? status.reason : "the install recorded no reason";
     return {
       detail: `unavailable — ${key}: ${reason}`,
       fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
