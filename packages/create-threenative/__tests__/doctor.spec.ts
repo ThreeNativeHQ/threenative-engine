@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -180,10 +180,20 @@ describe("threenative doctor", () => {
       const runtimeRoot = path.resolve("packages/runtime-native");
       const withReader = (overrides: Partial<IProjectSnapshot> = {}) =>
         snapshot({ readRelease, readRuntimeText: () => undefined, runtimeRoot, ...overrides });
-      const androidReport = diagnoseProject(withReader(), { target: "android" });
       // A root with no checkout player: a local engine build would legitimately bypass the pin.
       const emptyRoot = path.join("/tmp", "offline-pin-root");
       mkdirSync(emptyRoot, { recursive: true });
+      // A packed runtime root — the scripts, no CMakeLists.txt — is the case where Android does
+      // read the pin. The real checkout here has CMakeLists, so it counts as a source build.
+      const packedRoot = path.join("/tmp", "offline-pin-packed");
+      mkdirSync(path.join(packedRoot, "scripts"), { recursive: true });
+      copyFileSync(
+        path.join(runtimeRoot, "scripts", "package-android.mjs"),
+        path.join(packedRoot, "scripts", "package-android.mjs"),
+      );
+      const androidReport = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+        target: "android",
+      });
       for (const target of ["desktop", "ios"] as const) {
         const report = diagnoseProject(
           snapshot({
@@ -193,7 +203,10 @@ describe("threenative doctor", () => {
           }),
           { target },
         );
-        expect(check(report, "prebuilt manifest").status).toBe("fail");
+        expect(
+          check(report, "prebuilt manifest").status,
+          check(report, "prebuilt manifest").detail,
+        ).toBe("fail");
         expect(report.pass).toBe(false);
       }
       expect(check(androidReport, "prebuilt manifest").status).toBe("fail");
@@ -210,13 +223,25 @@ describe("threenative doctor", () => {
           },
         })}\n`,
       );
-      const android = diagnoseProject(withReader(), { target: "android" });
+      const android = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+        target: "android",
+      });
+      // A source checkout never reads the pin, so the same empty one does not block it.
+      const checkoutRoot = path.resolve("packages/runtime-native");
+      expect(existsSync(path.join(checkoutRoot, "CMakeLists.txt"))).toBe(true);
+      const checkout = diagnoseProject(withReader({ runtimeRoot: checkoutRoot }), {
+        target: "android",
+      });
+      expect(check(checkout, "prebuilt manifest")).toMatchObject({ status: "ok" });
+      expect(check(checkout, "prebuilt manifest").detail).toContain("source checkout");
       // One SDL key is not the eleven-key cohort the packager reads.
       expect(check(android, "prebuilt manifest").status).toBe("fail");
       // A relative pin resolves from the runtime package for a mobile target, not from the game.
       process.env.THREENATIVE_PREBUILT_MANIFEST = "prebuilt-lock.json";
       try {
-        const relative = diagnoseProject(withReader(), { target: "android" });
+        const relative = diagnoseProject(withReader({ runtimeRoot: packedRoot }), {
+          target: "android",
+        });
         expect(check(relative, "prebuilt manifest").status).toBe("fail");
       } finally {
         process.env.THREENATIVE_PREBUILT_MANIFEST = pin;

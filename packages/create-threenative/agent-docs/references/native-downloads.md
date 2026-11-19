@@ -42,8 +42,11 @@ The error names the asset, the installed version, the URL and the reason. Three 
      then set `THREENATIVE_RUNTIME_BINARY`.
    A Linux **ARM64** host has no preset: the `tn-linux` preset selects x86-64's Dawn backend and
    physics archive, so override both —
-   `cmake --preset tn-linux -B build/tn-engine-ui -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON
+   `cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON
+   -DMYSTRAL_USE_DAWN=OFF -DMYSTRAL_USE_WGPU=ON
    -DTHREENATIVE_PHYSICS_LIBRARY=.runtime/physics-target/aarch64-unknown-linux-gnu/release/libthreenative_native_physics.a`
+   (add `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON`, after `node scripts/build-native-ui-overlay.mjs`, when the
+   game has a web HUD)
    (`build-native-physics.mjs --desktop` builds the host's own archive; `-DTHREENATIVE_WGPU_ROOT`
    points at a wgpu-native checkout when it is not a checked-in dependency).
    macOS publishes no desktop asset at all, so there the checkout build is the only route.
