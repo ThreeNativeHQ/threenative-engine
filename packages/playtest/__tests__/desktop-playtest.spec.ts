@@ -78,12 +78,15 @@ test("--executable accepts the build output directory of either engine", async (
         executable: join(native, "tn-native-engine-player-v8.exe"),
       });
     }
-    // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory.
+    // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory; on
+    // another host that `.exe` is the other platform's artifact and must not outrank the launcher.
     const stale = join(root, "switched");
     await mkdir(stale, { recursive: true });
     await writeFile(join(stale, "switched"), "");
     await writeFile(`${stale}.exe`, "");
-    expect(await resolveDesktopExecutable(stale)).toBe(`${stale}.exe`);
+    expect(await resolveDesktopExecutable(stale)).toBe(
+      process.platform === "win32" ? `${stale}.exe` : join(stale, "switched"),
+    );
     const empty = join(root, "empty");
     await mkdir(empty);
     await expect(resolveDesktopExecutable(empty)).rejects.toThrow("TN_PLAYTEST_EXECUTABLE_MISSING");

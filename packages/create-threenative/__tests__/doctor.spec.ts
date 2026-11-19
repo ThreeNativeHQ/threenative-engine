@@ -234,6 +234,9 @@ describe("threenative doctor", () => {
       });
       expect(check(checkout, "prebuilt manifest")).toMatchObject({ status: "ok" });
       expect(check(checkout, "prebuilt manifest").detail).toContain("source checkout");
+      // The build itself needs the flag: doctor names it instead of predicting a build that
+      // fails on the unread lock.
+      expect(JSON.stringify(checkout)).toContain("--allow-source-build");
       // One SDL key is not the eleven-key cohort the packager reads.
       expect(check(android, "prebuilt manifest").status).toBe("fail");
       // A relative pin resolves from the runtime package for a mobile target, not from the game.

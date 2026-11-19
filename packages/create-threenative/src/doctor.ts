@@ -1400,7 +1400,18 @@ function androidPrebuiltCohort(snapshot: IProjectSnapshot): readonly string[] | 
   return keys.length === 0 ? undefined : keys;
 }
 
-export function pinnedManifestCheck(
+export /** The runtime root the Android packager would build from, when it is a source checkout. */
+function sourceCheckoutRoot(snapshot: IProjectSnapshot): string | undefined {
+  const source = process.env.THREENATIVE_RUNTIME_SOURCE;
+  // The packager resolves a relative source from the installed runtime root, not from the game.
+  const root =
+    source !== undefined && source.length > 0
+      ? path.resolve(snapshot.runtimeRoot ?? process.cwd(), source)
+      : snapshot.runtimeRoot;
+  return root !== undefined && existsSync(path.join(root, "CMakeLists.txt")) ? root : undefined;
+}
+
+function pinnedManifestCheck(
   snapshot: IProjectSnapshot,
   options: { readonly target?: DoctorTarget } = {},
 ): IDoctorCheck | undefined {
@@ -1412,12 +1423,7 @@ export function pinnedManifestCheck(
   // own — a `CMakeLists.txt` at the resolved runtime root — so a workspace-linked checkout counts
   // and an override pointing at a packed runtime does not.
   if (options.target === "android") {
-    const source = process.env.THREENATIVE_RUNTIME_SOURCE;
-    // The packager resolves a relative source from the installed runtime root, not from the game.
-    const root =
-      source !== undefined && source.length > 0
-        ? path.resolve(snapshot.runtimeRoot ?? process.cwd(), source)
-        : snapshot.runtimeRoot;
+    const root = sourceCheckoutRoot(snapshot);
     if (root !== undefined && existsSync(path.join(root, "CMakeLists.txt")))
       return {
         detail: `not read — ${root} is a source checkout, so the Android packager builds the runtime instead of reading a lock`,
@@ -2140,6 +2146,13 @@ function requestedBuildBlockers(
   }
   if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs"))
     blockers.push(`${RUNTIME_PACKAGE} has no Android packager`);
+  // A source checkout answers from its own CMake build, which the default path refuses: naming the
+  // flag turns a build that fails on an unread lock into one that says what to pass.
+  const androidSource = sourceCheckoutRoot(snapshot);
+  if (androidSource !== undefined)
+    blockers.push(
+      `the Android runtime resolves to the source checkout ${androidSource}; pass --allow-source-build`,
+    );
   const requiredSdk = requiredAndroidSdk(snapshot);
   const androidToolchain =
     snapshot.androidToolchain ??
