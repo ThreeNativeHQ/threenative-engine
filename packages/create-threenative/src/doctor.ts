@@ -1365,6 +1365,15 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
+/** Whether a path is a regular file a packager can copy. */
+function isFile(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
 /**
  * The Android prebuilt keys the installed packager will ask this pin for.
  *
@@ -1433,9 +1442,8 @@ export function pinnedManifestCheck(
     name: "prebuilt manifest",
     status: "fail",
   });
-  if (!existsSync(resolved)) return fail("which does not exist");
-  // The downloader's own reader, so `schemaVersion`, the release's URL contract, the declared
-  // cohort and the loopback allowance are all judged exactly as the build judges them.
+  // The downloader's own reader decides everything, existence included: a pin in a project whose
+  // runtime package is absent cannot be judged here, and a web-only project must not fail on one.
   const readRelease = snapshot.readRelease;
   if (readRelease === undefined) {
     return {
@@ -1532,21 +1540,24 @@ function localNativeBinary(
     // The legacy host has the same override, and the build hands it to the same packager: a missing
     // one fails the build exactly like a missing player, so doctor answers it the same way.
     const explicitRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
-    if (explicitRuntime === undefined) return undefined;
+    if (explicitRuntime === undefined || explicitRuntime.length === 0) return undefined;
     const resolved = path.resolve(explicitRuntime);
     return {
-      kind: existsSync(resolved) ? "available" : "broken",
+      kind: isFile(resolved) ? "available" : "broken",
       path: resolved,
       variable: "THREENATIVE_RUNTIME_BINARY",
     };
   }
   const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
-  if (explicit !== undefined) {
+  // An exported empty string means "unset": resolving it would name the project directory, which
+  // the packager then tries to copy as a binary.
+  if (explicit !== undefined && explicit.length > 0) {
     // An exported path beats every download, so a missing one is a build that will fail: doctor
-    // reports it instead of promising the cache or a download the build never reaches.
+    // reports it instead of promising the cache or a download the build never reaches. A directory
+    // is not a player either.
     const resolved = path.resolve(explicit);
     return {
-      kind: existsSync(resolved) ? "available" : "broken",
+      kind: isFile(resolved) ? "available" : "broken",
       path: resolved,
       variable: "THREENATIVE_ENGINE_PLAYER",
     };
@@ -1558,7 +1569,7 @@ function localNativeBinary(
     "tn-engine-ui",
     nativeEnginePlayerFilename(),
   );
-  return existsSync(checkout)
+  return isFile(checkout)
     ? { kind: "available", path: checkout, variable: "THREENATIVE_ENGINE_PLAYER" }
     : undefined;
 }

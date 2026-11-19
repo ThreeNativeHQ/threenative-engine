@@ -277,7 +277,13 @@ export function readRelease(manifestPath, key, options = {}) {
     // asked to fill must fail when it omits a published asset, exactly as the remote path does.
     validateReleaseManifest(manifest, options);
   }
-  return releaseFromManifest(manifest, key, options);
+  const release = releaseFromManifest(manifest, key, options);
+  // An artifact-only pin skips the envelope validator, so a size it does state is judged here:
+  // `size: 0` is a pin the build refuses even when the bytes it downloads match the sha256.
+  if (release.size !== undefined && (!Number.isSafeInteger(release.size) || release.size <= 0)) {
+    throw new Error(`Prebuilt release size for '${key}' must be a positive integer.`);
+  }
+  return release;
 }
 
 /** The pinned manifest, or nothing: an exported empty string means "unset", not the cwd. */

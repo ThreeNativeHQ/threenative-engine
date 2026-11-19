@@ -249,6 +249,30 @@ describe("threenative doctor", () => {
     }
   });
 
+  it("treats an empty or directory-valued desktop override as unset or broken", () => {
+    // An exported empty string resolves to the project directory, which the packager would try to
+    // copy as a binary: it means unset here, exactly as it does for the pinned manifest.
+    process.env.THREENATIVE_ENGINE_PLAYER = "";
+    try {
+      const unset = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(check(unset, "native runtime").detail).not.toContain(
+        "THREENATIVE_ENGINE_PLAYER names",
+      );
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+    const directory = path.join("/tmp", "offline-pin-local");
+    mkdirSync(directory, { recursive: true });
+    process.env.THREENATIVE_ENGINE_PLAYER = directory;
+    try {
+      const broken = diagnoseProject(snapshot({ readRuntimeText: () => undefined }));
+      expect(check(broken, "native runtime").status).toBe("fail");
+      expect(check(broken, "native runtime").detail).toContain("does not exist");
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+    }
+  });
+
   it("fails when THREENATIVE_ENGINE_PLAYER names a file that is not there", () => {
     // The build hands this value to the packager, so a missing one is a failing build: doctor must
     // not report a download the build never reaches.
