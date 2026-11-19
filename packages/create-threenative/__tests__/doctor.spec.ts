@@ -186,6 +186,21 @@ describe("threenative doctor", () => {
         target: "desktop",
       });
       expect(check(desktop, "prebuilt manifest").status).toBe("fail");
+      // A build that already has a local player reads no manifest at all, so a stale pin is not
+      // its blocker.
+      const player = path.join("/tmp", "offline-pin-local", "tn-native-engine-player-v8");
+      mkdirSync(path.dirname(player), { recursive: true });
+      writeFileSync(player, "");
+      process.env.THREENATIVE_ENGINE_PLAYER = player;
+      try {
+        const local = diagnoseProject(snapshot({ readRuntimeText: () => undefined }), {
+          target: "desktop",
+        });
+        expect(check(local, "prebuilt manifest")).toMatchObject({ status: "ok" });
+        expect(check(local, "prebuilt manifest").detail).toContain("not read");
+      } finally {
+        Reflect.deleteProperty(process.env, "THREENATIVE_ENGINE_PLAYER");
+      }
     } finally {
       Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
     }

@@ -1368,6 +1368,19 @@ export function pinnedManifestCheck(
   if (pinned === undefined) return undefined;
   const resolved = path.resolve(pinned);
   const target = nativePrebuiltTarget(snapshot.config);
+  // A build that already has a local binary reads no manifest at all: the checkout player and
+  // `THREENATIVE_ENGINE_PLAYER` / `THREENATIVE_RUNTIME_BINARY` all return before the network.
+  const local = localNativeBinary(snapshot, target);
+  if (
+    local?.kind === "available" &&
+    (options.target === undefined || options.target === "desktop")
+  ) {
+    return {
+      detail: `not read — ${local.path} supplies the binary, so no prebuilt manifest is consulted`,
+      name: "prebuilt manifest",
+      status: "ok",
+    };
+  }
   const fail = (reason: string): IDoctorCheck => ({
     detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a ${options.target ?? "native"} build fails before downloading.`,
     fix: "Restore the pinned manifest, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
@@ -1390,22 +1403,24 @@ export function pinnedManifestCheck(
   const wanted = mobile
     ? Object.keys(record(artifacts) ?? {}).filter((key) => key.startsWith(`${options.target}-`))
     : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
-  const served = wanted.filter((key) => {
+  // Every key the target's packager reads must be served: a `threejs` desktop build needs the
+  // runtime and the build tool helper, and one without the other is a download that fails.
+  const missing = wanted.filter((key) => {
     const artifact = record(record(artifacts)?.[key]);
-    return (
+    return !(
       typeof artifact?.url === "string" &&
       artifact.url.length > 0 &&
       typeof artifact.sha256 === "string" &&
       /^[a-f0-9]{64}$/u.test(artifact.sha256)
     );
   });
-  if (served.length === 0) {
+  if (wanted.length === 0 || missing.length > 0) {
     return fail(
-      `which records no usable ${mobile ? `${options.target} artifact` : target.key} (a url and a sha256 are required)`,
+      `which records no usable ${wanted.length === 0 ? (mobile ? `${options.target} artifact` : target.key) : missing.join(", ")} (a url and a sha256 are required for every key the build reads)`,
     );
   }
   return {
-    detail: `available — ${resolved} records ${served.length === 1 ? served[0] : `${served.length} ${options.target} artifacts`}`,
+    detail: `available — ${resolved} records ${wanted.length === 1 ? wanted[0] : `${wanted.length} ${options.target} artifacts`}`,
     name: "prebuilt manifest",
     status: "ok",
   };

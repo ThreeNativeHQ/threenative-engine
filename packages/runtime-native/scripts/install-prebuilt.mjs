@@ -439,6 +439,34 @@ async function readRangeBody(response, { end, key, start, url }) {
  * key, the URL and the byte range, and cancels the siblings so a stalled one cannot hold the
  * install lock. The sha256 in the lock is still the only trust decision.
  */
+/**
+ * Read a claimed whole-body response, re-arming the inactivity deadline as bytes arrive.
+ *
+ * A sibling's HTTP error must not cap the fallback at a fixed wall time: a slow but progressing
+ * body is a working download. A body that stops arriving is what the deadline is for.
+ */
+async function readClaimedBody(response, { arm, key, url }) {
+  const reader = response.body?.getReader();
+  if (reader === undefined) return readRangeBody(response, { end: 0, key, start: 0, url });
+  const chunks = [];
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      if (value !== undefined) {
+        arm();
+        chunks.push(Buffer.from(value));
+      }
+    }
+  } catch (error) {
+    throw new Error(
+      `Prebuilt release fetch failed for '${key}' at ${url}: the whole-file response was interrupted (${error instanceof Error ? error.message : String(error)}).`,
+      { cause: error },
+    );
+  }
+  return Buffer.concat(chunks);
+}
+
 async function downloadRanges(key, url, size, expectedSha256) {
   const chunk = Math.ceil(size / PARALLEL_RANGE_COUNT);
   const parts = Array.from({ length: PARALLEL_RANGE_COUNT }, (_, index) => {
@@ -456,6 +484,13 @@ async function downloadRanges(key, url, size, expectedSha256) {
   // status it names is what the caller must see unless a complete body verifies against the lock.
   let failure;
   let claimDeadline;
+  // A sibling's failure bounds how long the claim may keep the install lock, but the bound is
+  // inactivity, not total time: a body that is still arriving reaches checksum verification.
+  const armClaimDeadline = (index) => {
+    if (claimDeadline !== undefined) clearTimeout(claimDeadline);
+    claimDeadline = setTimeout(() => controllers[index]?.abort(), CLAIM_GRACE_MS);
+    claimDeadline.unref?.();
+  };
   const abortOthers = (keep) => {
     controllers.forEach((controller, other) => {
       if (other !== keep && other !== claimed) controller.abort();
@@ -476,8 +511,10 @@ async function downloadRanges(key, url, size, expectedSha256) {
           }
           claimed = index;
           // The siblings are not aborted until this body is in memory: they may share its socket,
-          // and aborting them mid-read truncated it (a checksum failure, observed).
-          whole = await readRangeBody(response, { end, key, start, url });
+          // and aborting them mid-read truncated it (a checksum failure, observed). A body that
+          // keeps arriving is not stalled, so each chunk re-arms the deadline a failing sibling
+          // imposed.
+          whole = await readClaimedBody(response, { arm: () => armClaimDeadline(index), key, url });
           abortOthers(index);
           return;
         }
@@ -507,10 +544,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
         const aborted = controllers[index].signal.aborted || isAbortError(error);
         if (!aborted && failure === undefined) {
           failure = error;
-          if (claimed !== undefined && claimDeadline === undefined) {
-            claimDeadline = setTimeout(() => controllers[claimed]?.abort(), CLAIM_GRACE_MS);
-            claimDeadline.unref?.();
-          }
+          if (claimed !== undefined) armClaimDeadline(claimed);
         } else if (aborted && claimed === undefined && failure === undefined) {
           failure = error;
         }
