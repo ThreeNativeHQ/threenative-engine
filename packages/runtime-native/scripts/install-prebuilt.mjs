@@ -268,9 +268,11 @@ export function readRelease(manifestPath, key, options = {}) {
   // Explicit artifact-only local pins predate the envelope. Never downgrade a partially
   // specified candidate, and never allow this compatibility path for a remote default lock.
   if (manifest && ['schemaVersion', 'version', 'sourceSha'].some((field) => Object.hasOwn(manifest, field))) {
-    validateReleaseManifest(manifest);
+    // The caller's options carry the completeness requirement: an official lock a prefetch was
+    // asked to fill must fail when it omits a published asset, exactly as the remote path does.
+    validateReleaseManifest(manifest, options);
   }
-  return releaseFromManifest(manifest, key);
+  return releaseFromManifest(manifest, key, options);
 }
 
 /** The GitHub release tag a version's prebuilt payload is published under. */

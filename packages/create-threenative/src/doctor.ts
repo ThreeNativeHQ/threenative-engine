@@ -1501,6 +1501,21 @@ export function nativeRuntimeCheck(
         };
   }
 
+  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
+  // buildable that `threenative build` rejects before it downloads anything.
+  const renderer = record(record(snapshot.config)?.ui)?.renderer;
+  const hudRefusal: IDoctorCheck | undefined =
+    !target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()
+      ? {
+          detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
+          fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
+          name: "native runtime",
+          // Blocking only when the desktop build is what the caller asked about: a web-only project
+          // on this platform is healthy and a plain `threenative doctor` must not fail it (AC-4).
+          status: options.target === "desktop" ? "fail" : "warn",
+        }
+      : undefined;
+
   // The build selects a local player before it would download one: an explicit variable, then a
   // checkout build. Doctor must read the same order, or it blocks a valid local build.
   const localPlayer = localNativeBinary(snapshot, target);
@@ -1529,6 +1544,7 @@ export function nativeRuntimeCheck(
     // One predicate for the message and the verdict: the target already decided whether this
     // platform publishes the binary a build would run, and the warning follows that decision.
     const unpublished = target.deprecated === true;
+    if (hudRefusal !== undefined) return hudRefusal;
     return {
       detail: target.absentDetail,
       ...(unpublished
@@ -1554,19 +1570,6 @@ export function nativeRuntimeCheck(
     };
   }
 
-  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
-  // buildable that `threenative build` rejects before it downloads anything.
-  const renderer = record(record(snapshot.config)?.ui)?.renderer;
-  if (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()) {
-    // Blocking only when the desktop build is what the caller asked about: a web-only project on
-    // this platform is healthy, and a plain `threenative doctor` must not fail it (PRD-783 AC-4).
-    return {
-      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
-      fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
-      name: "native runtime",
-      status: options.target === "desktop" ? "fail" : "warn",
-    };
-  }
   if (status.ok !== true) {
     const reason =
       typeof status.reason === "string" ? status.reason : "the install recorded no reason";
@@ -1577,6 +1580,7 @@ export function nativeRuntimeCheck(
       status: "fail",
     };
   }
+  if (hudRefusal !== undefined) return hudRefusal;
   if (status.key !== key) {
     return {
       detail: `unavailable — install status is for ${String(status.key ?? "an unknown target")}, not ${key}`,
