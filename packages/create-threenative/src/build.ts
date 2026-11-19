@@ -1633,7 +1633,7 @@ export async function ensureEngineDesktopPlayer(
   // while it holds the install lock, so a concurrent install cannot swap the shared cache path
   // between verification and packaging. Overrides and checkout builds are the caller's own files
   // and are returned untouched.
-  options: { readonly stagePrivate?: boolean } = {},
+  options: { readonly report?: { staged?: boolean }; readonly stagePrivate?: boolean } = {},
 ): Promise<string> {
   const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
   if (desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd) !== undefined) return player();
@@ -1657,7 +1657,13 @@ export async function ensureEngineDesktopPlayer(
       enginePlayer: true,
       ...(options.stagePrivate ? { stagePrivate: true } : {}),
     });
-    return options.stagePrivate && typeof ensured === "string" ? ensured : player();
+    if (options.stagePrivate && typeof ensured === "string") {
+      // One ensure, no second read of the cache: the runtime returned the snapshot, and the cache
+      // path is what it would have returned otherwise.
+      if (options.report !== undefined) options.report.staged = ensured !== player();
+      return ensured;
+    }
+    return player();
   }
   if (typeof runtime.installPrebuilt === "function") {
     // The older runtime cannot stage; its verified cache path is what it has.
@@ -1671,14 +1677,14 @@ export async function ensureEngineDesktopPlayerForPackaging(
   runtimeRoot: string,
   cwd: string,
 ): Promise<{ readonly player: string; readonly staged: boolean }> {
+  const report: { staged?: boolean } = {};
+  // The runtime answers both questions in one call: the path to package, and whether it created a
+  // snapshot this build owns. Nothing re-reads the cache afterwards.
   const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
+    report,
     stagePrivate: true,
   });
-  // The runtime stages only its own cache entry; an override or a checkout player is the same
-  // path it would return without staging, and this build must never unlink it.
-  // Exact, not inferred: the path the runtime would have returned without staging is the same
-  // string in the override and checkout cases, and differs only for a snapshot it created.
-  return { player, staged: player !== (await ensureEngineDesktopPlayer(runtimeRoot, cwd)) };
+  return { player, staged: report.staged === true };
 }
 
 /**

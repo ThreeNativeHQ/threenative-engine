@@ -1851,9 +1851,9 @@ export function nativeRuntimeCheck(
         detail: `${hudRefusal.detail} A previous download also failed (${reason}).`,
         fix: `${hudRefusal.fix ?? ""} Then rerun \`threenative build --target desktop\` to retry the download.`.trim(),
         name: "native runtime",
-        // The refusal's own severity survives: a desktop-only refusal is a warning unless the
-        // desktop build is the question being asked (AC-4).
-        status: hudRefusal.status === "fail" && options.target === "desktop" ? "fail" : "warn",
+        // No local binary answers this build, so the failed download is what a desktop build hits:
+        // that is AC-4's failure whatever target was asked about. The refusal still leads.
+        status: "fail",
       };
     }
     return {
