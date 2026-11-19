@@ -1,14 +1,5 @@
-import {
-  copyFileSync,
-  existsSync,
-  mkdirSync,
-  mkdtempSync,
-  readFileSync,
-  rmSync,
-  writeFileSync,
-} from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -22,6 +13,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...actual, execFileSync: execFileSyncMock, spawnSync: spawnSyncMock };
 });
 
+import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { readRelease } from "../../runtime-native/scripts/install-prebuilt.mjs";
 import { assertNativeAssetsCompatible } from "../src/build.js";
@@ -341,7 +333,8 @@ describe("threenative doctor", () => {
   it("fails a legacy runtime override that has no packaging helper beside it", () => {
     // The legacy host dispatches desktop packaging to `mystral-tools` beside itself, and an
     // override skips the download that installs it: the first build would exit 127.
-    const root = mkdtempSync(path.join(tmpdir(), "tn-doctor-helper-"));
+    // Registered, so the repo guard sees its cleanup as the shared helper's job.
+    const root = makeTempDirSync("tn-doctor-helper-");
     const host = path.join(root, "tn-native-host");
     writeFileSync(host, "");
     process.env.THREENATIVE_RUNTIME_BINARY = host;
