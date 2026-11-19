@@ -264,7 +264,8 @@ test('an unpublished release records the gap and finishes the consumer install',
   const status = JSON.parse(readFileSync(join(root, 'prebuilt', 'install-status.json'), 'utf8'));
   assert.equal(status.ok, false);
   assert.match(status.reason, /linux-x64/);
-  assert.match(result.stderr, /no prebuilt release is published/iu);
+  // PRD-783: the command now reports the named, offline-stable diagnosis.
+  assert.match(result.stderr, /TN_NATIVE_BINARY_UNPUBLISHED: no threenative-runtime-linux-x64 is published/iu);
 });
 
 test('the install hook runs when invoked through a symlinked package path', async () => {

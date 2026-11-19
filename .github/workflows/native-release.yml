@@ -930,6 +930,27 @@ jobs:
           NODE
           test ! -e "$TN_TOOLCHAIN_LOG"
           trap - ERR
+      # PRD-783 AC-8: a packed default-engine consumer, whose player the *build* fetched, runs its
+      # own native proof. This is the only lane that exercises a lazily downloaded player through a
+      # shipped kit command (`pnpm test:native`) rather than a hand-written playtest invocation.
+      - name: Scaffold the default-engine racing consumer from local tarballs
+        uses: ./.github/actions/scaffold-from-tarballs
+        with:
+          archives-directory: ${{ runner.temp }}/packages
+          specs-file: ${{ runner.temp }}/threenative-package-specs
+          target: ${{ runner.temp }}/threenative-racing-proof
+          template: racing
+      - name: Install and run the racing kit's own native proof
+        run: |
+          set -euo pipefail
+          RACING_TARGET="$RUNNER_TEMP/threenative-racing-proof"
+          pnpm --dir "$RACING_TARGET" install
+          # The install still downloads nothing; the kit's `test:native` starts with
+          # `pnpm build:desktop`, which is where the player arrives.
+          test ! -e "$RACING_TARGET/node_modules/@threenative/runtime-native/prebuilt/engine-player-install-status.json"
+          TN_PLAYTEST_ALLOW_SOFTWARE=1 sh scripts/xvfb.sh pnpm --dir "$RACING_TARGET" test:native
+          test -s "$RACING_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/tn-native-engine-player-v8"
+          test ! -e "$TN_TOOLCHAIN_LOG"
       - name: Enable KVM for the emulator
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' \

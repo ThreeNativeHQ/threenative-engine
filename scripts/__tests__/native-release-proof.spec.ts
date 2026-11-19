@@ -816,6 +816,34 @@ test("the consumer gets the build tool helper the runtime dispatches to", () => 
   assert.ok(absentAt > 0 && absentAt < buildAt, "the install must be proved to fetch nothing");
 });
 
+test("the Linux lane runs a packed default-engine kit's own native proof (PRD-783 AC-8)", () => {
+  const consumer = job("clean-consumer");
+  // The scaffold must take the default engine: the racing kit's `test:native` starts with
+  // `pnpm build:desktop`, which is the call that fetches the engine player.
+  const scaffold =
+    consumer
+      .split("- name: Scaffold the default-engine racing consumer from local tarballs\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.ok(scaffold.length > 0, "missing the racing scaffold step");
+  assert.match(scaffold, /template: racing/u);
+  assert.doesNotMatch(scaffold, /engine: threejs/u);
+  const run =
+    consumer
+      .split("- name: Install and run the racing kit's own native proof\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.ok(run.length > 0, "missing the racing native proof step");
+  // The install downloads nothing; the build does.
+  assert.match(
+    run,
+    /test ! -e "\$RACING_TARGET\/node_modules\/@threenative\/runtime-native\/prebuilt\/engine-player-install-status\.json"/u,
+  );
+  assert.match(
+    run,
+    /TN_PLAYTEST_ALLOW_SOFTWARE=1 sh scripts\/xvfb\.sh pnpm --dir "\$RACING_TARGET" test:native/u,
+  );
+  assert.match(run, /prebuilt\/linux-x64\/tn-native-engine-player-v8/u);
+});
+
 test("the same-run proof serves the published cohort, not every non-iOS key", () => {
   // macOS uploads under a name the `pattern: runtime-*` download does not collect, so a proof step
   // that demanded every non-iOS asset failed a run whose staging was exactly right:

@@ -18,15 +18,22 @@ offline.
 
 The error names the asset, the installed version, the URL and the reason. Three fixes work:
 
-1. Reconnect and rerun the same command — it resumes from nothing and re-verifies.
+1. Reconnect and rerun the same command — it verifies again from the start.
 2. Point the build at a local binary: `THREENATIVE_ENGINE_PLAYER=/path/to/player` (default engine)
    or `THREENATIVE_RUNTIME_BINARY=/path/to/runtime` (`engine: "threejs"`).
-3. Build the binary from an engine checkout:
-   `pnpm --filter @threenative/runtime-native native:build`.
+3. Build the binary from an engine checkout. The engine player and the legacy host are different
+   binaries with different recipes:
+   - engine player (default): `cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON
+     -DTN_ENGINE_PLAYER=ON`, then `cmake --build build/tn-engine-ui --target
+     tn-native-engine-player-v8`. A checkout with `build/tn-engine-ui/tn-native-engine-player-v8`
+     is picked up with no variable set.
+   - legacy host (`engine: "threejs"`): `pnpm --filter @threenative/runtime-native native:build`,
+     then set `THREENATIVE_RUNTIME_BINARY`.
+   macOS publishes no desktop asset at all, so there the checkout build is the only route.
 
 `TN_NATIVE_BINARY_UNAVAILABLE` is a network, HTTP or checksum failure.
-`TN_NATIVE_BINARY_UNPUBLISHED` means the release carries no asset for that platform — a packaging
-fact, not a broken machine.
+`TN_NATIVE_BINARY_UNPUBLISHED` means the release carries no asset for that platform or this
+version — a packaging fact, not a broken machine, and it reads the same online or offline.
 
 ## Fetch ahead, or bake an offline image
 

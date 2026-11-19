@@ -1351,9 +1351,11 @@ const UNPUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["darwi
  * status told a reader about a binary that build does not start.
  */
 function nativePrebuiltTarget(config: unknown): {
-  readonly binary: string;
   readonly absentDetail: string;
+  readonly binary: string;
   readonly key: string;
+  /** Whether the prebuilt is the legacy host, whose own `--version` doctor can ask. */
+  readonly legacy: boolean;
   readonly statusFile: string;
 } {
   const platform = nativeRuntimeKey();
@@ -1362,6 +1364,7 @@ function nativePrebuiltTarget(config: unknown): {
       absentDetail: `not downloaded yet — the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_RUNTIME_BINARY to a local file to stay offline.`,
       binary: `prebuilt/${platform}/${nativeRuntimeFilename()}`,
       key: platform,
+      legacy: true,
       statusFile: "prebuilt/install-status.json",
     };
   }
@@ -1370,10 +1373,11 @@ function nativePrebuiltTarget(config: unknown): {
   const unpublished = UNPUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
   return {
     absentDetail: unpublished
-      ? `not downloaded yet, and no engine player is published for ${platform} — build one from an engine checkout (\`pnpm --filter @threenative/runtime-native native:build\`) and set THREENATIVE_ENGINE_PLAYER. Web builds download nothing.`
+      ? `no engine player is published for ${platform}, so a desktop build needs a local one: build it from an engine checkout (\`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON\`, then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\`) and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
       : "not downloaded yet — the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified); web builds download nothing. Set THREENATIVE_ENGINE_PLAYER to a local file to stay offline.",
     binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
     key: `${platform}-engine-player`,
+    legacy: false,
     statusFile: "prebuilt/engine-player-install-status.json",
   };
 }
@@ -1436,8 +1440,19 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const statusText = snapshot.readRuntimeText(target.statusFile);
   if (statusText === undefined) {
     // Nothing to report is the ordinary web-only state now: the first native build downloads it.
-    // A *recorded failure* still fails below, which is the fact doctor is for.
-    return { detail: target.absentDetail, name: "native runtime", status: "ok" };
+    // A *recorded failure* still fails below, which is the fact doctor is for. On a platform whose
+    // asset is never published, no build can create the record, so it warns: a native build there
+    // needs an explicit checkout player, and a web-only project still passes.
+    const unpublished =
+      !target.legacy && UNPUBLISHED_ENGINE_PLAYER_PLATFORMS.has(nativeRuntimeKey());
+    return {
+      detail: target.absentDetail,
+      ...(unpublished
+        ? { fix: "Point THREENATIVE_ENGINE_PLAYER at a locally built engine player." }
+        : {}),
+      name: "native runtime",
+      status: unpublished ? "warn" : "ok",
+    };
   }
 
   let status: IInstallStatus;
@@ -1490,10 +1505,19 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       status: "fail",
     };
   }
-  if (status.url !== snapshot.runtimeManifestUrl) {
+  // An offline build records the local lock it read. That is a legitimate source: the install
+  // verified the same sha256 from it, so doctor must not send the user to reinstall for it.
+  const pin = process.env.THREENATIVE_PREBUILT_MANIFEST;
+  const pinnedLock = pin === undefined ? undefined : path.resolve(pin);
+  const recorded = typeof status.url === "string" ? status.url : undefined;
+  const fromPinnedLock =
+    pinnedLock !== undefined &&
+    recorded !== undefined &&
+    (recorded === pinnedLock || path.resolve(recorded) === pinnedLock);
+  if (status.url !== snapshot.runtimeManifestUrl && !fromPinnedLock) {
     return {
       detail: `unavailable — install status release URL ${String(status.url ?? "is missing")} does not match ${snapshot.runtimeManifestUrl}`,
-      fix: "Remove the runtime package and run npm install to fetch the current release manifest.",
+      fix: "Reinstall the runtime package, then rerun the desktop build so it records the current release manifest.",
       name: "native runtime",
       status: "fail",
     };
@@ -1509,6 +1533,12 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       name: "native runtime",
       status: "fail",
     };
+  }
+  if (!target.legacy) {
+    // The engine player is not the legacy host and does not answer `--version`. Its receipt is the
+    // proof: the status was published only after the lock's sha256 verified the bytes, and the
+    // version check above already rejected a record from another release.
+    return { detail: `available (${key})`, name: "native runtime", status: "ok" };
   }
   // The package version is not the host's version, and only the host knows its own. This is the
   // check that catches the stale published prebuilt: `runtime-native-v0.3.2` answered
@@ -1746,8 +1776,10 @@ function requestedBuildBlockers(
     if (!snapshot.files.has("src/main.ts")) blockers.push("src/main.ts is missing");
     return blockers;
   }
-  // Every native target ships the downloaded runtime; its install status is the download's receipt.
-  if (nativeRuntime.status !== "ok")
+  // The download doctor reads is the desktop host's. Android and iOS fetch their own libraries at
+  // package time, so a failed desktop download must not veto a mobile build; each mobile target's
+  // own packager is checked below.
+  if (request.target === "desktop" && nativeRuntime.status !== "ok")
     blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
   // The thing the native host actually starts. Left out, a project with no portable entry read
   // `buildable — android` on a supported JDK while the build it predicted cannot start at all.
@@ -1832,7 +1864,9 @@ const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[
     "desktop overlay": Object.freeze(["desktop"] as const),
     // Its own words are "so a native build has nothing to start"; a web build starts src/main.ts.
     "native entry": Object.freeze(["android", "desktop", "ios"] as const),
-    "native runtime": Object.freeze(["android", "desktop", "ios"] as const),
+    // The prebuilt this check reads is the desktop host's. Android and iOS fetch their own
+    // libraries at package time from the same release, so their builds are not predicted by it.
+    "native runtime": Object.freeze(["desktop"] as const),
   },
 );
 

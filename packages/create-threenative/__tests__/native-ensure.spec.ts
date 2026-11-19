@@ -145,14 +145,18 @@ describe("native binaries download on first native use", () => {
     const runtime = path.join(root, "node_modules/@threenative/runtime-native");
 
     const explicit = { THREENATIVE_ENGINE_PLAYER: "bin/player" };
-    await ensureEngineDesktopPlayer(runtime, explicit);
+    expect(await ensureEngineDesktopPlayer(runtime, root, explicit)).toBe(
+      path.join(root, "bin/player"),
+    );
     expect(explicit.THREENATIVE_ENGINE_PLAYER).toBe("bin/player");
     expect(await calls(ensureCalls)).toBe(0);
 
     await mkdir(path.join(runtime, "build/tn-engine-ui"), { recursive: true });
     await writeFile(path.join(runtime, "build/tn-engine-ui", PLAYER), "checkout player");
     const checkout = {};
-    await ensureEngineDesktopPlayer(runtime, checkout);
+    expect(await ensureEngineDesktopPlayer(runtime, root, checkout)).toBe(
+      path.join(runtime, "build/tn-engine-ui", PLAYER),
+    );
     expect(checkout).toEqual({});
     expect(await calls(ensureCalls)).toBe(0);
   });
@@ -176,7 +180,9 @@ export async function ensureNativeBinary(options) {
 `,
     );
     const env: NodeJS.ProcessEnv = {};
-    await ensureEngineDesktopPlayer(runtime, env);
-    expect(env.THREENATIVE_ENGINE_PLAYER).toBe(player);
+    expect(await ensureEngineDesktopPlayer(runtime, root, env)).toBe(player);
+    // The player is returned, never written to the process-wide override: a second build in this
+    // process would otherwise package the first game's player.
+    expect(env.THREENATIVE_ENGINE_PLAYER).toBeUndefined();
   });
 });

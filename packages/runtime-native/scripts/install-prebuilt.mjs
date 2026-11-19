@@ -374,9 +374,11 @@ async function fetchArtifact(url, key, init) {
 /**
  * One asset over parallel `Range` requests, assembled at each part's offset in one buffer.
  *
- * A `200` answer means the server ignored `Range`: that body is the whole file, so it is returned
- * as-is and the remaining requests are cancelled. Any other status fails closed naming the key,
- * the URL and the byte range — the sha256 in the lock is still the only trust decision.
+ * A `200` answer means the server ignored `Range`: the first part to see one claims the whole body
+ * and cancels the siblings *before* reading it, so a range-ignoring server costs one asset in
+ * memory rather than one per request. Any other status, or a short body, fails closed naming the
+ * key, the URL and the byte range, and cancels the siblings so a stalled one cannot hold the
+ * install lock. The sha256 in the lock is still the only trust decision.
  */
 async function downloadRanges(key, url, size) {
   const chunk = Math.ceil(size / PARALLEL_RANGE_COUNT);
@@ -386,43 +388,67 @@ async function downloadRanges(key, url, size) {
   }).filter(({ start }) => start < size);
   const contents = Buffer.allocUnsafe(size);
   const controllers = parts.map(() => new AbortController());
-  // Set by the first part that sees a `200`: the server ignored `Range`, so its body is the file.
+  const abortOthers = (keep) => {
+    controllers.forEach((controller, other) => {
+      if (other !== keep) controller.abort();
+    });
+  };
+  // The first part to see a `200` claims the whole body synchronously, before any other handler
+  // can claim it too (two claims aborted both readers and returned nothing).
+  let claimed = false;
   let whole;
+  let failure;
   try {
-    const answers = await Promise.allSettled(parts.map(async ({ start, end, index }) => {
-      const response = await fetchArtifact(url, key, {
-        headers: { Range: `bytes=${start}-${end}` },
-        signal: controllers[index].signal,
-      });
-      if (response.status === 200) {
-        // Cancel the siblings before reading the body: they are downloading the same bytes, and a
-        // whole asset each in memory is what this path must not cost.
-        controllers.forEach((controller, other) => {
-          if (other !== index) controller.abort();
+    await Promise.allSettled(parts.map(async ({ start, end, index }) => {
+      try {
+        const response = await fetchArtifact(url, key, {
+          headers: { Range: `bytes=${start}-${end}` },
+          signal: controllers[index].signal,
         });
-        whole = Buffer.from(await response.arrayBuffer());
-        return;
+        if (response.status === 200) {
+          if (claimed) {
+            // A sibling already has the whole file: drop this body instead of reading a second one.
+            await response.body?.cancel().catch(() => undefined);
+            return;
+          }
+          claimed = true;
+          // The siblings are not aborted here: they may share this response's socket, and aborting
+          // them truncated the body being read (a checksum failure, observed). Each of them cancels
+          // its own body instead, so the asset is still read once.
+          whole = Buffer.from(await response.arrayBuffer());
+          return;
+        }
+        if (response.status !== 206) {
+          throw new Error(
+            `Prebuilt release fetch failed for '${key}' at ${url}: HTTP ${response.status} for byte range ${start}-${end}.`,
+          );
+        }
+        const body = Buffer.from(await response.arrayBuffer());
+        if (body.length !== end - start + 1) {
+          throw new Error(
+            `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
+          );
+        }
+        body.copy(contents, start);
+      } catch (error) {
+        // The first real failure decides the message and cancels the siblings, so a stalled body
+        // cannot hold the install lock. A sibling truncated by that cancel merely fails too: the
+        // checksum decides, and this path never returns bytes.
+        if (claimed === false && failure === undefined && !isAbortError(error)) failure = error;
+        abortOthers(index);
+        throw error;
       }
-      if (response.status !== 206) {
-        throw new Error(
-          `Prebuilt release fetch failed for '${key}' at ${url}: HTTP ${response.status} for byte range ${start}-${end}.`,
-        );
-      }
-      const body = Buffer.from(await response.arrayBuffer());
-      if (body.length !== end - start + 1) {
-        throw new Error(
-          `Prebuilt release fetch failed for '${key}' at ${url}: byte range ${start}-${end} answered ${body.length} bytes.`,
-        );
-      }
-      body.copy(contents, start);
     }));
-    // A whole body wins: the checksum still decides, and the aborted siblings explain themselves.
-    const failure = answers.find((answer) => answer.status === 'rejected');
-    if (whole === undefined && failure?.status === 'rejected') throw failure.reason;
   } finally {
     for (const controller of controllers) controller.abort();
   }
-  return whole ?? contents;
+  if (whole !== undefined) return whole;
+  if (failure !== undefined) throw failure;
+  return contents;
+}
+
+function isAbortError(error) {
+  return error instanceof Error && (error.name === 'AbortError' || /aborted/u.test(error.message));
 }
 
 export async function downloadReleaseArtifact(key, options = {}) {
@@ -440,7 +466,10 @@ export async function downloadReleaseArtifact(key, options = {}) {
   }
   const response = await fetchArtifact(release.url, key);
   if (!response.ok) {
-    throw new Error(`Prebuilt release fetch failed for '${key}' at ${release.url}: HTTP ${response.status}.`);
+    const error = new Error(`Prebuilt release fetch failed for '${key}' at ${release.url}: HTTP ${response.status}.`);
+    // A published release that does not carry this asset is a packaging fact, not a bad network.
+    if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
+    throw error;
   }
   let contents;
   try {
@@ -505,7 +534,7 @@ export async function installPrebuilt(options = {}) {
   }
 }
 
-/** How long a lock may outlive the process that made it. A killed install leaves one behind. */
+/** A lock older than this cannot belong to a running install, even one with no recorded pid. */
 const LOCK_STALE_MS = 15 * 60 * 1000;
 
 /** How often a waiter re-checks the winner, and the lock. */
@@ -515,55 +544,45 @@ const LOCK_POLL_MS = 250;
 const LOCK_NOTICE_MS = 30 * 1000;
 
 /**
- * Hold the install lock for one plan.
+ * Hold the install lock for one plan, and own it while doing so.
  *
  * `mkdirSync` is the atomic primitive: exactly one caller creates the directory, every other
  * caller sees `EEXIST` and waits. Two parallel commands used to race here, and the loser's
  * `beginInstall` deleted the winner's output mid-download.
  *
- * Waiting ends three ways, and none of them spins: the winner publishes a verified binary (the
- * waiter reuses it immediately), the lock's owner is gone (a killed build — its pid no longer
- * exists — is stolen at once), or the lock is 15 minutes old and therefore stale. A steal is one
- * `rename`, so two waiters cannot both take the same stale lock and resurrect the race.
+ * Ownership is a token written inside the lock, so releasing deletes only a lock this caller
+ * still owns: a waiter that reclaimed a dead owner's lock cannot have it deleted underneath it by
+ * the process that died. Waiting ends three ways, none of them spinning: the winner publishes a
+ * verified binary (the waiter reuses it at once), the lock's recorded pid is gone (a killed
+ * build — reclaimed immediately), or a lock with no pid at all is 15 minutes old. A reclaim
+ * re-reads the dead pid before its single `rename`, so two waiters cannot both move it and one
+ * cannot move the other's fresh lock.
  */
 async function withInstallLock(plan, options, callback) {
   const lock = `${plan.statusPath}.lock`;
   mkdirSync(dirname(lock), { recursive: true });
+  const owner = randomUUID();
   const deadline = Date.now() + LOCK_STALE_MS;
   let announcedAt = 0;
-  const notice = (suffix) => {
-    process.stderr.write(`Waiting for another install of '${plan.key}' to finish (${lock}${suffix}).\n`);
-  };
   for (;;) {
     try {
       mkdirSync(lock);
-      // Best effort: a lock without a pid still serializes, it is only slower to reclaim.
-      try {
-        writeFileSync(join(lock, 'pid'), `${process.pid}\n`, { flag: 'wx' });
-      } catch {
-        // The owner pid is an optimisation for a killed build, never a precondition.
-      }
-      break;
     } catch (error) {
       if (error?.code !== 'EEXIST') throw error;
       // The winner may have published a verified binary while this caller waited: reuse it.
       if (isVerifiedInstall(plan, options)) return plan.output;
-      let age = 0;
+      let age;
       try {
         age = Date.now() - statSync(lock).mtimeMs;
-      } catch {
-        // Released between the `mkdir` and the `stat`: try again without sleeping.
-        continue;
+      } catch (error) {
+        // Released between the `mkdir` and the `stat`: retry at once. Any other filesystem error
+        // is real and must not be turned into a busy loop.
+        if (error?.code === 'ENOENT') continue;
+        throw error;
       }
-      const abandoned = lockOwnerIsGone(lock);
-      if (abandoned || age > LOCK_STALE_MS) {
-        const stale = `${lock}.${randomUUID()}.stale`;
-        try {
-          renameSync(lock, stale);
-          rmSync(stale, { recursive: true, force: true });
-        } catch {
-          // Another waiter stole it first, which is the outcome this branch wants anyway.
-        }
+      const abandoned = abandonedLockOwner(lock, age);
+      if (abandoned !== undefined) {
+        reclaimAbandonedLock(lock, abandoned);
         continue;
       }
       const now = Date.now();
@@ -574,56 +593,126 @@ async function withInstallLock(plan, options, callback) {
       }
       if (announcedAt === 0 || now - announcedAt >= LOCK_NOTICE_MS) {
         announcedAt = now;
-        notice(` is ${Math.round(age / 1000)}s old`);
+        process.stderr.write(
+          `Waiting for another install of '${plan.key}' to finish (${lock} is ${Math.round(age / 1000)}s old).\n`,
+        );
       }
       await new Promise((resolveWait) => setTimeout(resolveWait, LOCK_POLL_MS));
+      continue;
     }
+    // The lock is ours. The token ties cleanup to this caller; the pid lets a later build reclaim
+    // it the moment this process is gone, so a killed build never becomes a 15-minute wait.
+    try {
+      writeFileSync(join(lock, 'owner'), `${owner}\n`, { flag: 'wx' });
+    } catch (error) {
+      // Without a token this caller cannot prove ownership on release, so it gives the lock back
+      // rather than installing unprotected.
+      rmSync(lock, { recursive: true, force: true });
+      throw error;
+    }
+    try {
+      writeFileSync(join(lock, 'pid'), `${process.pid}\n`, { flag: 'wx' });
+    } catch {
+      // The pid is an optimisation for a killed build, never a precondition.
+    }
+    break;
   }
   try {
     return await callback();
   } finally {
-    rmSync(lock, { recursive: true, force: true });
+    releaseInstallLock(lock, owner);
   }
 }
 
-/** Whether the pid recorded in a lock no longer runs, which is how a killed install is detected. */
-function lockOwnerIsGone(lock) {
-  let pid;
+/** Delete the lock only while this caller still owns it. */
+function releaseInstallLock(lock, owner) {
+  let recorded;
   try {
-    pid = Number(readFileSync(join(lock, 'pid'), 'utf8').trim());
+    recorded = readFileSync(join(lock, 'owner'), 'utf8').trim();
   } catch {
-    // No pid yet: the owner may be between `mkdir` and the write, so treat it as alive.
-    return false;
+    // A lock whose token is unreadable is not provably this caller's: leave it to go stale.
+    return;
   }
-  if (!Number.isSafeInteger(pid) || pid <= 0 || pid === process.pid) return false;
+  if (recorded === owner) rmSync(lock, { recursive: true, force: true });
+}
+
+/**
+ * The identity of a lock nobody owns any more, or `undefined` while it must be respected.
+ *
+ * A recorded pid that no longer runs is reclaimed at once. A lock with no pid is reclaimed only
+ * once it is 15 minutes old — that is a build killed between `mkdir` and the pid write, or a lock
+ * from a release that predates the pid. A live pid, an `EPERM` (another user's process) or a
+ * malformed pid is respected.
+ */
+function abandonedLockOwner(lock, age) {
+  let pidText;
+  try {
+    pidText = readFileSync(join(lock, 'pid'), 'utf8').trim();
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    return age > LOCK_STALE_MS ? '' : undefined;
+  }
+  const pid = Number(pidText);
+  if (!Number.isSafeInteger(pid) || pid <= 0) return age > LOCK_STALE_MS ? pidText : undefined;
+  if (pid === process.pid) return undefined;
   try {
     process.kill(pid, 0);
-    return false;
+    return undefined;
   } catch (error) {
-    // EPERM means it exists under another user; anything else means the process is gone.
-    return error?.code === 'ESRCH';
+    return error?.code === 'ESRCH' ? pidText : undefined;
   }
+}
+
+/** Move one dead lock aside. Only the caller that still sees that owner may, and only once. */
+function reclaimAbandonedLock(lock, identity) {
+  let current;
+  try {
+    current = readFileSync(join(lock, 'pid'), 'utf8').trim();
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error;
+    current = '';
+  }
+  if (current !== identity) return false;
+  const graveyard = `${lock}.${randomUUID()}.stale`;
+  try {
+    renameSync(lock, graveyard);
+  } catch (error) {
+    // Another waiter moved it first, which is the outcome this branch wants anyway.
+    if (error?.code === 'ENOENT' || error?.code === 'ENOTEMPTY') return false;
+    throw error;
+  }
+  rmSync(graveyard, { recursive: true, force: true });
+  return true;
 }
 
 /**
  * Name a failed ensure, because the bare download error reads like an engine bug.
  *
  * Each message names the asset, the version, the URL, the underlying reason, and the only three
- * fixes that work. `TN_NATIVE_BINARY_UNPUBLISHED` is a packaging fact and the release census
- * already fails on it; `TN_NATIVE_BINARY_UNAVAILABLE` is a network, HTTP or checksum failure.
+ * fixes that work. `TN_NATIVE_BINARY_UNPUBLISHED` covers every packaging fact — a release with no
+ * such asset, a manifest without the key, a platform whose asset is deliberately unpublished — so
+ * the same absent asset is diagnosed the same way whether or not the host was online.
+ * `TN_NATIVE_BINARY_UNAVAILABLE` is a network, HTTP or checksum failure.
  */
 function unavailableNativeBinary(error, plan) {
   const reason = error instanceof Error ? error.message : String(error);
-  const unpublished = error instanceof Error &&
-    ['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code);
-  const code = unpublished ? 'TN_NATIVE_BINARY_UNPUBLISHED' : 'TN_NATIVE_BINARY_UNAVAILABLE';
+  const code =
+    error instanceof Error &&
+    (['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code) ||
+      /No prebuilt release (?:asset|manifest)|is not published for/u.test(reason))
+      ? 'TN_NATIVE_BINARY_UNPUBLISHED'
+      : 'TN_NATIVE_BINARY_UNAVAILABLE';
   const asset = PREBUILT_ASSET_NAMES[plan.key] ?? plan.key;
   const env = plan.key.endsWith('-engine-player') ? 'THREENATIVE_ENGINE_PLAYER' : 'THREENATIVE_RUNTIME_BINARY';
-  const message = unpublished
+  const message = code === 'TN_NATIVE_BINARY_UNPUBLISHED'
     ? `${code}: no ${asset} is published for @threenative/runtime-native ${packageVersion} at ${plan.status.url} (${reason}).`
     : `${code}: ${asset} for @threenative/runtime-native ${packageVersion} could not be downloaded from ${plan.status.url} (${reason}).`;
   const wrapped = new Error(
-    `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (pnpm --filter @threenative/runtime-native native:build).`,
+    `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (${
+      plan.key.endsWith('-engine-player')
+        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8'
+        : 'pnpm --filter @threenative/runtime-native native:build'
+    }).`,
   );
   wrapped.code = code;
   return wrapped;
@@ -647,25 +736,25 @@ export async function ensureNativeBinary(options = {}) {
   }
 }
 
-// Real paths on both sides: pnpm runs this hook through a symlinked `node_modules` path, and a
-// plain comparison with the module's real URL silently skipped the install.
+// The explicit "fetch now" command, for an offline image or a link known to be slow. It goes
+// through the same locked, reuse-aware entry point a build uses: run beside a desktop build it
+// waits instead of racing, and a failed refresh never deletes a verified cache.
+//
+// Real paths on both sides: this is invoked through a symlinked `node_modules` path, and a plain
+// comparison with the module's real URL silently skipped the install.
 if (process.argv[1] && existsSync(process.argv[1]) &&
     realpathSync(fileURLToPath(import.meta.url)) === realpathSync(process.argv[1])) {
   const sourceCheckout = existsSync(join(packageRoot, 'src')) && existsSync(join(packageRoot, 'CMakeLists.txt'));
   if (sourceCheckout) {
     console.log('ThreeNative runtime source checkout detected; prebuilt install is deferred to package testing.');
   } else {
-    installPrebuilt().then(() => installPrebuilt({ enginePlayer: true }))
+    ensureNativeBinary().then(() => ensureNativeBinary({ enginePlayer: true }))
       .catch((error) => {
         const reason = error instanceof Error ? error.message : String(error);
-        // An unpublished release is a packaging-state fact, not a broken download. The web game
-        // this install carries must not lose node_modules/.bin over an optional native binary;
-        // the native lanes fail closed later, on the missing binary itself.
-        if (error instanceof Error &&
-            ['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code)) {
-          console.warn(
-            `No prebuilt release is published for v${packageVersion} (${reason}). Continuing without the native runtime; desktop and device lanes fail closed on the missing binary.`,
-          );
+        // A release that carries no asset for this platform is a packaging-state fact, not a
+        // broken download: report it and keep the exit code for a real failure.
+        if (error instanceof Error && error.code === 'TN_NATIVE_BINARY_UNPUBLISHED') {
+          console.warn(reason);
           return;
         }
         console.error(reason);

@@ -1604,23 +1604,37 @@ export function engineDesktopPlayer(
  *
  * `pnpm install` downloads nothing any more, so this is the one place a default-engine desktop
  * build acquires its player. A verified cached binary, an explicit `THREENATIVE_ENGINE_PLAYER`
- * and a checkout build all return without touching the network.
+ * and a checkout build all return the path without touching the network.
+ *
+ * The path is returned rather than written to `THREENATIVE_ENGINE_PLAYER`: that variable is
+ * process-wide, and a second build in the same process would otherwise package the first game's
+ * player.
  */
 export async function ensureEngineDesktopPlayer(
   runtimeRoot: string,
+  cwd: string,
   env: NodeJS.ProcessEnv = process.env,
-): Promise<void> {
-  if (env.THREENATIVE_ENGINE_PLAYER !== undefined) return;
+): Promise<string> {
+  const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
+  if (env.THREENATIVE_ENGINE_PLAYER !== undefined) return player();
   const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
-  if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return;
+  if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return player();
   const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
   // An engine checkout build is selected by hand; the packager's own missing-player error names
   // an installation that also lacks this script, so there is nothing better to say here.
-  if (!existsSync(module)) return;
-  const { ensureNativeBinary } = (await import(pathToFileURL(module).href)) as {
-    ensureNativeBinary(options: { enginePlayer: boolean }): Promise<string>;
+  if (!existsSync(module)) return player();
+  const runtime = (await import(pathToFileURL(module).href)) as {
+    ensureNativeBinary?: (options: { enginePlayer: boolean }) => Promise<string>;
+    installPrebuilt?: (options: { enginePlayer: boolean; reuse: boolean }) => Promise<string>;
   };
-  env.THREENATIVE_ENGINE_PLAYER = await ensureNativeBinary({ enginePlayer: true });
+  // A runtime older than this CLI has no ensure entry point: fall back to its verified install so
+  // a CLI-only upgrade still builds, rather than calling an undefined function.
+  if (typeof runtime.ensureNativeBinary === "function") {
+    await runtime.ensureNativeBinary({ enginePlayer: true });
+  } else if (typeof runtime.installPrebuilt === "function") {
+    await runtime.installPrebuilt({ enginePlayer: true, reuse: true });
+  }
+  return player();
 }
 
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
@@ -1644,7 +1658,7 @@ async function buildEngineDesktop(
   }
   // The player every desktop package runs is fetched here, before the UI build, so a missing
   // download is a cheap failure rather than a full UI build thrown away (PRD-783).
-  await ensureEngineDesktopPlayer(runtimeRoot);
+  const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd);
   const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
   const output = path.join(cwd, "dist-native", await projectName(cwd));
   await packageStaged(output, cwd, [
@@ -1654,7 +1668,7 @@ async function buildEngineDesktop(
     "--entry",
     entry,
     "--player",
-    engineDesktopPlayer(runtimeRoot, process.env, cwd),
+    player,
     ...(ui === undefined ? [] : ["--ui", ui]),
     "--width",
     String(config.window.width),

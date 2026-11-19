@@ -708,6 +708,34 @@ describe("threenative doctor", () => {
     expect(check(report, "target desktop")).toMatchObject({ status: "ok" });
   });
 
+  it("accepts a receipt recorded from a local prebuilt lock", () => {
+    // The documented offline path is `THREENATIVE_PREBUILT_MANIFEST`. A build that used it records
+    // the local lock as its source; comparing that to the public URL told the user to reinstall,
+    // which would fetch nothing and change nothing.
+    const pin = path.join("/tmp", "offline-pin", "prebuilt-lock.json");
+    process.env.THREENATIVE_PREBUILT_MANIFEST = pin;
+    try {
+      const report = diagnoseProject(
+        snapshot({
+          readRuntimeText: (relative) =>
+            relative === "prebuilt/engine-player-install-status.json"
+              ? JSON.stringify({
+                  key: `${process.platform}-${process.arch}-engine-player`,
+                  ok: true,
+                  reason: "installed",
+                  url: pin,
+                  version: "0.4.0",
+                })
+              : undefined,
+        }),
+      );
+      expect(check(report, "native runtime").status).toBe("ok");
+      expect(report.pass).toBe(true);
+    } finally {
+      Reflect.deleteProperty(process.env, "THREENATIVE_PREBUILT_MANIFEST");
+    }
+  });
+
   it("reads the binary the default engine actually runs, not the legacy one", () => {
     // M10: `engine: "threenative"` desktop builds package the engine player and never the legacy
     // runtime, so a broken legacy record must not colour the default engine's verdict, and a
@@ -1353,8 +1381,29 @@ describe("threenative doctor edge coverage", () => {
   });
 
   it("fails closed when the installed host is older than the engine it must satisfy", () => {
+    // The version probe belongs to the legacy host, which answers `--version`. The default engine
+    // runs the engine player, whose receipt is its proof (PRD-783), so this test pins the `threejs`
+    // host explicitly.
+    const legacyConfig = { engine: "threejs", nativeEntry: "src/game.ts" };
     const host = (nativeHost: { readonly reason?: string; readonly runtimeVersion?: string }) =>
-      nativeRuntimeCheck(snapshot({ nativeHost }));
+      nativeRuntimeCheck(
+        snapshot({
+          config: legacyConfig,
+          nativeHost,
+          readRuntimeText: (relative) =>
+            relative === "prebuilt/install-status.json"
+              ? JSON.stringify({
+                  key: `${process.platform}-${process.arch}`,
+                  ok: true,
+                  reason: "installed",
+                  url: "https://github.com/ThreeNativeHQ/threenative/releases/download/runtime-native-v0.4.0/prebuilt-lock.json",
+                  version: "0.4.0",
+                })
+              : undefined,
+          runtimeFileExists: (relative) =>
+            relative === `prebuilt/${process.platform}-${process.arch}/threenative-runtime`,
+        }),
+      );
 
     // The published `runtime-native-v0.3.2` prebuilt answered exactly this, under a package whose
     // own version said 0.4.0, and every desktop binary built with it showed no UI.
@@ -1376,9 +1425,15 @@ describe("threenative doctor edge coverage", () => {
 
     // Equal or newer is the whole passing set, and the detail names the host it read.
     expect(host({ runtimeVersion: "0.4.0" })).toMatchObject({
-      detail: `available (${process.platform}-${process.arch}-engine-player, host runtime v0.4.0)`,
+      detail: `available (${process.platform}-${process.arch}, host runtime v0.4.0)`,
       status: "ok",
     });
+
+    // The default engine never asks the legacy host: an injected answer must not change a verdict
+    // about the engine player, in either direction.
+    const player = nativeRuntimeCheck(snapshot({ nativeHost: { runtimeVersion: "0.1.0" } }));
+    expect(player).toMatchObject({ status: "ok" });
+    expect(player.detail).not.toContain("runtime v0.1.0");
     expect(host({ runtimeVersion: "0.5.1" })).toMatchObject({ status: "ok" });
 
     // A version string that cannot be compared is not a pass: the string it has to protect against
@@ -1853,7 +1908,10 @@ describe("threenative doctor --target/--mode", () => {
     expect(target.status).toBe("fail");
   });
 
-  it("should fail the requested Android build when the runtime artifact never downloaded", () => {
+  it("should not veto an Android build on a failed desktop download", () => {
+    // Android fetches its own libraries at package time; the record doctor reads is the desktop
+    // host's. A broken desktop download used to fail `--target android`, which is a red on a build
+    // that never touches it (PRD-783 moved that record to the engine player, making it clearer).
     const report = diagnoseProject(
       snapshot({
         androidToolchain: { jdkMajor: 17, jdkVersion: "17.0.1", sdkVersion: "35.0.0" },
@@ -1864,10 +1922,11 @@ describe("threenative doctor --target/--mode", () => {
       }),
       { target: "android" },
     );
-    const requested = check(report, "requested build");
-    expect(requested.status).toBe("fail");
-    expect(requested.detail).toMatch(/HTTP 404/u);
-    expect(report.pass).toBe(false);
+    expect(check(report, "requested build").status).toBe("ok");
+    expect(check(report, "target android").status).toBe("ok");
+    // The desktop fact stays in the report, demoted like every unrequested target's.
+    expect(check(report, "target desktop").status).toBe("warn");
+    expect(report.pass).toBe(true);
   });
 
   it("should block a native build on a runtime that only warns, not just one that fails", () => {
@@ -2043,23 +2102,23 @@ describe("threenative doctor --target/--mode", () => {
     expect(unscoped.pass).toBe(false);
   });
 
-  it("should let every native target own the native runtime, and only web demote it", () => {
+  it("should let desktop own the native runtime, and every other target demote it", () => {
     // The sibling of the `desktop overlay` owners bug, and only visible on a runtime that actually
-    // fails: dropping "ios" from TARGET_PREREQUISITE_OWNERS["native runtime"] is severity drift -
-    // the requested build still fails and the exit code is still 1 - but it is the same shape, and
-    // it survived the suite. A resolved package with no runtime root is the failing case.
+    // fails. PRD-783 made the record this check reads the *desktop host's* prebuilt; Android and
+    // iOS download their own libraries at package time from the same release, so a failed desktop
+    // prebuilt cannot predict their build and must not decide their exit code.
     const broken = snapshot({
       runtimeRoot: undefined,
       readRuntimeText: undefined,
       installedVersions: new Map([["@threenative/runtime-native", "0.4.0"]]),
     });
     expect(check(diagnoseProject(broken), "native runtime").status).toBe("fail");
-    // Web does not start it, so it is demoted and cannot decide a web request's exit code.
-    expect(check(diagnoseProject(broken, { target: "web" }), "native runtime").status).toBe("warn");
-    // Every native target does start it, so none of them demote it.
-    for (const target of ["android", "desktop", "ios"] as const) {
-      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("fail");
+    for (const target of ["web", "android", "ios"] as const) {
+      expect(check(diagnoseProject(broken, { target }), "native runtime").status).toBe("warn");
     }
+    expect(check(diagnoseProject(broken, { target: "desktop" }), "native runtime").status).toBe(
+      "fail",
+    );
   });
 
   it("should fail a requested web build with no web entry", () => {
