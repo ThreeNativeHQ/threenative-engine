@@ -57,9 +57,12 @@ test("--executable accepts the build output directory of either engine", async (
   try {
     const player = join(root, "racing");
     await mkdir(player, { recursive: true });
-    await writeFile(join(player, "racing"), "");
+    // Each platform's own layout: Windows cannot spawn the POSIX launcher the engine packager
+    // writes as `<dir>/<name>`, so its artifact is an `.exe`.
+    const launcher = process.platform === "win32" ? join(player, "racing.exe") : join(player, "racing");
+    await writeFile(launcher, "");
     await writeFile(join(player, "game.js"), "");
-    expect(await resolveDesktopExecutable(player)).toBe(join(player, "racing"));
+    expect(await resolveDesktopExecutable(player)).toBe(launcher);
     const flat = join(root, "flat");
     await writeFile(flat, "");
     expect(await resolveDesktopExecutable(flat)).toBe(flat);

@@ -22,7 +22,7 @@ import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/b
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { CORE_VERSION } from "../../core/src/version.js";
-import { resolveRuntimeAssetCapabilities } from "./build.js";
+import { enginePlayerSupportsWebUi, resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import { type IAuthoringLayerStatus, authoringLayerStatus } from "./index.js";
 import {
@@ -1482,6 +1482,17 @@ export function probeNativeHost(binary: string): INativeHostProbe {
 export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
   const target = nativePrebuiltTarget(snapshot.config);
   const key = target.key;
+  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
+  // buildable that `threenative build` rejects before it downloads anything.
+  const renderer = record(record(snapshot.config)?.ui)?.renderer;
+  if (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()) {
+    return {
+      detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a "web" HUD fails at TN_UI_LOAD_FAILED and a desktop build refuses this configuration (TN_ENGINE_PLAYER_UI_UNSUPPORTED).`,
+      fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
+      name: "native runtime",
+      status: "fail",
+    };
+  }
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
     return snapshot.installedVersions.has(RUNTIME_PACKAGE)
       ? {

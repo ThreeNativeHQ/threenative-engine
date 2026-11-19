@@ -257,7 +257,7 @@ export function generateReleaseManifest(directory, { repository, tag, sourceSha,
 export function readRelease(manifestPath, key) {
   if (!existsSync(manifestPath)) {
     const error = new Error(`No prebuilt release manifest exists for '${key}'; this target remains OPEN.`);
-    error.code = key.endsWith('-engine-player') ? 'PREBUILT_RELEASE_UNPUBLISHED' : 'PREBUILT_RELEASE_MISSING';
+    error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'));
@@ -368,7 +368,11 @@ async function fetchRelease(manifestUrl, key) {
     const error = new Error(
       `Prebuilt release manifest fetch failed for '${key}' at ${url.href}: HTTP ${response.status}.`,
     );
-    if (response.status === 404) error.code = key.endsWith('-engine-player') ? 'PREBUILT_RELEASE_UNPUBLISHED' : 'PREBUILT_RELEASE_MISSING';
+    // No manifest at this tag is an expected absence for both binaries — the release that carries
+    // them may not exist yet — so it is the same warning a missing local manifest earns. One
+    // artifact 404 inside a manifest that promises it stays fatal, and `downloadReleaseArtifact`
+    // tags that separately as PREBUILT_RELEASE_MISSING.
+    if (response.status === 404) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
   return releaseFromManifest(validateReleaseManifest(await response.json()), key);

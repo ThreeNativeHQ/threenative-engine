@@ -229,11 +229,13 @@ test('a 404 release manifest is recognised as a missing release, not a generic f
     const address = server.address();
     assert.ok(address && typeof address !== 'string');
     process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    // A tag with no release yet is the expected absence both hosts warn about; an artifact 404
+    // inside a manifest that promises it is the fatal one, tested beside this.
     await assert.rejects(
       downloadReleaseArtifact('linux-x64', {
         manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
       }),
-      (error) => error.code === 'PREBUILT_RELEASE_MISSING',
+      (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED',
     );
   } finally {
     await new Promise((resolve, reject) =>
