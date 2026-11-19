@@ -1360,6 +1360,35 @@ const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x
  * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
  * its own check because it answers for android and ios too, not only the desktop receipt.
  */
+/**
+ * The keys this release publishes, mirrored from `PREBUILT_ASSET_NAMES` minus the unpublished rows.
+ *
+ * Only used to judge a release lock that declares no `requiredKeys`: such a lock is the official
+ * full-cohort lock, so a partial one is a lock the downloader refuses.
+ */
+export const PUBLISHED_COHORT: readonly string[] = Object.freeze([
+  "android-arm64-v8a-libcxx",
+  "android-arm64-v8a-runtime",
+  "android-arm64-v8a-runtime-v8",
+  "android-arm64-v8a-sdl3",
+  "android-arm64-v8a-v8",
+  "android-arm64-v8a-v8-snapshot",
+  "android-sdl3-aar",
+  "android-x86_64-libcxx",
+  "android-x86_64-runtime",
+  "android-x86_64-runtime-v8",
+  "android-x86_64-sdl3",
+  "android-x86_64-v8",
+  "android-x86_64-v8-snapshot",
+  "ios-simulator-arm64",
+  "linux-x64",
+  "linux-x64-engine-player",
+  "linux-x64-tools",
+  "win32-x64",
+  "win32-x64-engine-player",
+  "win32-x64-tools",
+]);
+
 /** Whether a pinned manifest's entry for one key can actually be fetched and verified. */
 function usable(artifacts: unknown, key: string, releaseLock = false): boolean {
   const artifact = record(record(artifacts)?.[key]);
@@ -1409,8 +1438,9 @@ export function pinnedManifestCheck(
   snapshot: IProjectSnapshot,
   options: { readonly target?: DoctorTarget } = {},
 ): IDoctorCheck | undefined {
+  // An exported empty string means "unset": resolving it would read the working directory.
   const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
-  if (pinned === undefined) return undefined;
+  if (pinned === undefined || pinned.length === 0) return undefined;
   // The desktop packager resolves a relative pin from the game, the mobile ones from the runtime
   // package they run inside: resolving every pin from the game blessed one the build could not read.
   const mobile = options.target === "android" || options.target === "ios";
@@ -1471,6 +1501,17 @@ export function pinnedManifestCheck(
     return fail(
       `which records release ${declaredVersion} but ${RUNTIME_PACKAGE} is ${installedVersion}; the packager rejects a lock from another release`,
     );
+  }
+  if (releaseLock && record(manifest)?.requiredKeys === undefined) {
+    // The official lock omits `requiredKeys` because it always carries the whole published cohort,
+    // and a lock with one artifact and no scope is one the downloader refuses. These are the keys
+    // `PREBUILT_ASSET_NAMES` publishes today; a new one is never demanded here.
+    const cohort = PUBLISHED_COHORT.filter((key) => !key.startsWith("ios-"));
+    const missingCohort = cohort.filter((key) => !usable(artifacts, key, true));
+    if (missingCohort.length > 0)
+      return fail(
+        `which is a release lock without requiredKeys and is missing ${missingCohort.length} published keys (${missingCohort.slice(0, 3).join(", ")}${missingCohort.length > 3 ? ", …" : ""}); scope it with requiredKeys or ship the full cohort`,
+      );
   }
   if (options.target === "android") {
     // The cohort is the installed packager's own list, read from its source: mirroring eleven keys

@@ -19,6 +19,7 @@ import {
   ANDROID_RELEASE_SIGNING_ENV,
   type IProjectSnapshot,
   MCP_SERVER_SPECS,
+  PUBLISHED_COHORT,
   detectX11Compositor,
   diagnoseProject,
   formatDoctorReport,
@@ -153,6 +154,23 @@ async function workspaceVersion(packageName: string): Promise<string> {
 }
 
 describe("threenative doctor", () => {
+  it("mirrors the release's published cohort exactly", () => {
+    // One source of truth for what a release publishes: the runtime's own map. A key added there
+    // and not here would let a partial release lock pass doctor.
+    const source = readFileSync(
+      path.resolve("packages/runtime-native/scripts/install-prebuilt.mjs"),
+      "utf8",
+    );
+    const block = /export const PREBUILT_ASSET_NAMES = Object\.freeze\(\{([\s\S]*?)\n\}\);/u.exec(
+      source,
+    )?.[1];
+    expect(block).toBeDefined();
+    const published = [...(block as string).matchAll(/'([a-z0-9_-]+)':/gu)]
+      .map((match) => match[1] as string)
+      .filter((key) => !key.startsWith("darwin-"));
+    expect([...PUBLISHED_COHORT].sort()).toEqual(published.sort());
+  });
+
   it("fails a pinned manifest that cannot serve the build, for every native target", () => {
     // The packager reads the pin before the network for android too, so an empty pin must fail
     // there rather than leave `--target android` reporting a buildable project.

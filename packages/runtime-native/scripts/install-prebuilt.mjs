@@ -278,6 +278,11 @@ export function readRelease(manifestPath, key, options = {}) {
   return releaseFromManifest(manifest, key, options);
 }
 
+/** The pinned manifest, or nothing: an exported empty string means "unset", not the cwd. */
+export function pinnedManifestPath(value = process.env.THREENATIVE_PREBUILT_MANIFEST) {
+  return value === undefined || value.length === 0 ? undefined : value;
+}
+
 /** The GitHub release tag a version's prebuilt payload is published under. */
 export function releaseTag(version = packageVersion) {
   return `runtime-native-v${version}`;
@@ -314,7 +319,7 @@ function createInstallPlan(options) {
   const toolsOutput = join(dirname(output), toolsFilename(platform));
   if (toolsOutput === output) throw new Error('Prebuilt runtime and build tool helper paths must differ.');
   return { platform, key, output, statusPath, toolsOutput, toolsKey: toolsKey(key),
-    status: { key, url: options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST ??
+    status: { key, url: options.manifestPath ?? pinnedManifestPath() ??
       options.manifestUrl ?? releaseManifestUrl(), version: packageVersion } };
 }
 
@@ -377,10 +382,8 @@ async function fetchRelease(manifestUrl, key, options = {}) {
     const error = new Error(
       `Prebuilt release manifest fetch failed for '${key}' at ${url.href}: HTTP ${response.status}.`,
     );
-    // No manifest at this tag is an expected absence for both binaries — the release that carries
-    // them may not exist yet — so it is the same warning a missing local manifest earns. One
-    // artifact 404 inside a manifest that promises it stays fatal, and `downloadReleaseArtifact`
-    // tags that separately as PREBUILT_RELEASE_MISSING.
+    // No manifest at this tag: the diagnosis is "not published yet", but a prefetch that was asked
+    // to fill an offline image must not exit zero on it, so it is not the by-design class.
     if (response.status === 404) error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
@@ -593,7 +596,7 @@ export async function downloadReleaseArtifact(key, options = {}) {
     error.code = 'PREBUILT_RELEASE_UNPUBLISHED';
     throw error;
   }
-  const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
+  const manifestPath = options.manifestPath ?? pinnedManifestPath();
   const release = manifestPath
     ? readRelease(resolve(manifestPath), key, options)
     : await fetchRelease(options.manifestUrl ?? releaseManifestUrl(), key, options);
@@ -633,7 +636,7 @@ function isVerifiedInstall(plan, options) {
         status.version !== plan.status.version || status.url !== plan.status.url) return false;
     // A caller can replace a local lock without changing its path. That explicit pin must
     // still authorize these bytes, and a missing/invalid pin must never be bypassed by cache.
-    const manifestPath = options.manifestPath ?? process.env.THREENATIVE_PREBUILT_MANIFEST;
+    const manifestPath = options.manifestPath ?? pinnedManifestPath();
     const pinned = manifestPath ? readRelease(resolve(manifestPath), plan.key, options) : undefined;
     if (pinned && pinned.sha256 !== status.sha256) return false;
     const contents = readFileSync(plan.output);
@@ -898,9 +901,11 @@ function unavailableNativeBinary(error, plan) {
   // Two different facts share the UNPUBLISHED name: this platform publishes nothing (warn and move
   // on) and a release that is missing an asset it promised (a real failure). `unpublished` keeps
   // them apart for the prefetch command, which cannot see the plan.
+  // By-design means this platform publishes nothing (darwin, linux-arm64, an unsupported host).
+  // A manifest or asset that should exist and does not is a failure, however it is diagnosed.
   const byDesign =
     (error instanceof Error && error.code === 'PREBUILT_RELEASE_UNPUBLISHED') ||
-    /is not published for|No prebuilt release manifest exists|No prebuilt release asset is recorded/u.test(reason);
+    /is not published for/u.test(reason);
   const code =
     error instanceof Error &&
     (['PREBUILT_RELEASE_MISSING', 'PREBUILT_RELEASE_UNPUBLISHED'].includes(error.code) ||
