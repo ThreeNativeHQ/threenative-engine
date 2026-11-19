@@ -1,6 +1,6 @@
 {
   "name": "@threenative/assets",
-  "version": "0.3.17",
+  "version": "0.3.18",
   "license": "MIT",
   "description": "Content-addressed asset compile step for ThreeNative games.",
   "keywords": ["threenative", "three", "threejs", "assets", "gltf", "asset-pipeline", "webgpu"],
