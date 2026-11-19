@@ -118,6 +118,17 @@ function check(report: ReturnType<typeof diagnoseProject>, name: string) {
   return found;
 }
 
+function withArch<T>(arch: NodeJS.Architecture, callback: () => T): T {
+  const descriptor = Object.getOwnPropertyDescriptor(process, "arch");
+  if (descriptor === undefined) throw new Error("process.arch descriptor is missing");
+  Object.defineProperty(process, "arch", { ...descriptor, value: arch });
+  try {
+    return callback();
+  } finally {
+    Object.defineProperty(process, "arch", descriptor);
+  }
+}
+
 function withPlatform<T>(platform: NodeJS.Platform, callback: () => T): T {
   const descriptor = Object.getOwnPropertyDescriptor(process, "platform");
   if (descriptor === undefined) throw new Error("process.platform descriptor is missing");
@@ -837,11 +848,13 @@ describe("threenative doctor", () => {
     // A published desktop platform: on darwin-arm64, and on arm64 Linux, nothing is published and
     // the same fixture warns, which is the subject of its own test.
     const report = withPlatform("linux", () =>
-      diagnoseProject(
-        snapshot({
-          config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
-          readRuntimeText: () => undefined,
-        }),
+      withArch("x64", () =>
+        diagnoseProject(
+          snapshot({
+            config: { nativeEntry: "src/game.ts", ui: { renderer: "native" } },
+            readRuntimeText: () => undefined,
+          }),
+        ),
       ),
     );
     expect(report.pass).toBe(true);

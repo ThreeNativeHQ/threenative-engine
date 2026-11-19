@@ -611,6 +611,7 @@ async function downloadRanges(key, url, size, expectedSha256) {
             `Prebuilt release fetch failed for '${key}' at ${url}: HTTP ${response.status} for byte range ${start}-${end}.`,
           );
           if (response.status === 404) error.code = 'PREBUILT_RELEASE_MISSING';
+          error.status = response.status;
           throw error;
         }
         if (claimed !== undefined) {
@@ -645,8 +646,11 @@ async function downloadRanges(key, url, size, expectedSha256) {
         // recorded, the claim is bounded so a stalled body cannot hold the install lock.
         // Cancellation is read from the request's own signal, not from the message: a formatted
         // failure carries the asset URL, and a URL may contain "aborted".
-        if (cancelled.has(index)) return;
-        const aborted = controllers[index].signal.aborted || isAbortError(error);
+        // A status that has already arrived is the mirror's answer, whatever cancellation raced
+        // with it: only a body error may be reclassified as intentional.
+        const httpAnswer = typeof error?.status === 'number';
+        if (!httpAnswer && cancelled.has(index)) return;
+        const aborted = !httpAnswer && (controllers[index].signal.aborted || isAbortError(error));
         if (!aborted && failure === undefined) {
           failure = error;
           // Stop reading the whole-body fallback at once: the answer is the range failure, and a
@@ -1014,7 +1018,7 @@ function unavailableNativeBinary(error, plan) {
   const wrapped = new Error(
     `${message} Fix it one of three ways: connect (or reconnect) and rerun the same command; set ${env} to a local binary; or build one from an engine checkout (${
       plan.key.endsWith('-engine-player')
-        ? 'cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON, then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8; add -DTN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux when the game has a web UI (it is a Linux-only option, and elsewhere a web HUD needs engine: \"threejs\")'
+        ? 'for a Linux web HUD run node scripts/build-native-ui-overlay.mjs first (CMake needs that library before it accepts the flag), then cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON; on any other platform or with a "native" HUD use the same command without -DTN_ENGINE_PLAYER_UI_OVERLAY=ON (a web HUD there needs engine: \"threejs\"), then cmake --build build/tn-engine-ui --target tn-native-engine-player-v8'
         : 'pnpm --filter @threenative/runtime-native native:build'
     }).`,
   );

@@ -1523,6 +1523,23 @@ function nativePrebuiltTarget(config: unknown): {
   };
 }
 
+/** The reason a previous install recorded, when it recorded a failure. */
+function recordedInstallFailure(
+  snapshot: IProjectSnapshot,
+  target: { readonly statusFile: string },
+): string | undefined {
+  const text = snapshot.readRuntimeText?.(target.statusFile);
+  if (text === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const status = record(parsed);
+    if (status?.ok !== false) return undefined;
+    return typeof status.reason === "string" ? status.reason : "the install recorded no reason";
+  } catch {
+    return "the install status is malformed";
+  }
+}
+
 /**
  * The player a desktop build would use instead of downloading one, in the build's own order:
  * `THREENATIVE_ENGINE_PLAYER`, then a checkout build under `build/tn-engine-ui/`.
@@ -1673,7 +1690,25 @@ export function nativeRuntimeCheck(
     };
   }
   if (localPlayer !== undefined) {
-    if (hudRefusal !== undefined) return hudRefusal;
+    // A local binary does not erase a download that failed earlier, and the refusal that makes the
+    // build impossible outranks both. One answer, nothing hidden behind another.
+    const recorded = recordedInstallFailure(snapshot, target);
+    if (hudRefusal !== undefined)
+      return recorded === undefined
+        ? hudRefusal
+        : {
+            detail: `${hudRefusal.detail} A previous download also failed (${recorded}).`,
+            fix: `${hudRefusal.fix ?? ""} Then rerun \`threenative build --target desktop\` to retry the download.`.trim(),
+            name: "native runtime",
+            status: "fail",
+          };
+    if (recorded !== undefined)
+      return {
+        detail: `unavailable — ${target.key}: ${recorded}`,
+        fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
+        name: "native runtime",
+        status: "fail",
+      };
     return {
       detail: `available — ${localPlayer.path} (local build)`,
       name: "native runtime",
