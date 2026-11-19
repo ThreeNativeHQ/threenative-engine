@@ -1600,7 +1600,7 @@ function localNativeBinary(
       configuredTools !== undefined && configuredTools.length > 0
         ? path.resolve(configuredTools)
         : path.join(
-            path.dirname(resolved),
+            path.dirname(isFile(resolved) ? realpathSync(resolved) : resolved),
             process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
           );
     if (!isFile(resolved))
@@ -1746,7 +1746,12 @@ export function nativeRuntimeCheck(
   if (localPlayer?.kind === "broken") {
     return {
       detail: `${localPlayer.variable} names ${localPlayer.path}, ${localPlayer.missing ?? "which the build cannot use"}, so a desktop build fails before it would download anything.${recordedFailure === undefined ? "" : ` A previous download also failed (${recordedFailure}).`}`,
-      fix: `Point ${localPlayer.variable} at a built binary beside its ${process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"} helper, or ${retryHint}.`,
+      // The helper belongs to the legacy host only: the engine player is one file the packager runs
+      // itself, so naming a helper there sends the reader to the wrong repair.
+      fix:
+        localPlayer.variable === "THREENATIVE_RUNTIME_BINARY"
+          ? `Point THREENATIVE_RUNTIME_BINARY at a built binary beside its ${process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"} helper, set THREENATIVE_CLI_TOOLS to one, or ${retryHint}.`
+          : `Point THREENATIVE_ENGINE_PLAYER at a built player, or ${retryHint}.`,
       name: "native runtime",
       status: "fail",
     };

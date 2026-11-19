@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
 
 // A Windows build has to contain a runnable image: the same bytes under the `.exe` name the
@@ -44,8 +44,15 @@ export async function packageEngineDesktop(
   // An older CLI passes the canonical cache path without ever downloading it: this packager can
   // fill that cache itself, through the same locked entry point a build uses, instead of sending
   // the reader to a recipe for a binary the release publishes.
+  // Only the package's own cache path: an explicit `--player` elsewhere is the caller's file, and
+  // downloading a player into a different directory would still leave packaging to fail.
+  const canonicalPlayer = join(
+    fileURLToPath(new URL('../prebuilt/', import.meta.url)),
+    `${process.platform}-${process.arch}`,
+    PLAYER,
+  );
   if (player && !existsSync(player) && !process.env.THREENATIVE_ENGINE_PLAYER &&
-      basename(player) === PLAYER) {
+      resolve(player) === resolve(canonicalPlayer)) {
     // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
     const installer = new URL('./install-prebuilt.mjs', import.meta.url);
     if (existsSync(installer)) {
@@ -71,13 +78,18 @@ export async function packageEngineDesktop(
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
   const start = join(output, basename(output));
-  // A Windows output directory named after the player would make the launcher and the packaged
-  // executable the same path, and writing the launcher would destroy the player.
-  if (resolve(start) === resolve(join(output, PLAYER)))
-    throw new Error(
-      `TN_ENGINE_LAUNCHER_COLLIDES: the output directory's name gives the launcher the same path as the packaged player (${PLAYER}). Rename the game or its desktop output directory.`,
-    );
-  writeFileSync(start, launcher(width, height, title, priority, fullscreen));
+  // Write the launcher exclusively: on a case-insensitive filesystem a name that differs only in
+  // case is the packaged player, and opening it for writing would destroy the binary. Existence is
+  // the question the filesystem answers, not a string comparison.
+  try {
+    writeFileSync(start, launcher(width, height, title, priority, fullscreen), { flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST')
+      throw new Error(
+        `TN_ENGINE_LAUNCHER_COLLIDES: the launcher path ${start} is already taken by the packaged player (${PLAYER}). Rename the game or its desktop output directory.`,
+      );
+    throw error;
+  }
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
