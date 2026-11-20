@@ -4,7 +4,7 @@ import { createStylizedAsset, stylizedAssets } from "../src/stylized.js";
 
 describe("Stylized Biome Kit", () => {
   it("builds every catalog variant and all three biome scenes", () => {
-    const rows = stylizedAssets();
+    const rows = stylizedAssets().filter((row) => row.kind === "stylized");
     expect(rows.filter((row) => row.category === "Scenes")).toHaveLength(3);
     expect(rows.filter((row) => row.category !== "Scenes")).toHaveLength(50);
     expect(new Set(rows.map(({ id }) => id)).size).toBe(rows.length);

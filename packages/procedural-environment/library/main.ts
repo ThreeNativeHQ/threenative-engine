@@ -20,6 +20,7 @@ interface IElement {
   biomes: string[];
   bake?: string;
   variants?: number;
+  variantNames?: readonly string[];
   category?: string;
 }
 interface IBiome {
@@ -36,6 +37,7 @@ interface IControl {
   max?: number;
   step?: number;
   options?: string[];
+  labels?: readonly string[];
   default?: number | string | boolean;
   only?: string[];
 }
@@ -218,14 +220,16 @@ const say = (text: string, error = false) => {
 const kinds = () => [...new Set(catalog.elements.map((e) => e.kind))];
 /** The controls a kind shows; `only` ones show just for their element ids. */
 const controlsFor = (kind: string, id?: string): IControl[] => {
-  const variants = catalog.elements.find((e) => e.kind === kind && e.id === id)?.variants ?? 0;
+  const element = catalog.elements.find((e) => e.kind === kind && e.id === id);
+  const variants = element?.variants ?? 0;
   if (variants > 1) {
     return [
       {
         key: "variant",
-        label: "Variant",
+        label: element?.variantNames ? "Theme" : "Variant",
         type: "select",
         options: Array.from({ length: variants }, (_, i) => String(i + 1)),
+        labels: element?.variantNames,
         default: "1",
       },
     ];
@@ -360,11 +364,12 @@ function stylizedLighting(preview?: StylizedPreview): void {
   const env = preview?.env;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
-  scene.environment = null;
+  const studio = route.kind === "dungeon" && !preview?.view;
+  scene.environment = studio ? roomEnvironment : null;
   hemi.color.set(env?.hemi.sky ?? 0xd6e4ff);
   hemi.groundColor.set(env?.hemi.ground ?? 0x7f93c4);
-  hemi.intensity = env?.hemi.intensity ?? 1.9;
-  sun.color.set(env?.sun.color ?? 0xfff3dc);
+  hemi.intensity = env?.hemi.intensity ?? (studio ? 1.12 : 1.9);
+  sun.color.set(env?.sun.color ?? (studio ? 0xffedda : 0xfff3dc));
   sun.intensity = env?.sun.intensity ?? 3;
   sky.elevation = 49;
   sky.azimuth = -54;
@@ -535,7 +540,7 @@ type PreviewReport = Pick<IBake, "triangles" | "bounds" | "ms" | "call"> &
 function renderDocs(element: IElement, baked: PreviewReport, model: THREE.Object3D): void {
   const [w, h, d] = size(baked.bounds);
   const file = baked.path?.split("/").pop();
-  const runtime = element.kind === "stylized";
+  const runtime = isRuntimeKind(element.kind);
   rowsInto($("stat-rows"), [
     ["Triangles", baked.triangles.toLocaleString()],
     ["Size (m)", `${w} × ${h} × ${d}`],
@@ -621,9 +626,10 @@ function stylizedOf(element: IElement) {
   const { group: model, animated: windy } = preview;
   const args = [JSON.stringify(element.id)];
   if (Object.keys(options).length) args.push(JSON.stringify(options));
-  const call = `import { createStylizedAsset } from "@threenative/procedural-environment/stylized";
+  const imports = preview.update ? "createStylizedAsset, stylizedUniforms" : "createStylizedAsset";
+  const call = `import { ${imports} } from "@threenative/procedural-environment/stylized";
 
-const { group } = createStylizedAsset(${args.join(", ")});`;
+const { group${preview.update ? ", update" : ""} } = createStylizedAsset(${args.join(", ")});${preview.update ? "\n\n// In your animation loop, using elapsed time in seconds:\nstylizedUniforms.uTime.value = elapsedSeconds;\nupdate?.(elapsedSeconds);" : ""}`;
   const bounds = new THREE.Box3().setFromObject(model);
   let triangles = 0;
   model.traverse((node) => {
@@ -650,7 +656,7 @@ const { group } = createStylizedAsset(${args.join(", ")});`;
 }
 
 async function assetOf(element: IElement, lod = state.lod) {
-  if (element.kind === "stylized") return stylizedOf(element);
+  if (isRuntimeKind(element.kind)) return stylizedOf(element);
   const baked = await bakeOf(element, lod);
   return { ...(await modelOf(baked)), baked, preview: undefined };
 }
@@ -677,7 +683,7 @@ async function overview(mine: number, kindRows: IElement[]): Promise<boolean | u
     el("p", "text-muted", `${shown.length} elements. Pick one for its preview and source call.`),
     list,
   );
-  const lineup = shown.filter((row) => row.kind !== "stylized" || !isBackdrop(row));
+  const lineup = shown.filter((row) => !isRuntimeKind(row.kind) || !isBackdrop(row));
   const openingScene = lineup.length === 0 ? shown[0] : undefined;
   if (openingScene) {
     const { model, windy: animates, preview } = stylizedOf(openingScene);
@@ -746,7 +752,7 @@ async function show(): Promise<void> {
       ? undefined
       : (catalog.biomes.find((b) => b.id === biome)?.rock ?? String(biome)),
   );
-  if (route.kind === "stylized") stylizedLighting();
+  if (isRuntimeKind(route.kind)) stylizedLighting();
   applyBackground();
   let windy: boolean | undefined = false;
   try {
@@ -760,7 +766,7 @@ async function show(): Promise<void> {
   }
   if (mine !== token) return;
   $("wind").hidden = !windy;
-  $("wind").title = route.kind === "stylized" ? "Animate the scene" : "Animate the _WIND attribute";
+  $("wind").title = isRuntimeKind(route.kind) ? "Animate the scene" : "Animate the _WIND attribute";
   $("wind").setAttribute("aria-label", $("wind").title);
   swaying = Boolean(windy);
   invalidate();
@@ -898,7 +904,8 @@ function elementNode(e: IElement) {
 /** One kind: an uppercase section with its overview, then a node per category or per element. */
 const isBackdrop = (row: IElement) => row.category === "Scenes" || row.id === "sky-dome";
 const kindName = (kind: string) => (kind === "stylized" ? "Stylized Biome Kit" : title(kind));
-const hasLod = (kind: string) => kind !== "city" && kind !== "stylized";
+const isRuntimeKind = (kind: string) => kind === "stylized" || kind === "dungeon";
+const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
 
 function kindSection(kind: string, rows: IElement[], searching: boolean) {
   const summary = el(
@@ -1002,8 +1009,8 @@ function selectWidget(c: IControl, value: string | undefined, set: (v: string) =
   const select = el("select", "field");
   select.setAttribute("aria-label", c.label);
   select.name = c.key;
-  for (const option of c.options ?? []) {
-    const o = el("option", "", optionName(option));
+  for (const [i, option] of (c.options ?? []).entries()) {
+    const o = el("option", "", c.labels?.[i] ?? optionName(option));
     o.value = option;
     select.append(o);
   }
@@ -1028,7 +1035,7 @@ function widget(c: IControl): HTMLElement {
   if (c.type === "select" && (c.options?.length ?? 0) <= 4)
     return segmented(
       c.label,
-      (c.options ?? []).map((o) => [o, optionName(o)]),
+      (c.options ?? []).map((o, i) => [o, c.labels?.[i] ?? optionName(o)]),
       value ?? "",
       set,
     );
@@ -1326,8 +1333,10 @@ renderer.setAnimationLoop(() => {
   last = now;
   const moved = orbit.update();
   const animate = swaying && state.wind;
-  if (animate && route.kind === "stylized") stylizedUniforms.uTime.value += Math.min(dt, 0.1);
-  else if (animate) wind.uTime.value += dt;
+  if (animate && isRuntimeKind(route.kind)) {
+    stylizedUniforms.uTime.value += Math.min(dt, 0.1);
+    scenePreview?.update?.(stylizedUniforms.uTime.value);
+  } else if (animate) wind.uTime.value += dt;
   if (!(moved || dirty || animate)) return;
   dirty = false;
   renderer.render(scene, camera);

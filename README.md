@@ -113,7 +113,8 @@ lifecycle.
 Run `pnpm asset-library` from the repository root to open the Storybook-style viewer. Search
 for trees, ground cover, rocks, mountains, city modules, or the Stylized Biome Kit. Orbit each
 asset, change its seed or variant, and copy its bake call or generator code from the Docs tab.
-The Stylized Biome Kit includes alpine forest, snow peaks, and desert canyon scenes.
+The Stylized Biome Kit includes alpine forest, snow peaks, and desert canyon scenes. The Dungeon
+kit adds modular masonry, props, and animated fire in three themes.
 [Procedural environment package guide](packages/procedural-environment/README.md#browse-everything-pnpm-asset-library)
 
 ## Templates

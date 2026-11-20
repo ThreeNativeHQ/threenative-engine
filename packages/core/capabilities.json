@@ -8615,7 +8615,9 @@
     },
     {
       "aliases": [],
-      "constraints": ["the original shaders use Three.js WebGL materials"],
+      "constraints": [
+        "the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials"
+      ],
       "example": "const { group } = createStylizedAsset(\"mountain-snow\", { seed: 8, variant: 1 });",
       "importPath": "@threenative/procedural-environment/stylized",
       "kind": "function",
@@ -8624,9 +8626,10 @@
       "requires": ["npm i @threenative/procedural-environment"],
       "signature": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
       "situations": [
-        "create stylized mountain ridges, snowy trees, sandstone formations, or animated water"
+        "create stylized mountain ridges, snowy trees, sandstone formations, or animated water",
+        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme"
       ],
-      "summary": "Generate a Stylized Biome Kit piece or scene with the kit's original Three.js materials.",
+      "summary": "Generate a Stylized Biome Kit or Dungeon piece or scene with its Three.js materials.",
       "supersedes": [],
       "symbol": "createStylizedAsset"
     },
@@ -8641,7 +8644,8 @@
       "requires": ["npm i @threenative/procedural-environment"],
       "signature": "export function stylizedAssets(): IStylizedAsset[] { … }",
       "situations": [
-        "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon"
+        "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon",
+        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes"
       ],
       "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
       "supersedes": [],

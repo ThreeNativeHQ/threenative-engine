@@ -58,6 +58,28 @@ scene.add(group);
 The subpath also exports the source kit's `terrain`, `sky`, and `scatter` helpers. The Docs tab
 copies the call for the selected asset and controls. Variant indices in code start at zero.
 
+### Dungeon kit
+
+The **Dungeon** section includes 49 procedural pieces and two assembled previews. Each piece comes
+in Ancient Ruins, Ice Dungeon, and Lava Depths. Walls run along X and pair with 4 m floor modules.
+Rotate walls 90° around Y for the other axis. Straight stairs rise 2 m toward negative Z.
+
+```ts
+import { createStylizedAsset, stylizedUniforms } from "@threenative/procedural-environment/stylized";
+
+const torch = createStylizedAsset("dungeon-wall-torch", { seed: 12, variant: 0 });
+scene.add(torch.group);
+
+function tick(elapsedSeconds: number) {
+  stylizedUniforms.uTime.value = elapsedSeconds;
+  torch.update?.(elapsedSeconds);
+}
+```
+
+The wall torch, brazier, hanging lamp, candle cluster, and altar carry their own point light. The
+shader moves the flame and embers, and `update` flickers the emitted light. The Theme control in the
+viewer corresponds to variant indices 0, 1, and 2.
+
 ## Trees, cover and the forest floor
 
 ```ts
