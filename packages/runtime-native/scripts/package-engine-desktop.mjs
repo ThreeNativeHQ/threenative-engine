@@ -61,7 +61,7 @@ function samePath(left, right) {
 }
 
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority, fullscreen },
+  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
   // An older CLI passes the canonical cache path without ever downloading it: this packager can

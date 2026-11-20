@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { createHash, randomUUID } from 'node:crypto';
-import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -1072,10 +1072,12 @@ export async function ensureNativeBinary(options = {}) {
       // with its own copy of the helper: both are snapshotted into the same directory.
       // A read-only install (a prefetched image) cannot hold the snapshot beside the cache, so the
       // caller names the writable directory; the bytes are the cache's either way.
-      const staged = join(
-        options.stageDir && options.stageDir.length > 0 ? options.stageDir : dirname(path),
-        `${basename(path)}.${process.pid}.${randomUUID()}.stage`,
+      // One directory per snapshot: the helper keeps its fixed name, two builds must not share it,
+      // and the caller removes the directory it was handed a path into.
+      const stagedDir = mkdtempSync(
+        join(options.stageDir && options.stageDir.length > 0 ? options.stageDir : dirname(path), 'tn-stage-'),
       );
+      const staged = join(stagedDir, basename(path));
       try {
         linkSync(path, staged);
       } catch {

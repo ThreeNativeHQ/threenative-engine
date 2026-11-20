@@ -217,8 +217,17 @@ export function packageDesktop(options) {
     }
     return compileOrPackage(options, options.runtime);
   }
-  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then((runtime) =>
-    compileOrPackage(options, runtime),
+  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then(
+    async (runtime) => {
+      // A staged runtime arrived in a `tn-stage-` directory of its own: packaging done, that whole
+      // directory goes, so a build leaves no copy behind in the temp root.
+      const staged = /[\\/]tn-stage-[^\\/]+[\\/]/u.test(runtime);
+      try {
+        return await compileOrPackage(options, runtime);
+      } finally {
+        if (staged) rmSync(dirname(runtime), { force: true, recursive: true });
+      }
+    },
   );
 }
 
