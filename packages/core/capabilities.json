@@ -8636,6 +8636,38 @@
     {
       "aliases": [],
       "constraints": [],
+      "example": "scene.add(scatter(group, [{ x: 5, z: 8 }, { x: 9, z: 10, rot: 1 }]));",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function scatter( source: Object3D, placements: { … }",
+      "situations": ["instance a stylized biome tree or grass asset at many positions"],
+      "summary": "Make instanced batches of a Stylized Biome Kit piece at explicit positions.",
+      "supersedes": [],
+      "symbol": "scatter"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "scene.add(sky({ top: 0x3a8be8, horizon: 0xe2f1ff }));",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function sky(options?: { … }",
+      "situations": [
+        "a procedural stylized gradient sky dome for an alpine, snow, or desert scene"
+      ],
+      "summary": "Build a gradient sky dome with the Stylized Biome Kit's WebGL shader.",
+      "supersedes": [],
+      "symbol": "sky"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
       "example": "const rows = stylizedAssets();",
       "importPath": "@threenative/procedural-environment/stylized",
       "kind": "function",
@@ -8650,6 +8682,21 @@
       "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
       "supersedes": [],
       "symbol": "stylizedAssets"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const meadow = terrain({ height: (x, z) => 1 + Math.sin(x) * Math.cos(z), color: (_x, _z, _y, _n, out) => out.set(0x55b93e) });",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function terrain(options: { … }",
+      "situations": ["make stylized heightfield terrain with vertex colors and a worn path"],
+      "summary": "Build stylized heightfield geometry with a color callback and a second-color mask for path edges.",
+      "supersedes": [],
+      "symbol": "terrain"
     },
     {
       "aliases": [],

@@ -312,6 +312,18 @@ describe("capability manifest generator", () => {
     );
   });
 
+  it("follows a re-export into a vendored .d.ts sidecar", () => {
+    const manifest = buildCapabilityManifest(process.cwd());
+    for (const symbol of ["scatter", "sky", "terrain"]) {
+      expect(manifest.entries).toContainEqual(
+        expect.objectContaining({
+          importPath: "@threenative/procedural-environment/stylized",
+          symbol,
+        }),
+      );
+    }
+  });
+
   it("keeps the IComputeDriven cloth and fluid capability searchable in both manifests", async () => {
     for (const file of ["packages/core/capabilities.json", "packages/core/capabilities.json"]) {
       const manifest = JSON.parse(await readFile(file, "utf8")) as {
