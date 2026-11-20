@@ -1100,16 +1100,16 @@ export async function ensureNativeBinary(options = {}) {
           if (isVerifiedInstall(plan, options)) {
             const staged = stage(plan.output);
             // The snapshot itself must match the receipt, not just the path it was taken from.
-            const declared = (() => {
-              try {
-                return JSON.parse(readFileSync(plan.statusPath, 'utf8')).sha256;
-              } catch {
-                return undefined;
-              }
-            })();
+            // No receipt, no snapshot: an unreadable one cannot say which bytes these are.
+            let declared;
+            try {
+              declared = JSON.parse(readFileSync(plan.statusPath, 'utf8')).sha256;
+            } catch {
+              declared = undefined;
+            }
             const stagedSha = existsSync(staged) ? sha256(readFileSync(staged)) : undefined;
             if (isVerifiedInstall(plan, options) && stagedSha !== undefined &&
-                (declared === undefined || declared === stagedSha))
+                declared !== undefined && declared === stagedSha)
               return staged;
             rmSync(staged, { force: true });
           }

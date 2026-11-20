@@ -5,7 +5,7 @@
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
+import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
 
@@ -38,13 +38,26 @@ export function launcher(width, height, title, priority = "game", fullscreen = t
  * Writes `output` as a directory: `<name>` (launcher), the player, `game.js`, `native/assets.tnpk`
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
-/** Whether two paths name the same file, through symlinks. */
-function samePath(left, right) {
-  try {
-    return realpathSync(left) === realpathSync(right);
-  } catch {
-    return resolve(left) === resolve(right);
+/** A path with every symlink resolved, including the ones above a file that does not exist yet. */
+function resolvedPath(target) {
+  const absolute = resolve(target);
+  const rest = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...rest.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return absolute;
+      rest.push(basename(current));
+      current = parent;
+    }
   }
+}
+
+/** Whether two paths name the same file, through symlinks and through a file not yet written. */
+function samePath(left, right) {
+  return resolvedPath(left) === resolvedPath(right);
 }
 
 export async function packageEngineDesktop(
