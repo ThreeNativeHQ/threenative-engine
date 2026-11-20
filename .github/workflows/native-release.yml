@@ -1532,7 +1532,7 @@ jobs:
           # A fetched player that cannot start the game is not AC-7: run the packaged image with
           # its bundle, the same check the golden path uses, and require its startup marker.
           packaged="$target/dist-native/$(node -p "require('$target/package.json').name")"
-          "$packaged/tn-native-engine-player-v8.exe" "$packaged/game.js" --check-game --frames 1 \
+          "$packaged/tn-native-engine-player-v8.exe" "$packaged/game.js" --check-game \
             > "$RUNNER_TEMP/windows-player-boot.log" 2>&1
           grep -F 'TN_PLAYER_V8_GAME_CHECK' "$RUNNER_TEMP/windows-player-boot.log"
       - name: Prove a renderer that never presents fails the launch assertions
