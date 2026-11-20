@@ -43,11 +43,7 @@ import {
   formatValidationReport,
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
-import {
-  describeSceneShape,
-  formatSceneWarning,
-  sceneWarning,
-} from "./profiling/scene-warning.js";
+import { describeSceneShape, formatSceneWarning, sceneWarning } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
