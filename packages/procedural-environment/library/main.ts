@@ -17,6 +17,7 @@ interface IElement {
   name: string;
   latin?: string;
   kind: string;
+  style: string;
   biomes: string[];
   bake?: string;
   variants?: number;
@@ -201,9 +202,15 @@ function lightFor(outcropBiome?: string): void {
   sky.azimuth = env.azimuth as number;
 }
 
-let catalog: { elements: IElement[]; biomes: IBiome[]; controls: Record<string, IControl[]> } = {
+let catalog: {
+  elements: IElement[];
+  biomes: IBiome[];
+  styles: Record<string, string>;
+  controls: Record<string, IControl[]>;
+} = {
   elements: [],
   biomes: [],
+  styles: {},
   controls: {},
 };
 /** A story: a kind overview (optionally one category of it) or one element. */
@@ -556,6 +563,7 @@ function renderDocs(element: IElement, baked: PreviewReport, model: THREE.Object
   const dl = rowsInto(el("dl", DL), [
     ["Id", element.id],
     ["Kind", title(element.kind)],
+    ["Style", catalog.styles[element.style]],
     ...(element.category ? [["Category", element.category] as [string, string]] : []),
     ["Biomes", element.biomes.join(", ") || "none listed"],
     ...(file ? [["File", file] as [string, string]] : []),
@@ -776,9 +784,14 @@ async function show(): Promise<void> {
 function visible(e: IElement): boolean {
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const biome = $<HTMLSelectElement>("biome").value;
+  const style = $<HTMLSelectElement>("style").value;
   const text =
-    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${e.biomes.join(" ")}`.toLowerCase();
-  return (!biome || e.biomes.includes(biome)) && words.every((w) => text.includes(w));
+    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${catalog.styles[e.style]} ${e.biomes.join(" ")}`.toLowerCase();
+  return (
+    (!biome || e.biomes.includes(biome)) &&
+    (!style || e.style === style) &&
+    words.every((w) => text.includes(w))
+  );
 }
 
 function hashOf(kind: string, id?: string, category?: string, extra: [string, string][] = []) {
@@ -944,6 +957,7 @@ function renderTree(): void {
     const rows = catalog.elements.filter((e) => e.kind === kind && visible(e));
     if (rows.length) nav.append(kindSection(kind, rows, searching));
   }
+  if (!nav.childElementCount) nav.append(el("p", "px-1 py-3 text-muted", "No matching assets"));
   nav.querySelector("[aria-current=page]")?.scrollIntoView({ block: "center" });
 }
 
@@ -1246,10 +1260,11 @@ for (const id of ["settings", "filter"])
     for (const b of ["settings", "filter"]) $(b).setAttribute("aria-pressed", String(open));
   };
 $("search").addEventListener("input", renderTree);
-$("biome").addEventListener("change", () => {
-  renderTree();
-  if (!route.id) void show();
-});
+for (const id of ["biome", "style"])
+  $(id).addEventListener("change", () => {
+    renderTree();
+    if (!route.id) void show();
+  });
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;
   if (e.key !== "/" || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
@@ -1346,6 +1361,11 @@ for (const type of ["click", "change", "input"]) document.addEventListener(type,
 
 try {
   catalog = (await (await fetch("/api/catalog")).json()) as typeof catalog;
+  for (const [id, name] of Object.entries(catalog.styles)) {
+    const option = el("option", "", name);
+    option.value = id;
+    $("style").append(option);
+  }
   for (const biome of catalog.biomes) {
     const option = el("option", "", biome.name);
     option.value = biome.id;

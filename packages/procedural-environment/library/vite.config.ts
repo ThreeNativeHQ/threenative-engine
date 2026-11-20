@@ -340,7 +340,14 @@ async function route(url: URL, res: ServerResponse): Promise<boolean> {
     const biomes = pkg.environmentBiomes();
     send(res, 200, {
       biomes,
-      elements: [...pkg.environmentElements(), ...stylizedAssets()],
+      styles: { realistic: "Realistic", stylized: "Stylized", "low-poly": "Low poly" },
+      elements: [
+        ...pkg.environmentElements().map((entry) => ({ ...entry, style: "realistic" })),
+        ...stylizedAssets().map((entry) => ({
+          ...entry,
+          style: entry.kind === "dungeon" ? "stylized" : "low-poly",
+        })),
+      ],
       controls: controls(biomes.map((biome) => biome.id)),
     });
   } else if (url.pathname === "/api/bake") send(res, 200, await bakeOnce(url.searchParams));
