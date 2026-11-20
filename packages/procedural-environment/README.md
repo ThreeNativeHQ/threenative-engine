@@ -33,15 +33,12 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 
 ## Browse everything: `pnpm asset-library`
 
-From the repository root, `pnpm asset-library` builds this package and opens a Storybook-shaped
-viewer: a sidebar of every element by kind with search and a biome filter, one story per element
-with every option its bake takes as a control (seed, level of detail, textures, a rock's biome,
-size, shape traits, surface cover and cliff module, a city module's floors, wetness and sign), a
-docs tab with the paste-ready bake call, size, triangles and GLB attributes, and an overview story
-per kind at true scale. Each story calls this package's own bake, so the viewer shows what a game
-gets. The URL holds the story (`#/rock/cliff?biome=coastal&module=1`), so a link shows the same
-bake. While it runs, an edit under `src/`, `vendor/` or `scans/` rebuilds the package and reloads
-the page.
+From the repository root, `pnpm asset-library` builds this package and opens a Storybook-style
+viewer. Search the sidebar by name or filter by biome, then open a story to orbit the asset.
+GLB stories run the package's bake with the selected controls. The Docs tab shows the exact
+bake call and mesh attributes, and the Stats tab shows dimensions and triangle counts.
+Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
+under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
 ### Stylized Biome Kit
 
