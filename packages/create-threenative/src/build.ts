@@ -1814,117 +1814,123 @@ async function buildNative(
     explicitRuntime = explicit;
     // The probe runs the binary, so it needs an executable copy: staged beside the build output,
     // which is where packaging runs from too, and removed when this build ends.
-    const stageDir = path.join(cwd, ".threenative", "stage");
-    mkdirSync(stageDir, { recursive: true });
+    const stageRoot = path.join(cwd, ".threenative", "stage");
+    mkdirSync(stageRoot, { recursive: true });
     selectedRuntime = await resolveDesktopRuntime(explicit, {
-      install: explicit === undefined ? { stageDir, stagePrivate: true } : undefined,
-      stageDir,
+      install: explicit === undefined ? { stageDir: stageRoot, stagePrivate: true } : undefined,
+      stageDir: stageRoot,
     });
-    // Only a snapshot this build asked for, recognisable by the installer's own directory name:
-    // the cache path is shared and must never be deleted here.
-    if (selectedRuntime !== undefined && /[\\/]tn-stage-[^\\/]+[\\/]/u.test(selectedRuntime))
-      stagedRuntimeDir = path.dirname(selectedRuntime);
+    // Ownership is exact: a `tn-stage-*` directory directly under the root this build asked for.
+    // A caller's tree that happens to contain such a name is not ours to delete, and the shared
+    // cache never matches.
+    const snapshot = selectedRuntime === undefined ? undefined : path.dirname(selectedRuntime);
+    if (
+      snapshot !== undefined &&
+      path.dirname(snapshot) === stageRoot &&
+      path.basename(snapshot).startsWith("tn-stage-")
+    )
+      stagedRuntimeDir = snapshot;
   }
-  const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
-  await compileAssets({
-    config: config.assets,
-    cwd,
-    platform: target,
-    runtimeDecoders: capabilities.decoders,
-    runtimeIdentity: capabilities.identity,
-  });
-  await assertNativeAssetsCompatible(cwd, target, config, capabilities);
-  const orientation = config.display.orientation;
-  const configPath = await writePackagingConfig(cwd, config);
-  const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(
-    cwd,
-    runtimeRoot,
-    entry,
-    target,
-    !capabilities.webAssembly,
-    capabilities.decoders,
-  );
-  await assertNativeBundleCompatible(bundle, target, capabilities);
-  // The compiled root the project configured, which `compileAssets` above baked into — not the
-  // `public` default. A project whose cook profile writes elsewhere was packaging an empty
-  // directory while its own assets sat next to it, unread.
-  const assets = assetRoot(cwd, config);
-  // The UI is built only when the game asked for the web renderer, so a `native` game ships no
-  // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
-  // `native-css` runs the same Vite build and keeps only its stylesheets: the React tree runs in
-  // the game's own JS realm, so the page and its JS are dead weight in the package.
-  let ui: string | undefined;
-  if (config.ui.renderer !== "native") {
-    const built = await buildUi(cwd, config);
-    if (config.ui.renderer === "native-css") {
-      ui = path.join(cwd, ".threenative", "build", "ui-css");
-      await extractUiStylesheets(built, ui, cwd);
-    } else {
-      ui = built;
-    }
-  }
-  if (target === "ios") {
-    const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
-    await packageStaged(
-      output,
-      runtimeRoot,
-      [
-        path.join(runtimeRoot, "scripts", "package-ios.mjs"),
-        "--bundle",
-        bundle,
-        "--assets",
-        assets,
-        ...(ui === undefined ? [] : ["--ui", ui]),
-        "--orientation",
-        orientation,
-        "--config",
-        configPath,
-        "--output",
-        output,
-      ],
-      { assets, config, target: "ios" },
-    );
-    return;
-  }
-  if (target === "android") {
-    const output = path.join(
-      cwd,
-      "dist-native",
-      `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
-    );
-    await packageStaged(
-      output,
-      runtimeRoot,
-      [
-        path.join(runtimeRoot, "scripts", "package-android.mjs"),
-        ...(allowSourceBuild ? ["--allow-source-build"] : []),
-        "--mode",
-        mode,
-        "--format",
-        format,
-        // The consumer project, so a relative keystore path in the signing environment resolves
-        // against the game rather than the engine's Android project.
-        "--project-root",
-        cwd,
-        "--bundle",
-        bundle,
-        "--assets",
-        assets,
-        ...(ui === undefined ? [] : ["--ui", ui]),
-        "--orientation",
-        orientation,
-        "--config",
-        configPath,
-        "--output",
-        output,
-      ],
-      { assets, config, target: "android" },
-    );
-    return;
-  }
-  const output = path.join(cwd, "dist-native", await projectName(cwd));
   try {
+    const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
+    await compileAssets({
+      config: config.assets,
+      cwd,
+      platform: target,
+      runtimeDecoders: capabilities.decoders,
+      runtimeIdentity: capabilities.identity,
+    });
+    await assertNativeAssetsCompatible(cwd, target, config, capabilities);
+    const orientation = config.display.orientation;
+    const configPath = await writePackagingConfig(cwd, config);
+    const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
+    const bundle = await bundleNative(
+      cwd,
+      runtimeRoot,
+      entry,
+      target,
+      !capabilities.webAssembly,
+      capabilities.decoders,
+    );
+    await assertNativeBundleCompatible(bundle, target, capabilities);
+    // The compiled root the project configured, which `compileAssets` above baked into — not the
+    // `public` default. A project whose cook profile writes elsewhere was packaging an empty
+    // directory while its own assets sat next to it, unread.
+    const assets = assetRoot(cwd, config);
+    // The UI is built only when the game asked for the web renderer, so a `native` game ships no
+    // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
+    // `native-css` runs the same Vite build and keeps only its stylesheets: the React tree runs in
+    // the game's own JS realm, so the page and its JS are dead weight in the package.
+    let ui: string | undefined;
+    if (config.ui.renderer !== "native") {
+      const built = await buildUi(cwd, config);
+      if (config.ui.renderer === "native-css") {
+        ui = path.join(cwd, ".threenative", "build", "ui-css");
+        await extractUiStylesheets(built, ui, cwd);
+      } else {
+        ui = built;
+      }
+    }
+    if (target === "ios") {
+      const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
+      await packageStaged(
+        output,
+        runtimeRoot,
+        [
+          path.join(runtimeRoot, "scripts", "package-ios.mjs"),
+          "--bundle",
+          bundle,
+          "--assets",
+          assets,
+          ...(ui === undefined ? [] : ["--ui", ui]),
+          "--orientation",
+          orientation,
+          "--config",
+          configPath,
+          "--output",
+          output,
+        ],
+        { assets, config, target: "ios" },
+      );
+      return;
+    }
+    if (target === "android") {
+      const output = path.join(
+        cwd,
+        "dist-native",
+        `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
+      );
+      await packageStaged(
+        output,
+        runtimeRoot,
+        [
+          path.join(runtimeRoot, "scripts", "package-android.mjs"),
+          ...(allowSourceBuild ? ["--allow-source-build"] : []),
+          "--mode",
+          mode,
+          "--format",
+          format,
+          // The consumer project, so a relative keystore path in the signing environment resolves
+          // against the game rather than the engine's Android project.
+          "--project-root",
+          cwd,
+          "--bundle",
+          bundle,
+          "--assets",
+          assets,
+          ...(ui === undefined ? [] : ["--ui", ui]),
+          "--orientation",
+          orientation,
+          "--config",
+          configPath,
+          "--output",
+          output,
+        ],
+        { assets, config, target: "android" },
+      );
+      return;
+    }
+    const output = path.join(cwd, "dist-native", await projectName(cwd));
     await packageStaged(
       output,
       cwd,
