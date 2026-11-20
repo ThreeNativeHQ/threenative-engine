@@ -1795,10 +1795,17 @@ async function buildNative(
       "package-desktop.mjs",
     );
     const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
-      resolveDesktopRuntime(explicit?: string): Promise<string>;
+      resolveDesktopRuntime(
+        explicit?: string,
+        options?: { install?: Record<string, unknown> },
+      ): Promise<string>;
     };
     const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
-    selectedRuntime = await resolveDesktopRuntime(explicit);
+    // Read the cache path itself: this build only probes its capabilities, and the packager stages
+    // its own executable copy, so a snapshot here would be a leaked 260 MiB per build.
+    selectedRuntime = await resolveDesktopRuntime(explicit, {
+      install: { stagePrivate: false },
+    });
   }
   const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({

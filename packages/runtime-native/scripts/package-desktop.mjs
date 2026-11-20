@@ -92,7 +92,13 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   }
   // A private snapshot, with its helper beside it: the shared cache can be republished by another
   // build under a different lock while this one cooks assets.
-  return ensureNativeBinary({ ...options.install, stageDir: tmpdir(), stagePrivate: true });
+  // Staged beside the artifact, not in the system temp root: a hardened host can mount /tmp
+  // `noexec`, and this runtime has to run to produce the artifact.
+  return ensureNativeBinary({
+    ...options.install,
+    stageDir: options.stageDir ?? process.cwd(),
+    stagePrivate: true,
+  });
 }
 
 /**
