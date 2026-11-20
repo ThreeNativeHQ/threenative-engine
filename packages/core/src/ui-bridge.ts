@@ -63,15 +63,6 @@ export const GAME_STATE_MESSAGE = "tn:state";
 /** The message the UI end sends when the player acts on a control. */
 export const UI_INTENT_MESSAGE = "tn:intent";
 /**
- * The scene-shape verdict the game end publishes when it was launched in dev mode.
- *
- * Separate from the state stream because it is not game state: it is the engine's own measurement
- * of the scene, and a game that never asked for dev mode never sends it. No frame rate rides it —
- * the loop's rAF rate reads throttled under a compositor or a virtual display, so a number drawn
- * from it lies in exactly the sessions where somebody is trying to measure.
- */
-export const UI_DEV_METRICS_MESSAGE = "tn:dev-metrics";
-/**
  * The startup phase the game end publishes: `covered` while the loading cover is up, `ready` from
  * the frame the cover lifts. The UI realm cannot read `ctx.startup`, so this is how `useUiState`
  * knows to return `undefined` until the player can see the page. A game that never sends it (an

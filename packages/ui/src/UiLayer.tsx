@@ -1,7 +1,6 @@
 import {
   type IUiBridge,
   type IUiStateMirror,
-  UI_DEV_METRICS_MESSAGE,
   UI_READY_INTENT,
   connectUiBridge,
   publishHitRegions,
@@ -52,53 +51,6 @@ function useUiLayer(name: string): IUiLayerValue {
   return value;
 }
 
-/**
- * The scene-shape verdict the game reports when it was launched in dev mode.
- *
- * Renders nothing until a frame earns a verdict, so a shipped build carries the component and never
- * a sentence. There is no frame rate here on purpose: the loop's own rAF rate reads throttled under
- * a compositor or a virtual display, so a number drawn from it lies in exactly the sessions where
- * somebody is trying to measure. `pointer-events: none` because a readout must never eat a touch:
- * the host routes input by the rectangles the UI publishes, and a chip that intercepted one would
- * be a button that stopped working while a developer was watching.
- */
-function DevSceneVerdict({ bridge }: { bridge: IUiBridge }) {
-  const [verdict, setVerdict] = useState<string | undefined>(undefined);
-  useEffect(
-    () =>
-      bridge.onMessage((message) => {
-        if (message.type !== UI_DEV_METRICS_MESSAGE) return;
-        const warning: unknown = message.sceneWarning;
-        if (typeof warning === "string" && warning.length > 0) setVerdict(warning);
-      }),
-    [bridge],
-  );
-  if (verdict === undefined) return null;
-  return (
-    // `<output>` carries the status role natively, so the readout is announced without an ARIA
-    // attribute standing in for an element that already means this.
-    <output
-      className="tn-dev-scene-warning"
-      style={{
-        position: "absolute",
-        top: 8,
-        right: 8,
-        maxWidth: 420,
-        padding: "2px 6px",
-        borderRadius: 4,
-        background: "rgba(0, 0, 0, 0.55)",
-        color: "#ffd98a",
-        font: "500 12px/1.4 ui-monospace, SFMono-Regular, Menlo, monospace",
-        whiteSpace: "normal",
-        pointerEvents: "none",
-        zIndex: 2147483647,
-      }}
-    >
-      {verdict}
-    </output>
-  );
-}
-
 export function UiLayer({ children }: { children: ReactNode }) {
   const [value, setValue] = useState<IUiLayerValue | undefined>(undefined);
   const registryRef = useRef<IStopHandle | undefined>(undefined);
@@ -133,12 +85,7 @@ export function UiLayer({ children }: { children: ReactNode }) {
     };
   }, [value]);
   if (value === undefined) return null;
-  return (
-    <UiLayerContext.Provider value={value}>
-      {children}
-      <DevSceneVerdict bridge={value.bridge} />
-    </UiLayerContext.Provider>
-  );
+  return <UiLayerContext.Provider value={value}>{children}</UiLayerContext.Provider>;
 }
 
 /**
