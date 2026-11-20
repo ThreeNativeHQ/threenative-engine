@@ -1194,7 +1194,9 @@ export function defineBrowserClasses(
             shaderNodes.set(ref.key, slots);
             return;
           }
-          if (value === null) {
+          // `undefined` clears a slot the way `null` does, as in plain three: two Studio runs on
+          // 2026-11-19/20 crashed the game on `scene.fogNode = undefined`.
+          if (value === null || value === undefined) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);
             return;

@@ -237,6 +237,11 @@ it("bridges Scene.backgroundNode and live uniforms through the shared TSL runtim
   }).toThrow("TN_BROWSER_SHADER_NODE");
   scene.backgroundNode = null;
   expect(scene.backgroundNode).toBe(null);
+  // `undefined` clears too, as in plain three.
+  expect(() => {
+    scene.backgroundNode = undefined;
+  }).not.toThrow();
+  expect(scene.backgroundNode ?? null).toBe(null);
   // A camelCase slot (`castShadowPositionNode`) is a TSL slot too, not a plain ABI value.
   const material = new (
     classes.MeshStandardNodeMaterial as new () => { castShadowPositionNode: unknown }
