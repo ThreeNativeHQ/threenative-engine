@@ -1529,6 +1529,12 @@ jobs:
           test ! -e "$runtime/win32-x64/threenative-runtime.exe"
           test ! -e "$runtime/win32-x64/mystral-tools.exe"
           test ! -e "$TN_TOOLCHAIN_LOG"
+          # A fetched player that cannot start the game is not AC-7: run the packaged image with
+          # its bundle, the same check the golden path uses, and require its startup marker.
+          packaged="$target/dist-native/$(node -p "require('$target/package.json').name")"
+          "$packaged/tn-native-engine-player-v8.exe" "$packaged/game.js" --check-game --frames 1 \
+            > "$RUNNER_TEMP/windows-player-boot.log" 2>&1
+          grep -F 'TN_PLAYER_V8_GAME_CHECK' "$RUNNER_TEMP/windows-player-boot.log"
       - name: Prove a renderer that never presents fails the launch assertions
         run: |
           # Phase 2 observed-red, measured by run 34746542857: with the entry replaced by one that

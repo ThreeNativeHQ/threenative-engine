@@ -672,6 +672,10 @@ async function downloadRanges(key, url, size, expectedSha256) {
         // with it: only a body error may be reclassified as intentional.
         const httpAnswer = typeof error?.status === 'number';
         if (!httpAnswer && cancelled.has(index)) return;
+        // A reset on a redundant request is not an answer about the asset: once a `200` body is
+        // claimed, that body is the download, and its checksum decides. A status is still an answer
+        // and still fails, which is what the "sibling answered 500" rule is about.
+        if (!httpAnswer && claimed !== undefined) return;
         const aborted = !httpAnswer && (controllers[index].signal.aborted || isAbortError(error));
         if (!aborted && failure === undefined) {
           failure = error;
