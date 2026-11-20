@@ -1823,8 +1823,11 @@ async function buildNative(
     // Ownership is exact: a `tn-stage-*` directory directly under the root this build asked for.
     // A caller's tree that happens to contain such a name is not ours to delete, and the shared
     // cache never matches.
+    // Only a snapshot this build acquired: an explicit override is the caller's file, even when it
+    // happens to sit under the stage root.
     const snapshot = selectedRuntime === undefined ? undefined : path.dirname(selectedRuntime);
     if (
+      explicit === undefined &&
       snapshot !== undefined &&
       path.dirname(snapshot) === stageRoot &&
       path.basename(snapshot).startsWith("tn-stage-")
@@ -1945,11 +1948,9 @@ async function buildNative(
         ...(ui === undefined ? [] : ["--ui", ui]),
         "--config",
         configPath,
-        // Only an explicit override is handed to the packager: a downloaded runtime is the packager's
-        // own to stage and remove, and passing the cache path would skip that ownership.
-        ...(selectedRuntime === undefined || selectedRuntime !== explicitRuntime
-          ? []
-          : ["--runtime", selectedRuntime]),
+        // The exact binary the cook probed, every time: resolving again inside the packager could
+        // ship a runtime that differs from the one which decided the assets' decoders.
+        ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
         "--output",
         output,
       ],
