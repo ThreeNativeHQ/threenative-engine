@@ -124,9 +124,10 @@ export async function packageEngineDesktop(
   const startContents = windows
     ? [
         "@echo off",
-        // The title stays out of the batch file: cmd expands `%…%` inside quoted `set` values and
-        // treats a caret as an escape, so a game named `Rock & Roll 100%` cannot be written here.
-        // The packaged window settings carry the title the player opens with.
+        `if exist "%~dp0title.txt" set /p TN_PLAYER_TITLE=<"%~dp0title.txt"`,
+        // The title never appears in the batch text: cmd expands `%…%` inside quoted `set` values
+        // and treats a caret as an escape. It is read from a sidecar as data instead, which is the
+        // one form a batch file cannot mangle.
         `set "TN_PLAYER_WIDTH=${width}"`,
         `set "TN_PLAYER_HEIGHT=${height}"`,
         `set "TN_PLAYER_PRIORITY=${priority}"`,
@@ -147,6 +148,8 @@ export async function packageEngineDesktop(
       );
     throw error;
   }
+  if (windows && title)
+    writeFileSync(join(output, "title.txt"), `${title}\n`, { encoding: "utf8", flag: "wx" });
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));

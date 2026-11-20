@@ -1789,6 +1789,7 @@ async function buildNative(
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;
   let explicitRuntime: string | undefined;
+  let stagedRuntimeDir: string | undefined;
   if (target === "desktop") {
     const module = path.join(
       packageRoot(cwd, "@threenative/runtime-native"),
@@ -1803,11 +1804,15 @@ async function buildNative(
     };
     const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
     explicitRuntime = explicit;
-    // Read the cache path itself: this build only probes its capabilities, and the packager stages
-    // its own executable copy, so a snapshot here would be a leaked 260 MiB per build.
+    // The probe runs the binary, so it needs an executable copy: staged beside the build output,
+    // which is where packaging runs from too, and removed when this build ends.
+    const stageDir = path.join(cwd, ".threenative", "stage");
     selectedRuntime = await resolveDesktopRuntime(explicit, {
-      install: { stagePrivate: false },
+      install: explicit === undefined ? { stageDir, stagePrivate: true } : undefined,
+      stageDir,
     });
+    if (selectedRuntime !== undefined && explicit === undefined)
+      stagedRuntimeDir = path.dirname(selectedRuntime);
   }
   const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
   await compileAssets({
@@ -1908,30 +1913,36 @@ async function buildNative(
     return;
   }
   const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await packageStaged(
-    output,
-    cwd,
-    [
-      path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
-      "--mode",
-      mode,
-      "--bundle",
-      bundle,
-      "--assets",
-      assets,
-      ...(ui === undefined ? [] : ["--ui", ui]),
-      "--config",
-      configPath,
-      // Only an explicit override is handed to the packager: a downloaded runtime is the packager's
-      // own to stage and remove, and passing the cache path would skip that ownership.
-      ...(selectedRuntime === undefined || selectedRuntime !== explicitRuntime
-        ? []
-        : ["--runtime", selectedRuntime]),
-      "--output",
+  try {
+    await packageStaged(
       output,
-    ],
-    { assets, config, target: "desktop" },
-  );
+      cwd,
+      [
+        path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
+        "--mode",
+        mode,
+        "--bundle",
+        bundle,
+        "--assets",
+        assets,
+        ...(ui === undefined ? [] : ["--ui", ui]),
+        "--config",
+        configPath,
+        // Only an explicit override is handed to the packager: a downloaded runtime is the packager's
+        // own to stage and remove, and passing the cache path would skip that ownership.
+        ...(selectedRuntime === undefined || selectedRuntime !== explicitRuntime
+          ? []
+          : ["--runtime", selectedRuntime]),
+        "--output",
+        output,
+      ],
+      { assets, config, target: "desktop" },
+    );
+  } finally {
+    // The probe's copy is this build's: removed however packaging ended, so a failed cook does not
+    // leave a 260 MiB runtime in the game's own `.threenative` directory.
+    if (stagedRuntimeDir !== undefined) rmSync(stagedRuntimeDir, { force: true, recursive: true });
+  }
 }
 
 /**
