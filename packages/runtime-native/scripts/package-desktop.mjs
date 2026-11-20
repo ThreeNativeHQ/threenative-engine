@@ -94,9 +94,9 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   // build under a different lock while this one cooks assets.
   // Staged beside the artifact, not in the system temp root: a hardened host can mount /tmp
   // `noexec`, and this runtime has to run to produce the artifact.
-  // The resolver answers "which binary" and stages nothing: the packager takes the snapshot it
-  // will execute, and a capability probe reads the cache path without copying 260 MiB.
-  return ensureNativeBinary({ ...options.install, stagePrivate: false });
+  // The resolver passes the request through and defaults to no staging: a capability probe reads
+  // the cache path, and a caller that must execute the binary asks for its own snapshot.
+  return ensureNativeBinary({ ...options.install });
 }
 
 /**

@@ -1,6 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { copyFileSync, existsSync, linkSync, readFileSync, rmSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -1807,11 +1815,14 @@ async function buildNative(
     // The probe runs the binary, so it needs an executable copy: staged beside the build output,
     // which is where packaging runs from too, and removed when this build ends.
     const stageDir = path.join(cwd, ".threenative", "stage");
+    mkdirSync(stageDir, { recursive: true });
     selectedRuntime = await resolveDesktopRuntime(explicit, {
       install: explicit === undefined ? { stageDir, stagePrivate: true } : undefined,
       stageDir,
     });
-    if (selectedRuntime !== undefined && explicit === undefined)
+    // Only a snapshot this build asked for, recognisable by the installer's own directory name:
+    // the cache path is shared and must never be deleted here.
+    if (selectedRuntime !== undefined && /[\\/]tn-stage-[^\\/]+[\\/]/u.test(selectedRuntime))
       stagedRuntimeDir = path.dirname(selectedRuntime);
   }
   const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
