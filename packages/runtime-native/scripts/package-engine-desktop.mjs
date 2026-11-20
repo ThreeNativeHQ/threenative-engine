@@ -4,7 +4,7 @@
 // player reads `native/assets.tnpk` and `ui/index.html` beside the bundle, so the layout is the contract.
 import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
-import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
@@ -38,6 +38,15 @@ export function launcher(width, height, title, priority = "game", fullscreen = t
  * Writes `output` as a directory: `<name>` (launcher), the player, `game.js`, `native/assets.tnpk`
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
+/** Whether two paths name the same file, through symlinks. */
+function samePath(left, right) {
+  try {
+    return realpathSync(left) === realpathSync(right);
+  } catch {
+    return resolve(left) === resolve(right);
+  }
+}
+
 export async function packageEngineDesktop(
   { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority, fullscreen },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
@@ -55,10 +64,12 @@ export async function packageEngineDesktop(
   // A snapshot this packager took, and where it lives: removed in `finally` however packaging ends,
   // because a cross-filesystem hard link fell back to a full 118 MiB copy.
   let snapshot;
+  try {
   // A canonical cache path is always passed through the verifier: a file that exists is not a file
-  // that verifies, and an install killed before writing its receipt leaves exactly that.
+  // that verifies, and an install killed before writing its receipt leaves exactly that. Compared
+  // through symlinks, because pnpm hands the CLI a linked `node_modules/@threenative/...` path.
   if (player && !process.env.THREENATIVE_ENGINE_PLAYER &&
-      resolve(player) === resolve(canonicalPlayer)) {
+      samePath(player, canonicalPlayer)) {
     // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
     const installer = new URL('./install-prebuilt.mjs', import.meta.url);
     if (existsSync(installer)) {
@@ -107,7 +118,6 @@ export async function packageEngineDesktop(
     throw error;
   }
   chmodSync(start, 0o755);
-  try {
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
     if (receipt.buildProtocol !== "midway-clean-build-v1" || !/^[a-f0-9]{40}$/.test(bundled?.engineCommit)

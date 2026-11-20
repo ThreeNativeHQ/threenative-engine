@@ -1099,7 +1099,18 @@ export async function ensureNativeBinary(options = {}) {
         if (error?.code === 'EROFS' || error?.code === 'EACCES') {
           if (isVerifiedInstall(plan, options)) {
             const staged = stage(plan.output);
-            if (isVerifiedInstall(plan, options)) return staged;
+            // The snapshot itself must match the receipt, not just the path it was taken from.
+            const declared = (() => {
+              try {
+                return JSON.parse(readFileSync(plan.statusPath, 'utf8')).sha256;
+              } catch {
+                return undefined;
+              }
+            })();
+            const stagedSha = existsSync(staged) ? sha256(readFileSync(staged)) : undefined;
+            if (isVerifiedInstall(plan, options) && stagedSha !== undefined &&
+                (declared === undefined || declared === stagedSha))
+              return staged;
             rmSync(staged, { force: true });
           }
         }

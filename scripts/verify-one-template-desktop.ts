@@ -171,10 +171,10 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
   // `@threenative` closure, with the toolchain size reported beside it.
   const frameworkBytes = packageBytes(path.join(project, "node_modules", "@threenative"));
   const installedBytes = treeBytes(path.join(project, "node_modules"));
-  // Measured on the racing kit: 14 packages, 160.5 MiB apparent. The ceiling's job is to catch a
-  // native payload arriving by accident — the engine player is 118 MiB and the legacy runtime plus
-  // helper 260 MiB — so it sits above the data the framework ships and below one player.
-  const ceiling = 220 * 1024 * 1024;
+  // Measured on the racing kit after dereferencing pnpm's links: 43 MiB. The ceiling's job is to
+  // catch a native payload arriving by accident — the engine player is 118 MiB — so it sits at
+  // twice the measurement and still well under one player.
+  const ceiling = 88 * 1024 * 1024;
   if (frameworkBytes > ceiling)
     throw new Error(
       `TN_PACKED_INSTALL_TOO_LARGE: node_modules/@threenative is ${Math.round(frameworkBytes / 1024 / 1024)} MiB, over the ${ceiling / 1024 / 1024} MiB ceiling PRD-783 measured`,
