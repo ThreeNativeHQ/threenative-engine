@@ -19,6 +19,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./stylized": {
+      "types": "./dist/stylized.d.ts",
+      "import": "./dist/stylized.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

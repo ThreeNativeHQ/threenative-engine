@@ -491,8 +491,10 @@
       }
     },
     "@threenative/procedural-environment": {
-      "exports": [".", "./package.json"],
+      "exports": [".", "./package.json", "./stylized"],
       "symbols": {
+        "@threenative/procedural-environment/stylized#createStylizedAsset": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
+        "@threenative/procedural-environment/stylized#stylizedAssets": "export function stylizedAssets(): IStylizedAsset[] { … }",
         "@threenative/procedural-environment#bakeCity": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",

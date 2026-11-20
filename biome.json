@@ -47,6 +47,7 @@
       "packages/procedural-environment/vendor/arbor.js",
       "packages/procedural-environment/vendor/forest-kit/**",
       "packages/procedural-environment/vendor/outcrop.js",
+      "packages/procedural-environment/vendor/stylized-biome-kit/*.js",
       "packages/runtime-native/**/*.json",
       "packages/terrain/starter/*/recipe.json",
       "test-results/**",

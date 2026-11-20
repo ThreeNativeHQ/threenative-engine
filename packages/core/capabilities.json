@@ -8615,6 +8615,40 @@
     },
     {
       "aliases": [],
+      "constraints": ["the original shaders use Three.js WebGL materials"],
+      "example": "const { group } = createStylizedAsset(\"mountain-snow\", { seed: 8, variant: 1 });",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
+      "situations": [
+        "create stylized mountain ridges, snowy trees, sandstone formations, or animated water"
+      ],
+      "summary": "Generate a Stylized Biome Kit piece or scene with the kit's original Three.js materials.",
+      "supersedes": [],
+      "symbol": "createStylizedAsset"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const rows = stylizedAssets();",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function stylizedAssets(): IStylizedAsset[] { … }",
+      "situations": [
+        "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon"
+      ],
+      "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
+      "supersedes": [],
+      "symbol": "stylizedAssets"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "materials are never chosen here; the geometry carries groups, the game carries materials"
       ],

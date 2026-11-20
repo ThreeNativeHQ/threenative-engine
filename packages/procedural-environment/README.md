@@ -14,7 +14,7 @@ npm i -D @threenative/procedural-environment
 
 ## Find what to bake
 
-One catalog holds every element (`tree`, `cover`, `debris`, `rock`, `city`) with its biomes and the exact
+The bake catalog lists each element (`tree`, `cover`, `debris`, `rock`, `city`) with its biomes and the exact
 bake call. A biome takes its id or a request word: `jungle` is `tropical`, `swamp` is `wetland`,
 `canyon` is `desert`.
 
@@ -42,6 +42,24 @@ per kind at true scale. Each story calls this package's own bake, so the viewer 
 gets. The URL holds the story (`#/rock/cliff?biome=coastal&module=1`), so a link shows the same
 bake. While it runs, an edit under `src/`, `vendor/` or `scans/` rebuilds the package and reloads
 the page.
+
+### Stylized Biome Kit
+
+Open **Stylized Biome Kit** in the same sidebar for the alpine forest, snow peaks, and desert
+canyon scenes, all original asset variants, and the three mountain ridges. These generators
+return Three.js objects with their original WebGL shader materials. Advance
+`stylizedUniforms.uTime.value` each frame to animate water, snow, and foliage.
+
+```ts
+import { createStylizedAsset, stylizedAssets } from "@threenative/procedural-environment/stylized";
+
+const assets = stylizedAssets();
+const { group } = createStylizedAsset("mountain-snow", { seed: 8, variant: 1 });
+scene.add(group);
+```
+
+The subpath also exports the source kit's `terrain`, `sky`, and `scatter` helpers. The Docs tab
+copies the call for the selected asset and controls. Variant indices in code start at zero.
 
 ## Trees, cover and the forest floor
 
