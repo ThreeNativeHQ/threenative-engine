@@ -1799,7 +1799,7 @@ async function buildNative(
     const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
       resolveDesktopRuntime(
         explicit?: string,
-        options?: { install?: Record<string, unknown> },
+        options?: { install?: Record<string, unknown>; stageDir?: string },
       ): Promise<string>;
     };
     const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
