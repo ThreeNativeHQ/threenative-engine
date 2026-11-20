@@ -124,7 +124,7 @@ export async function packageEngineDesktop(
   const startContents = windows
     ? [
         "@echo off",
-        ...(title ? [`set "TN_PLAYER_TITLE=${title}"`] : []),
+        ...(title ? [`set "TN_PLAYER_TITLE=${title.replaceAll(/[%&|<>^]/gu, (character) => `^${character}`)}"`] : []),
         `set "TN_PLAYER_WIDTH=${width}"`,
         `set "TN_PLAYER_HEIGHT=${height}"`,
         `set "TN_PLAYER_PRIORITY=${priority}"`,

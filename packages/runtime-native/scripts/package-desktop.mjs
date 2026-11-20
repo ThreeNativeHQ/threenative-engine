@@ -94,11 +94,13 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   // build under a different lock while this one cooks assets.
   // Staged beside the artifact, not in the system temp root: a hardened host can mount /tmp
   // `noexec`, and this runtime has to run to produce the artifact.
-  return ensureNativeBinary({
-    ...options.install,
-    stageDir: options.stageDir ?? process.cwd(),
-    stagePrivate: true,
-  });
+  // A caller that only probes capabilities asks for no snapshot at all; the packager takes its
+  // own when it has somewhere to put an executable.
+  if (options.install?.stagePrivate === false) return ensureNativeBinary({ ...options.install });
+  // Staged where the artifact can run: the output's own directory, created first.
+  const stageDir = options.stageDir ?? (options.output === undefined ? process.cwd() : dirname(options.output));
+  mkdirSync(stageDir, { recursive: true });
+  return ensureNativeBinary({ ...options.install, stageDir, stagePrivate: true });
 }
 
 /**
@@ -223,7 +225,11 @@ export function packageDesktop(options) {
     }
     return compileOrPackage(options, options.runtime);
   }
-  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then(
+  return resolveDesktopRuntime(undefined, {
+    runtimeSource: options.runtimeSource,
+    install: options.install,
+    output: options.output,
+  }).then(
     async (runtime) => {
       // A staged runtime arrived in a `tn-stage-` directory of its own: packaging done, that whole
       // directory goes, so a build leaves no copy behind in the temp root.

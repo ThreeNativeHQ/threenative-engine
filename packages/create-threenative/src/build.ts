@@ -1788,6 +1788,7 @@ async function buildNative(
   // Resolve the same desktop binary the packager will receive, before cooking. A default
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;
+  let explicitRuntime: string | undefined;
   if (target === "desktop") {
     const module = path.join(
       packageRoot(cwd, "@threenative/runtime-native"),
@@ -1801,6 +1802,7 @@ async function buildNative(
       ): Promise<string>;
     };
     const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
+    explicitRuntime = explicit;
     // Read the cache path itself: this build only probes its capabilities, and the packager stages
     // its own executable copy, so a snapshot here would be a leaked 260 MiB per build.
     selectedRuntime = await resolveDesktopRuntime(explicit, {
@@ -1920,7 +1922,11 @@ async function buildNative(
       ...(ui === undefined ? [] : ["--ui", ui]),
       "--config",
       configPath,
-      ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
+      // Only an explicit override is handed to the packager: a downloaded runtime is the packager's
+      // own to stage and remove, and passing the cache path would skip that ownership.
+      ...(selectedRuntime === undefined || selectedRuntime !== explicitRuntime
+        ? []
+        : ["--runtime", selectedRuntime]),
       "--output",
       output,
     ],

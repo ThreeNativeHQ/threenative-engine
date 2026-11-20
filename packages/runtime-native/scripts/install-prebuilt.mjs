@@ -1087,9 +1087,16 @@ export async function ensureNativeBinary(options = {}) {
       if (plan.toolsKey && typeof helper === 'string' && existsSync(helper)) {
         const stagedHelper = join(dirname(staged), basename(helper));
         try {
-          linkSync(helper, stagedHelper);
-        } catch {
-          copyFileSync(helper, stagedHelper);
+          try {
+            linkSync(helper, stagedHelper);
+          } catch {
+            copyFileSync(helper, stagedHelper);
+          }
+        } catch (error) {
+          // Half a snapshot is worse than none: the caller never sees this path, so the whole
+          // directory goes, including the runtime already linked into it.
+          rmSync(stagedDir, { force: true, recursive: true });
+          throw error;
         }
       }
       return staged;
