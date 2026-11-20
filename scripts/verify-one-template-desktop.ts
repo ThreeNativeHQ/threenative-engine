@@ -184,11 +184,12 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
   // dependencies (two lightningcss builds, Tailwind's oxide, skia) put the same install well above
   // it on a machine that has them cached — a red there would indict Vite, not this PRD.
   const ac6Ceiling = 450 * 1024 * 1024;
+  const ac6Note =
+    installedBytes > ac6Ceiling
+      ? ` (above AC-6's ${ac6Ceiling / 1024 / 1024} MiB toolchain-era figure: the dev toolchain, not the framework, is what grew)`
+      : "";
   console.info(
-    `install fetched no native binary; node_modules/@threenative ${Math.round(frameworkBytes / 1024)} KiB of ${Math.round(installedBytes / 1024 / 1024)} MiB installed` +
-      (installedBytes > ac6Ceiling
-        ? ` (above AC-6's ${ac6Ceiling / 1024 / 1024} MiB toolchain-era figure: the dev toolchain, not the framework, is what grew)`
-        : ""),
+    `install fetched no native binary; node_modules/@threenative ${Math.round(frameworkBytes / 1024)} KiB of ${Math.round(installedBytes / 1024 / 1024)} MiB installed${ac6Note}`,
   );
   await run("pnpm", ["build:desktop"], project);
   // The default engine's desktop build needs the engine player and nothing else: the legacy runtime
