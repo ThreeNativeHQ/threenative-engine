@@ -165,6 +165,8 @@ const FROZEN_SETTLE_STEPS = 60;
  * 144 fps to one result) and still bounds an overloaded 60 Hz frame at 3 ticks instead of 5.
  */
 const MAX_PHYSICS_DELTA_SECONDS = 1 / 20;
+/** How long a frame error with the same message stays in the loop before it escapes again. */
+const REPEAT_ERROR_MS = 5000;
 
 export class FixedStepLoop {
   readonly step: number;
@@ -194,6 +196,7 @@ export class FixedStepLoop {
   #renderPerformanceSamples: IRenderPerformanceSample[] = [];
   #renderCompletionSequence = 0;
   #frameCallback: (time: number) => void;
+  #lastEscape: { readonly at: number; readonly message: string } | undefined;
   #budget: FrameBudget | undefined;
   #spans: SpanRecorder | undefined;
   #now: () => number;
@@ -618,6 +621,16 @@ export class FixedStepLoop {
     if (!this.#running || this.#driven) return;
     try {
       this.stepFrame(time);
+    } catch (error) {
+      // A broken update throws on every frame. Sixty escapes a second flooded the Vite dev server that
+      // relays page errors, and it never sent the hot update that fixed the code (Studio trial
+      // 2026-11-20T15-30). The first error escapes, then the same message once per REPEAT_ERROR_MS.
+      const message = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+      const last = this.#lastEscape;
+      if (last === undefined || last.message !== message || time - last.at >= REPEAT_ERROR_MS) {
+        this.#lastEscape = { at: time, message };
+        throw error;
+      }
     } finally {
       if (this.#running && !this.#driven) {
         this.#frameHandle = this.#requestFrame(this.#frameCallback);
