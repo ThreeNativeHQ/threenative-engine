@@ -407,10 +407,20 @@ describe("threenative doctor", () => {
       }),
     );
 
+    // Plain doctor warns: a web-only project does not open the overlay (AC-4). The desktop build
+    // is the question that makes it fatal.
     expect(check(report, "desktop overlay")).toMatchObject({
       detail: expect.stringContaining("no compositing manager is running"),
-      status: "fail",
+      status: "warn",
     });
+    const desktop = diagnoseProject(
+      snapshot({
+        config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
+        desktopOverlay: probe,
+      }),
+      { target: "desktop" },
+    );
+    expect(check(desktop, "desktop overlay").status).toBe("fail");
     // Naming them is the difference between a blocker and a fix: these are the three the
     // repository's own private displays start, so a reader can install one and move on.
     expect(formatDoctorReport(report)).toContain(
@@ -2395,10 +2405,10 @@ describe("threenative doctor --target/--mode", () => {
     const desktop = diagnoseProject(snapshot(overlayProject), { target: "desktop" });
     expect(check(desktop, "desktop overlay").status).toBe("fail");
     expect(desktop.pass).toBe(false);
-    // Unscoped, nothing is demoted: the report is unchanged for everyone who did not ask.
+    // Unscoped, the overlay is a warning: PRD-783 AC-4 says a project that asked for no desktop
+    // build does not exit 1 over a display it never opens.
     const unscoped = diagnoseProject(snapshot(overlayProject));
-    expect(check(unscoped, "desktop overlay").status).toBe("fail");
-    expect(unscoped.pass).toBe(false);
+    expect(check(unscoped, "desktop overlay").status).toBe("warn");
   });
 
   it("should let desktop own the native runtime, and every other target demote it", () => {

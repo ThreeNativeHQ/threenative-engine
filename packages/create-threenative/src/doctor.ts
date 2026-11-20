@@ -2361,12 +2361,17 @@ function targetChecks(
   );
 }
 
-function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
+function desktopOverlayCheck(
+  probe: IDesktopOverlayProbe,
+  options: { readonly target?: string } = {},
+): IDoctorCheck {
   return {
     detail: probe.detail,
     fix: probe.fix,
     name: "desktop overlay",
-    status: probe.status,
+    // The overlay is a desktop prerequisite: a plain `doctor` on a web-only project must not exit 1
+    // for a display it never opens (AC-4), while the desktop build being asked about still fails.
+    status: probe.status === "fail" && options.target !== "desktop" ? "warn" : probe.status,
   };
 }
 
@@ -2539,7 +2544,7 @@ export function diagnoseProject(
     ...(apkSize === undefined ? [] : [apkSize]),
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
-      : [desktopOverlayCheck(snapshot.desktopOverlay)]),
+      : [desktopOverlayCheck(snapshot.desktopOverlay, options)]),
     ...targetChecks(snapshot, nativeRuntime, options, requestedBuild),
     ...(requestedBuild === undefined ? [] : [requestedBuild]),
     snapshot.files.has("src/main.ts")
