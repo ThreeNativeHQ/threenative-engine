@@ -52,6 +52,9 @@ export async function packageEngineDesktop(
     `${process.platform}-${process.arch}`,
     PLAYER,
   );
+  // A snapshot this packager took, and where it lives: removed in `finally` however packaging ends,
+  // because a cross-filesystem hard link fell back to a full 118 MiB copy.
+  let snapshot;
   // A canonical cache path is always passed through the verifier: a file that exists is not a file
   // that verifies, and an install killed before writing its receipt leaves exactly that.
   if (player && !process.env.THREENATIVE_ENGINE_PLAYER &&
@@ -68,6 +71,8 @@ export async function packageEngineDesktop(
           stageDir: tmpdir(),
           stagePrivate: true,
         });
+        // The snapshot is this packager's own copy: it is removed however packaging ends.
+        snapshot = player;
       }
     }
   }
@@ -102,6 +107,7 @@ export async function packageEngineDesktop(
     throw error;
   }
   chmodSync(start, 0o755);
+  try {
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
     if (receipt.buildProtocol !== "midway-clean-build-v1" || !/^[a-f0-9]{40}$/.test(bundled?.engineCommit)
@@ -123,8 +129,10 @@ export async function packageEngineDesktop(
   }
   console.log(`ThreeNative desktop artifact: ${output}`);
   return output;
+  } finally {
+    if (snapshot !== undefined) rmSync(snapshot, { force: true });
+  }
 }
-
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
   const flags = new Map();

@@ -1093,6 +1093,16 @@ export async function ensureNativeBinary(options = {}) {
           return snapshot;
         });
       } catch (error) {
+        // A read-only install cannot hold a lock file either. The cache it already ships is verified
+        // before and after the snapshot, and nothing else can publish over it here, so the snapshot
+        // is still this build's own bytes; a download stays locked wherever the lock can be made.
+        if (error?.code === 'EROFS' || error?.code === 'EACCES') {
+          if (isVerifiedInstall(plan, options)) {
+            const staged = stage(plan.output);
+            if (isVerifiedInstall(plan, options)) return staged;
+            rmSync(staged, { force: true });
+          }
+        }
         if (snapshot !== undefined) rmSync(snapshot, { force: true });
         throw error;
       }
