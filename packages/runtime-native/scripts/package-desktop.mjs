@@ -94,13 +94,9 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
   // build under a different lock while this one cooks assets.
   // Staged beside the artifact, not in the system temp root: a hardened host can mount /tmp
   // `noexec`, and this runtime has to run to produce the artifact.
-  // A caller that only probes capabilities asks for no snapshot at all; the packager takes its
-  // own when it has somewhere to put an executable.
-  if (options.install?.stagePrivate === false) return ensureNativeBinary({ ...options.install });
-  // Staged where the artifact can run: the output's own directory, created first.
-  const stageDir = options.stageDir ?? (options.output === undefined ? process.cwd() : dirname(options.output));
-  mkdirSync(stageDir, { recursive: true });
-  return ensureNativeBinary({ ...options.install, stageDir, stagePrivate: true });
+  // The resolver answers "which binary" and stages nothing: the packager takes the snapshot it
+  // will execute, and a capability probe reads the cache path without copying 260 MiB.
+  return ensureNativeBinary({ ...options.install, stagePrivate: false });
 }
 
 /**
@@ -231,13 +227,24 @@ export function packageDesktop(options) {
     output: options.output,
   }).then(
     async (runtime) => {
-      // A staged runtime arrived in a `tn-stage-` directory of its own: packaging done, that whole
-      // directory goes, so a build leaves no copy behind in the temp root.
-      const staged = /[\\/]tn-stage-[^\\/]+[\\/]/u.test(runtime);
+      // The packager owns its executable copy: taken beside the artifact, removed in `finally`.
+      const stageDir = dirname(options.output);
+      let executable = runtime;
+      let stagedDir;
       try {
-        return await compileOrPackage(options, runtime);
+        // A cache path is the one the installer publishes: anything else is the caller's own file.
+        if (/[\\/]prebuilt[\\/][^\\/]+[\\/]/u.test(runtime)) {
+          mkdirSync(stageDir, { recursive: true });
+          executable = await ensureNativeBinary({
+            ...options.install,
+            stageDir,
+            stagePrivate: true,
+          });
+          stagedDir = dirname(executable);
+        }
+        return await compileOrPackage(options, executable);
       } finally {
-        if (staged) rmSync(dirname(runtime), { force: true, recursive: true });
+        if (stagedDir !== undefined) rmSync(stagedDir, { force: true, recursive: true });
       }
     },
   );

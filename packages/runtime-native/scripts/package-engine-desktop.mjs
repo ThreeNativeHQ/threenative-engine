@@ -124,7 +124,9 @@ export async function packageEngineDesktop(
   const startContents = windows
     ? [
         "@echo off",
-        ...(title ? [`set "TN_PLAYER_TITLE=${title.replaceAll(/[%&|<>^]/gu, (character) => `^${character}`)}"`] : []),
+        // The title stays out of the batch file: cmd expands `%…%` inside quoted `set` values and
+        // treats a caret as an escape, so a game named `Rock & Roll 100%` cannot be written here.
+        // The packaged window settings carry the title the player opens with.
         `set "TN_PLAYER_WIDTH=${width}"`,
         `set "TN_PLAYER_HEIGHT=${height}"`,
         `set "TN_PLAYER_PRIORITY=${priority}"`,
