@@ -17,7 +17,7 @@ interface IElement {
   name: string;
   latin?: string;
   kind: string;
-  style: string;
+  styleTags: string[];
   biomes: string[];
   bake?: string;
   variants?: number;
@@ -213,6 +213,8 @@ let catalog: {
   styles: {},
   controls: {},
 };
+const selectedStyles = new Set<string>();
+const styleNames = (element: IElement) => element.styleTags.map((tag) => catalog.styles[tag]);
 /** A story: a kind overview (optionally one category of it) or one element. */
 let route: { kind: string; id?: string; category?: string; tiled?: string } = { kind: "" };
 let token = 0;
@@ -563,7 +565,7 @@ function renderDocs(element: IElement, baked: PreviewReport, model: THREE.Object
   const dl = rowsInto(el("dl", DL), [
     ["Id", element.id],
     ["Kind", title(element.kind)],
-    ["Style", catalog.styles[element.style]],
+    ["Style tags", styleNames(element).join(", ")],
     ...(element.category ? [["Category", element.category] as [string, string]] : []),
     ["Biomes", element.biomes.join(", ") || "none listed"],
     ...(file ? [["File", file] as [string, string]] : []),
@@ -784,12 +786,11 @@ async function show(): Promise<void> {
 function visible(e: IElement): boolean {
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const biome = $<HTMLSelectElement>("biome").value;
-  const style = $<HTMLSelectElement>("style").value;
   const text =
-    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${catalog.styles[e.style]} ${e.biomes.join(" ")}`.toLowerCase();
+    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${styleNames(e).join(" ")} ${e.biomes.join(" ")}`.toLowerCase();
   return (
     (!biome || e.biomes.includes(biome)) &&
-    (!style || e.style === style) &&
+    (selectedStyles.size === 0 || e.styleTags.some((tag) => selectedStyles.has(tag))) &&
     words.every((w) => text.includes(w))
   );
 }
@@ -1260,11 +1261,11 @@ for (const id of ["settings", "filter"])
     for (const b of ["settings", "filter"]) $(b).setAttribute("aria-pressed", String(open));
   };
 $("search").addEventListener("input", renderTree);
-for (const id of ["biome", "style"])
-  $(id).addEventListener("change", () => {
-    renderTree();
-    if (!route.id) void show();
-  });
+function refreshFilters(): void {
+  renderTree();
+  if (!route.id) void show();
+}
+$("biome").addEventListener("change", refreshFilters);
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;
   if (e.key !== "/" || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
@@ -1362,9 +1363,19 @@ for (const type of ["click", "change", "input"]) document.addEventListener(type,
 try {
   catalog = (await (await fetch("/api/catalog")).json()) as typeof catalog;
   for (const [id, name] of Object.entries(catalog.styles)) {
-    const option = el("option", "", name);
-    option.value = id;
-    $("style").append(option);
+    const button = el(
+      "button",
+      "rounded border border-line px-2 py-1 text-xs text-ink hover:bg-hover aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-accent-ink",
+      name,
+    );
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    button.onclick = () => {
+      if (!selectedStyles.delete(id)) selectedStyles.add(id);
+      button.setAttribute("aria-pressed", String(selectedStyles.has(id)));
+      refreshFilters();
+    };
+    $("style-tags").append(button);
   }
   for (const biome of catalog.biomes) {
     const option = el("option", "", biome.name);
