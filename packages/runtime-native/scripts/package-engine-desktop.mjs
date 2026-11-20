@@ -117,12 +117,27 @@ export async function packageEngineDesktop(
       throw new Error(`TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`);
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
-  const start = join(output, basename(output));
+  // Windows cannot run the POSIX launcher, and the raw player exits without its bundle: a `.cmd`
+  // beside the player is what a person double-clicking the folder can actually start.
+  const windows = process.platform === "win32";
+  const start = windows ? join(output, `${basename(output)}.cmd`) : join(output, basename(output));
+  const startContents = windows
+    ? [
+        "@echo off",
+        ...(title ? [`set "TN_PLAYER_TITLE=${title}"`] : []),
+        `set "TN_PLAYER_WIDTH=${width}"`,
+        `set "TN_PLAYER_HEIGHT=${height}"`,
+        `set "TN_PLAYER_PRIORITY=${priority}"`,
+        `set "TN_PLAYER_FULLSCREEN=${fullscreen ? 1 : 0}"`,
+        `"%~dp0${PLAYER}" "%~dp0game.js" %*`,
+        "",
+      ].join("\r\n")
+    : launcher(width, height, title, priority, fullscreen);
   // Write the launcher exclusively: on a case-insensitive filesystem a name that differs only in
   // case is the packaged player, and opening it for writing would destroy the binary. Existence is
   // the question the filesystem answers, not a string comparison.
   try {
-    writeFileSync(start, launcher(width, height, title, priority, fullscreen), { flag: 'wx' });
+    writeFileSync(start, startContents, { flag: 'wx' });
   } catch (error) {
     if (error.code === 'EEXIST')
       throw new Error(

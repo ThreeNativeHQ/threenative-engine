@@ -90,7 +90,9 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
         'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
     );
   }
-  return ensureNativeBinary({ ...options.install });
+  // A private snapshot, with its helper beside it: the shared cache can be republished by another
+  // build under a different lock while this one cooks assets.
+  return ensureNativeBinary({ ...options.install, stageDir: tmpdir(), stagePrivate: true });
 }
 
 /**

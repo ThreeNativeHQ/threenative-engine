@@ -1068,6 +1068,8 @@ export async function ensureNativeBinary(options = {}) {
     // bytes this call verified even if another install with a different lock replaces the cache.
     const stage = (path) => {
       if (!options.stagePrivate) return path;
+      // The helper sits beside the runtime it dispatches from, so a private runtime is only usable
+      // with its own copy of the helper: both are snapshotted into the same directory.
       // A read-only install (a prefetched image) cannot hold the snapshot beside the cache, so the
       // caller names the writable directory; the bytes are the cache's either way.
       const staged = join(
@@ -1078,6 +1080,15 @@ export async function ensureNativeBinary(options = {}) {
         linkSync(path, staged);
       } catch {
         copyFileSync(path, staged);
+      }
+      const helper = plan.toolsOutput;
+      if (plan.toolsKey && typeof helper === 'string' && existsSync(helper)) {
+        const stagedHelper = join(dirname(staged), basename(helper));
+        try {
+          linkSync(helper, stagedHelper);
+        } catch {
+          copyFileSync(helper, stagedHelper);
+        }
       }
       return staged;
     };
