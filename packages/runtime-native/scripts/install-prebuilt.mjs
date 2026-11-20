@@ -2,7 +2,7 @@
 
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, copyFileSync, existsSync, linkSync, mkdirSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const packageRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -1068,7 +1068,12 @@ export async function ensureNativeBinary(options = {}) {
     // bytes this call verified even if another install with a different lock replaces the cache.
     const stage = (path) => {
       if (!options.stagePrivate) return path;
-      const staged = `${path}.${process.pid}.${randomUUID()}.stage`;
+      // A read-only install (a prefetched image) cannot hold the snapshot beside the cache, so the
+      // caller names the writable directory; the bytes are the cache's either way.
+      const staged = join(
+        options.stageDir && options.stageDir.length > 0 ? options.stageDir : dirname(path),
+        `${basename(path)}.${process.pid}.${randomUUID()}.stage`,
+      );
       try {
         linkSync(path, staged);
       } catch {

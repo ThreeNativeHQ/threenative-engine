@@ -14,6 +14,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { GLB_BUFFER, NodeIO } from "@gltf-transform/core";
@@ -1655,7 +1656,7 @@ export async function ensureEngineDesktopPlayer(
   if (typeof runtime.ensureNativeBinary === "function") {
     const ensured = await runtime.ensureNativeBinary({
       enginePlayer: true,
-      ...(options.stagePrivate ? { stagePrivate: true } : {}),
+      ...(options.stagePrivate ? { stageDir: tmpdir(), stagePrivate: true } : {}),
     });
     if (options.stagePrivate && typeof ensured === "string") {
       // One ensure, no second read of the cache: the runtime returned the snapshot, and the cache

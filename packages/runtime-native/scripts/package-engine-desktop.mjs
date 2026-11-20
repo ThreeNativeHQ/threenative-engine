@@ -3,6 +3,7 @@
 // engine's own three, its cooked assets and its built UI, in one directory with a launcher. The
 // player reads `native/assets.tnpk` and `ui/index.html` beside the bundle, so the layout is the contract.
 import { createHash } from "node:crypto";
+import { tmpdir } from "node:os";
 import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -51,13 +52,23 @@ export async function packageEngineDesktop(
     `${process.platform}-${process.arch}`,
     PLAYER,
   );
-  if (player && !existsSync(player) && !process.env.THREENATIVE_ENGINE_PLAYER &&
+  // A canonical cache path is always passed through the verifier: a file that exists is not a file
+  // that verifies, and an install killed before writing its receipt leaves exactly that.
+  if (player && !process.env.THREENATIVE_ENGINE_PLAYER &&
       resolve(player) === resolve(canonicalPlayer)) {
     // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
     const installer = new URL('./install-prebuilt.mjs', import.meta.url);
     if (existsSync(installer)) {
       const { ensureNativeBinary } = await import(installer.href);
-      if (typeof ensureNativeBinary === 'function') await ensureNativeBinary({ enginePlayer: true });
+      if (typeof ensureNativeBinary === 'function') {
+        // Verified and snapshotted under the lock, into a directory the packager can write even
+        // when the install itself is read-only.
+        player = await ensureNativeBinary({
+          enginePlayer: true,
+          stageDir: tmpdir(),
+          stagePrivate: true,
+        });
+      }
     }
   }
   if (!player || !existsSync(player)) {

@@ -140,14 +140,19 @@ export async function verifyInstalledConsumer(project: string): Promise<void> {
     throw new Error(
       `TN_PACKED_PREBUILT_DOWNLOADED: the install fetched ${fetched.length} native file(s): ${fetched.slice(0, 3).join(", ")}`,
     );
+  // The ceiling is about the framework's own payload, not the dev toolchain: Vite, Tailwind and
+  // their platform bindings fill node_modules on their own and vary with every lock update, while
+  // what PRD-783 promised is that no native binary of *ours* arrives. Measured on the installed
+  // `@threenative` closure, with the toolchain size reported beside it.
+  const frameworkBytes = treeBytes(path.join(project, "node_modules", "@threenative"));
   const installedBytes = treeBytes(path.join(project, "node_modules"));
-  const ceiling = 450 * 1024 * 1024;
-  if (installedBytes > ceiling)
+  const ceiling = 32 * 1024 * 1024;
+  if (frameworkBytes > ceiling)
     throw new Error(
-      `TN_PACKED_INSTALL_TOO_LARGE: node_modules is ${Math.round(installedBytes / 1024 / 1024)} MiB, over the ${ceiling / 1024 / 1024} MiB ceiling PRD-783 measured`,
+      `TN_PACKED_INSTALL_TOO_LARGE: node_modules/@threenative is ${Math.round(frameworkBytes / 1024 / 1024)} MiB, over the ${ceiling / 1024 / 1024} MiB ceiling PRD-783 measured`,
     );
   console.info(
-    `install fetched no native binary; node_modules ${Math.round(installedBytes / 1024 / 1024)} MiB`,
+    `install fetched no native binary; node_modules/@threenative ${Math.round(frameworkBytes / 1024)} KiB of ${Math.round(installedBytes / 1024 / 1024)} MiB installed`,
   );
   await run("pnpm", ["build:desktop"], project);
   // The default engine's desktop build needs the engine player and nothing else: the legacy runtime
