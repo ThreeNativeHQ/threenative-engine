@@ -1189,8 +1189,12 @@ void registerObject3D(ClassBinding& b) {
         auto measureLowest = [&]() -> double {
             bool fastOk = true;
             model.updateWorldMatrix(true, false, false);
-            static thread_local std::vector<std::pair<const Object3D*, Matrix4>> cache;
-            static thread_local std::vector<const Object3D*> chain;
+            // MSVC cannot name an enclosing lambda's thread_local from the nested lambda below (C2228, C2109), so the
+            // nested one captures plain references to the per-thread storage.
+            static thread_local std::vector<std::pair<const Object3D*, Matrix4>> cacheStore;
+            static thread_local std::vector<const Object3D*> chainStore;
+            auto& cache = cacheStore;
+            auto& chain = chainStore;
             cache.clear();
             chain.clear();
             const auto findWorld = [&](const Object3D* target, Matrix4& outWorld) -> bool {
