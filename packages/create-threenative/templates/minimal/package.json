@@ -19,15 +19,15 @@
     "format:check": "biome format src"
   },
   "dependencies": {
-    "@threenative/core": ">=0.3.18",
-    "@threenative/physics": ">=0.3.18",
+    "@threenative/core": ">=0.3.19",
+    "@threenative/physics": ">=0.3.19",
     "three": "0.187.0"
   },
   "devDependencies": {
-    "@threenative/assets": ">=0.3.19",
-    "@threenative/playtest": ">=0.3.18",
+    "@threenative/assets": ">=0.3.20",
+    "@threenative/playtest": ">=0.3.19",
     "@types/three": "0.187.0",
-    "create-threenative": "0.2.23",
+    "create-threenative": "0.2.24",
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "typescript": "7.0.2",
@@ -37,7 +37,7 @@
     "eslint": "10.13.0"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": ">=0.3.18"
+    "@threenative/runtime-native": ">=0.3.19"
   },
   "overrides": {
     "sharp": ">=0.35.4",
