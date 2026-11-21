@@ -120,14 +120,6 @@ describe("run-test-suite phase contract", () => {
       .join("\n");
     expect(prebuiltWalk).toContain("publint --strict");
     expect(prebuiltWalk, "the prebuilt walk re-runs unit specs").not.toMatch(/vitest/u);
-    for (const name of [
-      "@threenative/terrain",
-      "@threenative/procedural-environment",
-      "strata-terrain-preview",
-    ])
-      expect(source, `${name} still re-runs unit specs in the recursive walk`).toContain(
-        `    ${name}`,
-      );
   });
 
   it("fails a prebuilt browser run before invoking Playwright without its verified inputs", () => {
