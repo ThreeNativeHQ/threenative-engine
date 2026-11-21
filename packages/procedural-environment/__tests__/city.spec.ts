@@ -7,8 +7,17 @@ import { bakeCity, environmentElements } from "../src/index.js";
 interface IGltf {
   accessors: { count: number }[];
   images?: { mimeType: string }[];
-  meshes: { primitives: { attributes: Record<string, number>; indices?: number }[] }[];
-  materials?: { name: string; pbrMetallicRoughness?: { baseColorTexture?: unknown } }[];
+  meshes: {
+    primitives: { attributes: Record<string, number>; indices?: number; material?: number }[];
+  }[];
+  materials?: {
+    emissiveFactor?: number[];
+    emissiveTexture?: unknown;
+    extensions?: Record<string, unknown>;
+    extras?: Record<string, unknown>;
+    name: string;
+    pbrMetallicRoughness?: { baseColorTexture?: unknown };
+  }[];
   nodes: { extras?: Record<string, unknown> }[];
   textures?: unknown[];
 }
@@ -189,5 +198,75 @@ describe("bakeCity bakes the Apex City Kit headless", () => {
     await expect(bakeCity({ module: "store", text: "x".repeat(25), out })).rejects.toThrow(
       /text must be a string of at most 24 characters/u,
     );
+    await expect(
+      bakeCity({ module: "office", emissiveSigns: "yes" as unknown as boolean, out }),
+    ).rejects.toThrow(/emissiveSigns must be true or false/u);
+    await expect(
+      bakeCity({ module: "office", opaqueGlass: 1 as unknown as boolean, out }),
+    ).rejects.toThrow(/opaqueGlass must be true or false/u);
   });
+
+  it("deduplicates identical textures, materials and static sibling meshes without losing triangles", async () => {
+    const out = await makeTempDir("city-dedupe-");
+    const [office] = await bakeCity({ module: "office", detail: 1, dressing: false, out });
+    if (!office) throw new Error("Expected office GLB");
+    const gltf = parseGlb(await readFile(office.path));
+    const names = gltf.materials?.map((m) => m.name) ?? [];
+    expect(names.filter((name) => name === "Spectrally selective curtain glass")).toHaveLength(1);
+    expect(names.filter((name) => name === "Clear laminated lobby glass")).toHaveLength(1);
+    expect(new Set(names).size).toBe(names.length);
+    expect(gltf.meshes.length).toBeLessThanOrEqual(22);
+    expect(office.triangles).toBe(8862);
+  }, 30_000);
+
+  it("supports opt-in emissiveSigns and opaqueGlass while keeping default stock filenames unchanged", async () => {
+    const out = await makeTempDir("city-optin-");
+    const [plainAd] = await bakeCity({
+      module: "civic-ad",
+      detail: 1,
+      dressing: false,
+      text: "APEX",
+      out,
+    });
+    const [litAd] = await bakeCity({
+      module: "civic-ad",
+      detail: 1,
+      dressing: false,
+      text: "APEX",
+      emissiveSigns: true,
+      out,
+    });
+    if (!plainAd || !litAd) throw new Error("Expected both billboard GLBs");
+    expect(litAd.path).not.toBe(plainAd.path);
+    const plainSign = parseGlb(await readFile(plainAd.path)).materials?.find(
+      (m) => m.extras?.sign === true,
+    );
+    const litSign = parseGlb(await readFile(litAd.path)).materials?.find(
+      (m) => m.extras?.sign === true,
+    );
+    expect(plainSign?.emissiveTexture).toBeUndefined();
+    expect(litSign?.emissiveTexture).toBeDefined();
+    expect(litSign?.emissiveFactor).toEqual([1, 1, 1]);
+
+    const [stockOffice] = await bakeCity({ module: "office", detail: 1, dressing: false, out });
+    const [opaqueOffice] = await bakeCity({
+      module: "office",
+      detail: 1,
+      dressing: false,
+      opaqueGlass: true,
+      out,
+    });
+    if (!stockOffice || !opaqueOffice) throw new Error("Expected both office GLBs");
+    expect(opaqueOffice.path).not.toBe(stockOffice.path);
+    const stockTransmission =
+      parseGlb(await readFile(stockOffice.path)).materials?.filter(
+        (m) => m.extensions?.KHR_materials_transmission !== undefined,
+      ) ?? [];
+    const opaqueTransmission =
+      parseGlb(await readFile(opaqueOffice.path)).materials?.filter(
+        (m) => m.extensions?.KHR_materials_transmission !== undefined,
+      ) ?? [];
+    expect(stockTransmission.length).toBeGreaterThan(0);
+    expect(opaqueTransmission).toHaveLength(0);
+  }, 60_000);
 });
