@@ -204,6 +204,13 @@ export function liveUniforms<TNode extends object>(
   // every sync walks. ponytail: the value is the closest owner this module sees; the engine release of such a node
   // waits too.
   const objects = new Set<WeakRef<TNode>>();
+  let objectsVersion = 0;
+  let objectNodesVersion = -1;
+  let objectNodes: TNode[] = [];
+  const addObject = (node: TNode) => {
+    objects.add(new WeakRef(node));
+    objectsVersion += 1;
+  };
   const pinned = new WeakMap<object, TNode[]>();
   // The node lives exactly as long as `value` does, so a wrapper the game dropped is released with the object it
   // reads.
@@ -252,7 +259,7 @@ export function liveUniforms<TNode extends object>(
           const state = target === undefined ? undefined : states.get(target);
           if (target === undefined || state === undefined || state.scanned === true) continue;
           state.scanned = true;
-          objects.add(new WeakRef(target));
+          addObject(target);
           own(target, value);
         }
       },
@@ -280,7 +287,7 @@ export function liveUniforms<TNode extends object>(
     dirty.add(new WeakRef(node)); // its first sync writes it, as a scan did
     if (state.scanned !== true && !watch(node, value)) {
       state.scanned = true;
-      objects.add(new WeakRef(node));
+      addObject(node);
       own(node, value);
     }
   };
@@ -530,14 +537,53 @@ export function liveUniforms<TNode extends object>(
           }
           dirty.delete(ref);
         }
-        for (const ref of objects) {
-          const node = ref.deref();
-          if (node === undefined) {
-            objects.delete(ref);
-            continue;
+        if (extra?.kernels !== undefined && reads !== undefined) {
+          if (objects.size > 0) {
+            if (objectNodesVersion !== objectsVersion) {
+              const fresh: TNode[] = [];
+              for (const ref of objects) {
+                const node = ref.deref();
+                if (node === undefined) {
+                  objects.delete(ref);
+                  continue;
+                }
+                fresh.push(node);
+              }
+              objectsVersion += 1;
+              objectNodesVersion = objectsVersion;
+              objectNodes = fresh;
+            }
+            if (objectNodes.length > 0) {
+              const pickedObjects = reads(extra, objectNodes);
+              if (pickedObjects !== undefined) {
+                for (let i = 0; i < pickedObjects.length; i += 1) {
+                  const node = objectNodes[pickedObjects[i] as number];
+                  if (node === undefined) continue;
+                  const state = states.get(node);
+                  if (state !== undefined)
+                    write(node, state, uniformLanes(state.value, state.scratch));
+                }
+              } else {
+                for (let i = 0; i < objectNodes.length; i += 1) {
+                  const node = objectNodes[i] as TNode;
+                  const state = states.get(node);
+                  if (state !== undefined)
+                    write(node, state, uniformLanes(state.value, state.scratch));
+                }
+              }
+            }
           }
-          const state = states.get(node);
-          if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
+        } else {
+          for (const ref of objects) {
+            const node = ref.deref();
+            if (node === undefined) {
+              objects.delete(ref);
+              objectsVersion += 1;
+              continue;
+            }
+            const state = states.get(node);
+            if (state !== undefined) write(node, state, uniformLanes(state.value, state.scratch));
+          }
         }
         flush();
       } finally {

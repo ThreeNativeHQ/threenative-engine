@@ -103,6 +103,17 @@ export interface IBrowserRuntime {
    */
   attributeArray?(self: IEngineRef, offset?: number, count?: number): TypedArray;
   /**
+   * Copies the attribute's data (or subrange `[offset, offset + count)`) directly into `dest` at
+   * `destOffset` without intermediate allocations; returns the number of elements copied.
+   */
+  attributeReadInto?(
+    self: IEngineRef,
+    dest: TypedArray,
+    offset?: number,
+    count?: number,
+    destOffset?: number,
+  ): number;
+  /**
    * Writes `array` into the attribute's data; present with attributeArray. With `offset`, writes that
    * subrange; without it, `array` must be the attribute's whole data.
    */

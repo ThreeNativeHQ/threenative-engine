@@ -7,6 +7,7 @@ import {
   Quaternion,
   Vector3,
 } from "three";
+import { copyAssetProvenance } from "./asset-provenance.js";
 import { type IInstancedLodOptions, attachInstancedLod } from "./instanced-batch-lod.js";
 import { pooledMesh } from "./render/mesh-pool.js";
 
@@ -146,24 +147,7 @@ export class InstancedBatch {
   /** Records one instance from position, scale and Euler rotation, and returns its instance index. */
   place(placement: IInstancedPlacement): number {
     this.#assertOpen("place");
-    if (placement === undefined || placement === null)
-      throw new Error("InstancedBatch.place requires a placement.");
-    const [x, y, z] = requireTriple(placement.position, "InstancedBatch.place position");
-    const scale = placement.scale ?? 1;
-    const [sx, sy, sz] =
-      typeof scale === "number"
-        ? requireScalar(scale)
-        : requireTriple(scale, "InstancedBatch.place scale");
-    const [rx, ry, rz] =
-      placement.rotation === undefined
-        ? ([0, 0, 0] as const)
-        : requireTriple(placement.rotation, "InstancedBatch.place rotation");
-    this.#scratch.position.set(x, y, z);
-    this.#scratch.quaternion.identity();
-    this.#scratch.rotation.set(rx, ry, rz);
-    this.#scratch.scale.set(sx, sy, sz);
-    this.#scratch.updateMatrix();
-    this.#matrices.push(this.#scratch.matrix.clone());
+    this.#matrices.push(composePlacement(placement, "InstancedBatch", this.#scratch));
     return this.#matrices.length - 1;
   }
 
@@ -228,6 +212,7 @@ export class InstancedBatch {
       into.instanceMatrix.count >= count
         ? into
         : pooledMesh(this.geometry, this.material, Math.max(count, options.capacity ?? count));
+    copyAssetProvenance(this.geometry.userData, mesh.userData);
     mesh.count = count;
     mesh.visible = true;
     mesh.frustumCulled = true;
@@ -255,9 +240,34 @@ export class InstancedBatch {
   }
 }
 
-function requireScalar(value: number): readonly [number, number, number] {
-  if (!Number.isFinite(value))
-    throw new Error("InstancedBatch.place scale must be a finite number.");
+/** Validate and compose a placement triple into a standalone matrix. */
+export function composePlacement(
+  placement: IInstancedPlacement,
+  owner: string,
+  scratch = new Object3D(),
+): Matrix4 {
+  if (placement === undefined || placement === null)
+    throw new Error(`${owner}.place requires a placement.`);
+  const [x, y, z] = requireTriple(placement.position, `${owner}.place position`);
+  const scale = placement.scale ?? 1;
+  const [sx, sy, sz] =
+    typeof scale === "number"
+      ? requireScalar(scale, owner)
+      : requireTriple(scale, `${owner}.place scale`);
+  const [rx, ry, rz] =
+    placement.rotation === undefined
+      ? ([0, 0, 0] as const)
+      : requireTriple(placement.rotation, `${owner}.place rotation`);
+  scratch.position.set(x, y, z);
+  scratch.quaternion.identity();
+  scratch.rotation.set(rx, ry, rz);
+  scratch.scale.set(sx, sy, sz);
+  scratch.updateMatrix();
+  return scratch.matrix.clone();
+}
+
+function requireScalar(value: number, owner: string): readonly [number, number, number] {
+  if (!Number.isFinite(value)) throw new Error(`${owner}.place scale must be a finite number.`);
   return [value, value, value];
 }
 

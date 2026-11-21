@@ -479,7 +479,8 @@ if(EMSCRIPTEN OR NOT TN_ENGINE_CORE_ONLY)
         native_engine_prepass_eligible=eligible
         native_engine_prepass_targets=targets
         native_engine_prepass_fragments=fragments
-        native_engine_prepass_modes=modes)
+        native_engine_prepass_modes=modes
+        native_engine_virtual_shadow_early_out=virtual_shadow_early_out)
     target_link_libraries(tn-native-engine-prepass-test PRIVATE tn_engine_renderer)
 endif()
 
@@ -617,7 +618,10 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_rig_lane_follows_morph_set=rig_lane_follows_morph_set
     native_engine_abi_world_records=world_records
     native_engine_abi_world_stale_entries=world_stale_entries
-    native_engine_abi_projected_cull_held_restore=projected_cull_held_restore)
+    native_engine_abi_projected_cull_held_restore=projected_cull_held_restore
+    native_engine_abi_instanced_lod_partial_partition=instanced_lod_partial_partition
+    native_engine_abi_ground_snap_apply=ground_snap_apply
+    native_engine_abi_billboard_face=billboard_face)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp

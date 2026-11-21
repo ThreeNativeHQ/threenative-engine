@@ -74,13 +74,22 @@ void Renderer::buildLayouts(Program& program) {
         program.layouts[g] = layouts_->bindGroup(keys[g], entries);
     }
     program.pipelineLayout = layouts_->pipeline(keys[0] + "\x1e" + keys[1], program.layouts[0], program.layouts[1]);
+    std::vector<uint8_t> vertexBuiltIn(program.vertex.uniforms.size(), 0);
+    std::vector<uint8_t> fragmentBuiltIn(program.fragment.uniforms.size(), 0);
     for (int s = 0; s < kSlotCount; ++s) {
-        for (const shader::UniformField& f : program.vertex.uniforms)
-            if (f.name == kSlotNames[s]) program.vertexSlots[s] = &f;
-        for (const shader::UniformField& f : program.fragment.uniforms)
-            if (f.name == kSlotNames[s]) program.fragmentSlots[s] = &f;
+        for (std::size_t i = 0; i < program.vertex.uniforms.size(); ++i)
+            if (program.vertex.uniforms[i].name == kSlotNames[s]) {
+                program.vertexSlots[s] = &program.vertex.uniforms[i];
+                vertexBuiltIn[i] = 1;
+            }
+        for (std::size_t i = 0; i < program.fragment.uniforms.size(); ++i)
+            if (program.fragment.uniforms[i].name == kSlotNames[s]) {
+                program.fragmentSlots[s] = &program.fragment.uniforms[i];
+                fragmentBuiltIn[i] = 1;
+            }
     }
-    for (const shader::UniformField& f : program.fragment.uniforms) {
+    for (std::size_t i = 0; i < program.fragment.uniforms.size(); ++i) {
+        const shader::UniformField& f = program.fragment.uniforms[i];
         if (f.name.rfind("light", 0) != 0) continue;
         std::size_t end = 5;
         while (end < f.name.size() && std::isdigit(static_cast<unsigned char>(f.name[end]))) ++end;
@@ -88,8 +97,18 @@ void Renderer::buildLayouts(Program& program) {
         const std::size_t index = std::stoul(f.name.substr(5, end - 5));
         if (program.lightSlots.size() <= index) program.lightSlots.resize(index + 1);
         for (int field = 0; field < kLightFieldCount; ++field)
-            if (f.name.compare(end, std::string::npos, kLightFieldNames[field]) == 0) program.lightSlots[index][field] = &f;
+            if (f.name.compare(end, std::string::npos, kLightFieldNames[field]) == 0) {
+                program.lightSlots[index][field] = &f;
+                fragmentBuiltIn[i] = 1;
+            }
     }
+    for (std::size_t i = 0; i < program.vertex.uniforms.size(); ++i)
+        if (!vertexBuiltIn[i] || program.vertex.uniforms[i].shadowLightId != shader::kNoShadowLight)
+            program.vertexNodeUniforms.push_back(&program.vertex.uniforms[i]);
+    for (std::size_t i = 0; i < program.fragment.uniforms.size(); ++i)
+        if (!fragmentBuiltIn[i] || program.fragment.uniforms[i].shadowLightId != shader::kNoShadowLight)
+            program.fragmentNodeUniforms.push_back(&program.fragment.uniforms[i]);
+    program.hasDiscard = program.fragment.wgsl.code.find("discard") != std::string::npos;
     // FM3: what the stage modules alone decide about a draw of this program, resolved once here beside the
     // slots above. A program is immutable once built, so every draw of every pass of every frame reads these
     // instead of scanning the bindings again (perDrawFragment and its siblings).
@@ -292,8 +311,9 @@ const shader::StageModule* Renderer::prepassFragment(Program& program) {
         }
         auto& f = source.fragment;
         if (!f.diagnostics().empty()) return nullptr;
+        if (variant.alphaToCoverage && source.alpha == shader::kInvalid) return nullptr;
         const std::size_t varyings = f.varyings().size();
-        keepDiscardsOnly(f);
+        keepDiscardsOnly(f, variant.alphaToCoverage ? source.alpha : shader::kInvalid);
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         shader::positionalGraphTextures(*module);
@@ -345,9 +365,14 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     waste::debugAdd(waste::counters().programBuilds);  // PRD-876 Phase 1: the depth pass's own build
     std::string canonical;
     std::vector<std::string> serials;
-    if (auto stages = equalStages(key, kind.nodes, canonical, serials)) return add(key, std::move(stages->first), std::move(stages->second));
+    if (auto stages = equalStages(key, kind.nodes, canonical, serials)) {
+        Program& program = add(key, std::move(stages->first), std::move(stages->second));
+        program.variant = kind;
+        return program;
+    }
     const auto built = [&](shader::StageModule vertex, shader::StageModule fragment) -> Program& {
         Program& program = add(key, std::move(vertex), std::move(fragment));
+        program.variant = kind;
         rememberEqual(program, std::move(canonical), std::move(serials));
         return program;
     };

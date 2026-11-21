@@ -378,6 +378,55 @@ describe("uniform sync cost", () => {
     expect(ran).toEqual(["fog", "particle"]);
     expect(asked).toEqual(["scene", "quad", [5]]);
   });
+
+  it("scopes unwatched object scans on compute dispatches to the objects the kernel reads", () => {
+    const pushed: number[][] = [];
+    const asked: { kernels?: readonly number[]; len: number }[] = [];
+    const matrixUniform = (m: { elements: number[] }) => ({ m });
+    const mA = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
+    const mB = { elements: [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1] };
+    const uA = { elements: mA.elements };
+    const uB = { elements: mB.elements };
+    let readsMatrixB = false;
+    const live = liveUniforms<IFakeNode>(
+      (v) => matrixUniform(v as { elements: number[] }) as IFakeNode,
+      (_node, lanes) => pushed.push([...lanes]),
+      undefined,
+      (frame, hooked) => {
+        if (hooked.length > 0) asked.push({ kernels: frame.kernels, len: hooked.length });
+        return readsMatrixB ? [0, 1] : [1];
+      },
+    );
+    live.uniform(uA);
+    live.uniform(uB);
+    live.sync({ scene: "scene", frameId: 1 });
+    expect(pushed).toHaveLength(2);
+    pushed.length = 0;
+    asked.length = 0;
+
+    // On compute dispatches, only the selected scanned uniform (`uB`, index 1) is inspected.
+    uA.elements[12] = 99;
+    uB.elements[12] = 10;
+    live.sync({ frameId: 2, kernels: [11] });
+    expect(pushed).toEqual([uB.elements]);
+    expect(asked).toEqual([{ kernels: [11], len: 2 }]);
+    pushed.length = 0;
+
+    // Adding a third scanned object invalidates objectNodes and delivers its updates on full scene render.
+    const uC = { elements: [3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 3, 0, 0, 0, 0, 1] };
+    live.uniform(uC);
+    readsMatrixB = true;
+    uB.elements[12] = 20;
+    live.sync({ frameId: 3, kernels: [11] });
+    expect(asked.at(-1)).toEqual({ kernels: [11], len: 3 });
+    expect(pushed).toEqual([uC.elements, uA.elements, uB.elements]);
+    pushed.length = 0;
+
+    // Full scene render still scans all object uniforms including uC if mutated.
+    uC.elements[12] = 33;
+    live.sync({ scene: "scene", frameId: 4 });
+    expect(pushed).toEqual([uC.elements]);
+  });
 });
 
 afterEach(() => {

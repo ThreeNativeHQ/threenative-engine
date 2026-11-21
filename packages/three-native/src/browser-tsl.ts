@@ -883,7 +883,10 @@ export function defineTsl(
   };
   const setUniforms = runtime.setUniforms?.bind(runtime);
   const engineReads = runtime.reads?.bind(runtime);
-  const hookIds: number[] = [];
+  const readsCache = new WeakMap<
+    readonly object[],
+    { ids: number[]; kernelCache?: Map<string, ArrayLike<number> | undefined> }
+  >();
   const live = liveUniforms(
     matrixUniform,
     (node, lanes) => runtime.setUniform(node[TSL_NODE], lanes),
@@ -895,17 +898,39 @@ export function defineTsl(
           lanes,
         )),
     // A scene's render runs every hook (its fog, background and lights read uniforms no mesh names); a draw of
-    // a mesh (a post quad) or a dispatch runs the hooks its graphs read, which the engine answers (PRD-878).
+    // a mesh (a post quad) or a dispatch runs the hooks and scanned objects its graphs read, which the engine answers (PRD-878).
     engineReads &&
       ((frame, hooked) => {
         const root = frame.scene as { isScene?: unknown } | null | undefined;
         if (frame.kernels === undefined && (root == null || root.isScene === true))
           return undefined;
-        for (let i = hookIds.length; i < hooked.length; i += 1)
-          hookIds.push((hooked[i] as ITslNode)[TSL_NODE]);
         const ref = frame.kernels === undefined ? engineRef(root as object) : undefined;
         if (frame.kernels === undefined && ref === undefined) return undefined;
-        return engineReads(ref, frame.kernels ?? [], hookIds);
+        let entry = readsCache.get(hooked);
+        if (entry === undefined) {
+          entry = { ids: [] };
+          readsCache.set(hooked, entry);
+        }
+        if (entry.ids.length < hooked.length) {
+          for (let i = entry.ids.length; i < hooked.length; i += 1)
+            entry.ids.push((hooked[i] as ITslNode)[TSL_NODE]);
+          // Newly registered uniforms in the same array invalidate prior kernel read selections.
+          entry.kernelCache?.clear();
+        }
+        const kernels = frame.kernels;
+        if (kernels !== undefined) {
+          const kernelKey = kernels.length === 1 ? String(kernels[0]) : kernels.join(",");
+          let cache = entry.kernelCache;
+          if (cache === undefined) {
+            cache = new Map();
+            entry.kernelCache = cache;
+          }
+          if (cache.has(kernelKey)) return cache.get(kernelKey);
+          const picked = engineReads(undefined, kernels, entry.ids);
+          cache.set(kernelKey, picked);
+          return picked;
+        }
+        return engineReads(ref, [], entry.ids);
       }),
   );
   exports.uniform = booleanUniforms(live.uniform, (scalar) =>
