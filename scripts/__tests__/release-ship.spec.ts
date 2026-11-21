@@ -10,6 +10,7 @@ import {
   checkReleaseVersion,
   nextStep,
   parseNpmVersions,
+  pollInterval,
   runShip,
   ship,
 } from "../release-ship.js";
@@ -617,3 +618,14 @@ function stateOf(
     tagRun: "none",
   };
 }
+
+// PRD-903: a flat 60 s poll lost about half a minute per wait; a long wait still respects the
+// GITHUB_TOKEN's 1,000 calls an hour.
+describe("the ship's poll interval", () => {
+  it("polls every 15 s for ten minutes, then once a minute", () => {
+    expect(pollInterval(0)).toBe(15_000);
+    expect(pollInterval(9 * 60_000)).toBe(15_000);
+    expect(pollInterval(10 * 60_000)).toBe(60_000);
+    expect(pollInterval(120 * 60_000)).toBe(60_000);
+  });
+});

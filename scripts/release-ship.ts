@@ -452,18 +452,28 @@ function describeStep(
   }
 }
 
+/**
+ * PRD-903. A flat 60 s poll lost about half a minute on each of the ship's three waits. The job's
+ * `GITHUB_TOKEN` allows 1,000 API calls an hour and one state read makes about six, so the poll is
+ * fast only while a short wait is likely, then falls back to once a minute for a long tag run.
+ */
+export function pollInterval(elapsedMs: number): number {
+  return elapsedMs < 10 * 60_000 ? 15_000 : 60_000;
+}
+
 async function waitFor(
   deps: IShipDeps,
   what: string,
   done: () => boolean,
   timeoutMinutes: number,
 ): Promise<void> {
-  const deadline = Date.now() + timeoutMinutes * 60_000;
+  const started = Date.now();
+  const deadline = started + timeoutMinutes * 60_000;
   while (!done()) {
     if (Date.now() > deadline)
       throw new Error(`TN_SHIP_TIMEOUT: ${what} did not finish in ${timeoutMinutes} minutes.`);
     deps.log(`  waiting for ${what}…`);
-    await deps.sleep(60_000);
+    await deps.sleep(pollInterval(Date.now() - started));
   }
 }
 

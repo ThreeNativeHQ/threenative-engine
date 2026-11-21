@@ -9,6 +9,7 @@ import { PROVE_ARGV } from "../release-ship.js";
 import {
   UPGRADE_PROOF_TEMPLATES,
   assertCleanPackageTree,
+  builtByCaller,
   installableOnRegistry,
   packReleaseSet,
   packedTarballName,
@@ -806,8 +807,27 @@ describe("provisionReleaseArtifacts", () => {
 
   it("keeps a current web engine and still verifies the Gradle wrapper", async () => {
     const { calls, steps: built } = steps(true);
-    await provisionReleaseArtifacts("/repo", built);
+    expect(await provisionReleaseArtifacts("/repo", built)).toBe(false);
     expect(calls.built).toBe(0);
     expect(calls.wrapper).toHaveLength(1);
+  });
+
+  it("reports a rebuilt web engine, so a build made before it counts as stale", async () => {
+    expect(await provisionReleaseArtifacts("/repo", steps(false).steps)).toBe(true);
+  });
+});
+
+// PRD-903: the ship built the same commit four times; the caller now builds it once.
+describe("builtByCaller", () => {
+  const head = "a".repeat(40);
+  it("skips the release build only for the exact HEAD the caller built", () => {
+    expect(builtByCaller({ TN_RELEASE_PREBUILT: head }, head, false)).toBe(true);
+    expect(builtByCaller({ TN_RELEASE_PREBUILT: "b".repeat(40) }, head, false)).toBe(false);
+    expect(builtByCaller({}, head, false)).toBe(false);
+    expect(builtByCaller({ TN_RELEASE_PREBUILT: "" }, "", false)).toBe(false);
+  });
+
+  it("builds again when provisioning rebuilt the web engine after the caller's build", () => {
+    expect(builtByCaller({ TN_RELEASE_PREBUILT: head }, head, true)).toBe(false);
   });
 });
