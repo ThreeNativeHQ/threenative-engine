@@ -190,3 +190,93 @@ it("mints each key with the material the swap draws, not the raw part material",
   expect(asked).toEqual([["boulder", 0, 0]]);
   expect(shared?.mesh.material).toBe(masked);
 });
+
+it("keeps distinct cached LOD surfaces when main and wide roles share a level with different source materials", async () => {
+  const { vi } = await import("vitest");
+  const { CellGpuDress } = await import("../src/world-cell-render-gpu-dress.js");
+  const { WorldGpuScene } = await import("../src/world-gpu-scene.js");
+  const { uniform } = await import("three/tsl");
+  const lodMaterials = new Map<
+    string,
+    { readonly source: MeshBasicMaterial; readonly material: MeshBasicMaterial }
+  >();
+  const source0 = new MeshBasicMaterial();
+  const source2 = new MeshBasicMaterial();
+  const disposer0 = vi.spyOn(source0, "dispose");
+  const disposer2 = vi.spyOn(source2, "dispose");
+  const testAsset = {
+    id: "pine",
+    distances: [0, 26, 64],
+    levels: [
+      [{ geometry: new BoxGeometry(), material: source0, local: new Object3D().matrix }],
+      [
+        {
+          geometry: new BoxGeometry(),
+          material: new MeshBasicMaterial(),
+          local: new Object3D().matrix,
+        },
+      ],
+      [{ geometry: new BoxGeometry(), material: source2, local: new Object3D().matrix }],
+    ],
+  } as unknown as IAssetState;
+  const gpuScene = new WorldGpuScene();
+  const dress = new CellGpuDress({
+    add: () => undefined,
+    asset: () => testAsset,
+    camera: () => undefined,
+    canonical: (id) => id,
+    carryPrewarm: () => undefined,
+    isBundleHome: () => false,
+    renderer: () => undefined,
+    root: () => new Object3D().matrixWorld,
+    shared: () => new Map(),
+    retired: () => new Map(),
+    resident: () => new Map(),
+    gpuScene: () => gpuScene,
+    lodMaterials: () => lodMaterials,
+    lodDistanceBias: () => uniform(1) as never,
+    lodHysteresis: () => 0.15,
+    lodTransition: () => "temporal",
+    lodSpatial: () => false,
+    receiveShadow: () => true,
+    preserveAuthoredParts: () => false,
+    freshCount: () => 0,
+    extentBounds: () => new Box3(),
+    visibleSquares: () => new Set(),
+    freshAllowance: () => 4,
+    attach: () => undefined,
+    bumpBundle: () => undefined,
+    bundleIn: () => undefined,
+    bundleOut: () => undefined,
+    shardOf: () => ({}) as never,
+    shadowFloorOf: () => 0,
+    shadowKeyFor: () => undefined,
+  });
+  const mainEntry = {
+    asset: "pine",
+    level: 0,
+    part: 0,
+    batch: { geometry: new BoxGeometry(), material: source0 },
+  } as unknown as import("../src/world-cell-data.js").ICellBatch;
+  const mainA = dress.shapeFor(mainEntry, "main", 0).material;
+  const wideA = dress.shapeFor(mainEntry, "wide", 0).material;
+  const mainB = dress.shapeFor(mainEntry, "main", 0).material;
+  const wideB = dress.shapeFor(mainEntry, "wide", 0).material;
+  expect(mainA).not.toBe(wideA);
+  expect(mainB).toBe(mainA);
+  expect(wideB).toBe(wideA);
+  expect(lodMaterials.size).toBe(2);
+  expect(disposer0).not.toHaveBeenCalled();
+  expect(disposer2).not.toHaveBeenCalled();
+  // Reloading the asset's own source material still disposes and replaces its cached LOD surface.
+  const reloadedSource = new MeshBasicMaterial();
+  const oldLodSpy = vi.spyOn(mainA, "dispose");
+  const reloaded = dress.lodSurface("pine", 0, 0, reloadedSource);
+  expect(reloaded).not.toBe(mainA);
+  expect(oldLodSpy).toHaveBeenCalledTimes(1);
+  reloaded.dispose();
+  wideA.dispose();
+  source0.dispose();
+  source2.dispose();
+  reloadedSource.dispose();
+});
