@@ -1641,6 +1641,7 @@ private:
         std::array<uint64_t, 3> srcColorStamp{};
         std::vector<std::array<uint64_t, 3>> srcCustomStamps;
         std::vector<uint32_t> lastIndices;
+        std::vector<uint32_t> lastMembers;  // the survivors of lastIndices, ascending
         uint32_t srcCount = 0;
         uint64_t lastPlanSeen = 0;
     };

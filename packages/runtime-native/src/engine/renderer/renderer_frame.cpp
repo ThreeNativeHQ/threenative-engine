@@ -131,8 +131,19 @@ const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frus
         survivors.emplace_back(i, d);
     }
 
+    auto& cache = culledInstances_[{drawn.key, srcMatrices}];
+    cache.lastPlanSeen = planSerial_;
+    // TR1: the same survivors keep the order they were uploaded in, so a camera turn sends no bytes; only a new
+    // survivor set is sorted front to back again.
+    const bool sameMembers =
+        cache.srcCount == srcCount && cache.lastMembers.size() == survivors.size() &&
+        std::equal(survivors.begin(), survivors.end(), cache.lastMembers.begin(),
+                   [](const std::pair<uint32_t, float>& s, uint32_t member) { return s.first == member; });
     ordered.resize(survivors.size());
-    if (survivors.size() > 16 && std::isfinite(minDepth) && std::isfinite(maxDepth) && maxDepth > minDepth + 1e-3f) {
+    if (sameMembers) {
+        ordered = cache.lastIndices;
+    } else if (survivors.size() > 16 && std::isfinite(minDepth) && std::isfinite(maxDepth) &&
+               maxDepth > minDepth + 1e-3f) {
         std::array<uint32_t, 16> counts{};
         const float invSpan = 16.0f / (maxDepth - minDepth);
         for (const auto& [origIdx, d] : survivors) {
@@ -152,8 +163,6 @@ const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frus
 
     const auto matStamp = storeStampOf(srcMatrices);
     const auto colStamp = storeStampOf(srcColors);
-    auto& cache = culledInstances_[{drawn.key, srcMatrices}];
-    cache.lastPlanSeen = planSerial_;
     bool changed = cache.srcCount != srcCount || cache.srcMatrixStamp != matStamp || cache.srcColorStamp != colStamp ||
                    cache.lastIndices != ordered || cache.customStores.size() != customSources.size() ||
                    cache.srcCustomStamps.size() != customSources.size();
@@ -209,6 +218,8 @@ const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frus
         cache.srcMatrixStamp = matStamp;
         cache.srcColorStamp = colStamp;
         cache.lastIndices = ordered;
+        cache.lastMembers.resize(survivors.size());
+        for (std::size_t k = 0; k < survivors.size(); ++k) cache.lastMembers[k] = survivors[k].first;
     }
 
     DrawItem& culled = job.culledMainItems.emplace_back(drawn);
