@@ -24,7 +24,9 @@
 #include "engine/scene/lights.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
+#include "engine/scene/geometries.h"
 #include "engine/scene/projected_cull.h"
+#include "engine/renderer/lod/instanced_lod.h"
 
 #include <algorithm>
 #include <fstream>
@@ -4422,6 +4424,289 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
+void instanced_lod_partial_partition() {
+    using namespace tn::engine;
+    auto lod0 = makeBoxGeometry(); // 12 tris
+    auto lod1 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod1->setAttribute(entry.first, entry.second);
+    lod1->setIndexFromArray({0, 1, 2, 0, 2, 3}); // 2 tris
+    auto lod2 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod2->setAttribute(entry.first, entry.second);
+    lod2->setIndexFromArray({0, 1, 2}); // 1 tri
+    lod0->computeBoundingSphere();
+
+    auto mat = std::make_shared<Material>(MaterialType::Basic);
+    auto root = std::make_shared<Group>();
+    auto carrier = std::make_shared<InstancedMesh>(lod0, mat, 16);
+    root->add(*carrier);
+    for (uint32_t i = 0; i < 8; ++i) {
+        Matrix4 m;
+        m.makeTranslation(-100.0 + double(i) * 0.25, 0.0, 0.0);
+        carrier->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 8; i < 16; ++i) {
+        Matrix4 m;
+        m.makeTranslation(100.0 + double(i - 8) * 0.25, 0.0, 0.0);
+        carrier->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 0; i < 16; ++i)
+        carrier->setColorAt(i, Color(double(i) / 16.0, 0.5, 0.25));
+
+    tn::engine::lod::InstancedLodState state;
+    state.levelCount = 3;
+    state.distances = {0.0, 40.0, 140.0};
+    state.local = *lod0->boundingSphere;
+    state.states.assign(16, 0);
+    state.partitionOf.resize(16);
+    const std::array<std::shared_ptr<BufferGeometry>, 3> geoms = {lod0, lod1, lod2};
+    for (uint32_t i = 0; i < 16; ++i) state.partitionOf[i] = i / 4; // 4 partitions of 4 instances each
+    for (uint32_t p = 0; p < 4; ++p) {
+        for (std::size_t l = 0; l < 3; ++l) {
+            auto child = std::make_shared<InstancedMesh>(geoms[l], mat, 4);
+            child->count = 0;
+            child->setCastShadow(true);
+            carrier->add(*child);
+            state.children.push_back(child);
+        }
+    }
+    root->updateMatrixWorld(true);
+
+    struct ChildSnap {
+        uint32_t matrixVer, colorVer, count;
+        uint64_t rev;
+    };
+    auto snapshot = [&]() {
+        std::vector<ChildSnap> out;
+        for (const auto& c : state.children) {
+            out.push_back({c->instanceMatrix->version(),
+                           c->instanceColor ? c->instanceColor->version() : 0u,
+                           c->count,
+                           c->revision()});
+        }
+        return out;
+    };
+
+    PerspectiveCamera cam(60, 1, 0.1, 1000);
+    cam.position.set(-100, 0, 10);
+    cam.updateMatrixWorld();
+    double tri = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 104.0); // 8*12 + 8*1
+    const auto s1 = snapshot();
+
+    // Camera moves so ONLY partitions 0..1 transition LOD0->LOD1; partitions 2..3 stay at LOD2.
+    cam.position.set(-100, 0, 60);
+    cam.updateMatrixWorld();
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 24.0); // 8*2 + 8*1
+    const auto s2 = snapshot();
+    for (std::size_t c = 6; c < 12; ++c) {
+        CHECK(s2[c].matrixVer == s1[c].matrixVer);
+        CHECK(s2[c].colorVer == s1[c].colorVer);
+        CHECK(s2[c].rev == s1[c].rev);
+    }
+    CHECK(s2[1].matrixVer > s1[1].matrixVer);
+    CHECK(s2[4].matrixVer > s1[4].matrixVer);
+
+    // In-place matrix mutation in partition 0 ONLY (no setNeedsUpdate) -> only partition 0 bumps.
+    Matrix4 moved0;
+    moved0.makeTranslation(-100.0, 2.0, 0.0);
+    carrier->setMatrixAt(0, moved0);
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 24.0);
+    const auto s3 = snapshot();
+    CHECK(s3[1].matrixVer > s2[1].matrixVer);
+    for (std::size_t c = 3; c < 12; ++c) {
+        CHECK(s3[c].matrixVer == s2[c].matrixVer);
+        CHECK(s3[c].colorVer == s2[c].colorVer);
+        CHECK(s3[c].rev == s2[c].rev);
+    }
+
+    // Moving meshWorld shifts all world spheres: partitions 0..1 move to x=+100 -> dist ~209 -> LOD2.
+    root->position.set(200, 0, 0);
+    root->updateMatrixWorld(true);
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 16.0);
+    for (const auto& c : state.children) CHECK(c->matrixWorld.elements[12] == 200.0);
+
+    // Baked chainErrors mode: partial partition transition leaves distant partitions untouched.
+    tn::engine::lod::InstancedLodState cstate;
+    cstate.levelCount = 2;
+    cstate.chainErrors = std::vector<double>{0.0, 0.25};
+    cstate.budget = 4.0;
+    cstate.hysteresis = 0.15;
+    cstate.local = *lod0->boundingSphere;
+    cstate.states.assign(16, 0);
+    cstate.partitionOf = state.partitionOf;
+    auto cmesh = std::make_shared<InstancedMesh>(lod0, mat, 16);
+    for (uint32_t i = 0; i < 8; ++i) {
+        Matrix4 m;
+        m.makeTranslation(-100.0 + double(i) * 0.25, 0.0, 0.0);
+        cmesh->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 8; i < 16; ++i) {
+        Matrix4 m;
+        m.makeTranslation(200.0 + double(i - 8) * 0.25, 0.0, -300.0);
+        cmesh->setMatrixAt(i, m);
+    }
+    for (uint32_t p = 0; p < 4; ++p) {
+        for (std::size_t l = 0; l < 2; ++l) {
+            auto child = std::make_shared<InstancedMesh>(geoms[l], mat, 4);
+            child->count = 0;
+            cmesh->add(*child);
+            cstate.children.push_back(child);
+        }
+    }
+    cam.position.set(-100, 0, 2);
+    cam.updateMatrixWorld();
+    double ct1 = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, 1080, 1.0, ct1));
+    CHECK(ct1 > 16.0);
+    std::vector<uint32_t> cver1;
+    for (const auto& c : cstate.children) cver1.push_back(c->instanceMatrix->version());
+    cam.position.set(-100, 0, 80);
+    cam.updateMatrixWorld();
+    double ct2 = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, 1080, 1.0, ct2));
+    CHECK(ct2 < ct1);
+    for (std::size_t c = 4; c < 8; ++c) CHECK(cstate.children[c]->instanceMatrix->version() == cver1[c]);
+    // Invalid viewport refuses without modifying state or children.
+    double ctBad = 0;
+    CHECK(!tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, -1.0, 1.0, ctBad));
+}
+
+void ground_snap_apply() {
+    using namespace tn::engine;
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_value_t out{};
+
+    // Build parent (rotated + scaled) -> group -> model -> foot(Bone) + head(Bone) + mesh(SkinnedMesh).
+    tn_handle_t world{}, group{}, model{}, foot{}, head{}, sibling{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &world, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &group, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &model, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &foot, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &head, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &sibling, &d.value) == TN_OK);
+
+    auto addChild = [&](tn_handle_t p, tn_handle_t c) {
+        const tn_value_t arg = ref(c);
+        CHECK(tn_invoke(p, "add", &arg, 1, &out, &d.value) == TN_OK);
+    };
+    addChild(world, group);
+    addChild(group, model);
+    addChild(group, sibling);
+    addChild(model, foot);
+    addChild(foot, head);
+
+    const tn_value_t wy = num(2.0), wrot = num(0.4), wsx = num(1.5), wsy = num(1.2);
+    CHECK(tn_set(world, "position.y", &wy, &d.value) == TN_OK);
+    CHECK(tn_set(world, "rotation.y", &wrot, &d.value) == TN_OK);
+    CHECK(tn_set(world, "scale.x", &wsx, &d.value) == TN_OK);
+    CHECK(tn_set(world, "scale.y", &wsy, &d.value) == TN_OK);
+
+    const tn_value_t fy = num(0.5), hy = num(1.5), sibY = num(0.8);
+    CHECK(tn_set(foot, "position.y", &fy, &d.value) == TN_OK);
+    CHECK(tn_set(head, "position.y", &hy, &d.value) == TN_OK);
+    CHECK(tn_set(sibling, "position.y", &sibY, &d.value) == TN_OK);
+
+    // Also attach a SkinnedMesh with AttachedBindMode under model to verify bindMatrixInverse updates.
+    auto modelPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(model)->ptr);
+    auto footPtr = std::static_pointer_cast<Bone>(tn::abi::objectOf(foot)->ptr);
+    auto headPtr = std::static_pointer_cast<Bone>(tn::abi::objectOf(head)->ptr);
+    auto groupPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(group)->ptr);
+    auto siblingPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(sibling)->ptr);
+    auto worldPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(world)->ptr);
+    auto* modelObj = modelPtr.get();
+    auto* footObj = footPtr.get();
+    auto* headObj = headPtr.get();
+    auto* groupObj = groupPtr.get();
+    auto* siblingObj = siblingPtr.get();
+    auto* worldObj = worldPtr.get();
+    auto geom = makeBoxGeometry();
+    auto mat = std::make_shared<Material>(MaterialType::Standard);
+    auto skinned = std::make_shared<SkinnedMesh>(geom, mat);
+    skinned->attached = true;
+    modelObj->add(*skinned);
+    auto skeleton = std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{footPtr, headPtr});
+    skinned->bind(skeleton);
+
+    const tn_value_t objects[] = {ref(foot), ref(head)};
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 2;
+    list.values = objects;
+    const double radiiValues[] = {0.25, 0.5};
+    tn_value_t radii{};
+    radii.kind = TN_VALUE_NUMBERS;
+    radii.count = 2;
+    radii.numbers = radiiValues;
+    const tn_value_t attachArgs[] = {list, radii};
+    CHECK(tn_invoke(model, "__tnSphereBoundsAttach", attachArgs, 2, &out, &d.value) == TN_OK);
+
+    // 1. enabled = false measures clearance without moving group.
+    const double biasY = -0.1;
+    // Initial lowest = worldY (2.0) + footLocalY (0.5) * wsy (1.2) - radius (0.25) + biasY (-0.1) = 2.25
+    const tn_value_t callDisabled[] = {ref(group), num(0.0), num(1.0 / 30.0), num(0.5), num(0), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callDisabled, 6, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBER && std::abs(out.number - 2.25) < 1e-9);
+    CHECK(std::abs(groupObj->position.y) < 1e-12);
+
+    // 2. maxRate clamps downward correction: desired = -2.25, maxRate = 0.5, dt = 0.1 -> correction = -0.05.
+    const tn_value_t callClamped[] = {ref(group), num(0.0), num(0.1), num(0.5), num(1), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callClamped, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number - 2.20) < 1e-9);
+    // world scale Y is 1.2 -> local group.position.y changed by -0.05 / 1.2
+    CHECK(std::abs(groupObj->position.y - (-0.05 / 1.2)) < 1e-9);
+
+    // Verify all descendant world matrices + SkinnedMesh bindMatrixInverse match a forced fresh walk to 1e-9.
+    const std::array<double, 16> footWorldAfter = footObj->matrixWorld.elements;
+    const std::array<double, 16> headWorldAfter = headObj->matrixWorld.elements;
+    const std::array<double, 16> siblingWorldAfter = siblingObj->matrixWorld.elements;
+    const std::array<double, 16> skinWorldAfter = skinned->matrixWorld.elements;
+    const std::array<double, 16> skinBindInvAfter = skinned->bindMatrixInverse.elements;
+    const uint64_t footRevAfter = footObj->revision();
+    const uint64_t headRevAfter = headObj->revision();
+
+    // Subsequent MatrixWorldPass (updateMatrixWorldVisible(false, true)) must perform ZERO redundant recomposes
+    // and keep Skeleton::poseVersion unchanged from pure world grounding moves.
+    const uint64_t poseVerAfterSnap = skeleton->poseVersion();
+    worldObj->updateMatrixWorldVisible(false, true);
+    CHECK(footObj->revision() == footRevAfter);
+    CHECK(headObj->revision() == headRevAfter);
+    CHECK(skeleton->poseVersion() == poseVerAfterSnap);
+
+    // Compare against forced full recomposition.
+    worldObj->updateWorldMatrix(true, true, true);
+    for (int i = 0; i < 16; ++i) {
+        CHECK(std::abs(footWorldAfter[i] - footObj->matrixWorld.elements[i]) < 1e-9);
+        CHECK(std::abs(headWorldAfter[i] - headObj->matrixWorld.elements[i]) < 1e-9);
+        CHECK(std::abs(siblingWorldAfter[i] - siblingObj->matrixWorld.elements[i]) < 1e-9);
+        CHECK(std::abs(skinWorldAfter[i] - skinned->matrixWorld.elements[i]) < 1e-9);
+        CHECK(std::abs(skinBindInvAfter[i] - skinned->bindMatrixInverse.elements[i]) < 1e-9);
+    }
+
+    // 3. Upward snap when pose sits below surfaceY ignores downward maxRate clamp (immediate raise).
+    const tn_value_t callUp[] = {ref(group), num(5.0), num(0.1), num(0.5), num(1), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callUp, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+
+    // 4. Non-carrying group falls back to re-measuring model clearance without moving model.
+    tn_handle_t detached{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &detached, &d.value) == TN_OK);
+    auto detachedPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(detached)->ptr);
+    auto* detachedObj = detachedPtr.get();
+    const tn_value_t callNonCarrier[] = {ref(detached), num(2.0), num(0.1), num(-1.0), num(1), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callNonCarrier, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number - 3.0) < 1e-9); // model remained at surface 5.0
+    CHECK(std::abs(detachedObj->position.y - (-3.0)) < 1e-9);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"argument_position", argument_position}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"rig_lane_follows_morph_set", rig_lane_follows_morph_set}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
@@ -4429,4 +4714,6 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_band_animation", projected_cull_band_animation},
              {"projected_cull_multiple_views", projected_cull_multiple_views},
-             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})
+             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore},
+             {"instanced_lod_partial_partition", instanced_lod_partial_partition},
+             {"ground_snap_apply", ground_snap_apply})

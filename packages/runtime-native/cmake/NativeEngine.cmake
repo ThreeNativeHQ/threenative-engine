@@ -633,7 +633,8 @@ tn_native_engine_target(tn_engine_batch)
 target_link_libraries(tn_engine_batch PUBLIC tn_engine_lod)
 target_include_directories(tn_engine_batch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-instanced-batch-test tests/native-engine/projection/instanced_batch_test.cpp
-    native_engine_batching_eligibility=batching_eligibility)
+    native_engine_batching_eligibility=batching_eligibility
+    native_engine_partial_partition_update=partial_partition_update)
 target_link_libraries(tn-native-engine-instanced-batch-test PRIVATE tn_engine_batch)
 target_include_directories(tn-native-engine-instanced-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection)
 if(TN_PNPM_EXECUTABLE)

@@ -152,12 +152,15 @@ describe("stress dashboard: trend series", () => {
 });
 
 describe("stress dashboard: scene kinds", () => {
-  it("gives the PRD-898 systems layers their own lane, apart from real and play", () => {
+  it("gives the PRD-898 systems layers and extended layers their own lanes, apart from real and play", () => {
     const kind = (variant: string) => sceneKindOf({ variant });
     expect(kind("stress")).toBe("real");
     expect(kind("stress&play")).toBe("play");
     expect(kind("stress&systems")).toBe("systems");
+    expect(kind("stress&extended")).toBe("extended");
     expect(kind("stress&play&systems&uncapped")).toBe("play+systems");
+    expect(kind("stress&systems&extended")).toBe("systems+extended");
+    expect(kind("stress&play&systems&extended&uncapped")).toBe("play+systems+extended");
     expect(kind("stress&systems&holdout=forest")).toBe("holdout=forest");
   });
 });
