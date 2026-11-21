@@ -24,7 +24,9 @@
 #include "engine/scene/lights.h"
 #include "engine/scene/camera.h"
 #include "engine/scene/geometry.h"
+#include "engine/scene/geometries.h"
 #include "engine/scene/projected_cull.h"
+#include "engine/renderer/lod/instanced_lod.h"
 
 #include <algorithm>
 #include <fstream>
@@ -4422,6 +4424,157 @@ void binding_fn() {
     CHECK(watch.expired() && !copy);
 }
 
+void instanced_lod_partial_partition() {
+    using namespace tn::engine;
+    auto lod0 = makeBoxGeometry(); // 12 tris
+    auto lod1 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod1->setAttribute(entry.first, entry.second);
+    lod1->setIndexFromArray({0, 1, 2, 0, 2, 3}); // 2 tris
+    auto lod2 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod2->setAttribute(entry.first, entry.second);
+    lod2->setIndexFromArray({0, 1, 2}); // 1 tri
+    lod0->computeBoundingSphere();
+
+    auto mat = std::make_shared<Material>(MaterialType::Basic);
+    auto root = std::make_shared<Group>();
+    auto carrier = std::make_shared<InstancedMesh>(lod0, mat, 16);
+    root->add(*carrier);
+    for (uint32_t i = 0; i < 8; ++i) {
+        Matrix4 m;
+        m.makeTranslation(-100.0 + double(i) * 0.25, 0.0, 0.0);
+        carrier->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 8; i < 16; ++i) {
+        Matrix4 m;
+        m.makeTranslation(100.0 + double(i - 8) * 0.25, 0.0, 0.0);
+        carrier->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 0; i < 16; ++i)
+        carrier->setColorAt(i, Color(double(i) / 16.0, 0.5, 0.25));
+
+    tn::engine::lod::InstancedLodState state;
+    state.levelCount = 3;
+    state.distances = {0.0, 40.0, 140.0};
+    state.local = *lod0->boundingSphere;
+    state.states.assign(16, 0);
+    state.partitionOf.resize(16);
+    const std::array<std::shared_ptr<BufferGeometry>, 3> geoms = {lod0, lod1, lod2};
+    for (uint32_t i = 0; i < 16; ++i) state.partitionOf[i] = i / 4; // 4 partitions of 4 instances each
+    for (uint32_t p = 0; p < 4; ++p) {
+        for (std::size_t l = 0; l < 3; ++l) {
+            auto child = std::make_shared<InstancedMesh>(geoms[l], mat, 4);
+            child->count = 0;
+            child->setCastShadow(true);
+            carrier->add(*child);
+            state.children.push_back(child);
+        }
+    }
+    root->updateMatrixWorld(true);
+
+    struct ChildSnap {
+        uint32_t matrixVer, colorVer, count;
+        uint64_t rev;
+    };
+    auto snapshot = [&]() {
+        std::vector<ChildSnap> out;
+        for (const auto& c : state.children) {
+            out.push_back({c->instanceMatrix->version(),
+                           c->instanceColor ? c->instanceColor->version() : 0u,
+                           c->count,
+                           c->revision()});
+        }
+        return out;
+    };
+
+    PerspectiveCamera cam(60, 1, 0.1, 1000);
+    cam.position.set(-100, 0, 10);
+    cam.updateMatrixWorld();
+    double tri = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 104.0); // 8*12 + 8*1
+    const auto s1 = snapshot();
+
+    // Camera moves so ONLY partitions 0..1 transition LOD0->LOD1; partitions 2..3 stay at LOD2.
+    cam.position.set(-100, 0, 60);
+    cam.updateMatrixWorld();
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 24.0); // 8*2 + 8*1
+    const auto s2 = snapshot();
+    for (std::size_t c = 6; c < 12; ++c) {
+        CHECK(s2[c].matrixVer == s1[c].matrixVer);
+        CHECK(s2[c].colorVer == s1[c].colorVer);
+        CHECK(s2[c].rev == s1[c].rev);
+    }
+    CHECK(s2[1].matrixVer > s1[1].matrixVer);
+    CHECK(s2[4].matrixVer > s1[4].matrixVer);
+
+    // In-place matrix mutation in partition 0 ONLY (no setNeedsUpdate) -> only partition 0 bumps.
+    Matrix4 moved0;
+    moved0.makeTranslation(-100.0, 2.0, 0.0);
+    carrier->setMatrixAt(0, moved0);
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 24.0);
+    const auto s3 = snapshot();
+    CHECK(s3[1].matrixVer > s2[1].matrixVer);
+    for (std::size_t c = 3; c < 12; ++c) {
+        CHECK(s3[c].matrixVer == s2[c].matrixVer);
+        CHECK(s3[c].colorVer == s2[c].colorVer);
+        CHECK(s3[c].rev == s2[c].rev);
+    }
+
+    // Moving meshWorld shifts all world spheres: partitions 0..1 move to x=+100 -> dist ~209 -> LOD2.
+    root->position.set(200, 0, 0);
+    root->updateMatrixWorld(true);
+    CHECK(tn::engine::lod::selectInstancedLods(*carrier, state, cam, 1080, 1.0, tri));
+    CHECK(tri == 16.0);
+    for (const auto& c : state.children) CHECK(c->matrixWorld.elements[12] == 200.0);
+
+    // Baked chainErrors mode: partial partition transition leaves distant partitions untouched.
+    tn::engine::lod::InstancedLodState cstate;
+    cstate.levelCount = 2;
+    cstate.chainErrors = std::vector<double>{0.0, 0.25};
+    cstate.budget = 4.0;
+    cstate.hysteresis = 0.15;
+    cstate.local = *lod0->boundingSphere;
+    cstate.states.assign(16, 0);
+    cstate.partitionOf = state.partitionOf;
+    auto cmesh = std::make_shared<InstancedMesh>(lod0, mat, 16);
+    for (uint32_t i = 0; i < 8; ++i) {
+        Matrix4 m;
+        m.makeTranslation(-100.0 + double(i) * 0.25, 0.0, 0.0);
+        cmesh->setMatrixAt(i, m);
+    }
+    for (uint32_t i = 8; i < 16; ++i) {
+        Matrix4 m;
+        m.makeTranslation(200.0 + double(i - 8) * 0.25, 0.0, -300.0);
+        cmesh->setMatrixAt(i, m);
+    }
+    for (uint32_t p = 0; p < 4; ++p) {
+        for (std::size_t l = 0; l < 2; ++l) {
+            auto child = std::make_shared<InstancedMesh>(geoms[l], mat, 4);
+            child->count = 0;
+            cmesh->add(*child);
+            cstate.children.push_back(child);
+        }
+    }
+    cam.position.set(-100, 0, 2);
+    cam.updateMatrixWorld();
+    double ct1 = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, 1080, 1.0, ct1));
+    CHECK(ct1 > 16.0);
+    std::vector<uint32_t> cver1;
+    for (const auto& c : cstate.children) cver1.push_back(c->instanceMatrix->version());
+    cam.position.set(-100, 0, 80);
+    cam.updateMatrixWorld();
+    double ct2 = 0;
+    CHECK(tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, 1080, 1.0, ct2));
+    CHECK(ct2 < ct1);
+    for (std::size_t c = 4; c < 8; ++c) CHECK(cstate.children[c]->instanceMatrix->version() == cver1[c]);
+    // Invalid viewport refuses without modifying state or children.
+    double ctBad = 0;
+    CHECK(!tn::engine::lod::selectInstancedLods(*cmesh, cstate, cam, -1.0, 1.0, ctBad));
+}
+
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"argument_position", argument_position}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"rig_lane_follows_morph_set", rig_lane_follows_morph_set}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
@@ -4429,4 +4582,5 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"projected_cull_list", projected_cull_list}, {"projected_cull_bands", projected_cull_bands},
              {"projected_cull_band_animation", projected_cull_band_animation},
              {"projected_cull_multiple_views", projected_cull_multiple_views},
-             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore})
+             {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore},
+             {"instanced_lod_partial_partition", instanced_lod_partial_partition})
