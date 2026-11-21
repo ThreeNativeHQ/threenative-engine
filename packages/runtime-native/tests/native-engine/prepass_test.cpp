@@ -23,6 +23,8 @@ struct Leaf {
 void eligibleDraws() {
     Leaf leaf;
     CHECK(prepassEligible(leaf.item));
+    CHECK(prepassMaskedEligible(leaf.item));
+    CHECK(!prepassSolidEligible(leaf.item));
     Leaf transparent;  // blended over what is behind it: refused
     transparent.item.transparent = true;
     CHECK(!prepassEligible(transparent.item));
@@ -38,9 +40,35 @@ void eligibleDraws() {
     Leaf hashed;
     hashed.material.alphaHash = true;
     CHECK(!prepassEligible(hashed.item));
-    Leaf solid;  // nothing cuts it: early depth already works
+    Leaf solid;  // plain untextured single solid skips prepass to avoid double pipeline compiles and draws
+    solid.item.kind = MaterialKind::Standard;
     solid.material.alphaTest = 0;
+    CHECK(!prepassSolidEligible(solid.item));
     CHECK(!prepassEligible(solid.item));
+    Leaf heavySolid;  // textured / node-shaded / instanced lit solid runs first in prepass so terrain/rocks cull foliage
+    heavySolid.item.kind = MaterialKind::Standard;
+    heavySolid.material.alphaTest = 0;
+    shader::MaterialNodes solidNodes;
+    solidNodes.colorNode = shader::graph::vec4({shader::graph::float_(1), shader::graph::float_(1),
+                                              shader::graph::float_(1), shader::graph::float_(1)});
+    heavySolid.item.nodes = &solidNodes;
+    CHECK(prepassEligible(heavySolid.item));
+    CHECK(prepassSolidEligible(heavySolid.item));
+    CHECK(!prepassMaskedEligible(heavySolid.item));
+    Leaf basicSolid;
+    basicSolid.item.kind = MaterialKind::Basic;
+    basicSolid.material.alphaTest = 0;
+    CHECK(!prepassSolidEligible(basicSolid.item));
+    CHECK(!prepassEligible(basicSolid.item));
+    Leaf customFragment;
+    customFragment.item.kind = MaterialKind::Standard;
+    customFragment.material.alphaTest = 0;
+    shader::MaterialNodes customNodes;
+    customNodes.fragmentNode = shader::graph::vec4({shader::graph::float_(1), shader::graph::float_(0),
+                                                    shader::graph::float_(0), shader::graph::float_(1)});
+    customFragment.item.nodes = &customNodes;
+    CHECK(!prepassSolidEligible(customFragment.item));
+    CHECK(!prepassEligible(customFragment.item));
     Leaf line;
     line.item.topology = WGPUPrimitiveTopology_LineList;
     CHECK(!prepassEligible(line.item));
@@ -113,6 +141,20 @@ void fragments() {
     CHECK(cutoutFragment.wgsl.code.find("discard") != std::string::npos);
     CHECK(cutoutFragment.wgsl.code.find("textureSampleCompare") == std::string::npos);
     CHECK(cutoutFragment.wgsl.code.size() * 3 < shippedCutoutFragment.wgsl.code.size());
+
+    // Solid opaque draw prepass compiles a minimal constant-zero fragment with identical layout.
+    shader::VertexVariant solidVar;
+    solidVar.map = true;
+    auto shippedSolid = shader::buildStandard(shader::StandardMaterial{}, solidVar, lights);
+    auto solidPrepass = shader::buildStandard(shader::StandardMaterial{}, solidVar, lights);
+    keepDiscardsOnly(solidPrepass.fragment);
+    const auto shippedSolidFrag = shader::buildStage(shippedSolid.fragment, 1);
+    const auto solidPrepassFrag = shader::buildStage(solidPrepass.fragment, 1);
+    CHECK(shippedSolidFrag.wgsl.ok() && solidPrepassFrag.wgsl.ok());
+    CHECK(solidPrepassFrag.wgsl.code.find("discard") == std::string::npos);
+    CHECK(solidPrepassFrag.wgsl.code.find("textureSampleCompare") == std::string::npos);
+    CHECK(solidPrepassFrag.wgsl.code.size() * 3 < shippedSolidFrag.wgsl.code.size());
+    CHECK(sameLayout(solidPrepassFrag, shippedSolidFrag));
 }
 
 void modes() {

@@ -3,6 +3,48 @@
 
 namespace tn::engine {
 
+void Renderer::coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& ranges, std::size_t maxWrites,
+                                   std::vector<uint64_t>& gapScratch) {
+    if (ranges.size() <= 1) return;
+    const uint64_t first = ranges.front().first;
+    const uint64_t last = ranges.back().first + ranges.back().second;
+    uint64_t dirtyBytes = 0;
+    for (const auto& range : ranges) dirtyBytes += range.second;
+    if (maxWrites <= 1 || dirtyBytes * 2 >= last - first) {
+        ranges.assign(1, {first, last - first});
+        return;
+    }
+    if (ranges.size() <= maxWrites) return;
+    const std::size_t gapCount = ranges.size() - 1;
+    gapScratch.resize(gapCount);
+    for (std::size_t i = 0; i < gapCount; ++i)
+        gapScratch[i] = ranges[i + 1].first - (ranges[i].first + ranges[i].second);
+    const std::size_t mergesNeeded = ranges.size() - maxWrites;
+    std::nth_element(gapScratch.begin(), gapScratch.begin() + std::ptrdiff_t(mergesNeeded - 1), gapScratch.end());
+    const uint64_t threshold = gapScratch[mergesNeeded - 1];
+    std::size_t strictlySmaller = 0;
+    for (std::size_t i = 0; i < gapCount; ++i) {
+        const uint64_t gap = ranges[i + 1].first - (ranges[i].first + ranges[i].second);
+        if (gap < threshold) ++strictlySmaller;
+    }
+    std::size_t equalBudget = mergesNeeded - strictlySmaller;
+    std::size_t write = 0;
+    for (std::size_t i = 1; i < ranges.size(); ++i) {
+        const uint64_t prevEnd = ranges[write].first + ranges[write].second;
+        const uint64_t gap = ranges[i].first - prevEnd;
+        if (gap < threshold || (gap == threshold && equalBudget > 0)) {
+            if (gap == threshold) --equalBudget;
+            ranges[write].second = (ranges[i].first + ranges[i].second) - ranges[write].first;
+        } else {
+            ranges[++write] = ranges[i];
+        }
+    }
+    ranges.resize(write + 1);
+    uint64_t mergedBytes = 0;
+    for (const auto& range : ranges) mergedBytes += range.second;
+    if (mergedBytes * 2 >= last - first) ranges.assign(1, {first, last - first});
+}
+
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
@@ -121,7 +163,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
-    const bool anyLampShadow = !compilation && std::any_of(lights.direct.begin(), lights.direct.end(), [&](const DirectLight& l) {
+    const bool anyLampShadow = !compilation && !skipShadows_ && std::any_of(lights.direct.begin(), lights.direct.end(), [&](const DirectLight& l) {
         if (!l.shadow || l.kind == DirectLight::Kind::Directional) return false;
         const auto index = std::size_t(&l - lights.direct.data());
         return !virtualShadows_.count(index);
@@ -258,7 +300,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
     // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
     std::map<std::size_t, uint32_t> lampSizes;
-    if (!compilation) {
+    if (!compilation && !skipShadows_) {
         bool anyAutoLamp = false;
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
@@ -362,20 +404,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
-        if (l.shadow)
+        const bool useShadow = !skipShadows_ && l.shadow.has_value();
+        if (useShadow)
             if (const char* refusal = sourceAngleFilterRefusal(*l.shadow)) throw std::runtime_error(refusal);
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
         // A lamp with sourceRadiusShadowFilter reads the soft filter: 'Q' a point light, 'R' a spot light.
-        const char shadowed = l.shadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
+        const char shadowed = useShadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
         // A virtual shadow's kind counts its levels from '0', or from '8' when its source-angle filter is compiled in.
-        lightKinds += virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
-                                               : l.shadow ? shadowed : kind;
-        if (virtualShadows_.count(i)) {
+        lightKinds += useShadow && virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
+                                                           : useShadow ? shadowed : kind;
+        if (useShadow && virtualShadows_.count(i)) {
             ensureVirtualShadowMap(i);
             continue;
         }
-        if (!l.shadow) continue;
+        if (!useShadow) continue;
         std::vector<ShadowMap>& maps = l.shadow->cube ? cubeShadowMaps_ : shadowMaps_;
         if (maps.size() <= i) maps.resize(i + 1);
         ShadowMap& map = maps[i];
@@ -635,8 +678,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
         postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
         postEffects_->reads("roughness"))) || traa_;
-    // PRD-888 (prepass.h): TN_PREPASS draws each masked opaque draw depth-only first, then shades it at depth Equal. The
-    // retained-rows path records no prepass, so it keeps the shipped draws.
+    // PRD-888 (prepass.h): TN_PREPASS draws masked opaque draws and heavy/instanced lit solid draws depth-only first
+    // (solids before masked), then shades them at depth Equal. Pure per-DrawItem eligibility guarantees live
+    // frustum-culled renders match compileAsync pipeline keys identically.
     const bool prepass = !features().stableRows && prepassEnabled();
     // variantOf's inputs that refresh()'s material half does not own (see DepthRowKey).
     const auto depthRowKey = [invariantPosition](const DrawItem& item) {
@@ -874,7 +918,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(block, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
             put(block, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
             put(block, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
-            if (l.shadow) {
+            if (l.shadow && !skipShadows_) {
                 put(block, f, slot[kLightShadowMatrix], l.shadow->matrix);
                 put(block, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
                 put(block, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
@@ -946,7 +990,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
         // changed up to 41 k pixels of the forest's overview where this pair changed none. Both pipelines run the one
         // vertex stage, so the Equal test meets the depth the prepass wrote.
-        const bool equalDraw = prepass && prepassEligible(item) && prepassFragment(program) != nullptr;
+        const bool solidCandidate = prepass && prepassSolidEligible(item);
+        const bool maskedCandidate = prepass && prepassMaskedEligible(item);
+        const bool equalDraw = (solidCandidate || maskedCandidate) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
@@ -1072,6 +1118,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
         plan.back().prepass = prepassPipeline;
+        plan.back().prepassSolid = equalDraw && solidCandidate &&
+                                   program.fragment.wgsl.code.find("discard") == std::string::npos;
     }
 
     if (features().stablePasses && !compilation)
@@ -1151,7 +1199,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
-        if (!lights.direct[i].shadow) continue;
+        if (skipShadows_ || !lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
@@ -2346,14 +2394,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             instancesUploaded = instancesUploaded || instances;
             continue;
         }
-        const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
-        uint64_t dirtyBytes = 0;
-        for (const auto& range : ranges) dirtyBytes += range.second;
-        // Mostly dirty, or many runs: one write over them all. A crowd palette has one run per moved rig, so it may take
-        // one write per rig (PRD-878: 240 walkers, about 76 moved slots a frame on ?stress).
-        if (ranges.size() > (instances ? kMaxWrites : kMaxPaletteWrites) || dirtyBytes * 2 >= last - first) {
-            ranges.assign(1, {first, last - first});
-        }
+        coalesceDirtyRanges(ranges, instances ? kMaxWrites : kMaxPaletteWrites, dirtyGapScratch_);
         storage.uploaded.resize(bytes);
         bool written = true;
         for (const auto& [offset, length] : ranges) {

@@ -251,7 +251,13 @@ Renderer& Renderer::probeCaptureRenderer() {
 Renderer& Renderer::reflectionRenderer(const std::shared_ptr<const void>& owner) {
     std::erase_if(mirrors_, [](const auto& entry) { return entry.second.first.expired(); });
     auto& mirror = mirrors_[owner.get()];
-    if (!mirror.second) mirror = {owner, sibling()};
+    if (!mirror.second) {
+        auto child = sibling();
+        child->skipOutputPass();
+        child->setSampleCount(1);
+        child->setSkipShadows(true);
+        mirror = {owner, std::move(child)};
+    }
     return *mirror.second;
 }
 
@@ -1099,14 +1105,17 @@ void Renderer::encodeFrame(FrameJob& job) {
             bound = nullptr;
             boundIndex = nullptr;
             std::fill(std::begin(boundVertex), std::end(boundVertex), nullptr);
-            if (rows != 2)
-                for (std::size_t k = from; k < to; ++k) {
-                    if (!plan[k].prepass) continue;
-                    Planned depthOnly = plan[k];
-                    depthOnly.pipeline = plan[k].prepass;
-                    encode(bundle, depthOnly, Tally::Extra);
-                    ++lastFrame_.prepassDraws;
+            if (rows != 2) {
+                for (const bool wantSolid : {true, false}) {
+                    for (std::size_t k = from; k < to; ++k) {
+                        if (!plan[k].prepass || plan[k].prepassSolid != wantSolid) continue;
+                        Planned depthOnly = plan[k];
+                        depthOnly.pipeline = plan[k].prepass;
+                        encode(bundle, depthOnly, Tally::Extra);
+                        ++lastFrame_.prepassDraws;
+                    }
                 }
+            }
             if (rows != 1)
                 for (std::size_t k = from; k < to; ++k) encode(bundle, plan[k], Tally::Main);
             WGPURenderBundleDescriptor finish{};

@@ -1187,6 +1187,107 @@ void registerObject3D(ClassBinding& b) {
         }
 
         auto measureLowest = [&]() -> double {
+            bool hasGpuBones = false;
+            for (const auto& weakObj : set.objects) {
+                const auto* obj = weakObj.lock().get();
+                if (obj != nullptr && obj->skipsGpuJointSubtree()) {
+                    hasGpuBones = true;
+                    break;
+                }
+            }
+            if (hasGpuBones) {
+                bool fastOk = true;
+                model.updateWorldMatrix(true, false, false);
+                auto updateNonBoneChildren = [&](auto& selfRef, Object3D& node) -> void {
+                    if (!fastOk) return;
+                    for (Object3D* child : node.children) {
+                        if (child->skipsGpuJointSubtree() || child->type() == "Bone") continue;
+                        if (!child->matrixAutoUpdate || !child->matrixWorldAutoUpdate || child->pivot.has_value()) {
+                            fastOk = false;
+                            return;
+                        }
+                        child->updateWorldMatrix(false, false, false);
+                        selfRef(selfRef, *child);
+                    }
+                };
+                updateNonBoneChildren(updateNonBoneChildren, model);
+                if (fastOk) {
+                    static thread_local std::vector<std::pair<const Object3D*, Matrix4>> cache;
+                    static thread_local std::vector<const Object3D*> chain;
+                    cache.clear();
+                    chain.clear();
+                    const auto findWorld = [&](const Object3D* target, Matrix4& outWorld) -> bool {
+                        chain.clear();
+                        const Object3D* cur = target;
+                        bool reached = false;
+                        while (cur != nullptr) {
+                            bool cached = false;
+                            for (const auto& entry : cache) {
+                                if (entry.first == cur) {
+                                    outWorld = entry.second;
+                                    cached = true;
+                                    break;
+                                }
+                            }
+                            if (cached) {
+                                reached = true;
+                                break;
+                            }
+                            if (cur == &model || (!cur->skipsGpuJointSubtree() && cur->type() != "Bone")) {
+                                bool underModel = (cur == &model);
+                                for (const Object3D* anc = cur->parent; !underModel && anc != nullptr; anc = anc->parent) {
+                                    if (anc == &model) {
+                                        underModel = true;
+                                        break;
+                                    }
+                                }
+                                if (!underModel) return false;
+                                outWorld = cur->matrixWorld;
+                                reached = true;
+                                break;
+                            }
+                            chain.push_back(cur);
+                            cur = cur->parent;
+                        }
+                        if (!reached) return false;
+                        Matrix4 localMat;
+                        Vector3 pos, scl;
+                        Quaternion quat;
+                        for (std::size_t idx = chain.size(); idx-- > 0;) {
+                            const Object3D& n = *chain[idx];
+                            if (!n.matrixAutoUpdate || !n.matrixWorldAutoUpdate || n.pivot.has_value()) return false;
+                            const auto* flags = n.ownTransformTracking();
+                            if (flags && flags[2]) return false;
+                            if (const auto* bone = dynamic_cast<const Bone*>(&n); bone && bone->hasDeferredTransform()) {
+                                const auto& trs = bone->deferredTRSInternal();
+                                pos.set(trs[0], trs[1], trs[2]);
+                                quat.set(trs[3], trs[4], trs[5], trs[6]);
+                                scl.set(trs[7], trs[8], trs[9]);
+                                localMat.compose(pos, quat, scl);
+                            } else {
+                                localMat.compose(n.position, n.quaternion, n.scale);
+                            }
+                            outWorld.multiply(localMat);
+                            cache.emplace_back(&n, outWorld);
+                        }
+                        return true;
+                    };
+                    double minY = std::numeric_limits<double>::infinity();
+                    Matrix4 worldMat;
+                    for (size_t i = 0; i < set.objects.size(); ++i) {
+                        const std::shared_ptr<Object3D> held = set.objects[i].lock();
+                        if (!held) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+                        if (!findWorld(held.get(), worldMat)) {
+                            fastOk = false;
+                            break;
+                        }
+                        const double cy = worldMat.elements[13];
+                        const double r = set.radii[i];
+                        if (cy - r < minY) minY = cy - r;
+                    }
+                    if (fastOk) return minY + biasY;
+                }
+            }
             model.updateWorldMatrix(true, true, false);
             double minY = std::numeric_limits<double>::infinity();
             for (size_t i = 0; i < set.objects.size(); ++i) {

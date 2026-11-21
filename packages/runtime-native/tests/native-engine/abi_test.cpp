@@ -4704,6 +4704,39 @@ void ground_snap_apply() {
     CHECK(std::abs(out.number - 3.0) < 1e-9); // model remained at surface 5.0
     CHECK(std::abs(detachedObj->position.y - (-3.0)) < 1e-9);
 
+    // 5. GPU-jointed skeleton fast path computes exact deferred-bone clearance and preserves validity.
+    footObj->enableTrackedTransform();
+    headObj->enableTrackedTransform();
+    auto gpuStream = std::make_shared<std::vector<float>>(24, 0.0f);
+    auto gpuValid = std::make_shared<bool>(true);
+    CHECK(footObj->enableDeferredTransform(gpuStream, 0, gpuValid));
+    CHECK(headObj->enableDeferredTransform(gpuStream, 12, gpuValid));
+    footObj->gpuJointBoundary = gpuValid;
+    footObj->gpuJointHierarchy = Object3D::hierarchyVersion();
+    headObj->gpuJointBoundary = gpuValid;
+    headObj->gpuJointHierarchy = Object3D::hierarchyVersion();
+    CHECK(footObj->skipsGpuJointSubtree() && headObj->skipsGpuJointSubtree());
+    const double movedFootPos[3] = {0.0, 0.9, 0.0};
+    const double movedHeadPos[3] = {0.0, 1.1, 0.0};
+    CHECK(footObj->deferTransformValue(0, movedFootPos));
+    CHECK(headObj->deferTransformValue(0, movedHeadPos));
+    CHECK(footObj->hasDeferredTransform());
+    const tn_value_t callGpuDisabled[] = {ref(group), num(5.0), num(0.1), num(-1.0), num(0), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callGpuDisabled, 6, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBER);
+    const double fastClearance = out.number;
+    // Foot moved locally +0.4 in Y relative to step 3 (`surfaceY = 5.0`, worldY scale = 1.2): +0.4 * 1.2 = +0.48.
+    CHECK(std::abs(fastClearance - 0.48) < 1e-6);
+    CHECK(footObj->hasDeferredTransform());
+    CHECK(*gpuValid && footObj->skipsGpuJointSubtree() && headObj->skipsGpuJointSubtree());
+    // Applying vertical correction via GPU-joint fast shift preserves gpuJointBoundary and Skeleton::poseVersion.
+    const uint64_t poseBeforeGpuSnap = skeleton->poseVersion();
+    const tn_value_t callGpuApply[] = {ref(group), num(5.0), num(0.1), num(-1.0), num(1), num(biasY)};
+    CHECK(tn_invoke(model, "__tnGroundSnapApply", callGpuApply, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-6);
+    CHECK(*gpuValid && footObj->skipsGpuJointSubtree());
+    CHECK(skeleton->poseVersion() == poseBeforeGpuSnap);
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

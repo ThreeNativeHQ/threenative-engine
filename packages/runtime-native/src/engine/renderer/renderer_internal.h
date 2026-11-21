@@ -464,9 +464,10 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
-    // PRD-888: a main draw shaded depth-Equal: its masked depth-only pipeline, drawn first in the same pass with the same
-    // groups and offsets. It moves only with `pipeline` (both follow the program), so the bundle key needs no word of it.
+    // PRD-888: a main draw shaded depth-Equal: its depth-only prepass pipeline, drawn first in the same pass with the same
+    // groups and offsets. Solid prepass draws execute before masked ones so solids reject occluded masked fragments.
     WGPURenderPipeline prepass = nullptr;
+    bool prepassSolid = false;
     // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;

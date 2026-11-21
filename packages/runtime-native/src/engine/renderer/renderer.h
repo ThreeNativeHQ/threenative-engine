@@ -517,6 +517,12 @@ public:
     }
     /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
     void skipOutputPass() { writesOutput_ = false; }
+    /** Reflection renderers can skip shadow map planning/rendering (`skipShadows_ = true`). */
+    void setSkipShadows(bool skip) { skipShadows_ = skip; }
+    /** Coalesce dirty upload ranges by merging smallest gaps first until `ranges.size() <= maxWrites`, falling back
+     *  to a single contiguous write only when `dirtyBytes * 2 >= span`. */
+    static void coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& ranges, std::size_t maxWrites,
+                                    std::vector<uint64_t>& gapScratch);
     /** three's autoClear false / clear(color, depth): the next renders load the scene colour or depth instead of clearing it. */
     void keepContents(bool color, bool depth) { keepColor_ = color; keepDepth_ = depth; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
@@ -1318,6 +1324,7 @@ private:
     // handles built under an older epoch are never reused.
     uint64_t groupEpoch_ = 0;
     bool writesOutput_ = true;
+    bool skipShadows_ = false;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
@@ -1621,6 +1628,7 @@ private:
     /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
     std::vector<uint8_t> uploadedUniforms_;
     std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;
+    std::vector<uint64_t> dirtyGapScratch_;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
     // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
     // Per-frame storage the vertex variants read, by binding name: `boneMatrices` (skinning),

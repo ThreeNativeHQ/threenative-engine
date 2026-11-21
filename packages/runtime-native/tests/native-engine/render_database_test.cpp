@@ -7734,6 +7734,7 @@ void reflectionReuse() {
                     (unsigned long long)database.matrixWalks(), (unsigned long long)pass->matrixWalks(), frames);
         CHECK(database.matrixWalks() == frames);
         CHECK(pass->matrixWalks() == (reuse ? 0u : frames));
+        CHECK(renderer.reflectionRenderer(s.reflector).lastFrame().shadowDraws == 0);
         CHECK(!drawsTower(database) && drawsTower(*pass));  // only the mirrored view sees the tower
         // The pass draws what an independent database prepares for the posed mirror camera.
         RenderDatabase alone;

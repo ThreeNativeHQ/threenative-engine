@@ -3999,6 +3999,26 @@ void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 0.4f, 4);
     auxTargets(true, 0, 0, 4, true);  // an alpha-hashed draw at opacity 0 hashes every pixel away, at 4x too
 }
+
+void coalesceDirtyRangesTest() {
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    for (uint64_t i = 0; i < 40; ++i) ranges.emplace_back(i * 512, 256);
+    ranges.emplace_back(4ull * 1024 * 1024, 256);
+    std::vector<uint64_t> scratch;
+    Renderer::coalesceDirtyRanges(ranges, 32, scratch);
+    CHECK(ranges.size() <= 32);
+    uint64_t totalBytes = 0;
+    for (const auto& [offset, length] : ranges) totalBytes += length;
+    CHECK(totalBytes < 64ull * 1024);
+    CHECK(ranges.front().first == 0);
+    CHECK(ranges.back().first == 4ull * 1024 * 1024 && ranges.back().second == 256);
+
+    // Dense dirtiness (>50% of span) still collapses cleanly into one write.
+    ranges.clear();
+    for (uint64_t i = 0; i < 40; ++i) ranges.emplace_back(i * 512, 384);
+    Renderer::coalesceDirtyRanges(ranges, 32, scratch);
+    CHECK(ranges.size() == 1 && ranges[0].first == 0 && ranges[0].second == 39 * 512 + 384);
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4047,4 +4067,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
-             {"indirect_record", indirectRecord})
+             {"indirect_record", indirectRecord},
+             {"coalesce_dirty_ranges", coalesceDirtyRangesTest})

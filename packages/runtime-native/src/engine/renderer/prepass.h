@@ -27,16 +27,44 @@ inline bool prepassSplit() {
     return flag != nullptr && std::strcmp(flag, "split") == 0;
 }
 
-/** An opaque, unblended, depth-tested and depth-writing triangle draw that cuts (alphaTest, alphaTestNode or
- *  maskNode), with no alphaHash and no depthNode. Every other draw keeps the shipped path. */
-inline bool prepassEligible(const DrawItem& item) {
+/** An opaque, unblended, depth-tested and depth-writing triangle draw with no alphaHash and no depthNode. */
+inline bool prepassBaseEligible(const DrawItem& item) {
     if (!item.material || item.transparent || item.background || item.sprite || !item.depthWrite || !item.depthTest ||
         !item.colorWrite || item.topology != WGPUPrimitiveTopology_TriangleList || item.material->alphaHash ||
         item.nodes->depthNode)
         return false;
     uint32_t state = 0;
-    return materialBlend(item.blending, item.transparent, item.blendFactors, state) == 0 &&
-           (item.material->alphaTest > 0 || bool(item.nodes->alphaTestNode) || bool(item.nodes->maskNode));
+    return materialBlend(item.blending, item.transparent, item.blendFactors, state) == 0;
+}
+
+/** A masked prepass draw that cuts (alphaTest, alphaTestNode, maskNode) or uses alphaToCoverage. */
+inline bool prepassMaskedEligible(const DrawItem& item) {
+    return prepassBaseEligible(item) &&
+           (item.material->alphaTest > 0 || bool(item.nodes->alphaTestNode) || bool(item.nodes->maskNode) ||
+            item.material->alphaToCoverage);
+}
+
+/** A heavy solid opaque lit draw (no cut, no custom fragmentNode that might issue an unlisted discard) that carries
+ *  textures, material node overrides, instancing or indirect draws. Drawn before masked prepass draws so terrain,
+ *  rocks and instanced trunks reject occluded masked foliage and avoid scene overdraw, while trivial untextured
+ *  single meshes and unlit Basic draws skip prepass to avoid double pipeline compiles and draws. */
+inline bool prepassSolidEligible(const DrawItem& item) {
+    if (!prepassBaseEligible(item) || prepassMaskedEligible(item) || item.kind == MaterialKind::Basic ||
+        item.nodes->fragmentNode) {
+        return false;
+    }
+    for (const Texture* pbr : item.pbrMaps) {
+        if (pbr != nullptr) return true;
+    }
+    return item.map != nullptr || item.normalMap != nullptr || bool(item.nodes->colorNode) ||
+           bool(item.nodes->normalNode) || bool(item.nodes->roughnessNode) || bool(item.nodes->metalnessNode) ||
+           bool(item.nodes->aoNode) || bool(item.nodes->emissiveNode) || item.instanceMatrices != nullptr ||
+           item.indirect != nullptr;
+}
+
+/** An opaque draw eligible for depth-only prepass (solid first, then masked), shaded depth-Equal in the scene pass. */
+inline bool prepassEligible(const DrawItem& item) {
+    return prepassMaskedEligible(item) || prepassSolidEligible(item);
 }
 
 /** The prepass pipeline from the draw's shipped colour target: every colour channel masked, cull, face, bias and

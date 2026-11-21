@@ -1009,20 +1009,26 @@ Object3D& Object3D::copy(const Object3D& source) {
 }
 
 namespace {
-bool canShiftWorldYSubtree(const Object3D& node) {
-    if (!node.matrixAutoUpdate || !node.matrixWorldAutoUpdate ||
-        node.hasDeferredTransformPublication() || node.skipsGpuJointSubtree() ||
-        node.pivot.has_value())
+bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
+    if (!node.matrixAutoUpdate || !node.matrixWorldAutoUpdate || node.pivot.has_value())
         return false;
+    if (isRoot) {
+        if (node.hasDeferredTransformPublication() || node.skipsGpuJointSubtree()) return false;
+    } else if (node.skipsGpuJointSubtree()) {
+        // MatrixWorldPass skips GPU-joint bone subtrees; they evaluate on GPU relative to the shifted placement.
+        return true;
+    } else if (node.hasDeferredTransformPublication()) {
+        return false;
+    }
     for (const Object3D* child : node.children) {
-        if (!canShiftWorldYSubtree(*child)) return false;
+        if (!canShiftWorldYSubtree(*child, false)) return false;
     }
     return true;
 }
 }  // namespace
 
 bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) {
-    if (!canShiftWorldYSubtree(*this)) return false;
+    if (!canShiftWorldYSubtree(*this, true)) return false;
 
     if (alreadyWalkedDescendant != nullptr && alreadyWalkedDescendant != this) {
         // Ancestors and `alreadyWalkedDescendant` were already updated by the caller; sync any sibling
@@ -1032,7 +1038,7 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
             Object3D* p = child->parent;
             if (p == nullptr) break;
             for (Object3D* sibling : p->children) {
-                if (sibling != child) sibling->updateWorldMatrix(false, true, false);
+                if (sibling != child && !sibling->skipsGpuJointSubtree()) sibling->updateWorldMatrix(false, true, false);
             }
             child = p;
         }
@@ -1068,6 +1074,7 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
     // parent so the frame's MatrixWorldPass sees zero stale links; never bump localTransformWritten
     // here so Skeleton::poseVersion() stays intact across pure world grounding shifts.
     auto shiftDescendant = [&](auto& selfRef, Object3D& node) -> void {
+        if (node.skipsGpuJointSubtree()) return;
         node.matrixWorld.elements[13] += dy;
         node.bump();
         node.matrixWorldNeedsUpdate = false;
