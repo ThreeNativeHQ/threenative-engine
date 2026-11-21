@@ -218,6 +218,10 @@ test.each([
   // host, not the game, so they must not be counted as the game's console errors (PRD-366).
   { stream: "stderr", text: "ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default", type: "log" },
   { stream: "stderr", text: "[Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or directory", type: "log" },
+  // Unix refuses an unprivileged priority raise, so a hosted runner without rtkit logs this once.
+  // The engine calls it "not an error" and the threads keep nice 0, so it is host capability, not
+  // the game's racking up of errors: it failed every template's `noRuntimeDiagnostics` native proof.
+  { stream: "stderr", text: "TN_PROCESS_PRIORITY_RAISE_REFUSED: setpriority EACCES, rtkit org.freedesktop.DBus.Error.ServiceUnknown; the frame-critical threads keep nice 0.", type: "log" },
   { stream: "stderr", text: "(threenative-starter-native:14620): dbind-WARNING **: 22:57:49.500: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files", type: "warning" },
   { stream: "stderr", text: "Warning: startup gate never opened within 30s; capturing anyway.", type: "warning" },
   { stream: "stderr", text: "MESA-EGL: error: context creation failed", type: "error" },
