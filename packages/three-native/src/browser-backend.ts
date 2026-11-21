@@ -370,6 +370,17 @@ export function defineBrowserClasses(
         );
         return attributeArray(self, offset, count);
       };
+    const attributeReadInto = source.attributeReadInto;
+    if (attributeReadInto !== undefined)
+      runtime.attributeReadInto = (self, dest, offset, count, destOffset) => {
+        debug.crossing(
+          "attributeRead",
+          self,
+          "array",
+          typeNames.get(self.type) ?? String(self.type),
+        );
+        return attributeReadInto(self, dest, offset, count, destOffset);
+      };
     const attributeWrite = source.attributeWrite;
     if (attributeWrite !== undefined)
       runtime.attributeWrite = (self, value, offset) => {
@@ -703,6 +714,7 @@ export function defineBrowserClasses(
     rangeOf,
     syncRange,
     syncFull,
+    syncRecords,
     instanceItem,
     writeItemAt,
   } = defineAttributeSync({ runtime, refOf });
@@ -991,12 +1003,9 @@ export function defineBrowserClasses(
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
             // A native record batch writes other attributes through the receiver's method.
-            // Keep their JS arrays current so a later read cannot upload pre-refilter data.
+            // Sync only the scalar subranges the op stream wrote instead of reading whole buffers back.
             if (method === "__tnRecords" && Array.isArray(args[0])) {
-              for (const attribute of args[0] as object[]) {
-                const entry = arrays.get(attribute);
-                if (entry !== undefined) syncFull(attribute, entry);
-              }
+              syncRecords(args[0] as object[], args[1]);
             }
           }
           // The engine's clone and copy carry the material's graphs; the TSL nodes a slot reads back
