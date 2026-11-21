@@ -11,6 +11,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import { copyAssetProvenance } from "./asset-provenance.js";
 import { pixelsPerUnit } from "./clustered-mesh.js";
 import type { attachInstancedLod } from "./instanced-batch-lod.js";
 
@@ -914,6 +915,7 @@ function preserveChainClones(registered: IRegisteredChain): void {
           geometry.setIndex(level.index?.clone() ?? null);
           geometry.boundingSphere = copy.boundingSphere;
           geometry.boundingBox = copy.boundingBox;
+          copyAssetProvenance(copy.userData, geometry.userData);
         }
         return geometry;
       });
@@ -1199,6 +1201,7 @@ export class DiscreteLodPlugin {
           geometry.boundingSphere = base.boundingSphere;
         if (base.boundingBox !== null && base.boundingBox !== undefined)
           geometry.boundingBox = base.boundingBox;
+        copyAssetProvenance(base.userData, geometry.userData);
         levels.push(geometry);
       }
       const sphere = new Sphere();

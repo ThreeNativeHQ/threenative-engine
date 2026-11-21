@@ -49,6 +49,10 @@ export interface IBakeCityOptions {
   readonly curb?: boolean;
   /** Include lane paint on straight and curve modules. Default true. */
   readonly markings?: boolean;
+  /** Light canvas-drawn sign materials (`extras.sign`) with an emissive map for night scenes. Default false. */
+  readonly emissiveSigns?: boolean;
+  /** Convert transmissive architectural glass (`transmission > 0`) to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass. Default false. */
+  readonly opaqueGlass?: boolean;
 }
 
 export const cityRoadDefaults = {
@@ -63,6 +67,11 @@ export const cityRoadDefaults = {
   markings: true,
 } satisfies Partial<IBakeCityOptions>;
 
+export const cityBakeDefaults = {
+  emissiveSigns: false,
+  opaqueGlass: false,
+} satisfies Partial<IBakeCityOptions>;
+
 export const cityRoadEdgeModules = [
   "straight",
   "curve",
@@ -75,7 +84,10 @@ export const cityRoadEdgeModules = [
 ];
 
 type CityRoadSettings = Required<Pick<IBakeCityOptions, keyof typeof cityRoadDefaults>>;
-type CityParameters = Required<Omit<IBakeCityOptions, "out" | "module" | keyof CityRoadSettings>>;
+type CityBakeSettings = Required<Pick<IBakeCityOptions, keyof typeof cityBakeDefaults>>;
+type CityParameters = Required<
+  Omit<IBakeCityOptions, "out" | "module" | keyof CityRoadSettings | keyof CityBakeSettings>
+>;
 
 interface IApex {
   build(
@@ -269,6 +281,476 @@ function roadSettings(options: IBakeCityOptions, hasSockets: boolean) {
   return road;
 }
 
+interface IVmTexture {
+  name?: string;
+  image?: {
+    encodeSync?: (format: string) => Uint8Array;
+    data?: ArrayBufferView;
+    src?: string;
+    width?: number;
+    height?: number;
+  };
+  wrapS?: number;
+  wrapT?: number;
+  magFilter?: number;
+  minFilter?: number;
+  repeat?: { x: number; y: number };
+  offset?: { x: number; y: number };
+  center?: { x: number; y: number };
+  rotation?: number;
+  flipY?: boolean;
+  colorSpace?: string;
+  generateMipmaps?: boolean;
+  anisotropy?: number;
+  channel?: number;
+  premultiplyAlpha?: boolean;
+  unpackAlignment?: number;
+  userData?: Record<string, unknown>;
+}
+
+interface IVmMaterial {
+  type?: string;
+  name?: string;
+  color?: { r: number; g: number; b: number };
+  emissive?: {
+    r: number;
+    g: number;
+    b: number;
+    setRGB?: (r: number, g: number, b: number) => void;
+  };
+  emissiveIntensity?: number;
+  emissiveMap?: IVmTexture | null;
+  map?: IVmTexture | null;
+  roughness?: number;
+  metalness?: number;
+  opacity?: number;
+  transparent?: boolean;
+  alphaTest?: number;
+  side?: number;
+  depthWrite?: boolean;
+  depthTest?: boolean;
+  vertexColors?: boolean;
+  flatShading?: boolean;
+  wireframe?: boolean;
+  transmission?: number;
+  thickness?: number;
+  ior?: number;
+  attenuationColor?: { r: number; g: number; b: number };
+  attenuationDistance?: number;
+  clearcoat?: number;
+  clearcoatRoughness?: number;
+  sheen?: number;
+  sheenRoughness?: number;
+  sheenColor?: { r: number; g: number; b: number };
+  specularIntensity?: number;
+  specularColor?: { r: number; g: number; b: number };
+  iridescence?: number;
+  iridescenceIOR?: number;
+  envMapIntensity?: number;
+  normalScale?: { x: number; y: number };
+  clearcoatNormalScale?: { x: number; y: number };
+  aoMapIntensity?: number;
+  bumpScale?: number;
+  userData?: Record<string, unknown>;
+  [slot: string]: unknown;
+}
+
+interface IVmAttribute {
+  array: ArrayBufferView & {
+    constructor: new (
+      length: number,
+    ) => ArrayBufferView & {
+      set: (array: ArrayBufferView, offset?: number) => void;
+    };
+  };
+  count: number;
+  itemSize: number;
+  normalized: boolean;
+  isInterleavedBufferAttribute?: boolean;
+  constructor: new (array: ArrayBufferView, itemSize: number, normalized?: boolean) => IVmAttribute;
+}
+
+interface IVmGeometry {
+  attributes: Record<string, IVmAttribute>;
+  index: IVmAttribute | null;
+  groups: unknown[];
+  drawRange: { start: number; count: number };
+  morphAttributes?: Record<string, unknown>;
+  userData?: Record<string, unknown>;
+  clone(): IVmGeometry;
+  getAttribute(name: string): IVmAttribute | undefined;
+  setAttribute(name: string, attribute: IVmAttribute): void;
+  setIndex(index: IVmAttribute | number[] | null): void;
+  computeBoundingBox(): void;
+  computeBoundingSphere(): void;
+}
+
+interface IVmMesh extends Object3D {
+  isMesh?: boolean;
+  geometry: IVmGeometry;
+  material: IVmMaterial | IVmMaterial[];
+  morphTargetInfluences?: unknown[];
+}
+
+const MATERIAL_TEXTURE_SLOTS = [
+  "map",
+  "normalMap",
+  "roughnessMap",
+  "metalnessMap",
+  "aoMap",
+  "emissiveMap",
+  "alphaMap",
+  "bumpMap",
+  "clearcoatMap",
+  "clearcoatNormalMap",
+  "clearcoatRoughnessMap",
+  "transmissionMap",
+  "thicknessMap",
+  "specularColorMap",
+  "specularIntensityMap",
+] as const;
+
+function bakeSettings(options: IBakeCityOptions): {
+  readonly settings: CityBakeSettings;
+  readonly changes: [string, boolean][];
+} {
+  const settings: CityBakeSettings = {
+    emissiveSigns: options.emissiveSigns ?? cityBakeDefaults.emissiveSigns,
+    opaqueGlass: options.opaqueGlass ?? cityBakeDefaults.opaqueGlass,
+  };
+  if (typeof settings.emissiveSigns !== "boolean")
+    throw new Error(
+      `bakeCity: emissiveSigns must be true or false, got ${JSON.stringify(settings.emissiveSigns)}`,
+    );
+  if (typeof settings.opaqueGlass !== "boolean")
+    throw new Error(
+      `bakeCity: opaqueGlass must be true or false, got ${JSON.stringify(settings.opaqueGlass)}`,
+    );
+  const changes = Object.entries(settings).filter(
+    ([key, value]) => cityBakeDefaults[key as keyof CityBakeSettings] !== value,
+  );
+  return { changes, settings };
+}
+
+function applyMaterialOptions(material: IVmMaterial, bake: CityBakeSettings): void {
+  if (bake.emissiveSigns && material.userData?.sign === true && material.map) {
+    if (!material.emissiveMap) {
+      material.emissiveMap = material.map;
+      material.emissive?.setRGB?.(1, 1, 1);
+    }
+    if (typeof material.emissiveIntensity !== "number" || material.emissiveIntensity <= 0) {
+      material.emissiveIntensity = 1;
+    }
+  }
+  if (bake.opaqueGlass && typeof material.transmission === "number" && material.transmission > 0) {
+    material.transmission = 0;
+    if (typeof material.thickness === "number") material.thickness = 0;
+  }
+}
+
+function applyCityMaterialOptions(group: Object3D, bake: CityBakeSettings): void {
+  if (!bake.emissiveSigns && !bake.opaqueGlass) return;
+  const seen = new Set<IVmMaterial>();
+  group.traverse((object) => {
+    const mesh = object as IVmMesh;
+    if (mesh.isMesh !== true) return;
+    const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const material of materials) {
+      if (material === undefined || material === null || seen.has(material)) continue;
+      seen.add(material);
+      applyMaterialOptions(material, bake);
+    }
+  });
+}
+
+function imageSignature(
+  image: IVmTexture["image"] | undefined,
+  cache: Map<object, string>,
+  fallbackIds: Map<object, number>,
+): string {
+  if (image === undefined || image === null || typeof image !== "object") return "none";
+  const existing = cache.get(image);
+  if (existing !== undefined) return existing;
+  let signature: string;
+  if (typeof image.encodeSync === "function") {
+    signature = `png:${createHash("sha256").update(image.encodeSync("png")).digest("hex")}`;
+  } else if (image.data !== undefined && ArrayBuffer.isView(image.data)) {
+    const view = image.data;
+    const hash = createHash("sha256")
+      .update(Buffer.from(view.buffer, view.byteOffset, view.byteLength))
+      .digest("hex");
+    signature = `raw:${image.width ?? 0}x${image.height ?? 0}:${hash}`;
+  } else if (typeof image.src === "string" && image.src.length > 0) {
+    signature = `src:${createHash("sha256").update(image.src).digest("hex")}`;
+  } else {
+    let id = fallbackIds.get(image);
+    if (id === undefined) {
+      id = fallbackIds.size;
+      fallbackIds.set(image, id);
+    }
+    signature = `ref:${id}`;
+  }
+  cache.set(image, signature);
+  return signature;
+}
+
+function textureSignature(
+  texture: IVmTexture,
+  imageCache: Map<object, string>,
+  fallbackImages: Map<object, number>,
+): string {
+  return JSON.stringify({
+    anisotropy: texture.anisotropy,
+    center: texture.center ? [texture.center.x, texture.center.y] : undefined,
+    channel: texture.channel,
+    colorSpace: texture.colorSpace,
+    flipY: texture.flipY,
+    generateMipmaps: texture.generateMipmaps,
+    image: imageSignature(texture.image, imageCache, fallbackImages),
+    magFilter: texture.magFilter,
+    minFilter: texture.minFilter,
+    name: texture.name,
+    offset: texture.offset ? [texture.offset.x, texture.offset.y] : undefined,
+    premultiplyAlpha: texture.premultiplyAlpha,
+    repeat: texture.repeat ? [texture.repeat.x, texture.repeat.y] : undefined,
+    rotation: texture.rotation,
+    unpackAlignment: texture.unpackAlignment,
+    userData: texture.userData,
+    wrapS: texture.wrapS,
+    wrapT: texture.wrapT,
+  });
+}
+
+function materialSignature(
+  material: IVmMaterial,
+  canonicalTextureId: (texture: IVmTexture | null | undefined) => number | null,
+): string {
+  const rgb = (c?: { r: number; g: number; b: number }) =>
+    c === undefined ? undefined : [c.r, c.g, c.b];
+  const vec2 = (v?: { x: number; y: number }) => (v === undefined ? undefined : [v.x, v.y]);
+  const slots: Record<string, number | null> = {};
+  for (const slot of MATERIAL_TEXTURE_SLOTS) {
+    const tex = material[slot] as IVmTexture | null | undefined;
+    if (tex !== undefined && tex !== null) slots[slot] = canonicalTextureId(tex);
+  }
+  return JSON.stringify({
+    alphaTest: material.alphaTest,
+    aoMapIntensity: material.aoMapIntensity,
+    attenuationColor: rgb(material.attenuationColor),
+    attenuationDistance: material.attenuationDistance,
+    bumpScale: material.bumpScale,
+    clearcoat: material.clearcoat,
+    clearcoatNormalScale: vec2(material.clearcoatNormalScale),
+    clearcoatRoughness: material.clearcoatRoughness,
+    color: rgb(material.color),
+    depthTest: material.depthTest,
+    depthWrite: material.depthWrite,
+    emissive: rgb(material.emissive),
+    emissiveIntensity: material.emissiveIntensity,
+    envMapIntensity: material.envMapIntensity,
+    flatShading: material.flatShading,
+    ior: material.ior,
+    iridescence: material.iridescence,
+    iridescenceIOR: material.iridescenceIOR,
+    metalness: material.metalness,
+    name: material.name,
+    normalScale: vec2(material.normalScale),
+    opacity: material.opacity,
+    roughness: material.roughness,
+    sheen: material.sheen,
+    sheenColor: rgb(material.sheenColor),
+    sheenRoughness: material.sheenRoughness,
+    side: material.side,
+    slots,
+    specularColor: rgb(material.specularColor),
+    specularIntensity: material.specularIntensity,
+    thickness: material.thickness,
+    transmission: material.transmission,
+    transparent: material.transparent,
+    type: material.type,
+    userData: material.userData,
+    vertexColors: material.vertexColors,
+    wireframe: material.wireframe,
+  });
+}
+
+function dedupeCityMaterials(group: Object3D): Map<IVmMaterial, number> {
+  const imageCache = new Map<object, string>();
+  const fallbackImages = new Map<object, number>();
+  const canonicalTextures = new Map<string, { id: number; texture: IVmTexture }>();
+  const textureIds = new Map<IVmTexture, number>();
+  const canonicalizeTexture = (texture: IVmTexture): IVmTexture => {
+    const key = textureSignature(texture, imageCache, fallbackImages);
+    let entry = canonicalTextures.get(key);
+    if (entry === undefined) {
+      entry = { id: canonicalTextures.size, texture };
+      canonicalTextures.set(key, entry);
+      textureIds.set(entry.texture, entry.id);
+    }
+    return entry.texture;
+  };
+  const textureId = (texture: IVmTexture | null | undefined): number | null =>
+    texture === undefined || texture === null ? null : (textureIds.get(texture) ?? null);
+
+  const canonicalMaterials = new Map<string, { id: number; material: IVmMaterial }>();
+  const materialIds = new Map<IVmMaterial, number>();
+  const canonicalizeMaterial = (material: IVmMaterial): IVmMaterial => {
+    for (const slot of MATERIAL_TEXTURE_SLOTS) {
+      const value = material[slot] as IVmTexture | null | undefined;
+      if (value !== undefined && value !== null) {
+        material[slot] = canonicalizeTexture(value);
+      }
+    }
+    const key = materialSignature(material, textureId);
+    let entry = canonicalMaterials.get(key);
+    if (entry === undefined) {
+      entry = { id: canonicalMaterials.size, material };
+      canonicalMaterials.set(key, entry);
+      materialIds.set(entry.material, entry.id);
+    }
+    return entry.material;
+  };
+
+  group.traverse((object) => {
+    const mesh = object as IVmMesh;
+    if (mesh.isMesh !== true) return;
+    if (Array.isArray(mesh.material)) {
+      mesh.material = mesh.material.map((material) =>
+        material ? canonicalizeMaterial(material) : material,
+      );
+    } else if (mesh.material) {
+      mesh.material = canonicalizeMaterial(mesh.material);
+    }
+  });
+  return materialIds;
+}
+
+function hasIdentityLocalTransform(object: Object3D): boolean {
+  return (
+    object.position.x === 0 &&
+    object.position.y === 0 &&
+    object.position.z === 0 &&
+    object.quaternion.x === 0 &&
+    object.quaternion.y === 0 &&
+    object.quaternion.z === 0 &&
+    object.quaternion.w === 1 &&
+    object.scale.x === 1 &&
+    object.scale.y === 1 &&
+    object.scale.z === 1
+  );
+}
+
+function geometryLayoutSignature(geometry: IVmGeometry): string | undefined {
+  if (geometry.groups.length > 0) return undefined;
+  if (geometry.drawRange.start !== 0 || geometry.drawRange.count !== Number.POSITIVE_INFINITY)
+    return undefined;
+  if (geometry.morphAttributes !== undefined && Object.keys(geometry.morphAttributes).length > 0)
+    return undefined;
+  const names = Object.keys(geometry.attributes).sort();
+  if (names.length === 0) return undefined;
+  const parts: string[] = [geometry.index !== null ? "idx" : "flat"];
+  for (const name of names) {
+    const attr = geometry.attributes[name];
+    if (attr === undefined || attr.isInterleavedBufferAttribute === true) return undefined;
+    parts.push(
+      `${name}:${attr.itemSize}:${attr.normalized ? 1 : 0}:${attr.array.constructor.name}`,
+    );
+  }
+  return parts.join("|");
+}
+
+function mergeSiblingGeometries(geometries: readonly IVmGeometry[]): IVmGeometry {
+  const first = geometries[0] as IVmGeometry;
+  const merged = first.clone();
+  const names = Object.keys(first.attributes);
+  const totalVertices = geometries.reduce(
+    (sum, geom) => sum + (geom.getAttribute("position")?.count ?? 0),
+    0,
+  );
+  for (const name of names) {
+    const sample = first.getAttribute(name) as IVmAttribute;
+    const itemSize = sample.itemSize;
+    const ArrayCtor = sample.array.constructor;
+    const AttrCtor = sample.constructor;
+    const buffer = new ArrayCtor(totalVertices * itemSize);
+    let offset = 0;
+    for (const geom of geometries) {
+      const attr = geom.getAttribute(name) as IVmAttribute;
+      buffer.set(attr.array, offset * itemSize);
+      offset += attr.count;
+    }
+    merged.setAttribute(name, new AttrCtor(buffer, itemSize, sample.normalized));
+  }
+  if (first.index !== null) {
+    let totalIndices = 0;
+    for (const geom of geometries) totalIndices += geom.index?.count ?? 0;
+    // A plain array lets Three pick Uint16 or Uint32 from the merged vertex count.
+    const indexBuffer = new Array<number>(totalIndices);
+    let writeAt = 0;
+    let vertexOffset = 0;
+    for (const geom of geometries) {
+      const idx = geom.index as IVmAttribute;
+      const arr = idx.array as unknown as ArrayLike<number>;
+      for (let i = 0; i < idx.count; i += 1) {
+        indexBuffer[writeAt + i] = (arr[i] as number) + vertexOffset;
+      }
+      writeAt += idx.count;
+      vertexOffset += geom.getAttribute("position")?.count ?? 0;
+    }
+    merged.setIndex(indexBuffer);
+  }
+  merged.computeBoundingBox();
+  merged.computeBoundingSphere();
+  return merged;
+}
+
+/** The bucket a direct child mesh merges into, or `undefined` when it must stay as it is. */
+function siblingMergeKey(
+  mesh: IVmMesh,
+  materialIds: ReadonlyMap<IVmMaterial, number>,
+): string | undefined {
+  if (
+    mesh.isMesh !== true ||
+    Array.isArray(mesh.material) ||
+    mesh.children.length > 0 ||
+    !hasIdentityLocalTransform(mesh) ||
+    (mesh.morphTargetInfluences !== undefined && mesh.morphTargetInfluences.length > 0)
+  ) {
+    return undefined;
+  }
+  const materialId = materialIds.get(mesh.material);
+  if (materialId === undefined) return undefined;
+  const layout = geometryLayoutSignature(mesh.geometry);
+  if (layout === undefined) return undefined;
+  return `${materialId}|${mesh.castShadow ? 1 : 0}|${mesh.receiveShadow ? 1 : 0}|${JSON.stringify(mesh.userData ?? {})}|${layout}`;
+}
+
+function mergeDuplicateCityMeshes(
+  group: Object3D,
+  materialIds: ReadonlyMap<IVmMaterial, number>,
+): void {
+  const buckets = new Map<string, IVmMesh[]>();
+  for (const child of [...group.children]) {
+    const mesh = child as IVmMesh;
+    const key = siblingMergeKey(mesh, materialIds);
+    if (key === undefined) continue;
+    let list = buckets.get(key);
+    if (list === undefined) {
+      list = [];
+      buckets.set(key, list);
+    }
+    list.push(mesh);
+  }
+  for (const meshes of buckets.values()) {
+    if (meshes.length < 2) continue;
+    const first = meshes[0] as IVmMesh;
+    first.geometry = mergeSiblingGeometries(meshes.map((mesh) => mesh.geometry));
+    for (let i = 1; i < meshes.length; i += 1) {
+      group.remove(meshes[i] as IVmMesh);
+    }
+  }
+}
+
 interface ICityBake {
   readonly glb: Uint8Array;
   readonly triangles: number;
@@ -298,11 +780,15 @@ export async function buildCity(options: IBakeCityOptions): Promise<ICityBake> {
   const roadChanges = Object.entries(road).filter(
     ([key, value]) => cityRoadDefaults[key as keyof CityRoadSettings] !== value,
   );
+  const { settings: bake, changes: bakeChanges } = bakeSettings(options);
   await kit.loadMaps();
   const profile = roadChanges.some(([key]) =>
     ["roadWidth", "roadLength", "bendAngle", "bendRadius", "bendSide"].includes(key),
   );
   const group = kit.build(module, parameters, roadChanges.length > 0 ? road : undefined, profile);
+  applyCityMaterialOptions(group, bake);
+  const materialIds = dedupeCityMaterials(group);
+  mergeDuplicateCityMeshes(group, materialIds);
   const glb = new Uint8Array(
     await new kit.GLTFExporter().parseAsync(group, {
       binary: true,
@@ -328,7 +814,7 @@ export async function buildCity(options: IBakeCityOptions): Promise<ICityBake> {
   const changed = Object.entries(parameters).filter(
     ([key, value]) => key !== "seed" && kit.defaults[key as keyof CityParameters] !== value,
   );
-  changed.push(...roadChanges);
+  changed.push(...roadChanges, ...bakeChanges);
   const tag =
     changed.length === 0
       ? ""

@@ -12,6 +12,7 @@ import {
   Matrix4,
   Mesh,
   MeshStandardMaterial,
+  PerspectiveCamera,
   Quaternion,
   Shape,
   SkinnedMesh,
@@ -19,7 +20,14 @@ import {
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { describe, expect, it, vi } from "vitest";
+import { GEOMETRY_ASSET_KEYS } from "../src/asset-provenance.js";
+import type { IResolvedAsset } from "../src/assets.js";
+import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
 import { type IMergePart, mergeByMaterial, mergeParts } from "../src/merge-parts.js";
+import {
+  measureStartupOffscreenBytes,
+  measureUnusedModels,
+} from "../src/startup-offscreen-bytes.js";
 
 /** The mismatch that actually happens: a lofted profile is non-indexed, a primitive is indexed. */
 function extruded(): ExtrudeGeometry {
@@ -785,5 +793,66 @@ describe("mergeParts — the fused copy against the three path it replaced (PRD-
     const before = Array.from(normal.data.array);
     mergeParts([part as IMergePart], { label: "untouched", preserve: ["normal", "uv"] });
     expect(Array.from(normal.data.array)).toEqual(before);
+  });
+});
+
+describe("mergeParts and mergeByMaterial provenance preservation", () => {
+  it("preserves single and multi-asset provenance through mergeParts and mergeByMaterial", () => {
+    const firstGeom = new BoxGeometry(1, 1, 1);
+    firstGeom.userData[GEOMETRY_ASSET_KEY] = "props/wall-a.glb";
+    const secondGeom = new BoxGeometry(1, 1, 1);
+    secondGeom.userData[GEOMETRY_ASSET_KEY] = "props/wall-b.glb";
+
+    const singleMerged = mergeParts([{ geometry: firstGeom }], { label: "single" });
+    expect(singleMerged.userData[GEOMETRY_ASSET_KEY]).toBe("props/wall-a.glb");
+    expect(singleMerged.userData[GEOMETRY_ASSET_KEYS]).toBeUndefined();
+
+    const multiMerged = mergeParts([{ geometry: firstGeom }, { geometry: secondGeom }], {
+      label: "multi",
+    });
+    expect(multiMerged.userData[GEOMETRY_ASSET_KEY]).toBeUndefined();
+    expect(multiMerged.userData[GEOMETRY_ASSET_KEYS]).toEqual([
+      "props/wall-a.glb",
+      "props/wall-b.glb",
+    ]);
+
+    // Ancestor-only root stamps also survive mergeByMaterial across distinct loaded models.
+    const sharedMat = new MeshStandardMaterial({ name: "stone" });
+    const rootA = new Group();
+    rootA.userData[GEOMETRY_ASSET_KEY] = "props/root-a.glb";
+    rootA.add(new Mesh(new BoxGeometry(1, 1, 1), sharedMat));
+    const rootB = new Group();
+    rootB.userData[GEOMETRY_ASSET_KEY] = "props/root-b.glb";
+    const meshB = new Mesh(new BoxGeometry(1, 1, 1), sharedMat);
+    meshB.position.set(0, 0, -5);
+    rootB.add(meshB);
+    const parent = new Group();
+    parent.add(rootA, rootB);
+
+    const [baked] = mergeByMaterial(parent, { label: "street-block" });
+    if (baked === undefined) throw new Error("expected merged mesh");
+    expect(baked.userData[GEOMETRY_ASSET_KEYS]).toEqual(["props/root-a.glb", "props/root-b.glb"]);
+
+    const scene = new Group();
+    baked.position.set(0, 0, -10);
+    scene.add(baked);
+    scene.updateMatrixWorld(true);
+    const camera = new PerspectiveCamera(60, 16 / 9, 0.1, 1000);
+    camera.updateMatrixWorld(true);
+    const resolved = new Map<string, IResolvedAsset>([
+      [
+        "props/root-a.glb",
+        { bytes: 5_000, kind: "model", url: "/props/root-a.glb", via: "manifest" },
+      ],
+      [
+        "props/root-b.glb",
+        { bytes: 7_000, kind: "model", url: "/props/root-b.glb", via: "manifest" },
+      ],
+    ]);
+
+    expect(measureUnusedModels(resolved, scene, 60_000)).toBeUndefined();
+    const offscreen = measureStartupOffscreenBytes(resolved, scene, camera);
+    expect(offscreen.visibleBytes).toBe(12_000);
+    expect(offscreen.offscreenBytes).toBe(0);
   });
 });

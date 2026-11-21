@@ -12,6 +12,11 @@ import {
   Object3D,
 } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import {
+  ancestorAssetProvenance,
+  readAssetProvenance,
+  writeAssetProvenance,
+} from "./asset-provenance.js";
 
 /**
  * One piece on its way into a merged buffer.
@@ -493,6 +498,12 @@ export function mergeParts(
     ? concatenate(list, coloured !== 0, preserve, deindex, label)
     : mergeThroughThree(list, coloured !== 0, preserve, deindex, label);
   if (!preserve.includes("normal")) merged.computeVertexNormals();
+  const provenance: string[] = [];
+  for (const part of list) {
+    provenance.push(...readAssetProvenance(part.geometry.userData));
+    if (part instanceof Object3D) provenance.push(...ancestorAssetProvenance(part));
+  }
+  writeAssetProvenance(merged.userData, provenance);
   return merged;
 }
 
@@ -815,6 +826,10 @@ export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions
         }),
         material,
       );
+      const provenance: string[] = [...readAssetProvenance(mesh.geometry.userData)];
+      for (const source of group.sources) provenance.push(...ancestorAssetProvenance(source));
+      writeAssetProvenance(mesh.geometry.userData, provenance);
+      writeAssetProvenance(mesh.userData, provenance);
       options.onGroup?.(mesh, group.sources);
       merged.push(mesh);
     });

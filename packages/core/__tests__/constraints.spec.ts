@@ -108,6 +108,10 @@ describe("core constraints", () => {
           // by reference, through the same tile ring. It constructs no material, light, colour or
           // shader; the word the filter trips on is the `Material` type of a game-supplied part.
           file !== "scatter-field.ts" &&
+          // InstancedModel groups a loaded model's meshes by their geometry and material identity and
+          // hands each group the model's own material instance through `InstancedBatch`. It
+          // constructs no material, light, colour or shader, and reads only `name` for a label.
+          file !== "instanced-model.ts" &&
           // These exact seams carry the formerly allowed WorldCells code: package surface identity,
           // load flight counts and numeric contracts. The same appearance checks below cover each.
           file !== "world-cell-data.ts" &&
