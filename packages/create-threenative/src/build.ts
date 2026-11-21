@@ -1,6 +1,14 @@
 import { spawn, spawnSync } from "node:child_process";
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, statSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  linkSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+  statSync,
+} from "node:fs";
 import {
   copyFile,
   mkdir,
@@ -14,6 +22,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { GLB_BUFFER, NodeIO } from "@gltf-transform/core";
@@ -1406,7 +1415,7 @@ export function runtimeHasWebAssembly(
   binary: string | undefined = process.env.THREENATIVE_RUNTIME_BINARY,
   probe: typeof spawnSync = spawnSync,
 ): boolean {
-  return runtimeEngine(binary, probe) === "v8";
+  return runtimeEngine(desktopBinaryOverride(binary), probe) === "v8";
 }
 
 /**
@@ -1585,18 +1594,118 @@ async function assertArtifactBudget(
 }
 
 /** Where a desktop `engine: "threenative"` build finds the engine player, absent an explicit path. */
+/**
+ * A desktop binary override, or nothing.
+ *
+ * An exported empty string resolves to the project directory, which made a build skip the
+ * first-use download and then hand a directory to the packager. Doctor treats the same value as
+ * unset, and so does the build now: one reading of one variable.
+ */
+export function desktopBinaryOverride(
+  value: string | undefined,
+  cwd = process.cwd(),
+): string | undefined {
+  if (value === undefined || value.length === 0) return undefined;
+  return path.resolve(cwd, value);
+}
+
 export function engineDesktopPlayer(
   runtimeRoot: string,
   env: NodeJS.ProcessEnv = process.env,
   cwd = process.cwd(),
 ): string {
-  const explicit = env.THREENATIVE_ENGINE_PLAYER;
-  if (explicit !== undefined) return path.resolve(cwd, explicit);
+  const explicit = desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd);
+  if (explicit !== undefined) return explicit;
   const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
   const checkout = path.join(runtimeRoot, "build", "tn-engine-ui", filename);
   return existsSync(checkout)
     ? checkout
     : path.join(runtimeRoot, "prebuilt", `${process.platform}-${process.arch}`, filename);
+}
+
+/**
+ * Fetch the engine player a desktop build needs, the first time it needs it (PRD-783).
+ *
+ * `pnpm install` downloads nothing any more, so this is the one place a default-engine desktop
+ * build acquires its player. A verified cached binary, an explicit `THREENATIVE_ENGINE_PLAYER`
+ * and a checkout build all return the path without touching the network.
+ *
+ * The path is returned rather than written to `THREENATIVE_ENGINE_PLAYER`: that variable is
+ * process-wide, and a second build in the same process would otherwise package the first game's
+ * player.
+ */
+export async function ensureEngineDesktopPlayer(
+  runtimeRoot: string,
+  cwd: string,
+  env: NodeJS.ProcessEnv = process.env,
+  // A packaging caller asks for a build-private name for the verified bytes: the runtime takes it
+  // while it holds the install lock, so a concurrent install cannot swap the shared cache path
+  // between verification and packaging. Overrides and checkout builds are the caller's own files
+  // and are returned untouched.
+  options: { readonly report?: { staged?: boolean }; readonly stagePrivate?: boolean } = {},
+): Promise<string> {
+  const player = () => engineDesktopPlayer(runtimeRoot, env, cwd);
+  if (desktopBinaryOverride(env.THREENATIVE_ENGINE_PLAYER, cwd) !== undefined) return player();
+  const filename = `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+  if (existsSync(path.join(runtimeRoot, "build", "tn-engine-ui", filename))) return player();
+  const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
+  // An engine checkout build is selected by hand; the packager's own missing-player error names
+  // an installation that also lacks this script, so there is nothing better to say here.
+  if (!existsSync(module)) return player();
+  const runtime = (await import(pathToFileURL(module).href)) as {
+    ensureNativeBinary?: (options: {
+      enginePlayer: boolean;
+      stagePrivate?: boolean;
+    }) => Promise<string>;
+    installPrebuilt?: (options: { enginePlayer: boolean; reuse: boolean }) => Promise<string>;
+  };
+  // A runtime older than this CLI has no ensure entry point: fall back to its verified install so
+  // a CLI-only upgrade still builds, rather than calling an undefined function.
+  if (typeof runtime.ensureNativeBinary === "function") {
+    const ensured = await runtime.ensureNativeBinary({
+      enginePlayer: true,
+      ...(options.stagePrivate ? { stageDir: tmpdir(), stagePrivate: true } : {}),
+    });
+    if (options.stagePrivate && typeof ensured === "string") {
+      // One ensure, no second read of the cache: the runtime returned the snapshot, and the cache
+      // path is what it would have returned otherwise.
+      if (options.report !== undefined) options.report.staged = ensured !== player();
+      return ensured;
+    }
+    return player();
+  }
+  if (typeof runtime.installPrebuilt === "function") {
+    // The older runtime cannot stage; its verified cache path is what it has.
+    await runtime.installPrebuilt({ enginePlayer: true, reuse: true });
+  }
+  return player();
+}
+
+/** The player a desktop build packages, and whether this build owns its private snapshot. */
+export async function ensureEngineDesktopPlayerForPackaging(
+  runtimeRoot: string,
+  cwd: string,
+): Promise<{ readonly player: string; readonly staged: boolean }> {
+  const report: { staged?: boolean } = {};
+  // The runtime answers both questions in one call: the path to package, and whether it created a
+  // snapshot this build owns. Nothing re-reads the cache afterwards.
+  const player = await ensureEngineDesktopPlayer(runtimeRoot, cwd, process.env, {
+    report,
+    stagePrivate: true,
+  });
+  return { player, staged: report.staged === true };
+}
+
+/**
+ * Whether the engine player this platform downloads can attach a web-UI overlay.
+ *
+ * The release builds the player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux only: the option
+ * pulls in WebKitGTK, and the Windows and macOS rows ship without it. A desktop build with a "web"
+ * HUD on either platform would download 118 MiB and then die at `TN_UI_LOAD_FAILED`, so the build
+ * refuses before the download and names the two working configurations.
+ */
+export function enginePlayerSupportsWebUi(platform: NodeJS.Platform = process.platform): boolean {
+  return platform === "linux";
 }
 
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
@@ -1618,30 +1727,52 @@ async function buildEngineDesktop(
       `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
-  const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
-  const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await packageStaged(output, cwd, [
-    packager,
-    "--project",
+  // The released player carries the web-UI overlay on Linux only; on Windows and macOS it is built
+  // without one, so a web HUD there attaches nothing and the game dies at TN_UI_LOAD_FAILED after
+  // the download. Refuse before fetching, when the fix costs nothing.
+  if (config.ui.renderer === "web" && !enginePlayerSupportsWebUi()) {
+    throw new Error(
+      `TN_ENGINE_PLAYER_UI_UNSUPPORTED: the engine player published for ${process.platform}-${process.arch} has no web-UI overlay, so a "web" HUD would fail at TN_UI_LOAD_FAILED. Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host, which renders the web UI.`,
+    );
+  }
+  // The player every desktop package runs is fetched here, before the UI build, so a missing
+  // download is a cheap failure rather than a full UI build thrown away (PRD-783).
+  // The runtime takes the build-private snapshot while it holds the install lock, so the bytes
+  // packaged are the bytes this build verified even if another install publishes over the cache.
+  const { player: staged, staged: ownsStage } = await ensureEngineDesktopPlayerForPackaging(
+    runtimeRoot,
     cwd,
-    "--entry",
-    entry,
-    "--player",
-    engineDesktopPlayer(runtimeRoot, process.env, cwd),
-    ...(ui === undefined ? [] : ["--ui", ui]),
-    "--width",
-    String(config.window.width),
-    "--height",
-    String(config.window.height),
-    "--title",
-    config.window.title,
-    "--priority",
-    config.display.priority,
-    "--fullscreen",
-    String(config.display.fullscreen),
-    "--output",
-    output,
-  ]);
+  );
+  try {
+    const ui = config.ui.renderer === "web" ? await buildUi(cwd, config) : undefined;
+    const output = path.join(cwd, "dist-native", await projectName(cwd));
+    await packageStaged(output, cwd, [
+      packager,
+      "--project",
+      cwd,
+      "--entry",
+      entry,
+      "--player",
+      staged,
+      ...(ui === undefined ? [] : ["--ui", ui]),
+      "--width",
+      String(config.window.width),
+      "--height",
+      String(config.window.height),
+      "--title",
+      config.window.title,
+      "--priority",
+      config.display.priority,
+      "--fullscreen",
+      String(config.display.fullscreen),
+      "--output",
+      output,
+    ]);
+  } finally {
+    // Only a snapshot this build took is deleted: an override or a checkout player came from the
+    // caller, so the runtime reports ownership rather than this code guessing from the path.
+    if (ownsStage) rmSync(staged, { force: true });
+  }
 }
 
 async function buildNative(
@@ -1665,6 +1796,8 @@ async function buildNative(
   // Resolve the same desktop binary the packager will receive, before cooking. A default
   // prebuilt used to be selected only after the cook had guessed from the build machine.
   let selectedRuntime: string | undefined;
+  let explicitRuntime: string | undefined;
+  let stagedRuntimeDir: string | undefined;
   if (target === "desktop") {
     const module = path.join(
       packageRoot(cwd, "@threenative/runtime-native"),
@@ -1672,132 +1805,162 @@ async function buildNative(
       "package-desktop.mjs",
     );
     const { resolveDesktopRuntime } = (await import(pathToFileURL(module).href)) as {
-      resolveDesktopRuntime(explicit?: string): Promise<string>;
+      resolveDesktopRuntime(
+        explicit?: string,
+        options?: { install?: Record<string, unknown>; stageDir?: string },
+      ): Promise<string>;
     };
-    const explicit = process.env.THREENATIVE_RUNTIME_BINARY;
-    selectedRuntime = await resolveDesktopRuntime(
-      explicit === undefined ? undefined : path.resolve(cwd, explicit),
-    );
+    const explicit = desktopBinaryOverride(process.env.THREENATIVE_RUNTIME_BINARY, cwd);
+    explicitRuntime = explicit;
+    // The probe runs the binary, so it needs an executable copy: staged beside the build output,
+    // which is where packaging runs from too, and removed when this build ends.
+    const stageRoot = path.join(cwd, ".threenative", "stage");
+    mkdirSync(stageRoot, { recursive: true });
+    selectedRuntime = await resolveDesktopRuntime(explicit, {
+      install: explicit === undefined ? { stageDir: stageRoot, stagePrivate: true } : undefined,
+      stageDir: stageRoot,
+    });
+    // Ownership is exact: a `tn-stage-*` directory directly under the root this build asked for.
+    // A caller's tree that happens to contain such a name is not ours to delete, and the shared
+    // cache never matches.
+    // Only a snapshot this build acquired: an explicit override is the caller's file, even when it
+    // happens to sit under the stage root.
+    const snapshot = selectedRuntime === undefined ? undefined : path.dirname(selectedRuntime);
+    if (
+      explicit === undefined &&
+      snapshot !== undefined &&
+      path.dirname(snapshot) === stageRoot &&
+      path.basename(snapshot).startsWith("tn-stage-")
+    )
+      stagedRuntimeDir = snapshot;
   }
-  const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
-  await compileAssets({
-    config: config.assets,
-    cwd,
-    platform: target,
-    runtimeDecoders: capabilities.decoders,
-    runtimeIdentity: capabilities.identity,
-  });
-  await assertNativeAssetsCompatible(cwd, target, config, capabilities);
-  const orientation = config.display.orientation;
-  const configPath = await writePackagingConfig(cwd, config);
-  const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
-  const bundle = await bundleNative(
-    cwd,
-    runtimeRoot,
-    entry,
-    target,
-    !capabilities.webAssembly,
-    capabilities.decoders,
-  );
-  await assertNativeBundleCompatible(bundle, target, capabilities);
-  // The compiled root the project configured, which `compileAssets` above baked into — not the
-  // `public` default. A project whose cook profile writes elsewhere was packaging an empty
-  // directory while its own assets sat next to it, unread.
-  const assets = assetRoot(cwd, config);
-  // The UI is built only when the game asked for the web renderer, so a `native` game ships no
-  // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
-  // `native-css` runs the same Vite build and keeps only its stylesheets: the React tree runs in
-  // the game's own JS realm, so the page and its JS are dead weight in the package.
-  let ui: string | undefined;
-  if (config.ui.renderer !== "native") {
-    const built = await buildUi(cwd, config);
-    if (config.ui.renderer === "native-css") {
-      ui = path.join(cwd, ".threenative", "build", "ui-css");
-      await extractUiStylesheets(built, ui, cwd);
-    } else {
-      ui = built;
-    }
-  }
-  if (target === "ios") {
-    const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
-    await packageStaged(
-      output,
-      runtimeRoot,
-      [
-        path.join(runtimeRoot, "scripts", "package-ios.mjs"),
-        "--bundle",
-        bundle,
-        "--assets",
-        assets,
-        ...(ui === undefined ? [] : ["--ui", ui]),
-        "--orientation",
-        orientation,
-        "--config",
-        configPath,
-        "--output",
-        output,
-      ],
-      { assets, config, target: "ios" },
-    );
-    return;
-  }
-  if (target === "android") {
-    const output = path.join(
+  try {
+    const capabilities = resolveRuntimeAssetCapabilities(target, selectedRuntime);
+    await compileAssets({
+      config: config.assets,
       cwd,
-      "dist-native",
-      `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
+      platform: target,
+      runtimeDecoders: capabilities.decoders,
+      runtimeIdentity: capabilities.identity,
+    });
+    await assertNativeAssetsCompatible(cwd, target, config, capabilities);
+    const orientation = config.display.orientation;
+    const configPath = await writePackagingConfig(cwd, config);
+    const runtimeRoot = packageRoot(cwd, "@threenative/runtime-native");
+    const bundle = await bundleNative(
+      cwd,
+      runtimeRoot,
+      entry,
+      target,
+      !capabilities.webAssembly,
+      capabilities.decoders,
     );
+    await assertNativeBundleCompatible(bundle, target, capabilities);
+    // The compiled root the project configured, which `compileAssets` above baked into — not the
+    // `public` default. A project whose cook profile writes elsewhere was packaging an empty
+    // directory while its own assets sat next to it, unread.
+    const assets = assetRoot(cwd, config);
+    // The UI is built only when the game asked for the web renderer, so a `native` game ships no
+    // web view, no UI bundle and no extra process — acceptance criterion 5 of PRD-217.
+    // `native-css` runs the same Vite build and keeps only its stylesheets: the React tree runs in
+    // the game's own JS realm, so the page and its JS are dead weight in the package.
+    let ui: string | undefined;
+    if (config.ui.renderer !== "native") {
+      const built = await buildUi(cwd, config);
+      if (config.ui.renderer === "native-css") {
+        ui = path.join(cwd, ".threenative", "build", "ui-css");
+        await extractUiStylesheets(built, ui, cwd);
+      } else {
+        ui = built;
+      }
+    }
+    if (target === "ios") {
+      const output = path.join(cwd, "dist-native", `${await projectName(cwd)}.app`);
+      await packageStaged(
+        output,
+        runtimeRoot,
+        [
+          path.join(runtimeRoot, "scripts", "package-ios.mjs"),
+          "--bundle",
+          bundle,
+          "--assets",
+          assets,
+          ...(ui === undefined ? [] : ["--ui", ui]),
+          "--orientation",
+          orientation,
+          "--config",
+          configPath,
+          "--output",
+          output,
+        ],
+        { assets, config, target: "ios" },
+      );
+      return;
+    }
+    if (target === "android") {
+      const output = path.join(
+        cwd,
+        "dist-native",
+        `${await projectName(cwd)}.${format === "aab" ? "aab" : "apk"}`,
+      );
+      await packageStaged(
+        output,
+        runtimeRoot,
+        [
+          path.join(runtimeRoot, "scripts", "package-android.mjs"),
+          ...(allowSourceBuild ? ["--allow-source-build"] : []),
+          "--mode",
+          mode,
+          "--format",
+          format,
+          // The consumer project, so a relative keystore path in the signing environment resolves
+          // against the game rather than the engine's Android project.
+          "--project-root",
+          cwd,
+          "--bundle",
+          bundle,
+          "--assets",
+          assets,
+          ...(ui === undefined ? [] : ["--ui", ui]),
+          "--orientation",
+          orientation,
+          "--config",
+          configPath,
+          "--output",
+          output,
+        ],
+        { assets, config, target: "android" },
+      );
+      return;
+    }
+    const output = path.join(cwd, "dist-native", await projectName(cwd));
     await packageStaged(
       output,
-      runtimeRoot,
+      cwd,
       [
-        path.join(runtimeRoot, "scripts", "package-android.mjs"),
-        ...(allowSourceBuild ? ["--allow-source-build"] : []),
+        path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
         "--mode",
         mode,
-        "--format",
-        format,
-        // The consumer project, so a relative keystore path in the signing environment resolves
-        // against the game rather than the engine's Android project.
-        "--project-root",
-        cwd,
         "--bundle",
         bundle,
         "--assets",
         assets,
         ...(ui === undefined ? [] : ["--ui", ui]),
-        "--orientation",
-        orientation,
         "--config",
         configPath,
+        // The exact binary the cook probed, every time: resolving again inside the packager could
+        // ship a runtime that differs from the one which decided the assets' decoders.
+        ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
         "--output",
         output,
       ],
-      { assets, config, target: "android" },
+      { assets, config, target: "desktop" },
     );
-    return;
+  } finally {
+    // The probe's copy is this build's: removed however packaging ended, so a failed cook does not
+    // leave a 260 MiB runtime in the game's own `.threenative` directory.
+    if (stagedRuntimeDir !== undefined) rmSync(stagedRuntimeDir, { force: true, recursive: true });
   }
-  const output = path.join(cwd, "dist-native", await projectName(cwd));
-  await packageStaged(
-    output,
-    cwd,
-    [
-      path.join(runtimeRoot, "scripts", "package-desktop.mjs"),
-      "--mode",
-      mode,
-      "--bundle",
-      bundle,
-      "--assets",
-      assets,
-      ...(ui === undefined ? [] : ["--ui", ui]),
-      "--config",
-      configPath,
-      ...(selectedRuntime === undefined ? [] : ["--runtime", selectedRuntime]),
-      "--output",
-      output,
-    ],
-    { assets, config, target: "desktop" },
-  );
 }
 
 /**

@@ -801,12 +801,47 @@ test("the consumer gets the build tool helper the runtime dispatches to", () => 
   assert.match(
     consumer,
     /test -x "\$CONSUMER_TARGET\/node_modules\/@threenative\/runtime-native\/prebuilt\/linux-x64\/mystral-tools"/u,
-    "the consumer gate must assert the installed helper before the desktop build",
+    "the consumer gate must assert the installed helper",
   );
-  // Order matters: asserting it after the build would not prove the install produced it.
-  const assertAt = consumer.indexOf("prebuilt/linux-x64/mystral-tools");
+  // PRD-783 moved the download from the install to the first native build, so the order inverted:
+  // the install must place nothing, and the build is what fetches the helper this row asserts.
+  const assertAt = consumer.indexOf(
+    'test -x "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"',
+  );
   const buildAt = consumer.indexOf("build --target desktop");
-  assert.ok(assertAt > 0 && assertAt < buildAt, "the helper check must precede the consumer build");
+  assert.ok(assertAt > buildAt, "the helper check must follow the consumer build");
+  const absentAt = consumer.indexOf(
+    'test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools"',
+  );
+  assert.ok(absentAt > 0 && absentAt < buildAt, "the install must be proved to fetch nothing");
+});
+
+test("the Linux lane runs a packed default-engine kit's own native proof (PRD-783 AC-8)", () => {
+  const consumer = job("clean-consumer");
+  // The scaffold must take the default engine: the racing kit's `test:native` starts with
+  // `pnpm build:desktop`, which is the call that fetches the engine player.
+  const scaffold =
+    consumer
+      .split("- name: Scaffold the default-engine racing consumer from local tarballs\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.ok(scaffold.length > 0, "missing the racing scaffold step");
+  assert.match(scaffold, /template: racing/u);
+  assert.doesNotMatch(scaffold, /engine: threejs/u);
+  const run =
+    consumer
+      .split("- name: Install and run the racing kit's own native proof\n")[1]
+      ?.split("\n      - ")[0] ?? "";
+  assert.ok(run.length > 0, "missing the racing native proof step");
+  // The install downloads nothing; the build does.
+  assert.match(
+    run,
+    /test ! -e "\$RACING_TARGET\/node_modules\/@threenative\/runtime-native\/prebuilt\/engine-player-install-status\.json"/u,
+  );
+  assert.match(
+    run,
+    /TN_PLAYTEST_ALLOW_SOFTWARE=1 sh scripts\/xvfb\.sh pnpm --dir "\$RACING_TARGET" test:native/u,
+  );
+  assert.match(run, /prebuilt\/linux-x64\/tn-native-engine-player-v8/u);
 });
 
 test("the same-run proof serves the published cohort, not every non-iOS key", () => {
@@ -827,6 +862,20 @@ test("the Linux proof lane ignores the simulator zip a proof run now downloads",
   // also collects its zip, and the "no extras" check failed a run whose staging was right.
   const consumer = job("clean-consumer");
   assert.match(consumer, /name\.startsWith\("threenative-ios-"\)/u);
+});
+
+test("the Windows lane also builds a default-engine consumer, which is AC-7's host (PRD-783)", () => {
+  const consumer = job("clean-consumer-windows");
+  const scaffold = windowStep(
+    "Scaffold a default-engine consumer for the engine player's own first-build fetch",
+  );
+  assert.match(scaffold, /template: minimal/u);
+  assert.doesNotMatch(scaffold, /engine: threejs/u);
+  const run = windowStep("Install and build the default-engine consumer on Windows (PRD-783 AC-7)");
+  assert.match(run, /test ! -e "\$runtime\/engine-player-install-status\.json"/u);
+  assert.match(run, /pnpm --dir "\$target" build --target desktop/u);
+  assert.match(run, /win32-x64\/tn-native-engine-player-v8\.exe/u);
+  assert.match(run, /test ! -e "\$runtime\/win32-x64\/threenative-runtime\.exe"/u);
 });
 
 test("the Windows consumer serves only the Windows row it installs", () => {
@@ -877,9 +926,9 @@ test("the Windows consumer runs on a Windows runner with every native compiler m
   assert.match(mask, /cygpath -w/u);
 });
 
-test("the Windows consumer asserts the installed helper before the desktop build and never places one", () => {
+test("the Windows consumer asserts the first desktop build downloaded its binaries and never places one", () => {
   const consumer = job("clean-consumer-windows");
-  // Nothing may place the helper for the consumer: the whole claim is that the install does.
+  // Nothing may place either binary for the consumer: the claim is that the build fetches them.
   assert.doesNotMatch(consumer, /--name tools-/u);
   assert.doesNotMatch(consumer, /install -m 0755/u);
   const build = windowStep("Install and build without a native toolchain");
@@ -887,14 +936,35 @@ test("the Windows consumer asserts the installed helper before the desktop build
   assert.match(build, /prebuilt\/win32-x64\/threenative-runtime\.exe/u);
   assert.match(build, /prebuilt\/win32-x64\/mystral-tools\.exe/u);
   assert.match(build, /build --target desktop/u);
-  const statusAt = build.indexOf("install-status.json");
-  const runtimeAt = build.indexOf("prebuilt/win32-x64/threenative-runtime.exe");
-  const helperAt = build.indexOf("prebuilt/win32-x64/mystral-tools.exe");
+  // PRD-783: the install downloads nothing, and the first desktop build is what fetches both.
   const buildAt = build.indexOf("build --target desktop");
-  assert.ok(statusAt > 0 && statusAt < buildAt, "the install-status check must precede the build");
+  const absentStatusAt = build.indexOf(
+    'test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/install-status.json"',
+  );
+  const absentHelperAt = build.indexOf(
+    'test ! -e "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"',
+  );
   assert.ok(
-    runtimeAt > 0 && runtimeAt < buildAt && helperAt > 0 && helperAt < buildAt,
-    "both installed binaries must be asserted before the consumer build",
+    absentStatusAt > 0 && absentStatusAt < buildAt,
+    "the install must be proved to fetch nothing",
+  );
+  assert.ok(
+    absentHelperAt > 0 && absentHelperAt < buildAt,
+    "the install must be proved to fetch no helper",
+  );
+  const statusAt = build.indexOf(
+    "readFileSync(`${process.env.CONSUMER_TARGET}/node_modules/@threenative/runtime-native/prebuilt/install-status.json`",
+  );
+  const runtimeAt = build.indexOf(
+    'test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/threenative-runtime.exe"',
+  );
+  const helperAt = build.indexOf(
+    'test -s "$CONSUMER_TARGET/node_modules/@threenative/runtime-native/prebuilt/win32-x64/mystral-tools.exe"',
+  );
+  assert.ok(statusAt > buildAt, "the install-status check must follow the build");
+  assert.ok(
+    runtimeAt > buildAt && helperAt > buildAt,
+    "both binaries must be asserted after the consumer build",
   );
 });
 

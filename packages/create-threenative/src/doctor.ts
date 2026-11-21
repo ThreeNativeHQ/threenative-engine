@@ -22,7 +22,7 @@ import { installCommandFor, resolveBlender } from "@threenative/blender-bridge/b
 
 import { MCP_HOSTS } from "../../core/mcp/install.mjs";
 import { CORE_VERSION } from "../../core/src/version.js";
-import { resolveRuntimeAssetCapabilities } from "./build.js";
+import { enginePlayerSupportsWebUi, resolveRuntimeAssetCapabilities } from "./build.js";
 import { loadConfig } from "./config.js";
 import { type IAuthoringLayerStatus, authoringLayerStatus } from "./index.js";
 import {
@@ -108,6 +108,11 @@ export interface IProjectSnapshot {
   readonly runtimeFileExists?: (relative: string) => boolean;
   readonly runtimeManifestUrl?: string;
   readonly runtimeRoot?: string;
+  /**
+   * The installed downloader's own lock reader, so the pin check applies the rules the build
+   * applies instead of a second copy that drifts.
+   */
+  readonly readRelease?: (manifestPath: string, key: string) => unknown;
   /**
    * What the installed native host binary reports about itself, injected so the check is testable
    * on a machine either way. Absent means doctor runs the host's own `--version` itself.
@@ -1328,6 +1333,325 @@ function nativeRuntimeFilename(): string {
   return process.platform === "win32" ? "threenative-runtime.exe" : "threenative-runtime";
 }
 
+function nativeEnginePlayerFilename(): string {
+  return `tn-native-engine-player-v8${process.platform === "win32" ? ".exe" : ""}`;
+}
+
+/**
+ * Platforms this repository publishes a native binary for.
+ *
+ * Copied from `packages/runtime-native/scripts/install-prebuilt.mjs` rather than imported: doctor
+ * must answer in a project that has no native runtime package, and a static import would make the
+ * whole report fail where this is the only fact it needs. `nativeRuntimeKey()` answers for any host
+ * the types allow, so a platform absent from this list — Linux arm64 today — has nothing to
+ * download: macOS is deliberately unpublished (an unsigned bundle is refused by Gatekeeper, so a
+ * released asset would be a support ticket, PRD-262) and arm64 Linux has no row at all. The first
+ * build then fails asking for a checkout binary, which is what doctor must report instead of
+ * promising a download.
+ */
+const PUBLISHED_ENGINE_PLAYER_PLATFORMS: ReadonlySet<string> = new Set(["linux-x64", "win32-x64"]);
+
+/**
+ * Which prebuilt a native build actually runs, and where its install status is written.
+ *
+ * PRD-783 moved the download from `pnpm install` to the first native build, and the default engine
+ * (`engine: "threenative"`) runs the engine player, never the legacy runtime: reporting the legacy
+ * status told a reader about a binary that build does not start.
+ */
+/**
+ * Whether the locally pinned prebuilt manifest can actually serve a native build.
+ *
+ * The downloader reads `THREENATIVE_PREBUILT_MANIFEST` before the network, for every native target,
+ * so a deleted file or one overwritten with `{}` fails the build whatever the cache says. This is
+ * its own check because it answers for android and ios too, not only the desktop receipt.
+ */
+/** Whether a path is a regular file a packager can copy. */
+function isFile(candidate: string): boolean {
+  try {
+    return statSync(candidate).isFile();
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * The Android prebuilt keys the installed packager will ask this pin for.
+ *
+ * Read from `scripts/package-android.mjs` rather than mirrored: the V8 cohort is eleven keys, and a
+ * second copy here is a list that drifts into approving a lock the packager refuses. Absent or
+ * unreadable, the pin check says `unknown` instead of guessing.
+ */
+function androidPrebuiltCohort(snapshot: IProjectSnapshot): readonly string[] | undefined {
+  if (snapshot.runtimeRoot === undefined) return undefined;
+  const source = (() => {
+    try {
+      return readFileSync(
+        path.join(snapshot.runtimeRoot, "scripts", "package-android.mjs"),
+        "utf8",
+      );
+    } catch {
+      return undefined;
+    }
+  })();
+  if (source === undefined) return undefined;
+  const block = /export const ANDROID_PREBUILT_V8_ASSETS = \{([\s\S]*?)\n\};/u.exec(source)?.[1];
+  if (block === undefined) return undefined;
+  const keys = [...block.matchAll(/'([a-z0-9_-]+)':/gu)].map((match) => match[1] as string);
+  return keys.length === 0 ? undefined : keys;
+}
+
+export /** The runtime root the Android packager would build from, when it is a source checkout. */
+function sourceCheckoutRoot(snapshot: IProjectSnapshot): string | undefined {
+  const source = process.env.THREENATIVE_RUNTIME_SOURCE;
+  // The packager resolves a relative source from the installed runtime root, not from the game.
+  const root =
+    source !== undefined && source.length > 0
+      ? path.resolve(snapshot.runtimeRoot ?? process.cwd(), source)
+      : snapshot.runtimeRoot;
+  return root !== undefined && existsSync(path.join(root, "CMakeLists.txt")) ? root : undefined;
+}
+
+function pinnedManifestCheck(
+  snapshot: IProjectSnapshot,
+  options: { readonly target?: DoctorTarget } = {},
+): IDoctorCheck | undefined {
+  // An exported empty string means "unset": resolving it would read the working directory.
+  const pinned = process.env.THREENATIVE_PREBUILT_MANIFEST;
+  if (pinned === undefined || pinned.length === 0) return undefined;
+  // A source checkout answers from its own build: the Android packager's `--allow-source-build`
+  // path never reads a prebuilt lock, so a stale pin cannot block it. The test is the packager's
+  // own — a `CMakeLists.txt` at the resolved runtime root — so a workspace-linked checkout counts
+  // and an override pointing at a packed runtime does not.
+  if (options.target === "android") {
+    const root = sourceCheckoutRoot(snapshot);
+    if (root !== undefined && existsSync(path.join(root, "CMakeLists.txt")))
+      return {
+        detail: `not read — ${root} is a source checkout, so the Android packager builds the runtime instead of reading a lock`,
+        name: "prebuilt manifest",
+        status: "ok",
+      };
+  }
+  // The desktop packager resolves a relative pin from the game, the mobile ones from the runtime
+  // package they run inside: resolving every pin from the game blessed one the build could not read.
+  const mobile = options.target === "android" || options.target === "ios";
+  const resolved =
+    mobile && snapshot.runtimeRoot !== undefined && !path.isAbsolute(pinned)
+      ? path.resolve(snapshot.runtimeRoot, pinned)
+      : path.resolve(pinned);
+  const target = nativePrebuiltTarget(snapshot.config);
+  // A build that already has a local binary reads no manifest at all: the checkout player and
+  // `THREENATIVE_ENGINE_PLAYER` / `THREENATIVE_RUNTIME_BINARY` all return before the network.
+  const local = localNativeBinary(snapshot, target);
+  if (
+    local?.kind === "available" &&
+    (options.target === undefined || options.target === "desktop")
+  ) {
+    return {
+      detail: `not read — ${local.path} supplies the binary, so no prebuilt manifest is consulted`,
+      name: "prebuilt manifest",
+      status: "ok",
+    };
+  }
+  const suppliedArchive = process.env.THREENATIVE_IOS_SIMULATOR_ARCHIVE;
+  if (options.target === "ios" && suppliedArchive !== undefined && suppliedArchive.length > 0) {
+    return {
+      detail: "not read — THREENATIVE_IOS_SIMULATOR_ARCHIVE supplies the simulator build",
+      name: "prebuilt manifest",
+      status: "ok",
+    };
+  }
+  // A plain `threenative doctor` requested no native build, so a pin that cannot serve one is a
+  // warning there and a failure only when the build being asked about would read it (AC-4).
+  const fail = (reason: string): IDoctorCheck => ({
+    detail: `unavailable — THREENATIVE_PREBUILT_MANIFEST names ${resolved}, ${reason}, so a ${options.target ?? "native"} build fails before downloading.`,
+    fix: "Restore the pinned manifest, or unset THREENATIVE_PREBUILT_MANIFEST to download from the release.",
+    name: "prebuilt manifest",
+    status: options.target === undefined ? "warn" : "fail",
+  });
+  // The downloader's own reader decides everything, existence included: a pin in a project whose
+  // runtime package is absent cannot be judged here, and a web-only project must not fail on one.
+  const readRelease = snapshot.readRelease;
+  if (readRelease === undefined) {
+    return {
+      detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its lock reader, so this pin cannot be checked here; the packager still validates it.`,
+      name: "prebuilt manifest",
+      status: "warn",
+    };
+  }
+  const wanted =
+    options.target === "android"
+      ? androidPrebuiltCohort(snapshot)
+      : options.target === "ios"
+        ? ["ios-simulator-arm64"]
+        : [target.key, ...(target.legacy ? [`${nativeRuntimeKey()}-tools`] : [])];
+  if (wanted === undefined) {
+    return {
+      detail: `unknown — the installed ${RUNTIME_PACKAGE} does not expose its Android prebuilt cohort, so this pin cannot be checked here; the packager still validates it.`,
+      name: "prebuilt manifest",
+      status: "warn",
+    };
+  }
+  for (const key of wanted) {
+    try {
+      readRelease(resolved, key);
+    } catch (error) {
+      return fail(
+        `which the downloader refuses for ${key}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
+  return {
+    detail: `available — ${resolved} serves all ${wanted.length} ${options.target ?? "desktop"} key${wanted.length === 1 ? "" : "s"} the downloader reads`,
+    name: "prebuilt manifest",
+    status: "ok",
+  };
+}
+
+function nativePrebuiltTarget(config: unknown): {
+  readonly absentDetail: string;
+  readonly binary: string;
+  /** Whether this platform publishes no such binary, so a download promise would be false. */
+  readonly deprecated?: boolean;
+  readonly key: string;
+  /** Whether the prebuilt is the legacy host, whose own `--version` doctor can ask. */
+  readonly legacy: boolean;
+  readonly statusFile: string;
+} {
+  const platform = nativeRuntimeKey();
+  if (record(config)?.engine === "threejs") {
+    // The legacy host is published for the same two platforms as the player: macOS builds it for
+    // the release census but never ships it, so promising a download there would be a promise the
+    // release cannot keep.
+    const legacyUnpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
+    return {
+      absentDetail: legacyUnpublished
+        ? `no native runtime is published for ${platform}, so a desktop build with engine "threejs" needs a local one: run \`pnpm --filter @threenative/runtime-native native:build\` in an engine checkout and point THREENATIVE_RUNTIME_BINARY at the result. Web builds download nothing.`
+        : `available — not downloaded yet; the first \`threenative build --target desktop\` (engine "threejs") downloads the runtime and its build tool helper (about 260 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_RUNTIME_BINARY pins a local file.`,
+      binary: `prebuilt/${platform}/${nativeRuntimeFilename()}`,
+      ...(legacyUnpublished ? { deprecated: true } : {}),
+      key: platform,
+      legacy: true,
+      statusFile: "prebuilt/install-status.json",
+    };
+  }
+  // macOS has no published engine player, so "the first build downloads it" would be a promise
+  // that platform cannot keep: the release census refuses an unsigned bundle instead.
+  const unpublished = !PUBLISHED_ENGINE_PLAYER_PLATFORMS.has(platform);
+  return {
+    absentDetail: unpublished
+      ? `no engine player is published for ${platform}, so a desktop build needs one from an engine checkout: the recipe per platform, including the physics archive and wgpu-native overrides an ARM64 host needs, is node_modules/create-threenative/agent-docs/references/native-downloads.md — build it there and point THREENATIVE_ENGINE_PLAYER at it. Web builds download nothing.`
+      : "available — not downloaded yet; the first `threenative build --target desktop` downloads it (about 118 MiB, checksum-verified). Web builds download nothing, and THREENATIVE_ENGINE_PLAYER pins a local file.",
+    binary: `prebuilt/${platform}/${nativeEnginePlayerFilename()}`,
+    ...(unpublished ? { deprecated: true } : {}),
+    key: `${platform}-engine-player`,
+    legacy: false,
+    statusFile: "prebuilt/engine-player-install-status.json",
+  };
+}
+
+/** The reason a previous install recorded, when it recorded a failure. */
+function recordedInstallFailure(
+  snapshot: IProjectSnapshot,
+  target: { readonly statusFile: string },
+): string | undefined {
+  const text = snapshot.readRuntimeText?.(target.statusFile);
+  if (text === undefined) return undefined;
+  try {
+    const parsed = JSON.parse(text) as unknown;
+    const status = record(parsed);
+    if (status?.ok !== false) return undefined;
+    return typeof status.reason === "string" ? status.reason : "the install recorded no reason";
+  } catch {
+    return "the install status is malformed";
+  }
+}
+
+/**
+ * The player a desktop build would use instead of downloading one, in the build's own order:
+ * `THREENATIVE_ENGINE_PLAYER`, then a checkout build under `build/tn-engine-ui/`.
+ *
+ * The path is only reported when it exists: an exported variable pointing at nothing is not a
+ * local build, and the download path is what will really run.
+ */
+function localNativeBinary(
+  snapshot: IProjectSnapshot,
+  target: { readonly legacy: boolean; readonly key: string },
+):
+  | {
+      readonly kind: "available" | "broken";
+      /** What the build will not find, when the override is broken. */
+      readonly missing?: string;
+      readonly path: string;
+      readonly variable: string;
+    }
+  | undefined {
+  if (target.legacy) {
+    // The legacy host has the same override, and the build hands it to the same packager: a missing
+    // one fails the build exactly like a missing player, so doctor answers it the same way.
+    const explicitRuntime = process.env.THREENATIVE_RUNTIME_BINARY;
+    if (explicitRuntime === undefined || explicitRuntime.length === 0) return undefined;
+    const resolved = path.resolve(explicitRuntime);
+    // The legacy host dispatches desktop packaging to a `mystral-tools` helper beside itself
+    // (`src/cli/tool_dispatch.cpp:52`), and an override skips the download that would install it:
+    // a present host without that helper exits 127 on the first build.
+    // The runtime's own lookup: `THREENATIVE_CLI_TOOLS` first
+    // (`packages/runtime-native/src/cli/tool_dispatch.cpp:22`), then the helper beside the
+    // executable it was dispatched from.
+    const configuredTools = process.env.THREENATIVE_CLI_TOOLS;
+    const helper =
+      configuredTools !== undefined && configuredTools.length > 0
+        ? path.resolve(configuredTools)
+        : path.join(
+            path.dirname(isFile(resolved) ? realpathSync(resolved) : resolved),
+            process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools",
+          );
+    if (!isFile(resolved))
+      return {
+        kind: "broken",
+        missing: "which does not exist",
+        path: resolved,
+        variable: "THREENATIVE_RUNTIME_BINARY",
+      };
+    return isFile(helper)
+      ? { kind: "available", path: resolved, variable: "THREENATIVE_RUNTIME_BINARY" }
+      : {
+          kind: "broken",
+          missing: `which exists, but the ${path.basename(helper)} helper it packages through is not beside it`,
+          path: resolved,
+          variable: "THREENATIVE_RUNTIME_BINARY",
+        };
+  }
+  const explicit = process.env.THREENATIVE_ENGINE_PLAYER;
+  // An exported empty string means "unset": resolving it would name the project directory, which
+  // the packager then tries to copy as a binary.
+  if (explicit !== undefined && explicit.length > 0) {
+    // An exported path beats every download, so a missing one is a build that will fail: doctor
+    // reports it instead of promising the cache or a download the build never reaches. A directory
+    // is not a player either.
+    const resolved = path.resolve(explicit);
+    return isFile(resolved)
+      ? { kind: "available", path: resolved, variable: "THREENATIVE_ENGINE_PLAYER" }
+      : {
+          kind: "broken",
+          missing: existsSync(resolved)
+            ? "which is a directory, not a player"
+            : "which does not exist",
+          path: resolved,
+          variable: "THREENATIVE_ENGINE_PLAYER",
+        };
+  }
+  if (snapshot.runtimeRoot === undefined) return undefined;
+  const checkout = path.join(
+    snapshot.runtimeRoot,
+    "build",
+    "tn-engine-ui",
+    nativeEnginePlayerFilename(),
+  );
+  return isFile(checkout)
+    ? { kind: "available", path: checkout, variable: "THREENATIVE_ENGINE_PLAYER" }
+    : undefined;
+}
+
 /**
  * What the installed host binary says it is.
  *
@@ -1364,8 +1688,12 @@ export function probeNativeHost(binary: string): INativeHostProbe {
   }
 }
 
-export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
-  const key = nativeRuntimeKey();
+export function nativeRuntimeCheck(
+  snapshot: IProjectSnapshot,
+  options: { readonly target?: DoctorTarget } = {},
+): IDoctorCheck {
+  const target = nativePrebuiltTarget(snapshot.config);
+  const key = target.key;
   if (snapshot.runtimeRoot === undefined || snapshot.readRuntimeText === undefined) {
     return snapshot.installedVersions.has(RUNTIME_PACKAGE)
       ? {
@@ -1375,20 +1703,124 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
           status: "fail",
         }
       : {
-          detail: "unknown — no install status recorded",
+          detail: `unknown — ${RUNTIME_PACKAGE} is not installed, so a native target has nothing to download with`,
           fix: "Install @threenative/runtime-native before building a native target.",
           name: "native runtime",
           status: "warn",
         };
   }
 
-  const statusText = snapshot.readRuntimeText("prebuilt/install-status.json");
-  if (statusText === undefined) {
+  // The same refusal the build makes, so `doctor --target desktop` cannot call a configuration
+  // buildable that `threenative build` rejects before it downloads anything.
+  // The build's default renderer is "web" when the config is absent or silent, so an unreadable
+  // config cannot be an exemption from the refusal either.
+  const renderer = record(record(snapshot.config)?.ui)?.renderer ?? "web";
+  // The default engine draws "web" through the player's overlay and nothing else: "native-css"
+  // is the legacy host's renderer, and the build refuses it for this engine.
+  const nativeCssRefusal: IDoctorCheck | undefined =
+    !target.legacy && renderer === "native-css"
+      ? {
+          detail: `unavailable — engine "threenative" on desktop draws a "web" UI through the engine player's overlay, so ui.renderer "native-css" is refused with TN_ENGINE_NATIVE_UI_UNSUPPORTED before anything downloads.`,
+          fix: 'Set ui.renderer to "web" or "native", or set engine: "threejs" to keep the native-css host.',
+          name: "native runtime",
+          status: options.target === "desktop" ? "fail" : "warn",
+        }
+      : undefined;
+  const hudRefusal: IDoctorCheck | undefined =
+    nativeCssRefusal ??
+    (!target.legacy && renderer === "web" && !enginePlayerSupportsWebUi()
+      ? {
+          detail: `the engine player published for ${nativeRuntimeKey()} has no web-UI overlay, so a desktop build refuses a "web" HUD with TN_ENGINE_PLAYER_UI_UNSUPPORTED before it downloads anything (the HUD would fail at TN_UI_LOAD_FAILED).`,
+          fix: 'Set ui.renderer to "native" and draw the HUD in the game, or set engine: "threejs" to package with the legacy host.',
+          name: "native runtime",
+          // Blocking only when the desktop build is what the caller asked about: a web-only project
+          // on this platform is healthy and a plain `threenative doctor` must not fail it (AC-4).
+          status: options.target === "desktop" ? "fail" : "warn",
+        }
+      : undefined);
+
+  // The build selects a local player before it would download one: an explicit variable, then a
+  // checkout build. Doctor must read the same order, or it blocks a valid local build.
+  const localPlayer = localNativeBinary(snapshot, target);
+  const recordedFailure = recordedInstallFailure(snapshot, target);
+  const retryHint =
+    "unset the override (or prefetch explicitly with `node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs`) to retry the download";
+  if (localPlayer?.kind === "broken") {
     return {
-      detail: "unknown — no install status recorded",
-      fix: "Run npm install so the runtime install hook can record its result.",
+      detail: `${localPlayer.variable} names ${localPlayer.path}, ${localPlayer.missing ?? "which the build cannot use"}, so a desktop build fails before it would download anything.${recordedFailure === undefined ? "" : ` A previous download also failed (${recordedFailure}).`}`,
+      // The helper belongs to the legacy host only: the engine player is one file the packager runs
+      // itself, so naming a helper there sends the reader to the wrong repair.
+      fix:
+        localPlayer.variable === "THREENATIVE_RUNTIME_BINARY"
+          ? `Point THREENATIVE_RUNTIME_BINARY at a built binary beside its ${process.platform === "win32" ? "mystral-tools.exe" : "mystral-tools"} helper, set THREENATIVE_CLI_TOOLS to one, or ${retryHint}.`
+          : `Point THREENATIVE_ENGINE_PLAYER at a built player, or ${retryHint}.`,
       name: "native runtime",
-      status: "warn",
+      status: "fail",
+    };
+  }
+  if (localPlayer !== undefined) {
+    // A local binary does not erase a download that failed earlier, and the refusal that makes the
+    // build impossible outranks both. One answer, nothing hidden behind another.
+    const recorded = recordedFailure;
+    if (hudRefusal !== undefined)
+      return recorded === undefined
+        ? hudRefusal
+        : {
+            detail: `${hudRefusal.detail} A previous download also failed (${recorded}).`,
+            fix: `${hudRefusal.fix ?? ""} Then clear the local override and rerun \`threenative build --target desktop\`, or run \`node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs\`, to retry the download.`.trim(),
+            name: "native runtime",
+            // The refusal's own severity survives the added failure: a plain doctor warns about a
+            // desktop-only refusal, and `--target desktop` is the question that makes it fatal.
+            status: hudRefusal.status === "fail" && options.target === "desktop" ? "fail" : "warn",
+          };
+    if (recorded !== undefined)
+      return {
+        // The build selects this binary and never reaches the download, so an earlier failed
+        // download is history here, not a blocker — whatever target was asked about.
+        detail: `${localPlayer.path} supplies the binary, so the build skips the download; an earlier download did not finish (${recorded}).`,
+        fix: `Nothing to fix for this build. ${retryHint} to repair the cache.`,
+        name: "native runtime",
+        status: "warn",
+      };
+    return {
+      detail: `available — ${localPlayer.path} (local build)`,
+      name: "native runtime",
+      status: "ok",
+    };
+  }
+
+  if (
+    target.legacy &&
+    process.env.THREENATIVE_RUNTIME_SOURCE !== undefined &&
+    process.env.THREENATIVE_RUNTIME_SOURCE.length > 0 &&
+    (process.env.THREENATIVE_RUNTIME_BINARY ?? "").length === 0
+  ) {
+    return {
+      detail:
+        "unavailable — THREENATIVE_RUNTIME_SOURCE is set but THREENATIVE_RUNTIME_BINARY is not, which the packager rejects before it would download anything.",
+      fix: "Point THREENATIVE_RUNTIME_BINARY at the binary that source build produced, or unset THREENATIVE_RUNTIME_SOURCE to download the release runtime.",
+      name: "native runtime",
+      status: "fail",
+    };
+  }
+
+  const statusText = snapshot.readRuntimeText(target.statusFile);
+  if (statusText === undefined) {
+    // Nothing to report is the ordinary web-only state now: the first native build downloads it.
+    // A *recorded failure* still fails below, which is the fact doctor is for. On a platform whose
+    // asset is never published, no build can create the record, so it warns: a native build there
+    // needs an explicit checkout player, and a web-only project still passes.
+    // One predicate for the message and the verdict: the target already decided whether this
+    // platform publishes the binary a build would run, and the warning follows that decision.
+    const unpublished = target.deprecated === true;
+    if (hudRefusal !== undefined) return hudRefusal;
+    return {
+      detail: target.absentDetail,
+      ...(unpublished
+        ? { fix: "Point THREENATIVE_ENGINE_PLAYER at a locally built engine player." }
+        : {}),
+      name: "native runtime",
+      status: unpublished ? "warn" : "ok",
     };
   }
 
@@ -1409,14 +1841,29 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
 
   if (status.ok !== true) {
     const reason =
-      typeof status.reason === "string" ? status.reason : "the install hook recorded no reason";
+      typeof status.reason === "string" ? status.reason : "the install recorded no reason";
+    // A configuration the build refuses outranks the download it would never start, and the
+    // recorded failure stays visible rather than disappearing behind it.
+    if (hudRefusal !== undefined) {
+      return {
+        // The refusal leads, the recorded failure stays *a failure* (AC-4), and the retry that
+        // reaches the downloader comes after the renderer is fixed.
+        detail: `${hudRefusal.detail} A previous download also failed (${reason}).`,
+        fix: `${hudRefusal.fix ?? ""} Then rerun \`threenative build --target desktop\` to retry the download.`.trim(),
+        name: "native runtime",
+        // No local binary answers this build, so the failed download is what a desktop build hits:
+        // that is AC-4's failure whatever target was asked about. The refusal still leads.
+        status: "fail",
+      };
+    }
     return {
       detail: `unavailable — ${key}: ${reason}`,
-      fix: "Fix the recorded prebuilt download failure, then run npm install again.",
+      fix: "Rerun `threenative build --target desktop`: it downloads the binary again. A persistent failure names the URL and the way out.",
       name: "native runtime",
       status: "fail",
     };
   }
+  if (hudRefusal !== undefined) return hudRefusal;
   if (status.key !== key) {
     return {
       detail: `unavailable — install status is for ${String(status.key ?? "an unknown target")}, not ${key}`,
@@ -1442,25 +1889,40 @@ export function nativeRuntimeCheck(snapshot: IProjectSnapshot): IDoctorCheck {
       status: "fail",
     };
   }
-  if (status.url !== snapshot.runtimeManifestUrl) {
+  // An offline build records the local lock it read. That is a legitimate source: the install
+  // verified the same sha256 from it, so doctor must not send the user to reinstall for it.
+  const pin = process.env.THREENATIVE_PREBUILT_MANIFEST;
+  const pinnedLock = pin === undefined ? undefined : path.resolve(pin);
+  const recorded = typeof status.url === "string" ? status.url : undefined;
+  const fromPinnedLock =
+    pinnedLock !== undefined &&
+    recorded !== undefined &&
+    (recorded === pinnedLock || path.resolve(recorded) === pinnedLock);
+  if (status.url !== snapshot.runtimeManifestUrl && !fromPinnedLock) {
     return {
       detail: `unavailable — install status release URL ${String(status.url ?? "is missing")} does not match ${snapshot.runtimeManifestUrl}`,
-      fix: "Remove the runtime package and run npm install to fetch the current release manifest.",
+      fix: "Reinstall the runtime package, then rerun the desktop build so it records the current release manifest.",
       name: "native runtime",
       status: "fail",
     };
   }
 
-  const binary = `prebuilt/${key}/${nativeRuntimeFilename()}`;
+  const binary = target.binary;
   const exists =
     snapshot.runtimeFileExists?.(binary) ?? existsSync(path.join(snapshot.runtimeRoot, binary));
   if (!exists) {
     return {
       detail: `unavailable — ${key} prebuilt binary is missing`,
-      fix: "Run npm install again to restore the native runtime prebuilt.",
+      fix: "Rerun `threenative build --target desktop` to download it again.",
       name: "native runtime",
       status: "fail",
     };
+  }
+  if (!target.legacy) {
+    // The engine player is not the legacy host and does not answer `--version`. Its receipt is the
+    // proof: the status was published only after the lock's sha256 verified the bytes, and the
+    // version check above already rejected a record from another release.
+    return { detail: `available (${key})`, name: "native runtime", status: "ok" };
   }
   // The package version is not the host's version, and only the host knows its own. This is the
   // check that catches the stale published prebuilt: `runtime-native-v0.3.2` answered
@@ -1692,14 +2154,29 @@ function requestedBuildBlockers(
   snapshot: IProjectSnapshot,
   request: Required<Pick<IDoctorRequest, "target">> & IDoctorRequest,
   nativeRuntime: IDoctorCheck,
+  pinnedManifest?: IDoctorCheck,
 ): readonly string[] {
   const blockers: string[] = [];
+  // Every native packager reads the pin before the network, so its failure blocks the build the
+  // check above already reported.
+  if (request.target !== "web" && pinnedManifest?.status === "fail")
+    blockers.push(pinnedManifest.detail.replace(/^(?:unavailable|unknown) — /u, ""));
   if (request.target === "web") {
     if (!snapshot.files.has("src/main.ts")) blockers.push("src/main.ts is missing");
     return blockers;
   }
-  // Every native target ships the downloaded runtime; its install status is the download's receipt.
-  if (nativeRuntime.status !== "ok")
+  // The download doctor reads is the desktop host's. Android and iOS fetch their own libraries at
+  // package time, so a failed desktop download must not veto a mobile build; each mobile target's
+  // own packager is checked below.
+  // A failure always blocks. A warning blocks only when no local binary answers the build: "nothing
+  // downloaded yet" still means a desktop build has no runtime, while a usable local player that
+  // bypasses a failed download is a build that runs.
+  const usableLocal =
+    localNativeBinary(snapshot, nativePrebuiltTarget(snapshot.config))?.kind === "available";
+  if (
+    request.target === "desktop" &&
+    (nativeRuntime.status === "fail" || (nativeRuntime.status === "warn" && !usableLocal))
+  )
     blockers.push(nativeRuntime.detail.replace(/^(?:unavailable|unknown) — /u, ""));
   // The thing the native host actually starts. Left out, a project with no portable entry read
   // `buildable — android` on a supported JDK while the build it predicted cannot start at all.
@@ -1723,6 +2200,13 @@ function requestedBuildBlockers(
   }
   if (!runtimeFileAvailable(snapshot, "scripts/package-android.mjs"))
     blockers.push(`${RUNTIME_PACKAGE} has no Android packager`);
+  // A source checkout answers from its own CMake build, which the default path refuses: naming the
+  // flag turns a build that fails on an unread lock into one that says what to pass.
+  const androidSource = sourceCheckoutRoot(snapshot);
+  if (androidSource !== undefined)
+    blockers.push(
+      `the Android runtime resolves to the source checkout ${androidSource}; pass --allow-source-build`,
+    );
   const requiredSdk = requiredAndroidSdk(snapshot);
   const androidToolchain =
     snapshot.androidToolchain ??
@@ -1748,11 +2232,17 @@ function requestedBuildCheck(
   snapshot: IProjectSnapshot,
   request: IDoctorRequest,
   nativeRuntime: IDoctorCheck,
+  pinnedManifest?: IDoctorCheck,
 ): IDoctorCheck | undefined {
   const { target } = request;
   if (target === undefined) return undefined;
   const scope = `${target}${request.mode === undefined ? "" : ` ${request.mode}`}`;
-  const blockers = requestedBuildBlockers(snapshot, { ...request, target }, nativeRuntime);
+  const blockers = requestedBuildBlockers(
+    snapshot,
+    { ...request, target },
+    nativeRuntime,
+    pinnedManifest,
+  );
   if (blockers.length === 0)
     return { detail: `buildable — ${scope}`, name: "requested build", status: "ok" };
   const requiredSdk = requiredAndroidSdk(snapshot);
@@ -1784,7 +2274,11 @@ const TARGET_PREREQUISITE_OWNERS: Readonly<Record<string, readonly DoctorTarget[
     "desktop overlay": Object.freeze(["desktop"] as const),
     // Its own words are "so a native build has nothing to start"; a web build starts src/main.ts.
     "native entry": Object.freeze(["android", "desktop", "ios"] as const),
-    "native runtime": Object.freeze(["android", "desktop", "ios"] as const),
+    // The prebuilt this check reads is the desktop host's. Android and iOS fetch their own
+    // libraries at package time from the same release, so their builds are not predicted by it.
+    "native runtime": Object.freeze(["desktop"] as const),
+    // The pin is read by every native target's packager, ahead of the desktop receipt.
+    "prebuilt manifest": Object.freeze(["android", "desktop", "ios"] as const),
   },
 );
 
@@ -1867,12 +2361,17 @@ function targetChecks(
   );
 }
 
-function desktopOverlayCheck(probe: IDesktopOverlayProbe): IDoctorCheck {
+function desktopOverlayCheck(
+  probe: IDesktopOverlayProbe,
+  options: { readonly target?: string } = {},
+): IDoctorCheck {
   return {
     detail: probe.detail,
     fix: probe.fix,
     name: "desktop overlay",
-    status: probe.status,
+    // The overlay is a desktop prerequisite: a plain `doctor` on a web-only project must not exit 1
+    // for a display it never opens (AC-4), while the desktop build being asked about still fails.
+    status: probe.status === "fail" && options.target !== "desktop" ? "warn" : probe.status,
   };
 }
 
@@ -2030,20 +2529,22 @@ export function diagnoseProject(
   }
   const hasPlaytests = [...snapshot.files].some((file) => file.endsWith(".playtest.json"));
   const blender = modelConversionCheck(snapshot);
-  const nativeRuntime = nativeRuntimeCheck(snapshot);
+  const nativeRuntime = nativeRuntimeCheck(snapshot, { target: options.target });
+  const pinnedManifest = pinnedManifestCheck(snapshot, { target: options.target });
   const apkSize = apkSizeCheck(snapshot);
   const playtest = playtestCheck(snapshot, options.capturePath);
-  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime);
+  const requestedBuild = requestedBuildCheck(snapshot, options, nativeRuntime, pinnedManifest);
   const checks: IDoctorCheck[] = [
     { detail: "readable", name: "package.json", status: "ok" },
     ...dependencyChecks(snapshot),
     nativeEntryCheck(snapshot),
+    ...(pinnedManifest === undefined ? [] : [pinnedManifest]),
     nativeRuntime,
     assetPipelineCheck(snapshot),
     ...(apkSize === undefined ? [] : [apkSize]),
     ...(!usesDesktopOverlay(snapshot.config) || snapshot.desktopOverlay === undefined
       ? []
-      : [desktopOverlayCheck(snapshot.desktopOverlay)]),
+      : [desktopOverlayCheck(snapshot.desktopOverlay, options)]),
     ...targetChecks(snapshot, nativeRuntime, options, requestedBuild),
     ...(requestedBuild === undefined ? [] : [requestedBuild]),
     snapshot.files.has("src/main.ts")
@@ -2147,6 +2648,27 @@ async function runtimeReleaseManifestUrl(
   }
 }
 
+/**
+ * The installed downloader's `readRelease`, when the runtime package is resolvable.
+ *
+ * Doctor answers in projects whose runtime package may be absent, so this is a load rather than an
+ * import: no package, no reader, and the pin check says `unknown` instead of guessing.
+ */
+async function loadRuntimeReadRelease(
+  runtimeRoot: string,
+): Promise<((manifestPath: string, key: string) => unknown) | undefined> {
+  const module = path.join(runtimeRoot, "scripts", "install-prebuilt.mjs");
+  if (!existsSync(module)) return undefined;
+  try {
+    const loaded = (await import(pathToFileURL(module).href)) as {
+      readRelease?: (manifestPath: string, key: string) => unknown;
+    };
+    return typeof loaded.readRelease === "function" ? loaded.readRelease : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export async function readProject(root: string): Promise<IProjectSnapshot> {
   const projectRoot = path.resolve(root);
   const packageJson = await readJson(path.join(projectRoot, "package.json"));
@@ -2176,6 +2698,8 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
     runtimeRoot === undefined || runtimeVersion === undefined
       ? undefined
       : await runtimeReleaseManifestUrl(runtimeRoot, runtimeVersion);
+  const readReleaseFromRuntime =
+    runtimeRoot === undefined ? undefined : await loadRuntimeReadRelease(runtimeRoot);
   const playtestRunnerPath = resolveBinaryFrom(projectRoot, PLAYTEST_BINARY);
   const authoringLayer = await authoringLayerStatus(projectRoot).catch(
     (error: unknown): IAuthoringLayerStatus => ({
@@ -2242,9 +2766,19 @@ export async function readProject(root: string): Promise<IProjectSnapshot> {
             }
           },
           runtimeFileExists: (relative: string) => existsSync(path.join(runtimeRoot, relative)),
-          nativeHost: probeNativeHost(
-            path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
-          ),
+          ...(readReleaseFromRuntime === undefined ? {} : { readRelease: readReleaseFromRuntime }),
+          // Only the `threejs` host answers `--version`. Probing it for a default-engine project
+          // executed an unused binary and could spend its 20-second timeout doing it.
+          // The override wins over the cache, so a cached host is not probed when it is set: probing
+          // it spent its 20-second timeout before reporting a result the build never uses.
+          ...(record(config)?.engine === "threejs" &&
+          process.env.THREENATIVE_RUNTIME_BINARY === undefined
+            ? {
+                nativeHost: probeNativeHost(
+                  path.join(runtimeRoot, "prebuilt", nativeRuntimeKey(), nativeRuntimeFilename()),
+                ),
+              }
+            : {}),
           ...(runtimeManifestUrl === undefined ? {} : { runtimeManifestUrl }),
           runtimeRoot,
         }),

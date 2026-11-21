@@ -20,7 +20,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 import { assertNativeAssetsDecodable, deriveDesktopWebpSupport } from './asset-preflight.mjs';
 import { listFiles, selectManifestAssets } from './asset-manifest.mjs';
-import { installPrebuilt } from './install-prebuilt.mjs';
+import { ensureNativeBinary } from './install-prebuilt.mjs';
 
 // The container helper is imported lazily by the release path only, so a debug build never loads
 // it, and it ships in package.json `files` so a published `--mode release` run resolves it.
@@ -72,7 +72,7 @@ export function stripDesktopRuntime(file, { platform = process.platform, run = e
 /**
  * Resolve the desktop runtime binary a consumer build compiles against.
  *
- * A published install ships no compiled runtime until the postinstall hook fetches one, so a
+ * A published install ships no compiled runtime until the first native build fetches one, so a
  * missing `--runtime` installs from the release manifest rather than failing with a bare
  * "missing file". `THREENATIVE_RUNTIME_SOURCE` remains the decoder-preflight source only: it
  * never selects or substitutes the runtime binary, and no code path here reads a checkout as
@@ -90,7 +90,13 @@ export async function resolveDesktopRuntime(explicit, options = {}) {
         'Pass the checkout-built --runtime explicitly for a maintainer build; consumer builds unset the override and install from the release manifest.',
     );
   }
-  return installPrebuilt({ ...options.install, reuse: true });
+  // A private snapshot, with its helper beside it: the shared cache can be republished by another
+  // build under a different lock while this one cooks assets.
+  // Staged beside the artifact, not in the system temp root: a hardened host can mount /tmp
+  // `noexec`, and this runtime has to run to produce the artifact.
+  // The resolver passes the request through and defaults to no staging: a capability probe reads
+  // the cache path, and a caller that must execute the binary asks for its own snapshot.
+  return ensureNativeBinary({ ...options.install });
 }
 
 /**
@@ -215,8 +221,32 @@ export function packageDesktop(options) {
     }
     return compileOrPackage(options, options.runtime);
   }
-  return resolveDesktopRuntime(undefined, { runtimeSource: options.runtimeSource, install: options.install }).then((runtime) =>
-    compileOrPackage(options, runtime),
+  return resolveDesktopRuntime(undefined, {
+    runtimeSource: options.runtimeSource,
+    install: options.install,
+    output: options.output,
+  }).then(
+    async (runtime) => {
+      // The packager owns its executable copy: taken beside the artifact, removed in `finally`.
+      const stageDir = dirname(options.output);
+      let executable = runtime;
+      let stagedDir;
+      try {
+        // A cache path is the one the installer publishes: anything else is the caller's own file.
+        if (/[\\/]prebuilt[\\/][^\\/]+[\\/]/u.test(runtime)) {
+          mkdirSync(stageDir, { recursive: true });
+          executable = await ensureNativeBinary({
+            ...options.install,
+            stageDir,
+            stagePrivate: true,
+          });
+          stagedDir = dirname(executable);
+        }
+        return await compileOrPackage(options, executable);
+      } finally {
+        if (stagedDir !== undefined) rmSync(stagedDir, { force: true, recursive: true });
+      }
+    },
   );
 }
 

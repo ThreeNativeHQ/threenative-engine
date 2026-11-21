@@ -14,7 +14,7 @@ npm i -D @threenative/procedural-environment
 
 ## Find what to bake
 
-One catalog holds every element (`tree`, `cover`, `debris`, `rock`, `city`) with its biomes and the exact
+The bake catalog lists each element (`tree`, `cover`, `debris`, `rock`, `city`) with its biomes and the exact
 bake call. A biome takes its id or a request word: `jungle` is `tropical`, `swamp` is `wetland`,
 `canyon` is `desert`.
 
@@ -33,15 +33,54 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 
 ## Browse everything: `pnpm asset-library`
 
-From the repository root, `pnpm asset-library` builds this package and opens a Storybook-shaped
-viewer: a sidebar of every element by kind with search and a biome filter, one story per element
-with every option its bake takes as a control (seed, level of detail, textures, a rock's biome,
-size, shape traits, surface cover and cliff module, a city module's floors, wetness and sign), a
-docs tab with the paste-ready bake call, size, triangles and GLB attributes, and an overview story
-per kind at true scale. Each story calls this package's own bake, so the viewer shows what a game
-gets. The URL holds the story (`#/rock/cliff?biome=coastal&module=1`), so a link shows the same
-bake. While it runs, an edit under `src/`, `vendor/` or `scans/` rebuilds the package and reloads
-the page.
+From the repository root, `pnpm asset-library` builds this package and opens a Storybook-style
+viewer. Search the sidebar by name or filter by biome and style tags. Selecting several tags
+shows assets with any of those tags. Nature and city modules are tagged Realistic, the Biome
+Kit is tagged Stylized, and the Dungeon kit is tagged Low Poly. Open a story to orbit the asset.
+GLB stories run the package's bake with the selected controls. The Docs tab shows the exact
+bake call and mesh attributes, and the Stats tab shows dimensions and triangle counts.
+Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
+under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
+
+### Stylized Biome Kit
+
+Open **Stylized Biome Kit** in the same sidebar for the alpine forest, snow peaks, and desert
+canyon scenes, all original asset variants, and the three mountain ridges. These generators
+return Three.js objects with their original WebGL shader materials. Advance
+`stylizedUniforms.uTime.value` each frame to animate water, snow, and foliage.
+
+```ts
+import { createStylizedAsset, stylizedAssets } from "@threenative/procedural-environment/stylized";
+
+const assets = stylizedAssets();
+const { group } = createStylizedAsset("mountain-snow", { seed: 8, variant: 1 });
+scene.add(group);
+```
+
+The subpath also exports the source kit's `terrain`, `sky`, and `scatter` helpers. The Docs tab
+copies the call for the selected asset and controls. Variant indices in code start at zero.
+
+### Dungeon kit
+
+The **Dungeon** section includes 49 procedural pieces and two assembled previews. Each piece comes
+in Ancient Ruins, Ice Dungeon, and Lava Depths. Walls run along X and pair with 4 m floor modules.
+Rotate walls 90° around Y for the other axis. Straight stairs rise 2 m toward negative Z.
+
+```ts
+import { createStylizedAsset, stylizedUniforms } from "@threenative/procedural-environment/stylized";
+
+const torch = createStylizedAsset("dungeon-wall-torch", { seed: 12, variant: 0 });
+scene.add(torch.group);
+
+function tick(elapsedSeconds: number) {
+  stylizedUniforms.uTime.value = elapsedSeconds;
+  torch.update?.(elapsedSeconds);
+}
+```
+
+The wall torch, brazier, hanging lamp, candle cluster, and altar carry their own point light. The
+shader moves the flame and embers, and `update` flickers the emitted light. The Theme control in the
+viewer corresponds to variant indices 0, 1, and 2.
 
 ## Trees, cover and the forest floor
 

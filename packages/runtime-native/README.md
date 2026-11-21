@@ -31,10 +31,30 @@ portable entry and bundle it as the game's single native module.
 
 ## Where the native binaries come from
 
-An installed copy of this package contains no C++ and no build system. `build --target android`
-therefore downloads prebuilt artifacts for the version you installed, listed in the release's
-`prebuilt-lock.json`, and verifies each one against the SHA-256 the manifest records. Only an
-Android SDK and a JDK are needed; no NDK, no CMake, and nothing is compiled on your machine.
+An installed copy of this package contains no C++ and no build system, and **installing it downloads
+nothing**. The first native build fetches what that build needs and verifies it against the SHA-256
+recorded in the release's `prebuilt-lock.json`:
+
+| Command | Downloads |
+| --- | --- |
+| `build --target web`, `dev`, `test` | nothing — the Wasm engine is a file in this npm package (`build/web/`), so it arrives with the registry tarball |
+| `build --target desktop` (default engine) | the engine player, about 118 MiB, once per install |
+| `build --target desktop` (`engine: "threejs"`) | the legacy runtime and its build tool helper, about 260 MiB, once per install |
+| `build --target android` / `ios` | that platform's libraries, at package time |
+
+A verified download is reused with no network, so a second build is offline. Only an Android SDK
+and a JDK are needed for Android, and nothing is compiled on your machine.
+
+To fetch ahead of a build (an offline image, a slow link), run the downloader by hand — it is no
+longer an install hook:
+
+```sh
+node node_modules/@threenative/runtime-native/scripts/install-prebuilt.mjs
+```
+
+When a download fails, the error names the asset, the version, the URL and three fixes. Offline,
+set `THREENATIVE_ENGINE_PLAYER` (default engine) or `THREENATIVE_RUNTIME_BINARY` (`engine: "threejs"`)
+to a local binary.
 
 Two environment variables change where those artifacts come from.
 

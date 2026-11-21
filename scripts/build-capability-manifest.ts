@@ -222,6 +222,8 @@ function resolveRelativeModule(from: string, specifier: string): string | undefi
     `${base}.tsx`,
     `${base}.mts`,
     `${base}.cts`,
+    // A vendored `.js` module ships its types as a `.d.ts` sidecar.
+    `${base}.d.ts`,
     path.join(base, "index.ts"),
     path.join(base, "index.tsx"),
   ];

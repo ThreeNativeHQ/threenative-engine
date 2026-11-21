@@ -300,6 +300,12 @@ export function desktopConsoleType(stream: "stderr" | "stdout", line: string): s
   // host cannot fail a gameplay qualification. The audio lifecycle is proven by
   // verify-desktop-audio.mjs against real AudioContexts, not by this line.
   if (/^ALSA lib\b|^\[Audio\] Failed to open audio device: ALSA:|^Gtk-Message:/u.test(text)) return "log";
+  // Unix does not let an unprivileged process raise its own priority, so a hosted runner without
+  // rtkit refuses the raise and the engine logs that refusal once. Its own comment calls it "not
+  // an error", and the threads simply keep nice 0: the game that follows is identical to the game
+  // on a host that granted it. Counting the notice as an error failed every template's
+  // `noRuntimeDiagnostics` native proof on such a host, for a capability the host never had.
+  if (/^TN_PROCESS_PRIORITY_RAISE_REFUSED:/u.test(text)) return "log";
   return stream === "stderr" ? "error" : "log";
 }
 

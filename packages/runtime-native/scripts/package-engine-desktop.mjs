@@ -3,12 +3,15 @@
 // engine's own three, its cooked assets and its built UI, in one directory with a launcher. The
 // player reads `native/assets.tnpk` and `ui/index.html` beside the bundle, so the layout is the contract.
 import { createHash } from "node:crypto";
-import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { basename, join, resolve } from "node:path";
-import { pathToFileURL } from "node:url";
+import { tmpdir } from "node:os";
+import { readFileSync, readdirSync, chmodSync, copyFileSync, cpSync, existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { bundleNativeEngine, cookNativeEngineAssets } from "./bundle-native-engine.mjs";
 
-const PLAYER = "tn-native-engine-player-v8";
+// A Windows build has to contain a runnable image: the same bytes under the `.exe` name the
+// operating system will spawn, and the path the playtest launcher resolver looks for there.
+const PLAYER = process.platform === "win32" ? "tn-native-engine-player-v8.exe" : "tn-native-engine-player-v8";
 
 /**
  * The launcher: the window opens with the game's title and size, the player takes the game's CPU priority
@@ -35,13 +38,71 @@ export function launcher(width, height, title, priority = "game", fullscreen = t
  * Writes `output` as a directory: `<name>` (launcher), the player, `game.js`, `native/assets.tnpk`
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
+/** A path with every symlink resolved, including the ones above a file that does not exist yet. */
+function resolvedPath(target) {
+  const absolute = resolve(target);
+  const rest = [];
+  let current = absolute;
+  for (;;) {
+    try {
+      return join(realpathSync(current), ...rest.reverse());
+    } catch {
+      const parent = dirname(current);
+      if (parent === current) return absolute;
+      rest.push(basename(current));
+      current = parent;
+    }
+  }
+}
+
+/** Whether two paths name the same file, through symlinks and through a file not yet written. */
+function samePath(left, right) {
+  return resolvedPath(left) === resolvedPath(right);
+}
+
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority, fullscreen },
+  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
+  // An older CLI passes the canonical cache path without ever downloading it: this packager can
+  // fill that cache itself, through the same locked entry point a build uses, instead of sending
+  // the reader to a recipe for a binary the release publishes.
+  // Only the package's own cache path: an explicit `--player` elsewhere is the caller's file, and
+  // downloading a player into a different directory would still leave packaging to fail.
+  const canonicalPlayer = join(
+    fileURLToPath(new URL('../prebuilt/', import.meta.url)),
+    `${process.platform}-${process.arch}`,
+    PLAYER,
+  );
+  // A snapshot this packager took, and where it lives: removed in `finally` however packaging ends,
+  // because a cross-filesystem hard link fell back to a full 118 MiB copy.
+  let snapshot;
+  try {
+  // A canonical cache path is always passed through the verifier: a file that exists is not a file
+  // that verifies, and an install killed before writing its receipt leaves exactly that. Compared
+  // through symlinks, because pnpm hands the CLI a linked `node_modules/@threenative/...` path.
+  if (player && !process.env.THREENATIVE_ENGINE_PLAYER &&
+      samePath(player, canonicalPlayer)) {
+    // `new URL` needs no import of its own and resolves beside this file however it is symlinked.
+    const installer = new URL('./install-prebuilt.mjs', import.meta.url);
+    if (existsSync(installer)) {
+      const { ensureNativeBinary } = await import(installer.href);
+      if (typeof ensureNativeBinary === 'function') {
+        // Verified and snapshotted under the lock, into a directory the packager can write even
+        // when the install itself is read-only.
+        player = await ensureNativeBinary({
+          enginePlayer: true,
+          stageDir: tmpdir(),
+          stagePrivate: true,
+        });
+        // The snapshot is this packager's own copy: it is removed however packaging ends.
+        snapshot = player;
+      }
+    }
+  }
   if (!player || !existsSync(player)) {
     throw new Error(
-      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}.Build it (cmake --preset tn-linux -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON) and set THREENATIVE_ENGINE_PLAYER, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
+      `TN_ENGINE_PLAYER_MISSING: engine "threenative" on desktop needs the engine player (${PLAYER}) at ${player ?? "(not set)"}. The first \`threenative build --target desktop\` downloads it (about 118 MiB, checksum-verified) unless THREENATIVE_ENGINE_PLAYER names a local file; build one from an engine checkout: run \`node scripts/download-deps.mjs\` and \`node scripts/build-native-physics.mjs --desktop\` first (every desktop preset enables native physics), and for a Linux web HUD \`node scripts/build-native-ui-overlay.mjs\` (CMake needs that library before it accepts the flag), then \`cmake --preset <platform> -B build/tn-engine-ui -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON\`; on any other platform or with a \"native\" HUD use the same command without the overlay flag (a web HUD there needs engine: \"threejs\"), then \`cmake --build build/tn-engine-ui --target tn-native-engine-player-v8\` (the legacy host's \`native:build\` does not produce it), or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
   rmSync(output, { force: true, recursive: true });
@@ -56,8 +117,39 @@ export async function packageEngineDesktop(
       throw new Error(`TN_UI_BUNDLE_MISSING: ${ui} has no index.html, which is the page the overlay loads.`);
     cpSync(ui, join(output, "ui"), { recursive: true });
   }
-  const start = join(output, basename(output));
-  writeFileSync(start, launcher(width, height, title, priority, fullscreen));
+  // Windows cannot run the POSIX launcher, and the raw player exits without its bundle: a `.cmd`
+  // beside the player is what a person double-clicking the folder can actually start.
+  const windows = process.platform === "win32";
+  const start = windows ? join(output, `${basename(output)}.cmd`) : join(output, basename(output));
+  const startContents = windows
+    ? [
+        "@echo off",
+        `if exist "%~dp0title.txt" set /p TN_PLAYER_TITLE=<"%~dp0title.txt"`,
+        // The title never appears in the batch text: cmd expands `%…%` inside quoted `set` values
+        // and treats a caret as an escape. It is read from a sidecar as data instead, which is the
+        // one form a batch file cannot mangle.
+        `set "TN_PLAYER_WIDTH=${width}"`,
+        `set "TN_PLAYER_HEIGHT=${height}"`,
+        `set "TN_PLAYER_PRIORITY=${priority}"`,
+        `set "TN_PLAYER_FULLSCREEN=${fullscreen ? 1 : 0}"`,
+        `"%~dp0${PLAYER}" "%~dp0game.js" %*`,
+        "",
+      ].join("\r\n")
+    : launcher(width, height, title, priority, fullscreen);
+  // Write the launcher exclusively: on a case-insensitive filesystem a name that differs only in
+  // case is the packaged player, and opening it for writing would destroy the binary. Existence is
+  // the question the filesystem answers, not a string comparison.
+  try {
+    writeFileSync(start, startContents, { flag: 'wx' });
+  } catch (error) {
+    if (error.code === 'EEXIST')
+      throw new Error(
+        `TN_ENGINE_LAUNCHER_COLLIDES: the launcher path ${start} is already taken by the packaged player (${PLAYER}). Rename the game or its desktop output directory.`,
+      );
+    throw error;
+  }
+  if (windows && title)
+    writeFileSync(join(output, "title.txt"), `${title}\n`, { encoding: "utf8", flag: "wx" });
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
@@ -80,8 +172,10 @@ export async function packageEngineDesktop(
   }
   console.log(`ThreeNative desktop artifact: ${output}`);
   return output;
+  } finally {
+    if (snapshot !== undefined) rmSync(snapshot, { force: true });
+  }
 }
-
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   const args = process.argv.slice(2);
   const flags = new Map();

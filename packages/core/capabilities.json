@@ -7790,6 +7790,40 @@
     },
     {
       "aliases": [],
+      "constraints": ["the desktop host must be built before launching"],
+      "example": "await runDesktopPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function resolveDesktopExecutable(candidate: string): Promise<string> { … }",
+      "situations": [
+        "execute a scenario against the desktop host",
+        "verify native desktop behavior from the same scenario"
+      ],
+      "summary": "Run a desktop playtest and collect its report.",
+      "supersedes": [],
+      "symbol": "resolveDesktopExecutable"
+    },
+    {
+      "aliases": [],
+      "constraints": ["the desktop host must be built before launching"],
+      "example": "await runDesktopPlaytest(options);",
+      "importPath": "@threenative/playtest/runner",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "export async function resolveDesktopLaunch(candidate: string): Promise<IDesktopLaunchTarget> { … }",
+      "situations": [
+        "execute a scenario against the desktop host",
+        "verify native desktop behavior from the same scenario"
+      ],
+      "summary": "Run a desktop playtest and collect its report.",
+      "supersedes": [],
+      "symbol": "resolveDesktopLaunch"
+    },
+    {
+      "aliases": [],
       "constraints": ["missing observations and malformed assertions fail closed"],
       "example": "const report = await runStandalonePlaytest(options);",
       "importPath": "@threenative/playtest/runner",
@@ -8578,6 +8612,91 @@
       "summary": "List every preset a bake can grow: id, name, latin name and kind. Trees and cover come from Arbor; the `debris` rows (log, stump, twig, branch, leaflitter, rock) and the extra cover rows (reeds, tussock, seedgrass, clover, dock, plume) come from forest-kit.",
       "supersedes": [],
       "symbol": "vegetationPresets"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials"
+      ],
+      "example": "const { group } = createStylizedAsset(\"mountain-snow\", { seed: 8, variant: 1 });",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
+      "situations": [
+        "create stylized mountain ridges, snowy trees, sandstone formations, or animated water",
+        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme"
+      ],
+      "summary": "Generate a Stylized Biome Kit or Dungeon piece or scene with its Three.js materials.",
+      "supersedes": [],
+      "symbol": "createStylizedAsset"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "scene.add(scatter(group, [{ x: 5, z: 8 }, { x: 9, z: 10, rot: 1 }]));",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function scatter( source: Object3D, placements: { … }",
+      "situations": ["instance a stylized biome tree or grass asset at many positions"],
+      "summary": "Make instanced batches of a Stylized Biome Kit piece at explicit positions.",
+      "supersedes": [],
+      "symbol": "scatter"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "scene.add(sky({ top: 0x3a8be8, horizon: 0xe2f1ff }));",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function sky(options?: { … }",
+      "situations": [
+        "a procedural stylized gradient sky dome for an alpine, snow, or desert scene"
+      ],
+      "summary": "Build a gradient sky dome with the Stylized Biome Kit's WebGL shader.",
+      "supersedes": [],
+      "symbol": "sky"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const rows = stylizedAssets();",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function stylizedAssets(): IStylizedAsset[] { … }",
+      "situations": [
+        "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon",
+        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes"
+      ],
+      "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
+      "supersedes": [],
+      "symbol": "stylizedAssets"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const meadow = terrain({ height: (x, z) => 1 + Math.sin(x) * Math.cos(z), color: (_x, _z, _y, _n, out) => out.set(0x55b93e) });",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function terrain(options: { … }",
+      "situations": ["make stylized heightfield terrain with vertex colors and a worn path"],
+      "summary": "Build stylized heightfield geometry with a color callback and a second-color mask for path edges.",
+      "supersedes": [],
+      "symbol": "terrain"
     },
     {
       "aliases": [],

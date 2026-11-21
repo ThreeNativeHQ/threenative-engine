@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 import tailwindcss from "@tailwindcss/vite";
 import { type Plugin, defineConfig } from "vite";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "../src/city.js";
+import { stylizedAssets } from "../src/stylized.js";
 import Outcrop from "../vendor/outcrop.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
@@ -339,7 +340,14 @@ async function route(url: URL, res: ServerResponse): Promise<boolean> {
     const biomes = pkg.environmentBiomes();
     send(res, 200, {
       biomes,
-      elements: pkg.environmentElements(),
+      styles: { realistic: "Realistic", stylized: "Stylized", "low-poly": "Low Poly" },
+      elements: [
+        ...pkg.environmentElements().map((entry) => ({ ...entry, styleTags: ["realistic"] })),
+        ...stylizedAssets().map((entry) => ({
+          ...entry,
+          styleTags: entry.kind === "dungeon" ? ["low-poly"] : ["stylized"],
+        })),
+      ],
       controls: controls(biomes.map((biome) => biome.id)),
     });
   } else if (url.pathname === "/api/bake") send(res, 200, await bakeOnce(url.searchParams));

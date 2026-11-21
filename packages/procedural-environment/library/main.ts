@@ -3,16 +3,25 @@ import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import {
+  createStylizedAsset,
+  sky as makeStylizedSky,
+  stylizedMaterials,
+  stylizedUniforms,
+} from "../src/stylized.js";
 import Outcrop from "../vendor/outcrop.js";
 
-// The page knows no kind: kinds, their controls and their bake calls all come from /api/catalog.
+// /api/catalog serves the story index and bake controls for both asset sources.
 interface IElement {
   id: string;
   name: string;
   latin?: string;
   kind: string;
+  styleTags: string[];
   biomes: string[];
-  bake: string;
+  bake?: string;
+  variants?: number;
+  variantNames?: readonly string[];
   category?: string;
 }
 interface IBiome {
@@ -29,6 +38,7 @@ interface IControl {
   max?: number;
   step?: number;
   options?: string[];
+  labels?: readonly string[];
   default?: number | string | boolean;
   only?: string[];
 }
@@ -102,6 +112,13 @@ const figure = new THREE.Mesh(
 figure.castShadow = true;
 scene.add(ground, grid, figure);
 
+const stylizedSky = makeStylizedSky();
+stylizedSky.visible = false;
+scene.add(stylizedSky);
+const sharedStylizedMaterials = new Set(Object.values(stylizedMaterials));
+type StylizedPreview = ReturnType<typeof createStylizedAsset>;
+let scenePreview: StylizedPreview | undefined;
+
 const camera = new THREE.PerspectiveCamera(40, 1, 0.05, 2000);
 const orbit = new OrbitControls(camera, canvas);
 orbit.enableDamping = true;
@@ -160,6 +177,13 @@ function lightFor(outcropBiome?: string): void {
   // A rock story takes the page's own light (hemisphere 1.1, sun 3.2, exposure 1.05, no environment
   // map): the room environment on top of it washed every rock to near white beside the page.
   const rock = outcropBiome !== undefined;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  sun.shadow.normalBias = 0;
+  camera.fov = 40;
+  ground.visible = true;
+  grid.visible = $("grid").getAttribute("aria-pressed") === "true";
+  figure.visible = $("figure").getAttribute("aria-pressed") === "true";
+  stylizedSky.visible = false;
   scene.environment = rock ? null : roomEnvironment;
   hemi.intensity = rock ? 1.1 : 0.35;
   sun.intensity = rock ? 3.2 : 3;
@@ -178,11 +202,19 @@ function lightFor(outcropBiome?: string): void {
   sky.azimuth = env.azimuth as number;
 }
 
-let catalog: { elements: IElement[]; biomes: IBiome[]; controls: Record<string, IControl[]> } = {
+let catalog: {
+  elements: IElement[];
+  biomes: IBiome[];
+  styles: Record<string, string>;
+  controls: Record<string, IControl[]>;
+} = {
   elements: [],
   biomes: [],
+  styles: {},
   controls: {},
 };
+const selectedStyles = new Set<string>();
+const styleNames = (element: IElement) => element.styleTags.map((tag) => catalog.styles[tag]);
 /** A story: a kind overview (optionally one category of it) or one element. */
 let route: { kind: string; id?: string; category?: string; tiled?: string } = { kind: "" };
 let token = 0;
@@ -196,10 +228,25 @@ const say = (text: string, error = false) => {
 /** Every kind in the catalog, in the order its first element appears. */
 const kinds = () => [...new Set(catalog.elements.map((e) => e.kind))];
 /** The controls a kind shows; `only` ones show just for their element ids. */
-const controlsFor = (kind: string, id?: string) =>
-  (catalog.controls[kind] ?? []).filter(
+const controlsFor = (kind: string, id?: string): IControl[] => {
+  const element = catalog.elements.find((e) => e.kind === kind && e.id === id);
+  const variants = element?.variants ?? 0;
+  if (variants > 1) {
+    return [
+      {
+        key: "variant",
+        label: element?.variantNames ? "Theme" : "Variant",
+        type: "select",
+        options: Array.from({ length: variants }, (_, i) => String(i + 1)),
+        labels: element?.variantNames,
+        default: "1",
+      },
+    ];
+  }
+  return (catalog.controls[kind] ?? []).filter(
     (c) => !c.only || (id !== undefined && c.only.includes(id)),
   );
+};
 const paramsFor = (kind: string, id?: string) =>
   controlsFor(kind, id).flatMap((c) => {
     const value = touched.get(c.key);
@@ -294,21 +341,68 @@ async function modelOf(baked: IBake): Promise<{ model: THREE.Object3D; windy: bo
   return { model: gltf.scene, windy };
 }
 
+function disposeModel(root: THREE.Object3D): void {
+  const geometry = new Set<THREE.BufferGeometry>();
+  const materials = new Set<THREE.Material>();
+  root.traverse((node) => {
+    if (node instanceof CSS2DObject) node.element.remove();
+    const mesh = node as THREE.Mesh & THREE.Points & THREE.InstancedMesh;
+    if (!mesh.isMesh && !mesh.isPoints) return;
+    if (mesh.isInstancedMesh) mesh.dispose();
+    geometry.add(mesh.geometry);
+    for (const material of [mesh.material].flat()) {
+      if (!sharedStylizedMaterials.has(material)) materials.add(material);
+    }
+  });
+  for (const item of geometry) item.dispose();
+  for (const item of materials as Set<THREE.MeshStandardMaterial>) {
+    item.map?.dispose();
+    item.normalMap?.dispose();
+    item.dispose();
+  }
+}
+
 function clear(): void {
   for (const child of [...content.children]) {
     content.remove(child);
-    child.traverse((node) => {
-      const mesh = node as THREE.Mesh;
-      if (node instanceof CSS2DObject) node.element.remove();
-      if (!mesh.isMesh) return;
-      mesh.geometry.dispose();
-      for (const material of [mesh.material].flat() as THREE.MeshStandardMaterial[]) {
-        material.map?.dispose();
-        material.normalMap?.dispose();
-        material.dispose();
-      }
-    });
+    disposeModel(child);
   }
+}
+
+function stylizedLighting(preview?: StylizedPreview): void {
+  const env = preview?.env;
+  renderer.toneMapping = THREE.NeutralToneMapping;
+  renderer.toneMappingExposure = 1;
+  const studio = route.kind === "dungeon" && !preview?.view;
+  scene.environment = studio ? roomEnvironment : null;
+  hemi.color.set(env?.hemi.sky ?? 0xd6e4ff);
+  hemi.groundColor.set(env?.hemi.ground ?? 0x7f93c4);
+  hemi.intensity = env?.hemi.intensity ?? (studio ? 1.12 : 1.9);
+  sun.color.set(env?.sun.color ?? (studio ? 0xffedda : 0xfff3dc));
+  sun.intensity = env?.sun.intensity ?? 3;
+  sky.elevation = 49;
+  sky.azimuth = -54;
+  (scene.background as THREE.Color).set(env?.horizon ?? 0xb7c6e6);
+  (scene.fog as THREE.Fog).color.set(env?.horizon ?? 0xb7c6e6);
+  if (preview?.view) ground.visible = grid.visible = figure.visible = false;
+  if (!env) return;
+  stylizedSky.visible = true;
+  stylizedSky.material.uniforms.uTop?.value.set(env.skyTop);
+  stylizedSky.material.uniforms.uHorizon?.value.set(env.horizon);
+  (scene.fog as THREE.Fog).near = env.fog[1];
+  (scene.fog as THREE.Fog).far = env.fog[2];
+  sun.target.position.set(0, 0, 0);
+  sun.position
+    .set(...env.sun.dir)
+    .normalize()
+    .multiplyScalar(env.shadow * 3);
+  const shadow = sun.shadow.camera;
+  shadow.left = shadow.bottom = -env.shadow;
+  shadow.right = shadow.top = env.shadow;
+  shadow.near = 1;
+  shadow.far = env.shadow * 6;
+  shadow.updateProjectionMatrix();
+  sun.shadow.normalBias = Math.max(0.02, env.shadow * 0.0012);
 }
 
 /** The canvas renders on demand: after a change, while the camera moves, or while a _WIND model sways. */
@@ -320,10 +414,25 @@ const invalidate = () => {
 
 function frame(): void {
   invalidate();
+  if (scenePreview?.view) {
+    camera.fov = 42;
+    camera.near = 0.5;
+    camera.far = 2500;
+    orbit.target.set(...scenePreview.view.target);
+    camera.position
+      .set(...scenePreview.view.pos)
+      .sub(orbit.target)
+      .multiplyScalar(Math.max(1, 1.2 / camera.aspect))
+      .add(orbit.target);
+    camera.updateProjectionMatrix();
+    return;
+  }
   const box = new THREE.Box3().setFromObject(content);
   if (box.isEmpty()) return;
   const sphere = box.getBoundingSphere(new THREE.Sphere());
-  const fit = sphere.radius / Math.sin(THREE.MathUtils.degToRad(camera.fov / 2));
+  const halfFov = THREE.MathUtils.degToRad(camera.fov / 2);
+  const horizontal = Math.atan(Math.tan(halfFov) * camera.aspect);
+  const fit = sphere.radius / Math.sin(Math.min(halfFov, horizontal));
   orbit.target.copy(sphere.center);
   camera.position
     .copy(sphere.center)
@@ -349,6 +458,7 @@ function frame(): void {
   const s = sun.shadow.camera as THREE.OrthographicCamera;
   s.left = s.bottom = -sphere.radius * 1.4;
   s.right = s.top = sphere.radius * 1.4;
+  s.near = 0.5;
   s.far = sphere.radius * 8 + 20;
   s.updateProjectionMatrix();
 }
@@ -395,7 +505,7 @@ const size = (b: IBake["bounds"]) => b.max.map((v, i) => (v - (b.min[i] ?? 0)).t
 
 /** The catalog's bake call with the seed, the LOD and every touched control written in, `out` last. */
 function callFor(e: IElement): string {
-  const [, fn = "bake", body = ""] = /^(\w+)\(\{(.*)\}\)$/s.exec(e.bake.trim()) ?? [];
+  const [, fn = "bake", body = ""] = /^(\w+)\(\{(.*)\}\)$/s.exec(e.bake?.trim() ?? "") ?? [];
   const args = new Map(
     [...body.matchAll(/(\w+):\s*("[^"]*"|[^,]+?)\s*(?=,|$)/g)].map((m) => [m[1], m[2]]),
   );
@@ -433,15 +543,21 @@ const PRE =
   "whitespace-pre-wrap break-all rounded border border-line bg-sidebar p-3 font-mono text-xs text-ink";
 const DL = "grid grid-cols-[auto_1fr] gap-x-6 gap-y-1.5 [&_dt]:font-bold [&_dt]:text-muted";
 
-function renderDocs(element: IElement, baked: IBake, model: THREE.Object3D): void {
+type PreviewReport = Pick<IBake, "triangles" | "bounds" | "ms" | "call"> &
+  Partial<Pick<IBake, "lod" | "path">>;
+
+function renderDocs(element: IElement, baked: PreviewReport, model: THREE.Object3D): void {
   const [w, h, d] = size(baked.bounds);
-  const file = baked.path.split("/").pop() ?? "";
+  const file = baked.path?.split("/").pop();
+  const runtime = isRuntimeKind(element.kind);
   rowsInto($("stat-rows"), [
     ["Triangles", baked.triangles.toLocaleString()],
     ["Size (m)", `${w} × ${h} × ${d}`],
-    ["Level of detail", String(baked.lod)],
-    ["Bake", `${baked.ms} ms`],
-    ["File", file],
+    ...(baked.lod === undefined
+      ? []
+      : [["Level of detail", String(baked.lod)] as [string, string]]),
+    [runtime ? "Generate" : "Bake", `${baked.ms} ms`],
+    ...(file ? [["File", file] as [string, string]] : []),
   ]);
   const head = el("div");
   head.append(el("h2", "text-xl font-extrabold text-white", element.name));
@@ -449,14 +565,23 @@ function renderDocs(element: IElement, baked: IBake, model: THREE.Object3D): voi
   const dl = rowsInto(el("dl", DL), [
     ["Id", element.id],
     ["Kind", title(element.kind)],
+    ["Style tags", styleNames(element).join(", ")],
     ...(element.category ? [["Category", element.category] as [string, string]] : []),
     ["Biomes", element.biomes.join(", ") || "none listed"],
-    ["File", file],
+    ...(file ? [["File", file] as [string, string]] : []),
   ]);
   const call = baked.call ?? `await ${callFor(element)};`;
-  const copy = el("button", "tool w-auto justify-self-start px-2 text-ink", "Copy bake call");
-  copy.onclick = () => navigator.clipboard?.writeText(call).then(() => say("Bake call copied"));
-  const parts = el("label", "grid gap-1 font-bold text-muted", "GLB primitives and attributes");
+  const copy = el(
+    "button",
+    "tool w-auto justify-self-start px-2 text-ink",
+    runtime ? "Copy code" : "Copy bake call",
+  );
+  copy.onclick = () => navigator.clipboard?.writeText(call).then(() => say("Code copied"));
+  const parts = el(
+    "label",
+    "grid gap-1 font-bold text-muted",
+    runtime ? "Mesh attributes" : "GLB primitives and attributes",
+  );
   parts.append(el("pre", PRE, attributesOf(model)));
   $("docs").replaceChildren(head, dl, el("pre", PRE, call), copy, parts);
 }
@@ -500,6 +625,52 @@ async function tiled(mine: number, element: IElement, key: string): Promise<bool
   return windy;
 }
 
+function stylizedOf(element: IElement) {
+  const start = performance.now();
+  const variant = touched.get("variant");
+  const options = {
+    ...(variant === undefined ? {} : { variant: Number(variant) - 1 }),
+    ...(state.seed === undefined ? {} : { seed: state.seed }),
+  };
+  const preview = createStylizedAsset(element.id, options);
+  const { group: model, animated: windy } = preview;
+  const args = [JSON.stringify(element.id)];
+  if (Object.keys(options).length) args.push(JSON.stringify(options));
+  const imports = preview.update ? "createStylizedAsset, stylizedUniforms" : "createStylizedAsset";
+  const call = `import { ${imports} } from "@threenative/procedural-environment/stylized";
+
+const { group${preview.update ? ", update" : ""} } = createStylizedAsset(${args.join(", ")});${preview.update ? "\n\n// In your animation loop, using elapsed time in seconds:\nstylizedUniforms.uTime.value = elapsedSeconds;\nupdate?.(elapsedSeconds);" : ""}`;
+  const bounds = new THREE.Box3().setFromObject(model);
+  let triangles = 0;
+  model.traverse((node) => {
+    const mesh = node as THREE.Mesh & THREE.InstancedMesh;
+    if (!mesh.isMesh) return;
+    for (const material of [mesh.material].flat() as THREE.MeshStandardMaterial[])
+      material.wireframe = state.wire;
+    triangles +=
+      ((mesh.geometry.index?.count ?? mesh.geometry.attributes.position?.count ?? 0) / 3) *
+      (mesh.isInstancedMesh ? mesh.count : 1);
+  });
+  if (triangles === 0) throw new Error(`No triangles in ${element.name}`);
+  return {
+    model,
+    windy,
+    preview,
+    baked: {
+      bounds: { min: bounds.min.toArray(), max: bounds.max.toArray() },
+      triangles: Math.round(triangles),
+      ms: Math.round(performance.now() - start),
+      call,
+    },
+  };
+}
+
+async function assetOf(element: IElement, lod = state.lod) {
+  if (isRuntimeKind(element.kind)) return stylizedOf(element);
+  const baked = await bakeOf(element, lod);
+  return { ...(await modelOf(baked)), baked, preview: undefined };
+}
+
 /** The overview story: every visible element of the kind (or category) on one line, at its true size. */
 async function overview(mine: number, kindRows: IElement[]): Promise<boolean | undefined> {
   let x = 0;
@@ -507,7 +678,7 @@ async function overview(mine: number, kindRows: IElement[]): Promise<boolean | u
   const shown = kindRows.filter(
     (e) => visible(e) && (!route.category || e.category === route.category),
   );
-  const name = [title(route.kind), route.category].filter(Boolean).join(" · ");
+  const name = [kindName(route.kind), route.category].filter(Boolean).join(" · ");
   rowsInto($("stat-rows"), [["Shown", `${shown.length} of ${kindRows.length}`]]);
   const list = el("ul", "grid gap-1");
   for (const e of shown) {
@@ -519,14 +690,26 @@ async function overview(mine: number, kindRows: IElement[]): Promise<boolean | u
   }
   $("docs").replaceChildren(
     el("h2", "text-xl font-extrabold text-white", name),
-    el("p", "text-muted", `${shown.length} elements. Pick one for its bake call.`),
+    el("p", "text-muted", `${shown.length} elements. Pick one for its preview and source call.`),
     list,
   );
-  for (const [i, row] of shown.entries()) {
-    say(`Baking ${name} ${i + 1} of ${shown.length}`);
-    const baked = await bakeOf(row, Math.max(state.lod, 1));
-    const { model, windy: sways } = await modelOf(baked);
-    if (mine !== token) return undefined;
+  const lineup = shown.filter((row) => !isRuntimeKind(row.kind) || !isBackdrop(row));
+  const openingScene = lineup.length === 0 ? shown[0] : undefined;
+  if (openingScene) {
+    const { model, windy: animates, preview } = stylizedOf(openingScene);
+    scenePreview = preview;
+    stylizedLighting(preview);
+    content.add(model);
+    say(name);
+    return animates;
+  }
+  for (const [i, row] of lineup.entries()) {
+    say(`Loading ${name} ${i + 1} of ${lineup.length}`);
+    const { baked, model, windy: sways } = await assetOf(row, Math.max(state.lod, 1));
+    if (mine !== token) {
+      disposeModel(model);
+      return undefined;
+    }
     windy ||= sways;
     $("wind").hidden = !windy;
     const [minX = 0, , minZ = 0] = baked.bounds.min;
@@ -546,20 +729,29 @@ async function overview(mine: number, kindRows: IElement[]): Promise<boolean | u
 
 /** One element, as baked with the current seed, LOD and controls. */
 async function single(mine: number, element: IElement): Promise<boolean | undefined> {
-  say(`Baking ${element.name}`);
-  const baked = await bakeOf(element);
-  const { model, windy } = await modelOf(baked);
-  if (mine !== token) return undefined;
+  say(`Loading ${element.name}`);
+  const { baked, model, windy, preview } = await assetOf(element);
+  if (mine !== token) {
+    disposeModel(model);
+    return undefined;
+  }
+  scenePreview = preview;
+  if (preview) {
+    stylizedLighting(preview);
+    if (!preview.view) applyBackground();
+  }
   content.add(model);
   figure.position.set((baked.bounds.max[0] ?? 0) + 0.8, 0, 0);
   renderDocs(element, baked, model);
-  say(`${element.name} · lod ${baked.lod} · ${baked.triangles.toLocaleString()} triangles`);
+  const lod = "lod" in baked ? ` · lod ${baked.lod}` : "";
+  say(`${element.name}${lod} · ${baked.triangles.toLocaleString()} triangles`);
   return windy;
 }
 
 async function show(): Promise<void> {
   const mine = ++token;
   clear();
+  scenePreview = undefined;
   invalidate();
   const kindRows = catalog.elements.filter((e) => e.kind === route.kind);
   const element = kindRows.find((e) => e.id === route.id);
@@ -570,6 +762,7 @@ async function show(): Promise<void> {
       ? undefined
       : (catalog.biomes.find((b) => b.id === biome)?.rock ?? String(biome)),
   );
+  if (isRuntimeKind(route.kind)) stylizedLighting();
   applyBackground();
   let windy: boolean | undefined = false;
   try {
@@ -583,6 +776,8 @@ async function show(): Promise<void> {
   }
   if (mine !== token) return;
   $("wind").hidden = !windy;
+  $("wind").title = isRuntimeKind(route.kind) ? "Animate the scene" : "Animate the _WIND attribute";
+  $("wind").setAttribute("aria-label", $("wind").title);
   swaying = Boolean(windy);
   invalidate();
 }
@@ -592,8 +787,12 @@ function visible(e: IElement): boolean {
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const biome = $<HTMLSelectElement>("biome").value;
   const text =
-    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${e.biomes.join(" ")}`.toLowerCase();
-  return (!biome || e.biomes.includes(biome)) && words.every((w) => text.includes(w));
+    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${styleNames(e).join(" ")} ${e.biomes.join(" ")}`.toLowerCase();
+  return (
+    (!biome || e.biomes.includes(biome)) &&
+    (selectedStyles.size === 0 || e.styleTags.some((tag) => selectedStyles.has(tag))) &&
+    words.every((w) => text.includes(w))
+  );
 }
 
 function hashOf(kind: string, id?: string, category?: string, extra: [string, string][] = []) {
@@ -717,6 +916,11 @@ function elementNode(e: IElement) {
 }
 
 /** One kind: an uppercase section with its overview, then a node per category or per element. */
+const isBackdrop = (row: IElement) => row.category === "Scenes" || row.id === "sky-dome";
+const kindName = (kind: string) => (kind === "stylized" ? "Stylized Biome Kit" : title(kind));
+const isRuntimeKind = (kind: string) => kind === "stylized" || kind === "dungeon";
+const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
+
 function kindSection(kind: string, rows: IElement[], searching: boolean) {
   const summary = el(
     "summary",
@@ -724,7 +928,7 @@ function kindSection(kind: string, rows: IElement[], searching: boolean) {
   );
   summary.append(
     iconEl("chevron", "chev transition-transform", 12),
-    el("span", "flex-1", title(kind)),
+    el("span", "flex-1", kindName(kind)),
     el("span", "font-normal tracking-normal", String(rows.length)),
   );
   const section = folder(kind, true, summary);
@@ -754,6 +958,7 @@ function renderTree(): void {
     const rows = catalog.elements.filter((e) => e.kind === kind && visible(e));
     if (rows.length) nav.append(kindSection(kind, rows, searching));
   }
+  if (!nav.childElementCount) nav.append(el("p", "px-1 py-3 text-muted", "No matching assets"));
   nav.querySelector("[aria-current=page]")?.scrollIntoView({ block: "center" });
 }
 
@@ -819,8 +1024,8 @@ function selectWidget(c: IControl, value: string | undefined, set: (v: string) =
   const select = el("select", "field");
   select.setAttribute("aria-label", c.label);
   select.name = c.key;
-  for (const option of c.options ?? []) {
-    const o = el("option", "", optionName(option));
+  for (const [i, option] of (c.options ?? []).entries()) {
+    const o = el("option", "", c.labels?.[i] ?? optionName(option));
     o.value = option;
     select.append(o);
   }
@@ -845,7 +1050,7 @@ function widget(c: IControl): HTMLElement {
   if (c.type === "select" && (c.options?.length ?? 0) <= 4)
     return segmented(
       c.label,
-      (c.options ?? []).map((o) => [o, optionName(o)]),
+      (c.options ?? []).map((o, i) => [o, c.labels?.[i] ?? optionName(o)]),
       value ?? "",
       set,
     );
@@ -951,7 +1156,7 @@ function renderControls(): void {
         };
   body.replaceChildren(
     controlRow("seed", seed, unseed, unseed ? "" : "auto"),
-    ...(route.kind === "city" ? [] : [controlRow("lod", lod)]),
+    ...(hasLod(route.kind) ? [controlRow("lod", lod)] : []),
   );
   for (const group of [...new Set(list.map((c) => c.group ?? ""))]) {
     const rows = list
@@ -992,7 +1197,7 @@ function renderControls(): void {
     }
     body.append(...rows);
   }
-  $("control-count").textContent = String(list.length + (route.kind === "city" ? 1 : 2));
+  $("control-count").textContent = String(list.length + (hasLod(route.kind) ? 2 : 1));
 }
 
 function readHash(): void {
@@ -1056,10 +1261,11 @@ for (const id of ["settings", "filter"])
     for (const b of ["settings", "filter"]) $(b).setAttribute("aria-pressed", String(open));
   };
 $("search").addEventListener("input", renderTree);
-$("biome").addEventListener("change", () => {
+function refreshFilters(): void {
   renderTree();
   if (!route.id) void show();
-});
+}
+$("biome").addEventListener("change", refreshFilters);
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;
   if (e.key !== "/" || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
@@ -1088,10 +1294,10 @@ toggle("wire", (on) => {
   });
 });
 toggle("figure", (on) => {
-  figure.visible = on;
+  figure.visible = on && !scenePreview?.view;
 });
 toggle("grid", (on) => {
-  grid.visible = on;
+  grid.visible = on && !scenePreview?.view;
 });
 const dolly = (factor: number) =>
   camera.position.sub(orbit.target).multiplyScalar(factor).add(orbit.target);
@@ -1143,7 +1349,10 @@ renderer.setAnimationLoop(() => {
   last = now;
   const moved = orbit.update();
   const animate = swaying && state.wind;
-  if (animate) wind.uTime.value += dt;
+  if (animate && isRuntimeKind(route.kind)) {
+    stylizedUniforms.uTime.value += Math.min(dt, 0.1);
+    scenePreview?.update?.(stylizedUniforms.uTime.value);
+  } else if (animate) wind.uTime.value += dt;
   if (!(moved || dirty || animate)) return;
   dirty = false;
   renderer.render(scene, camera);
@@ -1153,6 +1362,21 @@ for (const type of ["click", "change", "input"]) document.addEventListener(type,
 
 try {
   catalog = (await (await fetch("/api/catalog")).json()) as typeof catalog;
+  for (const [id, name] of Object.entries(catalog.styles)) {
+    const button = el(
+      "button",
+      "rounded border border-line px-2 py-1 text-xs text-ink hover:bg-hover aria-pressed:border-accent aria-pressed:bg-accent aria-pressed:text-accent-ink",
+      name,
+    );
+    button.type = "button";
+    button.setAttribute("aria-pressed", "false");
+    button.onclick = () => {
+      if (!selectedStyles.delete(id)) selectedStyles.add(id);
+      button.setAttribute("aria-pressed", String(selectedStyles.has(id)));
+      refreshFilters();
+    };
+    $("style-tags").append(button);
+  }
   for (const biome of catalog.biomes) {
     const option = el("option", "", biome.name);
     option.value = biome.id;

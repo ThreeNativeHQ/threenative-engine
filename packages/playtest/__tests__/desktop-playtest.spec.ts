@@ -19,7 +19,11 @@ import { assertCaptureNotBlank } from "../src/capture.js";
 import { exitCodeForReport, runConfiguredPlaytest } from "../src/runner/cli.js";
 import { parseStandalonePlaytestArgs, type IStandalonePlaytestConfig } from "../src/runner/config.js";
 import { DesktopPlaytestDriver, LocalDeviceMailbox, desktopConsoleType } from "../src/runner/desktop.js";
-import { runDesktopPlaytest } from "../src/runner/desktopRunner.js";
+import {
+  resolveDesktopExecutable,
+  resolveDesktopLaunch,
+  runDesktopPlaytest,
+} from "../src/runner/desktopRunner.js";
 import { DeviceBridgeTransport } from "../src/runner/deviceTransport.js";
 import { normalizedRuntimeDiagnostics } from "../src/runner/observationSampling.js";
 import type { IDevicePlaytestDriver } from "../src/runner/deviceRunner.js";
@@ -41,6 +45,53 @@ test.each([undefined, false])("desktop counted run refuses an inherited clock wi
       { driverFactory },
     )).rejects.toThrow("TN_PLAYTEST_CLOCK: a counted run must not inherit a wall clock; unset TN_PLAYTEST_CLOCK or pass --live-clock.");
     expect(driverFactory).not.toHaveBeenCalled();
+  }
+});
+
+test("--executable accepts the build output directory of either engine", async () => {
+  // The owned engine player writes `dist-native/<name>/<name>` beside its assets; the `threejs`
+  // host writes one flat `dist-native/<name>`. A kit's `test:native` names the directory, so the
+  // same command proves a game after it flips `engine: "threejs"`.
+  const root = await makeTempDir("threenative-executable-");
+  try {
+    const player = join(root, "racing");
+    await mkdir(player, { recursive: true });
+    // Each platform's own layout: Windows cannot spawn the POSIX launcher the engine packager
+    // writes as `<dir>/<name>`, so its artifact is an `.exe`.
+    const launcher = process.platform === "win32" ? join(player, "racing.exe") : join(player, "racing");
+    await writeFile(launcher, "");
+    await writeFile(join(player, "game.js"), "");
+    expect(await resolveDesktopExecutable(player)).toBe(launcher);
+    const flat = join(root, "flat");
+    await writeFile(flat, "");
+    expect(await resolveDesktopExecutable(flat)).toBe(flat);
+    expect(await resolveDesktopExecutable(join(root, "absent"))).toBe(join(root, "absent"));
+    // A Windows default-engine build resolves to the raw player, which takes the bundle it sits
+    // beside; the resolver hands that argument to the driver instead of launching a bare binary.
+    if (process.platform === "win32") {
+      const native = join(root, "native");
+      await mkdir(native, { recursive: true });
+      await writeFile(join(native, "tn-native-engine-player-v8.exe"), "");
+      await writeFile(join(native, "game.js"), "");
+      expect(await resolveDesktopLaunch(native)).toEqual({
+        args: [join(native, "game.js")],
+        executable: join(native, "tn-native-engine-player-v8.exe"),
+      });
+    }
+    // A Windows `threejs` build leaves `<dir>.exe` beside an older engine build's directory; on
+    // another host that `.exe` is the other platform's artifact and must not outrank the launcher.
+    const stale = join(root, "switched");
+    await mkdir(stale, { recursive: true });
+    await writeFile(join(stale, "switched"), "");
+    await writeFile(`${stale}.exe`, "");
+    expect(await resolveDesktopExecutable(stale)).toBe(
+      process.platform === "win32" ? `${stale}.exe` : join(stale, "switched"),
+    );
+    const empty = join(root, "empty");
+    await mkdir(empty);
+    await expect(resolveDesktopExecutable(empty)).rejects.toThrow("TN_PLAYTEST_EXECUTABLE_MISSING");
+  } finally {
+    await rm(root, { recursive: true, force: true });
   }
 });
 
@@ -167,6 +218,10 @@ test.each([
   // host, not the game, so they must not be counted as the game's console errors (PRD-366).
   { stream: "stderr", text: "ALSA lib pcm.c:2721:(snd_pcm_open_noupdate) Unknown PCM default", type: "log" },
   { stream: "stderr", text: "[Audio] Failed to open audio device: ALSA: Couldn't open audio device: No such file or directory", type: "log" },
+  // Unix refuses an unprivileged priority raise, so a hosted runner without rtkit logs this once.
+  // The engine calls it "not an error" and the threads keep nice 0, so it is host capability, not
+  // the game's racking up of errors: it failed every template's `noRuntimeDiagnostics` native proof.
+  { stream: "stderr", text: "TN_PROCESS_PRIORITY_RAISE_REFUSED: setpriority EACCES, rtkit org.freedesktop.DBus.Error.ServiceUnknown; the frame-critical threads keep nice 0.", type: "log" },
   { stream: "stderr", text: "(threenative-starter-native:14620): dbind-WARNING **: 22:57:49.500: AT-SPI: Error retrieving accessibility bus address: org.freedesktop.DBus.Error.ServiceUnknown: The name org.a11y.Bus was not provided by any .service files", type: "warning" },
   { stream: "stderr", text: "Warning: startup gate never opened within 30s; capturing anyway.", type: "warning" },
   { stream: "stderr", text: "MESA-EGL: error: context creation failed", type: "error" },

@@ -43,12 +43,7 @@ import {
   formatValidationReport,
   renderListValidationRequested,
 } from "./profiling/render-list-validate.js";
-import {
-  describeSceneShape,
-  describeSceneWarning,
-  formatSceneWarning,
-  sceneWarning,
-} from "./profiling/scene-warning.js";
+import { describeSceneShape, formatSceneWarning, sceneWarning } from "./profiling/scene-warning.js";
 import { installSpanProbes } from "./profiling/span-probes.js";
 import { formatProjectionWindow } from "./projection-marker.js";
 import { RenderPassBudget } from "./render-pass-budget.js";
@@ -65,7 +60,6 @@ import {
 } from "./static-transform.js";
 import { endSliceFrames, noteSliceFrame } from "./streaming.js";
 import { resolveTargetFps } from "./target-fps.js";
-import { UI_DEV_METRICS_MESSAGE } from "./ui-bridge.js";
 
 /** The frame loop, and the instruments that only exist while it runs. */
 export interface IGameFrameLoop {
@@ -234,18 +228,6 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
                 )
               : undefined;
             if (warning !== undefined) reportWarning(formatSceneWarning(warning));
-            // The same sentence goes to the UI on a dev launch, so a human watching the window
-            // and an agent reading the log are told the same thing at the same time. No frame
-            // rate rides it: the loop's own rAF rate reads throttled under a compositor or a
-            // virtual display, so a number drawn from it lies in exactly the sessions where
-            // somebody is trying to measure.
-            if (devMetricsEnabled && warning !== undefined && game.uiBridge?.hasPeer() === true) {
-              const verdict = describeSceneWarning(warning);
-              if (verdict !== postedVerdict) {
-                postedVerdict = verdict;
-                game.uiBridge.post({ type: UI_DEV_METRICS_MESSAGE, sceneWarning: verdict });
-              }
-            }
             if (scaler === undefined) return;
             // **Not while the world is still arriving.** The scaler judges the game by closed
             // frame-budget windows, and the windows that close during a launch are not the game:
@@ -349,11 +331,8 @@ export function startFrameLoop<TState extends Record<string, unknown>, TPhysics>
   if (!stageMeters)
     (renderer.raw as { setStageMeters?: (enabled: boolean) => void }).setStageMeters?.(false);
   let computeStageMs = 0;
-  // The dev verdict is decided once per launch, and sent when it changes rather than on a timer:
-  // a chip that re-sent an unchanged sentence four times a second would pay a JSON round trip to
-  // say nothing new.
+  // The dev verdict is decided once per launch. It goes to the console only, never over the game.
   const devMetricsEnabled = isDevLaunch();
-  let postedVerdict: string | undefined;
   let lastGateSkips = 0;
   let readinessGateSkips = 0;
   const gameLoop: FixedStepLoop = new FixedStepLoop({

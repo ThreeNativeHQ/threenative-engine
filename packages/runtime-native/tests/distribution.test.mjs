@@ -12,6 +12,7 @@ import { afterAll, afterEach, test, vi } from 'vitest';
 import { PNG } from 'pngjs';
 
 import {
+  PARALLEL_RANGE_COUNT,
   PREBUILT_ASSET_NAMES,
   PREBUILT_KEYS,
   PUBLISHED_PREBUILT_KEYS,
@@ -171,7 +172,11 @@ test('unsupported platforms fail closed with the platform-arch string', () => {
 test('a missing release lock and a missing platform asset both fail closed', () => {
   const root = makeTempDirSync('threenative-prebuilt-');
   roots.push(root);
-  assert.throws(() => readRelease(join(root, 'missing.json'), 'linux-x64'), /linux-x64.*OPEN/);
+  // A local manifest is an explicit input: missing is a broken pin, not a release that is pending.
+  assert.throws(
+    () => readRelease(join(root, 'missing.json'), 'linux-x64'),
+    (error) => error.code === 'PREBUILT_RELEASE_MISSING' && /linux-x64/u.test(error.message),
+  );
   const manifest = join(root, 'lock.json');
   writeFileSync(manifest, '{"artifacts":{}}\n');
   assert.throws(() => readRelease(manifest, 'linux-x64'), /linux-x64/);
@@ -228,11 +233,13 @@ test('a 404 release manifest is recognised as a missing release, not a generic f
     const address = server.address();
     assert.ok(address && typeof address !== 'string');
     process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+    // A tag with no release yet is the expected absence both hosts warn about; an artifact 404
+    // inside a manifest that promises it is the fatal one, tested beside this.
     await assert.rejects(
       downloadReleaseArtifact('linux-x64', {
         manifestUrl: `http://127.0.0.1:${address.port}/prebuilt-lock.json`,
       }),
-      (error) => error.code === 'PREBUILT_RELEASE_MISSING',
+      (error) => error.code === 'PREBUILT_RELEASE_ABSENT',
     );
   } finally {
     await new Promise((resolve, reject) =>
@@ -241,7 +248,7 @@ test('a 404 release manifest is recognised as a missing release, not a generic f
   }
 });
 
-test('an unpublished release records the gap and finishes the consumer install', async () => {
+test('an absent explicit lock fails closed instead of baking an empty image', async () => {
   const root = makeTempDirSync('threenative-prebuilt-missing-');
   roots.push(root);
   mkdirSync(join(root, 'scripts'), { recursive: true });
@@ -258,12 +265,16 @@ test('an unpublished release records the gap and finishes the consumer install',
   const result = await run(process.execPath, [join(root, 'scripts', 'install-prebuilt.mjs')], {
     cwd: root,
     env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: manifestPath },
-  });
-  // `run` rejects on a non-zero exit — the pre-fix install aborts here, which is the red.
+  }).then(
+    (value) => ({ ...value, code: 0 }),
+    (error) => ({ code: 1, stderr: String(error.stderr ?? error.message) }),
+  );
+  // A missing explicit lock is a broken input: an offline image must not bake with neither binary.
+  assert.equal(result.code, 1);
   const status = JSON.parse(readFileSync(join(root, 'prebuilt', 'install-status.json'), 'utf8'));
   assert.equal(status.ok, false);
   assert.match(status.reason, /linux-x64/);
-  assert.match(result.stderr, /no prebuilt release is published/iu);
+  assert.match(result.stderr, /does not exist/u);
 });
 
 test('the install hook runs when invoked through a symlinked package path', async () => {
@@ -287,12 +298,12 @@ test('the install hook runs when invoked through a symlinked package path', asyn
   await run(process.execPath, [join(linked, 'scripts', 'install-prebuilt.mjs')], {
     cwd: root,
     env: { ...process.env, THREENATIVE_PREBUILT_MANIFEST: join(root, 'absent-lock.json') },
-  });
+  }).catch(() => undefined);
   // The pre-fix guard compared the symlinked argv path with the real module URL, skipped the
   // install entirely and wrote no status: that missing file is the red.
   const status = JSON.parse(readFileSync(join(real, 'prebuilt', 'install-status.json'), 'utf8'));
   assert.equal(status.ok, false);
-  assert.match(status.reason, /no prebuilt release manifest exists/iu);
+  assert.match(status.reason, /does not exist|no prebuilt release manifest/iu);
 });
 
 test('exports the complete prebuilt key table consumed by release packaging', () => {
@@ -532,7 +543,7 @@ test('the clean-room Android build fails loudly on a corrupt fixture manifest', 
 
     await assert.rejects(
       prepareAndroidPrebuilts({ manifestPath: join(root, 'absent-lock.json'), outputRoot }),
-      /No prebuilt release manifest exists/u,
+      /does not exist \(requested for/u,
       'an absent manifest must fail closed rather than fetch the network',
     );
   } finally {
@@ -601,7 +612,7 @@ test('corrupted downloads fail checksum verification and are never installed', a
   }
 });
 
-test('a packed consumer runs the allowlisted install hook and verifies its download', async () => {
+test('a packed consumer installs without a download, then fetches and verifies on demand', async () => {
   const root = makeTempDirSync('threenative-consumer-');
   roots.push(root);
   const runtime = Buffer.from('#!/bin/sh\nexit 0\n');
@@ -616,6 +627,12 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
       `${JSON.stringify({ artifacts: {
         'linux-x64': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/runtime` },
         'linux-x64-tools': { sha256: sha256(runtime), url: `http://127.0.0.1:${address.port}/tools` },
+        // The prefetch command fills both binaries, so the fixture the consumer pins must carry
+        // both: a manifest with only the legacy pair now fails that command, by design.
+        'linux-x64-engine-player': {
+          sha256: sha256(runtime),
+          url: `http://127.0.0.1:${address.port}/player`,
+        },
       } })}\n`,
     );
     const consumer = join(root, 'consumer');
@@ -640,6 +657,19 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
         THREENATIVE_PREBUILT_MANIFEST: manifest,
       },
     });
+    const installedRuntime = join(consumer, 'node_modules/@threenative/runtime-native');
+    // PRD-783 AC-1, on the published shape: the install of the packed runtime downloads nothing.
+    assert.equal(existsSync(join(installedRuntime, 'prebuilt/linux-x64/threenative-runtime')), false);
+    assert.equal(existsSync(join(installedRuntime, 'prebuilt/install-status.json')), false);
+    // The explicit command stays as the "fetch now" path an offline image uses.
+    await run(process.execPath, [join(installedRuntime, 'scripts/install-prebuilt.mjs')], {
+      cwd: consumer,
+      env: {
+        ...process.env,
+        THREENATIVE_ALLOW_INSECURE_PREBUILT: '1',
+        THREENATIVE_PREBUILT_MANIFEST: manifest,
+      },
+    });
     assert.deepEqual(
       readFileSync(
         join(
@@ -649,7 +679,7 @@ test('a packed consumer runs the allowlisted install hook and verifies its downl
       ),
       runtime,
     );
-    // A packed consumer's desktop build dispatches to this helper; the postinstall must place it.
+    // A packed consumer's desktop build dispatches to this helper, so the fetch must place both.
     assert.deepEqual(
       readFileSync(
         join(consumer, 'node_modules/@threenative/runtime-native/prebuilt/linux-x64/mystral-tools'),
@@ -742,7 +772,7 @@ test.runIf(process.platform === 'linux')('an installed runtime verifier uses pac
   );
 });
 
-test('a corrupted download fails the packed consumer install lifecycle', async () => {
+test('a corrupted download fails the packed consumer fetch, not the install', async () => {
   const root = makeTempDirSync('threenative-consumer-corrupt-');
   roots.push(root);
   const expected = Buffer.from('verified runtime');
@@ -768,8 +798,24 @@ test('a corrupted download fails the packed consumer install lifecycle', async (
         private: true,
       })}\n`,
     );
+    // PRD-783: the install downloads nothing, so it must succeed even when the release is corrupt.
+    await run('pnpm', ['install', '--config.side-effects-cache=false'], {
+      cwd: consumer,
+      env: {
+        ...process.env,
+        THREENATIVE_ALLOW_INSECURE_PREBUILT: '1',
+        THREENATIVE_PREBUILT_MANIFEST: manifest,
+      },
+    });
+    const installedRuntime = join(consumer, 'node_modules/@threenative/runtime-native');
+    assert.equal(
+      existsSync(join(installedRuntime, 'prebuilt/linux-x64/threenative-runtime')),
+      false,
+      'a plain install must not download a native binary',
+    );
+    // The failure belongs to the fetch, which is what the first native build runs.
     await assert.rejects(
-      run('pnpm', ['install', '--config.side-effects-cache=false'], {
+      run(process.execPath, [join(installedRuntime, 'scripts/install-prebuilt.mjs')], {
         cwd: consumer,
         env: {
           ...process.env,
@@ -827,7 +873,10 @@ test('the actual packed archive excludes C++ runtime source', async () => {
   const manifest = JSON.parse(
     readFileSync(new URL('../package.json', import.meta.url), 'utf8'),
   );
-  assert.equal(manifest.scripts.install, 'node scripts/install-prebuilt.mjs');
+  // PRD-783: an install downloads nothing. The script itself still ships as the explicit "fetch
+  // now" command, and the first native build calls `ensureNativeBinary` from it.
+  assert.equal(manifest.scripts.install, undefined);
+  assert.ok(packed.files.includes('scripts/install-prebuilt.mjs'));
 });
 
 test('the packed archive reaches the production profile command and evaluator', async () => {
@@ -2067,10 +2116,249 @@ test('engine player assets install and verify checksums on each desktop platform
     assert.ok(UNPUBLISHED_PREBUILT_KEYS.includes('darwin-arm64-engine-player'));
     assert.equal(PREBUILT_ASSET_NAMES['darwin-arm64-engine-player'], 'threenative-engine-player-darwin-arm64');
     await assert.rejects(installPrebuilt({ platform: 'darwin', arch: 'arm64', enginePlayer: true, output: join(root, 'mac-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
-    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED');
+    assert.throws(() => readRelease(join(root, 'not-released.json'), 'linux-x64-engine-player'), (error) => error.code === 'PREBUILT_RELEASE_MISSING');
     vi.stubGlobal('fetch', vi.fn(async () => new Response('', { status: 404 })));
-    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
+    // A tag with no release is diagnosed as unpublished but is not the by-design class: the
+    // prefetch must fail on it, which its own test asserts.
+    await assert.rejects(downloadReleaseArtifact('linux-x64-engine-player', { manifestUrl: 'https://fixture.invalid/not-released' }), (error) => error.code === 'PREBUILT_RELEASE_ABSENT' && error.message.includes('linux-x64-engine-player'));
     writeFileSync(manifestPath, JSON.stringify({ artifacts: {} }));
     await assert.rejects(installPrebuilt({ platform: 'linux', arch: 'x64', enginePlayer: true, output: join(root, 'absent-player'), manifestPath }), (error) => error.code === 'PREBUILT_RELEASE_UNPUBLISHED' && error.message.includes('linux-x64-engine-player'));
   } finally { vi.unstubAllGlobals(); }
+});
+
+/**
+ * A loopback release that honours `Range`, and the three ways it can answer badly (PRD-902).
+ *
+ * GitHub throttles one connection, not the host: a 118 MiB player took about nine minutes on the
+ * day a downstream loop gave up, and 5.5 s through 32 parallel ranges. The sha256 in the lock is
+ * still the only trust decision, so every case below ends at the same verification.
+ */
+async function rangeRelease(behaviour = 'ranges') {
+  const payload = Buffer.alloc(9 * 1024 * 1024, 0x5a);
+  for (let index = 0; index < payload.length; index += 4096) payload[index] = index % 251;
+  const seen = [];
+  // Bytes a range-ignoring server actually managed to push. The client aborts the siblings as
+  // soon as it sees a `200`, so this stays near one asset; without that abort it is one asset per
+  // request, which is the memory cost PRD-902 must not pay.
+  let streamed = 0;
+  const server = createServer((request, response) => {
+    const range = request.headers.range ?? '';
+    seen.push(range);
+    if (behaviour === 'ignore') {
+      let offset = 0;
+      const step = () => {
+        if (offset >= payload.length || response.destroyed) {
+          response.end();
+          return;
+        }
+        const part = payload.subarray(offset, offset + 64 * 1024);
+        offset += part.length;
+        streamed += part.length;
+        response.write(part);
+        setImmediate(step);
+      };
+      step();
+      return;
+    }
+    const match = /^bytes=(\d+)-(\d+)$/u.exec(range);
+    if (match === null) {
+      response.statusCode = 416;
+      response.end();
+      return;
+    }
+    const start = Number(match[1]);
+    const end = Number(match[2]);
+    if (behaviour === 'fail-halfway' && seen.length === 3) {
+      response.statusCode = 500;
+      response.end();
+      return;
+    }
+    if (behaviour === 'whole-beside-500') {
+      // One request claims the whole, valid asset and starts delivering it; the next range fails
+      // while that body is still streaming. A downloader that reports the 500 only after the body
+      // has been drained passes the old code, so the server stops early once the client hangs up
+      // and the test checks how much it managed to send.
+      if (seen.length === 1) {
+        response.writeHead(200, { 'content-length': String(payload.length) });
+        let offset = 0;
+        const step = () => {
+          if (offset >= payload.length || response.destroyed) {
+            response.end();
+            return;
+          }
+          const part = payload.subarray(offset, offset + 64 * 1024);
+          offset += part.length;
+          streamed += part.length;
+          response.write(part);
+          setTimeout(step, 5);
+        };
+        step();
+        return;
+      }
+      response.statusCode = 500;
+      response.end();
+      return;
+    }
+    if (behaviour === 'stall-claimed') {
+      // One request claims a whole body and never finishes it; every other range fails outright.
+      // The downloader must report the range failure instead of waiting on the stalled claim.
+      if (seen.length === 1) {
+        response.statusCode = 200;
+        response.writeHead(200, { 'content-length': String(payload.length) });
+        response.write(payload.subarray(0, 64 * 1024));
+        return;
+      }
+      response.statusCode = 500;
+      response.end();
+      return;
+    }
+    const part = Buffer.from(payload.subarray(start, end + 1));
+    if (behaviour === 'corrupt' && seen.length === 2) part[0] ^= 0xff;
+    response.statusCode = 206;
+    response.end(part);
+  });
+  await new Promise((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  assert.ok(address && typeof address !== 'string');
+  const root = makeTempDirSync('threenative-ranges-');
+  roots.push(root);
+  const manifestPath = join(root, 'prebuilt-lock.json');
+  writeFileSync(
+    manifestPath,
+    `${JSON.stringify({
+      artifacts: {
+        'linux-x64': {
+          sha256: sha256(payload),
+          size: payload.length,
+          url: `http://127.0.0.1:${address.port}/runtime`,
+        },
+      },
+    })}\n`,
+  );
+  process.env.THREENATIVE_ALLOW_INSECURE_PREBUILT = '1';
+  return {
+    close: () => new Promise((resolve) => server.close(resolve)),
+    manifestPath,
+    payload,
+    root,
+    seen,
+    streamed: () => streamed,
+  };
+}
+
+test('a large release asset downloads as parallel byte ranges and assembles exactly', async () => {
+  const release = await rangeRelease();
+  try {
+    const contents = await downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath });
+    assert.ok(contents.equals(release.payload), 'the assembled bytes differ from the release');
+    // Red before this PRD: one `fetch`, so `seen` held a single entry with no Range header.
+    assert.equal(release.seen.length, PARALLEL_RANGE_COUNT);
+    for (const range of release.seen) assert.match(range, /^bytes=\d+-\d+$/u);
+    assert.equal(new Set(release.seen).size, release.seen.length, 'ranges overlapped');
+  } finally {
+    await release.close();
+  }
+});
+
+test('a whole body that verifies still fails when a sibling range answered 500', async () => {
+  // PRD-902: an unexpected status must fail and name its range. A mirror that serves one whole
+  // body while another request 500s is broken, and the next build would hit it again. The body is
+  // complete and checksum-valid, so this only passes if the range failure wins.
+  const release = await rangeRelease('whole-beside-500');
+  try {
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /HTTP 500 for byte range/u,
+    );
+    // The stream was abandoned mid-flight: a downloader that drained it first would have the
+    // server push the whole asset.
+    assert.ok(
+      release.streamed() < release.payload.length,
+      `the body was drained before the range failure was reported (${release.streamed()} bytes)`,
+    );
+  } finally {
+    await release.close();
+  }
+});
+
+test('a server that ignores Range still yields the exact bytes from one body', async () => {
+  const release = await rangeRelease('ignore');
+  try {
+    const contents = await downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath });
+    assert.ok(contents.equals(release.payload));
+    // The whole point of cancelling siblings on a `200`: sixteen readers of a 9 MiB asset would
+    // otherwise stream 144 MiB and hold it all in memory. Red: remove the abort and this passes 144.
+    assert.ok(
+      release.streamed() < release.payload.length * 3,
+      `the server pushed ${release.streamed()} bytes; the siblings were not cancelled`,
+    );
+  } finally {
+    await release.close();
+  }
+});
+
+test('a claimed whole-body read that stalls does not hide a sibling range failure', async () => {
+  const release = await rangeRelease('stall-claimed');
+  try {
+    const started = Date.now();
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /HTTP 500 for byte range/u,
+    );
+    // The claim is aborted after its grace period, so the failure surfaces in seconds rather than
+    // holding the install lock until the socket times out.
+    assert.ok(Date.now() - started < 20_000, 'the stalled claim outlived its sibling failure');
+  } finally {
+    await release.close();
+  }
+});
+
+test('a corrupt range fails at the checksum, and no binary or success status is left behind', async () => {
+  const release = await rangeRelease('corrupt');
+  try {
+    const output = join(release.root, 'linux-x64', 'threenative-runtime');
+    const statusPath = join(release.root, 'install-status.json');
+    await assert.rejects(
+      installPrebuilt({ arch: 'x64', manifestPath: release.manifestPath, output, platform: 'linux', statusPath }),
+      /Checksum verification failed/u,
+    );
+    assert.equal(existsSync(output), false);
+    assert.equal(JSON.parse(readFileSync(statusPath, 'utf8')).ok, false);
+  } finally {
+    await release.close();
+  }
+});
+
+test('a range that answers 500 fails closed naming the key and the byte range', async () => {
+  const release = await rangeRelease('fail-halfway');
+  try {
+    await assert.rejects(
+      downloadReleaseArtifact('linux-x64', { manifestPath: release.manifestPath }),
+      /linux-x64.*HTTP 500 for byte range \d+-\d+/su,
+    );
+  } finally {
+    await release.close();
+  }
+});
+
+test('the engine packager refuses a launcher path that is the packaged player', async () => {
+  const { packageEngineDesktop } = await import('../scripts/package-engine-desktop.mjs');
+  const playerName = process.platform === 'win32' ? 'tn-native-engine-player-v8.exe' : 'tn-native-engine-player-v8';
+  const root = mkdtempSync(join(tmpdir(), 'tn-launcher-collision-'));
+  try {
+    const player = join(root, 'player');
+    writeFileSync(player, '');
+    // The output directory's own name becomes the launcher's, so this name collides with the
+    // player the packager copies beside it.
+    const output = join(root, playerName);
+    await assert.rejects(
+      packageEngineDesktop(
+        { output, player, project: join(root, 'project'), entry: join(root, 'project', 'game.ts') },
+        { bundle: async () => ({ engineCommit: 'a'.repeat(40) }), cook: async () => undefined },
+      ),
+      /TN_ENGINE_LAUNCHER_COLLIDES/u,
+    );
+  } finally {
+    rmSync(root, { force: true, recursive: true });
+  }
 });

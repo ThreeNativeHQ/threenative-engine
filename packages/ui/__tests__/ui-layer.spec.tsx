@@ -1,6 +1,5 @@
 import {
   type IUiStatePublisher,
-  UI_DEV_METRICS_MESSAGE,
   connectUiBridge,
   onUiIntent,
   publishUiState,
@@ -96,7 +95,7 @@ describe("UiLayer", () => {
     restore();
   });
 
-  it("shows the scene verdict and no frame rate, so a screenshot cannot be misread", async () => {
+  it("keeps the scene verdict off the screen, so it stays in the console only", async () => {
     const restore = installDocument();
     const gameBridge = connectUiBridge({ end: "game" });
 
@@ -105,23 +104,17 @@ describe("UiLayer", () => {
       renderer = create(createElement(UiLayer, null, createElement("span")));
       await flush();
     });
-    expect(renderer.root.findAllByType("output")).toHaveLength(0);
 
     await act(async () => {
-      // An `fps` field the current game no longer sends, so the check survives an older core: the
-      // rate is the loop's throttled rAF rate and must never reach the screen.
+      // The message an older core still sends: the UI must ignore it, not draw a chip over the game.
       gameBridge.post({
-        type: UI_DEV_METRICS_MESSAGE,
-        fps: 42,
+        type: "tn:dev-metrics",
         sceneWarning: "the last window was CPU-bound on scene shape",
       });
       await flush();
     });
 
-    const chip = renderer.root.findByType("output");
-    expect(chip.props.className).toBe("tn-dev-scene-warning");
-    expect(chip.props.children).toBe("the last window was CPU-bound on scene shape");
-    expect(chip.props.style.pointerEvents).toBe("none");
+    expect(renderer.root.findAllByType("output")).toHaveLength(0);
 
     gameBridge.close();
     renderer.unmount();
