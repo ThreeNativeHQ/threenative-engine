@@ -109,6 +109,25 @@ describe("run-test-suite phase contract", () => {
     expect(source, "assets has no pure prebuilt check").toContain("@threenative/assets");
     expect(source, "ueformat has no pure prebuilt check").toContain("@threenative/ueformat");
     expect(source, "raw-unreal has no pure prebuilt check").toContain("@threenative/raw-unreal");
+    // PRD-903: the unit phase owns every root-config spec, so the prebuilt walk runs none again.
+    const prebuiltWalk = source
+      .slice(
+        source.indexOf("run_prebuilt_package_tests() {"),
+        source.indexOf("\n}\n", source.indexOf("run_prebuilt_package_tests() {")),
+      )
+      .split("\n")
+      .filter((line) => !/^\s*#/u.test(line))
+      .join("\n");
+    expect(prebuiltWalk).toContain("publint --strict");
+    expect(prebuiltWalk, "the prebuilt walk re-runs unit specs").not.toMatch(/vitest/u);
+    for (const name of [
+      "@threenative/terrain",
+      "@threenative/procedural-environment",
+      "strata-terrain-preview",
+    ])
+      expect(source, `${name} still re-runs unit specs in the recursive walk`).toContain(
+        `    ${name}`,
+      );
   });
 
   it("fails a prebuilt browser run before invoking Playwright without its verified inputs", () => {

@@ -18,10 +18,11 @@ import {
 // The twin of `template-assets-compile-1.spec.ts`, with the same budget for the same reason: a
 // template compile is tens of seconds of real work, not a unit test's 60 s default.
 describe("shipped templates", { timeout: 180_000 }, () => {
-  it.each(secondHalf)(
-    "%s reaches the uncooked budget with an eligible source probe",
-    reachesTheUncookedBudgetWithAnEligibleSourceProbe,
-  );
+  // PRD-903: the budget is a property of `compileAssets` and the scaffold's config seam, and
+  // `compilesUnderTheDefaultConfig` already asserts every kit leaves that config at its defaults.
+  // Probing all sixteen kits compiled each of them a second time for the same answer.
+  it("starter reaches the uncooked budget with an eligible source probe", () =>
+    reachesTheUncookedBudgetWithAnEligibleSourceProbe("starter"));
 
   it.each(secondHalf)(
     "%s should compile with compression on by default",
