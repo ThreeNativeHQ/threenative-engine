@@ -64,7 +64,8 @@ export const sceneKindOf = (row) => {
   const holdout = flags.find((flag) => flag.startsWith("holdout="));
   return (
     holdout ??
-    (["play", "systems", "extended"].filter((kind) => flags.includes(kind)).join("+") || "real")
+    (["play", "systems", "extended", "strata"].filter((kind) => flags.includes(kind)).join("+") ||
+      "real")
   );
 };
 /** The non-`real` lanes the Overview adds once they have a row. */
@@ -72,10 +73,18 @@ const EXTRA_SCENES = [
   "play",
   "systems",
   "extended",
+  "strata",
   "play+systems",
   "systems+extended",
   "play+extended",
+  "play+strata",
+  "systems+strata",
+  "extended+strata",
   "play+systems+extended",
+  "play+systems+strata",
+  "systems+extended+strata",
+  "play+extended+strata",
+  "play+systems+extended+strata",
 ];
 
 /** A run is void above the host-load limit, or when its scene tag names a contaminated run. */

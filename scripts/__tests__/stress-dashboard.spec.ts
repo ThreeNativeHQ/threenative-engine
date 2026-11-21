@@ -161,6 +161,9 @@ describe("stress dashboard: scene kinds", () => {
     expect(kind("stress&play&systems&uncapped")).toBe("play+systems");
     expect(kind("stress&systems&extended")).toBe("systems+extended");
     expect(kind("stress&play&systems&extended&uncapped")).toBe("play+systems+extended");
+    expect(kind("stress&strata")).toBe("strata");
+    expect(kind("stress&systems&strata")).toBe("systems+strata");
+    expect(kind("stress&systems&extended&strata&uncapped")).toBe("systems+extended+strata");
     expect(kind("stress&systems&holdout=forest")).toBe("holdout=forest");
   });
 });
