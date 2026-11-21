@@ -557,6 +557,33 @@ describe("GeometryCapture", () => {
     expect(assets.get("models/hornet-b.glb")?.objects).toBe(1);
     expect(assets.get("unattributed")?.objects).toBe(1);
   });
+
+  it("attributes an instanced batch from geometry provenance when ancestors carry none", async () => {
+    const scene = new Scene();
+    const geometry = triangleGeometry(6);
+    geometry.userData[GEOMETRY_ASSET_KEY] = "props/cone.glb";
+    const batch = new InstancedMesh(geometry, material, 3);
+    batch.name = "cones";
+    scene.add(batch);
+
+    const collector = new GeometryCapture();
+    const pending = collector.request();
+    scene.updateMatrixWorld(true);
+    collector.beginFrame({
+      camera: defaultCamera(),
+      generation: 1,
+      root: scene,
+      viewportHeight: 720,
+      viewportWidth: 1280,
+    });
+    submitOnce(batch);
+    collector.finishFrame([]);
+    const report = await pending;
+
+    const assets = new Map((report.assets ?? []).map((row) => [row.asset, row]));
+    expect(assets.get("props/cone.glb")?.objects).toBe(1);
+    expect(assets.get("props/cone.glb")?.submittedTriangles).toBe(18);
+  });
 });
 
 /** The projected diameter a 1-unit mesh reports at `distance`, for one camera. */
