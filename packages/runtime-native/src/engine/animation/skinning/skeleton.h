@@ -54,6 +54,8 @@ class Bone : public Object3D {
         if (poseObservationEnabled) { poseObservationEscapedValues = true; if (poseObserver) poseObserver(*this, 5); }
         return deferredTRS_;
     }
+    /** Internal read-only accessor for bounds/grounding without triggering CPU escape observation. */
+    [[nodiscard]] const std::array<double, 10>& deferredTRSInternal() const { return deferredTRS_; }
     mutable bool poseObservationEscapedValues = false; // A retained native reference can read any later interval.
     [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
 

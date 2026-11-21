@@ -1102,4 +1102,145 @@ describe("BufferAttribute sync between the JS array and the engine, on the brows
     expect(writes.at(-1)).toMatchObject({ offset: 3, values: [0, 0.5, 0.25] });
     expect(Array.from((mesh.instanceColor as IAttribute).array)).toEqual([1, 0, 0, 0, 0.5, 0.25]);
   });
+
+  it("reads attribute subranges in place via attributeReadInto without allocating copies", () => {
+    const { runtime, counts } = engine();
+    let allocReads = 0;
+    const origArray = runtime.attributeArray;
+    runtime.attributeArray = (self, offset, count) => {
+      allocReads += 1;
+      return origArray?.(self, offset, count) as Typed;
+    };
+    const inPlaceReads: Array<{ offset: number; count: number; destOffset: number }> = [];
+    runtime.attributeReadInto = (self, dest, offset, count, destOffset) => {
+      const from = offset ?? 0;
+      const into = destOffset ?? 0;
+      const src = origArray?.(self, from, count) as Typed;
+      dest.set(src as never, into);
+      inPlaceReads.push({ offset: from, count: src.length, destOffset: into });
+      return src.length;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const Attribute = attributeClass(classes);
+    const a = new Attribute(new Float32Array([10, 20, 30, 40, 50, 60]), 3);
+    void a.array; // caches held shadow without calling attributeArray (adopted typed array)
+    a.setY(1, 99);
+    expect(a.getY(1)).toBe(99);
+    expect(a.array[4]).toBe(99);
+    expect(allocReads).toBe(0);
+    expect(counts.reads).toBe(1);
+    expect(inPlaceReads).toEqual([{ offset: 4, count: 1, destOffset: 4 }]);
+  });
+
+  it("performs zero shadow readbacks when __tnRecords contains only upload and box ops", () => {
+    const { runtime, counts } = engine();
+    let readIntoCalls = 0;
+    runtime.attributeReadInto = () => {
+      readIntoCalls += 1;
+      return 0;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const InstancedAttribute = classes.InstancedBufferAttribute as unknown as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => IAttribute & {
+      __tnRecords(attributes: IAttribute[], ops: Float64Array, payload: Float32Array): number[];
+    };
+    const matrices = new InstancedAttribute(new Float32Array(32), 16);
+    const ranges = new InstancedAttribute(new Float32Array(8), 4);
+    void matrices.array;
+    void ranges.array;
+    const baselineReads = counts.reads;
+    matrices.__tnRecords(
+      [matrices, ranges],
+      new Float64Array([6, 0, 0, 16, 7, 0, 0, 1, 0]),
+      new Float32Array([0, 0, 0, 1, 1, 1]),
+    );
+    expect(counts.reads).toBe(baselineReads);
+    expect(readIntoCalls).toBe(0);
+  });
+
+  it("syncs only affected subranges for write, fill, move, copy, and gather ops", () => {
+    const { runtime, counts } = engine();
+    const rangesRead: Array<{ offset: number; count: number; destOffset: number }> = [];
+    const origInvoke = runtime.invoke.bind(runtime);
+    const origArray = runtime.attributeArray;
+    runtime.invoke = (self, method, args) => {
+      if (method === "__tnRecords") return [];
+      return origInvoke(self, method, args);
+    };
+    runtime.attributeReadInto = (self, dest, offset, count, destOffset) => {
+      const from = offset ?? 0;
+      const into = destOffset ?? 0;
+      const fresh = origArray?.(self, from, count) as Typed;
+      dest.set(fresh as never, into);
+      rangesRead.push({ offset: from, count: fresh.length, destOffset: into });
+      return fresh.length;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const InstancedAttribute = classes.InstancedBufferAttribute as unknown as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => IAttribute & {
+      __tnRecords(attributes: IAttribute[], ops: Float64Array, payload: Float32Array): number[];
+    };
+    const a = new InstancedAttribute(new Float32Array(64), 4);
+    const b = new InstancedAttribute(new Float32Array(64), 4);
+    const c = new InstancedAttribute(new Float32Array(64), 4);
+    void a.array;
+    void b.array;
+    void c.array;
+    const readsBefore = counts.reads;
+    // ops: WRITE attr0 [4, 4), FILL attr0 [8, 4), MOVE attr0 from=0 to=20 count=4, GATHER attr1 stride=4 blocks=1 [from=2 count=3] -> [0, 12), COPY attr2 from attr1 count=8 -> [0, 8)
+    a.__tnRecords(
+      [a, b, c],
+      new Float64Array([1, 0, 4, 4, 0, 2, 0, 8, 4, 3, 0, 0, 20, 4, 5, 1, 4, 1, 2, 3, 4, 2, 1, 8]),
+      new Float32Array([1, 2, 3, 4]),
+    );
+    // attr0 merged [4, 24) => count 20 (< 64); attr1 gathered [0, 12) => count 12 (< 64); attr2 copied [0, 8) => count 8 (< 64)
+    expect(rangesRead).toEqual([
+      { offset: 4, count: 20, destOffset: 4 },
+      { offset: 0, count: 12, destOffset: 0 },
+      { offset: 0, count: 8, destOffset: 0 },
+    ]);
+    expect(counts.reads - readsBefore).toBe(40);
+  });
+
+  it("falls back to full shadow sync on lanes ops or malformed op streams", () => {
+    const { runtime, counts } = engine();
+    const readIntoLens: number[] = [];
+    const origInvoke = runtime.invoke.bind(runtime);
+    const origArray = runtime.attributeArray;
+    runtime.invoke = (self, method, args) => {
+      if (method === "__tnRecords") return [];
+      return origInvoke(self, method, args);
+    };
+    runtime.attributeReadInto = (self, dest, offset, count, destOffset) => {
+      const from = offset ?? 0;
+      const into = destOffset ?? 0;
+      const fresh = origArray?.(self, from, count) as Typed;
+      dest.set(fresh as never, into);
+      readIntoLens.push(fresh.length);
+      return fresh.length;
+    };
+    const { classes } = defineBrowserClasses(registry, runtime, loadCatalog(REPO));
+    const InstancedAttribute = classes.InstancedBufferAttribute as unknown as new (
+      array: Float32Array,
+      itemSize: number,
+    ) => IAttribute & {
+      __tnRecords(attributes: IAttribute[], ops: Float64Array, payload: Float32Array): number[];
+    };
+    const a = new InstancedAttribute(new Float32Array(32), 4);
+    const b = new InstancedAttribute(new Float32Array(16), 4);
+    void a.array;
+    void b.array;
+    const baseline = counts.reads;
+    // LANES op (code 8) on slot 1 only syncs slot 1 fully (16 elements), leaving slot 0 untouched.
+    a.__tnRecords([a, b], new Float64Array([8, 1, 4, 2, 1, 1]), new Float32Array(0));
+    expect(readIntoLens).toEqual([16]);
+    expect(counts.reads - baseline).toBe(16);
+    // Malformed op stream (truncated) safely falls back to syncing both attributes fully.
+    a.__tnRecords([a, b], new Float64Array([99, 0]), new Float32Array(0));
+    expect(readIntoLens).toEqual([16, 32, 16]);
+  });
 });

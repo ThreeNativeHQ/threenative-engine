@@ -3,6 +3,277 @@
 
 namespace tn::engine {
 
+namespace {
+
+bool extractInstanceLocalSphere(const DrawItem& drawn, Vector3& center, double& radius) {
+    if (drawn.geometryBox && !drawn.geometryBox->isEmpty()) {
+        drawn.geometryBox->getCenter(center);
+        radius = drawn.geometryBox->min.distanceTo(center);
+    } else if (drawn.shadowObject != nullptr) {
+        const auto* mesh = dynamic_cast<const Mesh*>(drawn.shadowObject);
+        if (!mesh || !mesh->geometry) return false;
+        if (!mesh->geometry->boundingSphere)
+            const_cast<BufferGeometry*>(mesh->geometry.get())->computeBoundingSphere();
+        const Sphere* sphere = mesh->geometry->boundingSphere.get();
+        if (!sphere) return false;
+        center = sphere->center;
+        radius = sphere->radius;
+    } else {
+        return false;
+    }
+    return radius >= 0.0 && std::isfinite(center.x + center.y + center.z + radius);
+}
+
+struct CulledCustomSource {
+    std::size_t attrIndex = 0;
+    const BufferStore* store = nullptr;
+    uint64_t stride = 0;
+};
+
+bool collectCustomInstanceSources(const DrawItem& drawn, uint32_t srcCount, uint64_t matrixMaxCount,
+                                  std::vector<CulledCustomSource>& out) {
+    out.clear();
+    if (!drawn.attributes || drawn.attributes->empty()) return true;
+    for (std::size_t i = 0; i < drawn.attributes->size(); ++i) {
+        const auto& attr = (*drawn.attributes)[i];
+        if (!attr.perInstance || !attr.store) continue;
+        const uint64_t bytes = attr.store->byteLength();
+        uint64_t stride = 0;
+        if (matrixMaxCount > 0 && bytes >= matrixMaxCount && bytes % matrixMaxCount == 0)
+            stride = bytes / matrixMaxCount;
+        else if (srcCount > 0 && bytes >= srcCount && bytes % srcCount == 0)
+            stride = bytes / srcCount;
+        if (stride == 0 || bytes < uint64_t{srcCount} * stride) return false;
+        out.push_back({i, attr.store, stride});
+    }
+    return true;
+}
+
+std::array<uint64_t, 3> storeStampOf(const BufferStore* s) {
+    if (!s) return {};
+    return {s->id() ^ (s->epoch() * 0x9e3779b97f4a7c15ull), s->writes(), s->version()};
+}
+
+}  // namespace
+
+const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frustum& frustum, const Matrix& view,
+                                               FrameJob& job, std::vector<std::pair<uint32_t, float>>& survivors,
+                                               std::vector<uint32_t>& ordered) {
+    if (!drawn.mainPass || drawn.transparent || drawn.indirect || drawn.boneMatrices || drawn.gpuJoints ||
+        drawn.morphGeometry || !drawn.instanceMatrices || drawn.instanceCount <= 1) {
+        return &drawn;
+    }
+    const bool hasDisp = bool(drawn.positionNode || drawn.nodes->shadowPositionNode());
+    const double dispMargin = drawn.material ? drawn.material->maxPositionOffset : 0.0;
+    if (hasDisp && dispMargin <= 0.0 && !displacedByGeometryBox(drawn)) return &drawn;
+
+    Vector3 localCenter;
+    double lr = -1.0;
+    if (!extractInstanceLocalSphere(drawn, localCenter, lr)) return &drawn;
+
+    const uint32_t srcCount = drawn.instanceCount;
+    const BufferStore* srcMatrices = drawn.instanceMatrices;
+    const BufferStore* srcColors = drawn.instanceColors;
+    if (srcMatrices->count() < uint64_t{srcCount} * 16) return &drawn;
+    if (srcColors && srcColors->count() < uint64_t{srcCount} * 3) return &drawn;
+
+    thread_local std::vector<CulledCustomSource> customSources;
+    if (!collectCustomInstanceSources(drawn, srcCount, srcMatrices->byteLength() / 64, customSources)) return &drawn;
+
+    const auto* matrices = reinterpret_cast<const float*>(srcMatrices->data());
+    const Matrix& mw = drawn.matrixWorld;
+    static constexpr Matrix kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const bool identityModel = mw == kIdentity;
+
+    survivors.clear();
+    survivors.reserve(srcCount);
+    float minDepth = std::numeric_limits<float>::infinity();
+    float maxDepth = -std::numeric_limits<float>::infinity();
+    const double lx = localCenter.x, ly = localCenter.y, lz = localCenter.z;
+    for (uint32_t i = 0; i < srcCount; ++i) {
+        const float* m = matrices + std::size_t(i) * 16;
+        double c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, tx, ty, tz;
+        if (identityModel) {
+            c0x = m[0]; c0y = m[1]; c0z = m[2];
+            c1x = m[4]; c1y = m[5]; c1z = m[6];
+            c2x = m[8]; c2y = m[9]; c2z = m[10];
+            tx = m[12]; ty = m[13]; tz = m[14];
+        } else {
+            c0x = mw[0] * m[0] + mw[4] * m[1] + mw[8] * m[2];
+            c0y = mw[1] * m[0] + mw[5] * m[1] + mw[9] * m[2];
+            c0z = mw[2] * m[0] + mw[6] * m[1] + mw[10] * m[2];
+            c1x = mw[0] * m[4] + mw[4] * m[5] + mw[8] * m[6];
+            c1y = mw[1] * m[4] + mw[5] * m[5] + mw[9] * m[6];
+            c1z = mw[2] * m[4] + mw[6] * m[5] + mw[10] * m[6];
+            c2x = mw[0] * m[8] + mw[4] * m[9] + mw[8] * m[10];
+            c2y = mw[1] * m[8] + mw[5] * m[9] + mw[9] * m[10];
+            c2z = mw[2] * m[8] + mw[6] * m[9] + mw[10] * m[10];
+            tx = mw[0] * m[12] + mw[4] * m[13] + mw[8] * m[14] + mw[12];
+            ty = mw[1] * m[12] + mw[5] * m[13] + mw[9] * m[14] + mw[13];
+            tz = mw[2] * m[12] + mw[6] * m[13] + mw[10] * m[14] + mw[14];
+        }
+        const double cx = c0x * lx + c1x * ly + c2x * lz + tx;
+        const double cy = c0y * lx + c1y * ly + c2y * lz + ty;
+        const double cz = c0z * lx + c1z * ly + c2z * lz + tz;
+        const double maxSq = std::max({c0x * c0x + c0y * c0y + c0z * c0z,
+                                       c1x * c1x + c1y * c1y + c1z * c1z,
+                                       c2x * c2x + c2y * c2y + c2z * c2z});
+        if (!std::isfinite(cx + cy + cz + maxSq)) {
+            survivors.emplace_back(i, 0.0f);
+            continue;
+        }
+        const double scale = std::sqrt(maxSq);
+        const double radius = (lr * scale + dispMargin * std::max(1.0, scale)) * 1.02 + 1e-3;
+        if (!frustum.intersectsSphere(Sphere(Vector3(cx, cy, cz), radius))) continue;
+        const float d = -static_cast<float>(view[2] * cx + view[6] * cy + view[10] * cz + view[14]);
+        if (d < minDepth) minDepth = d;
+        if (d > maxDepth) maxDepth = d;
+        survivors.emplace_back(i, d);
+    }
+
+    ordered.resize(survivors.size());
+    if (survivors.size() > 16 && std::isfinite(minDepth) && std::isfinite(maxDepth) && maxDepth > minDepth + 1e-3f) {
+        std::array<uint32_t, 16> counts{};
+        const float invSpan = 16.0f / (maxDepth - minDepth);
+        for (const auto& [origIdx, d] : survivors) {
+            (void)origIdx;
+            ++counts[std::size_t(std::clamp(int((d - minDepth) * invSpan), 0, 15))];
+        }
+        std::array<uint32_t, 16> offsets{};
+        for (int b = 1; b < 16; ++b)
+            offsets[std::size_t(b)] = offsets[std::size_t(b - 1)] + counts[std::size_t(b - 1)];
+        for (const auto& [origIdx, d] : survivors) {
+            const int b = std::clamp(int((d - minDepth) * invSpan), 0, 15);
+            ordered[offsets[std::size_t(b)]++] = origIdx;
+        }
+    } else {
+        for (std::size_t k = 0; k < survivors.size(); ++k) ordered[k] = survivors[k].first;
+    }
+
+    const auto matStamp = storeStampOf(srcMatrices);
+    const auto colStamp = storeStampOf(srcColors);
+    auto& cache = culledInstances_[{drawn.key, srcMatrices}];
+    cache.lastPlanSeen = planSerial_;
+    bool changed = cache.srcCount != srcCount || cache.srcMatrixStamp != matStamp || cache.srcColorStamp != colStamp ||
+                   cache.lastIndices != ordered || cache.customStores.size() != customSources.size() ||
+                   cache.srcCustomStamps.size() != customSources.size();
+    if (!changed) {
+        for (std::size_t k = 0; k < customSources.size(); ++k) {
+            if (cache.srcCustomStamps[k] != storeStampOf(customSources[k].store)) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed && !ordered.empty()) {
+        const uint64_t needMat = std::max<uint64_t>(srcMatrices->count(), uint64_t{srcCount} * 16);
+        if (!cache.matrices || cache.matrices->count() < needMat)
+            cache.matrices = std::make_shared<BufferStore>(Scalar::F32, needMat);
+        auto* dstMat = reinterpret_cast<float*>(cache.matrices->data());
+        for (std::size_t k = 0; k < ordered.size(); ++k)
+            std::memcpy(dstMat + k * 16, matrices + std::size_t(ordered[k]) * 16, 16 * sizeof(float));
+        cache.matrices->needsUpdate();
+
+        if (srcColors) {
+            const uint64_t needCol = std::max<uint64_t>(srcColors->count(), uint64_t{srcCount} * 3);
+            if (!cache.colors || cache.colors->count() < needCol)
+                cache.colors = std::make_shared<BufferStore>(Scalar::F32, needCol);
+            const auto* srcCol = reinterpret_cast<const float*>(srcColors->data());
+            auto* dstCol = reinterpret_cast<float*>(cache.colors->data());
+            for (std::size_t k = 0; k < ordered.size(); ++k)
+                std::memcpy(dstCol + k * 3, srcCol + std::size_t(ordered[k]) * 3, 3 * sizeof(float));
+            cache.colors->needsUpdate();
+        } else {
+            cache.colors.reset();
+        }
+
+        cache.customStores.resize(customSources.size());
+        cache.srcCustomStamps.resize(customSources.size());
+        for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
+            const auto& cs = customSources[ci];
+            auto& dstStore = cache.customStores[ci];
+            if (!dstStore || dstStore->scalar() != cs.store->scalar() ||
+                dstStore->byteLength() < cs.store->byteLength()) {
+                dstStore = std::make_shared<BufferStore>(cs.store->scalar(), cs.store->count());
+            }
+            const std::byte* srcBytes = cs.store->data();
+            std::byte* dstBytes = dstStore->data();
+            for (std::size_t k = 0; k < ordered.size(); ++k)
+                std::memcpy(dstBytes + k * cs.stride, srcBytes + std::size_t(ordered[k]) * cs.stride, cs.stride);
+            dstStore->needsUpdate();
+            cache.srcCustomStamps[ci] = storeStampOf(cs.store);
+        }
+    }
+    if (changed) {
+        cache.srcCount = srcCount;
+        cache.srcMatrixStamp = matStamp;
+        cache.srcColorStamp = colStamp;
+        cache.lastIndices = ordered;
+    }
+
+    DrawItem& culled = job.culledMainItems.emplace_back(drawn);
+    culled.instanceCount = static_cast<uint32_t>(ordered.size());
+    if (culled.instanceCount > 0) {
+        culled.instanceMatrices = cache.matrices.get();
+        job.culledStores.push_back(cache.matrices);
+        if (cache.colors) {
+            culled.instanceColors = cache.colors.get();
+            job.culledStores.push_back(cache.colors);
+        }
+        if (!customSources.empty()) {
+            auto& attrs = job.culledAttributes.emplace_back(*drawn.attributes);
+            for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
+                attrs[customSources[ci].attrIndex].store = cache.customStores[ci].get();
+                job.culledStores.push_back(cache.customStores[ci]);
+            }
+            culled.attributes = &attrs;
+        }
+    }
+    return &culled;
+}
+
+void Renderer::coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& ranges, std::size_t maxWrites,
+                                   std::vector<uint64_t>& gapScratch) {
+    if (ranges.size() <= 1) return;
+    const uint64_t first = ranges.front().first;
+    const uint64_t last = ranges.back().first + ranges.back().second;
+    uint64_t dirtyBytes = 0;
+    for (const auto& range : ranges) dirtyBytes += range.second;
+    if (maxWrites <= 1 || dirtyBytes * 2 >= last - first) {
+        ranges.assign(1, {first, last - first});
+        return;
+    }
+    if (ranges.size() <= maxWrites) return;
+    const std::size_t gapCount = ranges.size() - 1;
+    gapScratch.resize(gapCount);
+    for (std::size_t i = 0; i < gapCount; ++i)
+        gapScratch[i] = ranges[i + 1].first - (ranges[i].first + ranges[i].second);
+    const std::size_t mergesNeeded = ranges.size() - maxWrites;
+    std::nth_element(gapScratch.begin(), gapScratch.begin() + std::ptrdiff_t(mergesNeeded - 1), gapScratch.end());
+    const uint64_t threshold = gapScratch[mergesNeeded - 1];
+    std::size_t strictlySmaller = 0;
+    for (std::size_t i = 0; i < gapCount; ++i) {
+        const uint64_t gap = ranges[i + 1].first - (ranges[i].first + ranges[i].second);
+        if (gap < threshold) ++strictlySmaller;
+    }
+    std::size_t equalBudget = mergesNeeded - strictlySmaller;
+    std::size_t write = 0;
+    for (std::size_t i = 1; i < ranges.size(); ++i) {
+        const uint64_t prevEnd = ranges[write].first + ranges[write].second;
+        const uint64_t gap = ranges[i].first - prevEnd;
+        if (gap < threshold || (gap == threshold && equalBudget > 0)) {
+            if (gap == threshold) --equalBudget;
+            ranges[write].second = (ranges[i].first + ranges[i].second) - ranges[write].first;
+        } else {
+            ranges[++write] = ranges[i];
+        }
+    }
+    ranges.resize(write + 1);
+    uint64_t mergedBytes = 0;
+    for (const auto& range : ranges) mergedBytes += range.second;
+    if (mergedBytes * 2 >= last - first) ranges.assign(1, {first, last - first});
+}
+
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
@@ -121,8 +392,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    const bool anyLampShadow = !compilation && !skipShadows_ && std::any_of(lights.direct.begin(), lights.direct.end(), [&](const DirectLight& l) {
+        if (!l.shadow || l.kind == DirectLight::Kind::Directional) return false;
+        const auto index = std::size_t(&l - lights.direct.data());
+        return !virtualShadows_.count(index);
+    });
     // One stamp per pass: rigs that share a skeleton read its bones once (PRD-871).
-    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();    for (auto& [i, shadow] : virtualShadows_) {
+    const uint64_t planStamp = (!virtualShadows_.empty() || anyLampShadow) ? Skeleton::nextPlanStamp() : 0;
+    for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
@@ -238,19 +515,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) virtualCut_ = false;
 
     addCpuStage(CpuVirtualPages, stageStarted);
+    // Stack-safe box-vs-frustum test (`Primitives.cpp` `Frustum::intersectsBox` holds a function-local `static Vector3`).
+    const auto frustumIntersectsBox = [](const Frustum& frustum, const Box3& box) {
+        Vector3 corner;
+        for (const Plane& plane : frustum.planes) {
+            corner.x = plane.normal.x > 0 ? box.max.x : box.min.x;
+            corner.y = plane.normal.y > 0 ? box.max.y : box.min.y;
+            corner.z = plane.normal.z > 0 ? box.max.z : box.min.z;
+            if (plane.distanceToPoint(corner) < 0) return false;
+        }
+        return true;
+    };
     // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
     // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
     std::map<std::size_t, uint32_t> lampSizes;
-    if (!compilation) {
-        std::vector<std::size_t> autoLamps;
-        std::vector<shadows::LampDemand> demands;
-        // The unjittered view: a pixel's footprint does not move with the TRAA subpixel offset, and a jittered
-        // frustum flips a receiver on the view's edge in and out, which reallocated the map every frame (PRD-539).
-        Matrix4 view; view.elements = unjitteredCamera.matrixWorldInverse;
-        Matrix4 viewProjection; viewProjection.elements = unjitteredCamera.projectionMatrix; viewProjection.multiply(view);
-        const auto& p = unjitteredCamera.projectionMatrix;
-        const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
-        const WGPULimits& limits = deviceLimits();
+    if (!compilation && !skipShadows_) {
+        bool anyAutoLamp = false;
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
@@ -259,40 +539,28 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const std::string note = "TN_LAMP_SHADOW_MAPSIZE_OVERRIDE: light " + std::to_string(l.id) + " keeps shadow.mapSize " +
                     std::to_string(s.width) + "x" + std::to_string(s.height) + " instead of its footprint size";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
+            } else {
+                anyAutoLamp = true;
             }
-            // A pose seen for the first time is still: a still lamp draws its first map at its still size.
-            uint64_t pose = 0xcbf29ce484222325ull;
-            for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
-            for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
-            auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
-            if (state->second.pose != pose) state->second = {pose, int64_t(id)};
-            shadows::LampDemand demand;
-            demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
-            demand.cube = s.cube;
-            while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
-            const Vector3 at(l.position[0], l.position[1], l.position[2]);
-            const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
-            Matrix4 shadowView; shadowView.elements = s.view;
-            double footprint = INFINITY;
-            const auto visit = [&](const Vector3& point) {
-                Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
-                if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
-                const Vector3 offset = Vector3(point).sub(at);
-                const double reach = offset.length();
-                if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
-                if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
-                const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
-                                                  : -Vector3(point).applyMatrix4(shadowView).z;
-                if (!(shadowDepth > s.near)) return;
-                const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
-                footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
-            };
-            // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
-            // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
-            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+        }
+        if (anyAutoLamp) {
+            std::vector<std::size_t> autoLamps;
+            std::vector<shadows::LampDemand> demands;
+            // The unjittered view: a pixel's footprint does not move with the TRAA subpixel offset, and a jittered
+            // frustum flips a receiver on the view's edge in and out, which reallocated the map every frame (PRD-539).
+            Matrix4 view; view.elements = unjitteredCamera.matrixWorldInverse;
+            Matrix4 viewProjection; viewProjection.elements = unjitteredCamera.projectionMatrix; viewProjection.multiply(view);
+            Frustum cameraFrustum;
+            cameraFrustum.setFromProjectionMatrix(viewProjection, CoordinateSystem::WebGPU, false);
+            const auto& p = unjitteredCamera.projectionMatrix;
+            const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
+            const WGPULimits& limits = deviceLimits();
+
+            struct LampReceiver { Box3 box; uint32_t layers; };
+            std::vector<LampReceiver> lampReceivers;
+            lampReceivers.reserve(items.size());
             for (const DrawItem& item : items) {
-                if (!item.mainPass || !item.receiveShadow || (item.layers & s.layersMask) == 0) continue;
+                if (!item.mainPass || !item.receiveShadow) continue;
                 const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
                 if (!mesh || !mesh->geometry) continue;
                 std::shared_ptr<Box3> local = mesh->geometry->boundingBox;
@@ -305,20 +573,57 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 if (!local || local->isEmpty()) continue;
                 Matrix4 model; model.elements = item.matrixWorld;
-                Box3 box = *local; box.applyMatrix4(model);
-                if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
-                for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
-                    visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
-                                  box.min.z + (box.max.z - box.min.z) * z / 4));
-                Vector3 nearest; box.clampPoint(eye, nearest);
-                visit(nearest);
+                Box3 box = shadows::affineTransformBox(*local, model);
+                if (!frustumIntersectsBox(cameraFrustum, box)) continue;
+                lampReceivers.push_back({box, item.layers});
             }
-            demand.footprint = std::isfinite(footprint) ? footprint : 0;
-            autoLamps.push_back(i);
-            demands.push_back(demand);
+
+            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+            const double p11 = -p[11], p15 = p[15];
+            for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+                const DirectLight& l = lights.direct[i];
+                if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
+                const DirectLight::Shadow& s = *l.shadow;
+                if (s.width != 512 || s.height != 512) continue;
+                // A pose seen for the first time is still: a still lamp draws its first map at its still size.
+                uint64_t pose = 0xcbf29ce484222325ull;
+                for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+                for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+                auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
+                if (state->second.pose != pose) state->second = {pose, int64_t(id)};
+                shadows::LampDemand demand;
+                demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
+                demand.cube = s.cube;
+                while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
+                const Vector3 at(l.position[0], l.position[1], l.position[2]);
+                const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
+                Matrix4 shadowView; shadowView.elements = s.view;
+                Frustum spotFrustum;
+                const bool hasSpotFrustum = l.kind == DirectLight::Kind::Spot && !s.cube;
+                if (hasSpotFrustum) {
+                    Matrix4 sProj; sProj.elements = s.projection;
+                    Matrix4 spotVP; spotVP.multiplyMatrices(sProj, shadowView);
+                    spotFrustum.setFromProjectionMatrix(spotVP, CoordinateSystem::WebGPU, false);
+                }
+                const double shadowP00 = std::abs(s.projection[0]);
+                double footprint = INFINITY;
+                // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
+                // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
+                for (const LampReceiver& rec : lampReceivers) {
+                    if ((rec.layers & s.layersMask) == 0) continue;
+                    if (hasSpotFrustum && !frustumIntersectsBox(spotFrustum, rec.box)) continue;
+                    if (l.distance > 0 && rec.box.distanceToPoint(at) > l.distance) continue;
+                    shadows::accumulateLampBoxFootprint(
+                        rec.box, eye, at, axis, l.kind == DirectLight::Kind::Spot, s.cube, l.distance, l.coneCos,
+                        s.near, shadowP00, p11, p15, screenRadius, view, viewProjection, shadowView, footprint);
+                }
+                demand.footprint = std::isfinite(footprint) ? footprint : 0;
+                autoLamps.push_back(i);
+                demands.push_back(demand);
+            }
+            const auto sizes = shadows::lampMapSizes(demands);
+            for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
         }
-        const auto sizes = shadows::lampMapSizes(demands);
-        for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
     }
     const auto mapExtent = [&](std::size_t i) {
         const auto found = lampSizes.find(i);
@@ -328,20 +633,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     std::string lightKinds, unshadowedKinds;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         const DirectLight& l = lights.direct[i];
-        if (l.shadow)
+        const bool useShadow = !skipShadows_ && l.shadow.has_value();
+        if (useShadow)
             if (const char* refusal = sourceAngleFilterRefusal(*l.shadow)) throw std::runtime_error(refusal);
         const char kind = l.kind == DirectLight::Kind::Directional ? 'd' : l.kind == DirectLight::Kind::Point ? 'p' : 's';
         unshadowedKinds += kind;
         // A lamp with sourceRadiusShadowFilter reads the soft filter: 'Q' a point light, 'R' a spot light.
-        const char shadowed = l.shadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
+        const char shadowed = useShadow && l.shadow->sourceRadiusFilter ? (kind == 'p' ? 'Q' : 'R') : static_cast<char>(kind - 'a' + 'A');
         // A virtual shadow's kind counts its levels from '0', or from '8' when its source-angle filter is compiled in.
-        lightKinds += virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
-                                               : l.shadow ? shadowed : kind;
-        if (virtualShadows_.count(i)) {
+        lightKinds += useShadow && virtualShadows_.count(i) ? char((l.shadow->sourceAngleFilter ? '8' : '0') + virtualShadows_.at(i).atlas.options().clipExtents.size())
+                                                           : useShadow ? shadowed : kind;
+        if (useShadow && virtualShadows_.count(i)) {
             ensureVirtualShadowMap(i);
             continue;
         }
-        if (!l.shadow) continue;
+        if (!useShadow) continue;
         std::vector<ShadowMap>& maps = l.shadow->cube ? cubeShadowMaps_ : shadowMaps_;
         if (maps.size() <= i) maps.resize(i + 1);
         ShadowMap& map = maps[i];
@@ -419,28 +725,61 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (instanceTop_ > 2 * live + 20 * 1024) { instanceSlots_.clear(); instanceTop_ = 0; }
     }
+    std::vector<const DrawItem*> mainItems(opaque.size());
+    std::vector<uint32_t> mainCapacities(opaque.size(), 0);
+    for (std::size_t idx = 0; idx < opaque.size(); ++idx) mainItems[idx] = opaque[idx].second;
+    if (!compilation) {
+        if (!job_) job_ = std::make_unique<FrameJob>();
+        job_->culledMainItems.clear();
+        job_->culledStores.clear();
+        job_->culledAttributes.clear();
+    }
+    if (instanceCullEnabled() && !compilation && !traa_) {
+        if (planSerial_ % 256 == 0) {
+            for (auto it = culledInstances_.begin(); it != culledInstances_.end();) {
+                if (planSerial_ - it->second.lastPlanSeen > kInstanceSlotPlans) it = culledInstances_.erase(it);
+                else ++it;
+            }
+        }
+        Matrix4 projViewMat;
+        projViewMat.elements = multiply(camera.projectionMatrix, view);
+        Frustum viewFrustum;
+        viewFrustum.setFromProjectionMatrix(projViewMat, CoordinateSystem::WebGPU, false);
+        std::vector<std::pair<uint32_t, float>> survivorsScratch;
+        std::vector<uint32_t> orderedScratch;
+        for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+            const DrawItem* orig = opaque[idx].second;
+            const DrawItem* culled = cullMainInstanceItem(*orig, viewFrustum, view, *job_, survivorsScratch,
+                                                          orderedScratch);
+            if (culled != orig) {
+                mainItems[idx] = culled;
+                mainCapacities[idx] = orig->instanceCount;
+            }
+        }
+    }
     instancePlanned_.clear();
     instanceDirty_.clear();
     uint32_t instanceCopies = 0;
-    for (const auto& [depth, drawn] : opaque) {
-        if (!drawn->instanceMatrices) continue;
+    const auto packInstance = [&](const DrawItem* drawn, uint32_t reserveInstances) {
+        if (!drawn->instanceMatrices) return;
         if (drawn->indirect) {  // read in place as a vertex buffer; nothing to pack
             instanceBases[drawn] = 0.0;
-            continue;
+            return;
         }
         const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
+        const uint64_t slotReserve = std::max(floats, uint64_t{reserveInstances} * 20);
         const BufferStore& matrixStore = *drawn->instanceMatrices;
         const BufferStore* colorStore = drawn->instanceColors;
         InstanceSlot& slot = instanceSlots_[{matrixStore.id(), colorStore ? colorStore->id() : 0}];
         bool placed = false;
-        if (slot.count < floats) {  // new, or grown past its place: the last place grows in place, any other takes the end
+        if (slot.count < slotReserve) {  // new, or grown past its place: the last place grows in place, any other takes the end
             if (slot.count != 0 && slot.offset + slot.count == instanceTop_) {
-                instanceTop_ += floats - slot.count;
+                instanceTop_ += slotReserve - slot.count;
             } else {
                 slot.offset = instanceTop_;
-                instanceTop_ += floats;
+                instanceTop_ += slotReserve;
             }
-            slot.count = floats;
+            slot.count = slotReserve;
             placed = true;
         }
         slot.seen = planSerial_;
@@ -451,7 +790,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                   colorStore ? colorStore->epoch() : 0, colorStore ? colorStore->writes() : 0,
                                   colorStore ? colorStore->version() : 0, drawn->instanceCount};
         instancePlanned_.emplace_back(&slot, stamp);
-        if (!placed && slot.stamped && slot.stamp == stamp) continue;
+        if (!placed && slot.stamped && slot.stamp == stamp) return;
         const auto* matrices = reinterpret_cast<const float*>(matrixStore.data());
         const auto* colors = colorStore ? reinterpret_cast<const float*>(colorStore->data()) : nullptr;
         if (instances.size() < instanceTop_) instances.resize(instanceTop_);
@@ -466,6 +805,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         slot.stamped = false;  // until the upload below has gone through
         ++instanceCopies;
         instanceDirty_.emplace_back(slot.offset, floats);
+    };
+    const bool anyShadowPass = !compilation && !skipShadows_ &&
+                               std::any_of(lights.direct.begin(), lights.direct.end(),
+                                           [](const DirectLight& l) { return bool(l.shadow); });
+    for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+        const DrawItem* orig = opaque[idx].second;
+        const DrawItem* mainD = mainItems[idx];
+        if (mainD != orig) {
+            if (mainD->instanceCount > 0) packInstance(mainD, mainCapacities[idx]);
+            if (anyShadowPass && orig->castShadow && orig->instanceCount > 0) packInstance(orig, 0);
+        } else {
+            packInstance(orig, 0);
+        }
     }
     instances.resize(instanceTop_);
     struct Deform {
@@ -601,8 +953,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const bool invariantPosition = (postEffects_ && (postEffects_->reads("normal") || postEffects_->reads("albedo") ||
         postEffects_->reads("emissive") || postEffects_->reads("indirectDiffuse") || postEffects_->reads("metalness") ||
         postEffects_->reads("roughness"))) || traa_;
-    // PRD-888 (prepass.h): TN_PREPASS draws each masked opaque draw depth-only first, then shades it at depth Equal. The
-    // retained-rows path records no prepass, so it keeps the shipped draws.
+    // PRD-888 (prepass.h): TN_PREPASS draws masked opaque draws and heavy/instanced lit solid draws depth-only first
+    // (solids before masked), then shades them at depth Equal. Pure per-DrawItem eligibility guarantees live
+    // frustum-culled renders match compileAsync pipeline keys identically.
     const bool prepass = !features().stableRows && prepassEnabled();
     // variantOf's inputs that refresh()'s material half does not own (see DepthRowKey).
     const auto depthRowKey = [invariantPosition](const DrawItem& item) {
@@ -840,7 +1193,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(block, f, slot[kLightSourceRadius], std::array<double, 1>{l.sourceRadius});
             put(block, f, slot[kLightConeCos], std::array<double, 1>{l.coneCos});
             put(block, f, slot[kLightPenumbraCos], std::array<double, 1>{l.penumbraCos});
-            if (l.shadow) {
+            if (l.shadow && !skipShadows_) {
                 put(block, f, slot[kLightShadowMatrix], l.shadow->matrix);
                 put(block, f, slot[kLightShadowBias], std::array<double, 1>{l.shadow->bias});
                 put(block, f, slot[kLightShadowNormalBias], std::array<double, 1>{l.shadow->normalBias});
@@ -878,8 +1231,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
         }
     };
-    for (const auto& [depthKey, drawn] : opaque) {
-        const DrawItem& item = *drawn;
+    for (std::size_t opaqueIdx = 0; opaqueIdx < opaque.size(); ++opaqueIdx) {
+        const DrawItem& item = *mainItems[opaqueIdx];
         if (!item.mainPass) continue;
         shader::VertexVariant variant = variantOf(item);
         const std::string selective = selectiveLights(item);
@@ -912,7 +1265,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
         // changed up to 41 k pixels of the forest's overview where this pair changed none. Both pipelines run the one
         // vertex stage, so the Equal test meets the depth the prepass wrote.
-        const bool equalDraw = prepass && !target.alphaToCoverage && prepassEligible(item) && prepassFragment(program) != nullptr;
+        const bool solidCandidate = prepass && prepassSolidEligible(item);
+        const bool maskedCandidate = prepass && prepassMaskedEligible(item);
+        const bool equalDraw = (solidCandidate || maskedCandidate) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
@@ -1033,11 +1388,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
-        putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, v, program.vertexNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, f, program.fragmentNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
         plan.back().prepass = prepassPipeline;
+        plan.back().prepassSolid = equalDraw && solidCandidate && !program.hasDiscard;
     }
 
     if (features().stablePasses && !compilation)
@@ -1049,11 +1405,75 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     addCpuStage(CpuPlan, stageStarted);
     stageStarted = meterStart(cpuMetered_);
+    struct LampBounds {
+        bool ready = false;
+        bool hasSphere = false;
+        Sphere sphere{};
+        bool hasBox = false;
+        Box3 box{};
+    };
+    const auto boxDistanceToPoint = [](const Box3& box, const Vector3& point) {
+        Vector3 clamped;
+        box.clampPoint(point, clamped);
+        return clamped.distanceTo(point);
+    };
+    std::vector<LampBounds> lampBounds;
+    if (anyLampShadow) {
+        lampBounds.resize(opaque.size());
+        const std::vector<CasterRecord>* vsmRecord =
+            !virtualShadows_.empty() ? &casterRecords_.begin()->second : nullptr;
+        for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+            const DrawItem* drawn = opaque[idx].second;
+            if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) continue;
+            LampBounds& b = lampBounds[idx];
+            b.ready = true;
+            if (!drawn->shadowObject || drawn->positionNode || drawn->nodes->shadowPositionNode() ||
+                drawn->morphGeometry || drawn->gpuJoints) {
+                continue;
+            }
+            if (vsmRecord != nullptr) {
+                const std::size_t itemIndex = std::size_t(drawn - items.data());
+                if (itemIndex < vsmRecord->size() && (*vsmRecord)[itemIndex].casts) {
+                    const Box3& bounds = (*vsmRecord)[itemIndex].bounds;
+                    if (!bounds.isEmpty() && std::isfinite(bounds.min.x + bounds.min.y + bounds.min.z +
+                                                             bounds.max.x + bounds.max.y + bounds.max.z)) {
+                        b.hasBox = true;
+                        b.box = bounds;
+                    }
+                    continue;
+                }
+            }
+            if (drawn->boneMatrices != nullptr || drawn->instanceMatrices != nullptr) {
+                const auto& [bounds, diameter] =
+                    (drawn->cache ? *drawn->cache : uncachedBounds).virtualShadowBounds(*drawn, planStamp);
+                if (!bounds.isEmpty() && std::isfinite(bounds.min.x + bounds.min.y + bounds.min.z +
+                                                         bounds.max.x + bounds.max.y + bounds.max.z)) {
+                    b.hasBox = true;
+                    b.box = bounds;
+                }
+                continue;
+            }
+            const auto* mesh = dynamic_cast<const Mesh*>(drawn->shadowObject);
+            if (!mesh || !mesh->geometry) continue;
+            if (!mesh->geometry->boundingSphere)
+                const_cast<BufferGeometry*>(mesh->geometry.get())->computeBoundingSphere();
+            const Sphere* local = mesh->geometry->boundingSphere.get();
+            if (!local || !(local->radius >= 0) || !std::isfinite(local->radius)) continue;
+            Sphere world = *local;
+            Matrix4 model;
+            model.elements = drawn->matrixWorld;
+            world.applyMatrix4(model);
+            if (std::isfinite(world.center.x + world.center.y + world.center.z + world.radius)) {
+                b.hasSphere = true;
+                b.sphere = world;
+            }
+        }
+    }
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
-        if (!lights.direct[i].shadow) continue;
+        if (skipShadows_ || !lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
@@ -1072,22 +1492,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // frame in the stress lab the scan judged 259 pages x 1316 casters and 0.47% of them became a draw.
         const auto mayCast = [&](const DrawItem* drawn) {
             if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) return false;
-            if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) return false;
-            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving there
-            // neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->shadowPositionNode() ||
-                drawn->boneMatrices || drawn->morphGeometry) return true;
-            const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
-                ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
-                : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
-                    ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
-            if (!local) return true;
-            Sphere world = *local;
-            Matrix4 model; model.elements = drawn->matrixWorld;
-            world.applyMatrix4(model);
-            const auto& at = lights.direct[i].position;
-            return !(world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far);
+            return (drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) != 0;
         };
+        std::vector<std::size_t> lampCasters;
+        std::vector<const DrawItem*> spotCasters;
+        Frustum spotFrustum;
+        std::array<Frustum, 6> cubeFrustums;
+        const bool isSpotLamp = lamp && lights.direct[i].kind == DirectLight::Kind::Spot && !shadow.cube;
+        const bool isCubeLamp = lamp && shadow.cube;
+        if (isSpotLamp) {
+            Matrix4 sProj; sProj.elements = shadow.projection;
+            Matrix4 sView; sView.elements = shadow.view;
+            Matrix4 spotVP; spotVP.multiplyMatrices(sProj, sView);
+            spotFrustum.setFromProjectionMatrix(spotVP, CoordinateSystem::WebGPU, false);
+        } else if (isCubeLamp) {
+            Matrix4 sProj; sProj.elements = shadow.projection;
+            for (int face = 0; face < 6; ++face) {
+                Matrix4 fView; fView.elements = shadow.faceViews[face];
+                Matrix4 cubeVP; cubeVP.multiplyMatrices(sProj, fView);
+                cubeFrustums[face].setFromProjectionMatrix(cubeVP, CoordinateSystem::WebGPU, false);
+            }
+        }
+        if (lamp) {
+            const auto& at = lights.direct[i].position;
+            const Vector3 lightPos(at[0], at[1], at[2]);
+            if (isSpotLamp) spotCasters.reserve(opaque.size());
+            else lampCasters.reserve(opaque.size());
+            for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+                const DrawItem* drawn = opaque[idx].second;
+                if (!mayCast(drawn)) continue;
+                const LampBounds& b = lampBounds[idx];
+                if (b.hasBox) {
+                    if (shadow.far > 0 && boxDistanceToPoint(b.box, lightPos) > shadow.far) continue;
+                    if (isSpotLamp && !frustumIntersectsBox(spotFrustum, b.box)) continue;
+                } else if (b.hasSphere) {
+                    if (shadow.far > 0 && b.sphere.center.distanceTo(lightPos) - b.sphere.radius > shadow.far) continue;
+                    if (isSpotLamp && !spotFrustum.intersectsSphere(b.sphere)) continue;
+                }
+                if (isSpotLamp) spotCasters.push_back(drawn);
+                else lampCasters.push_back(idx);
+            }
+        }
         // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
         // scan admitted it: there is no rectangle to index it by.
         // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
@@ -1246,11 +1691,24 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
                         selected.push_back(drawn);
                     }
+                } else if (lamp) {
+                    if (isSpotLamp) {
+                        selected = std::move(spotCasters);
+                    } else {
+                        for (const std::size_t idx : lampCasters) {
+                            if (isCubeLamp) {
+                                const LampBounds& b = lampBounds[idx];
+                                if (b.hasSphere && !cubeFrustums[face].intersectsSphere(b.sphere)) continue;
+                                if (b.hasBox && !frustumIntersectsBox(cubeFrustums[face], b.box)) continue;
+                            }
+                            selected.push_back(opaque[idx].second);
+                        }
+                    }
                 } else {
-                    const auto& atlas = virtualIt->second.atlas;
                     for (const auto& [depthKey, drawn] : opaque) {
                         if (!mayCast(drawn)) continue;
                         if (page) {
+                            const auto& atlas = virtualIt->second.atlas;
                             if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
                             if (!page->mover && bounded(drawn) &&
                                 casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
@@ -1477,7 +1935,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         constexpr std::size_t kNoGroup = std::size_t(-1);
         std::vector<CasterGroup> groups;
         std::vector<std::size_t> groupOf(pageCasters.size(), kNoGroup);
-        if (page != nullptr && pageCasters.size() > 1 && shadowGroupsEnabled()) {
+        if ((page != nullptr || lampMap) && pageCasters.size() > 1 && shadowGroupsEnabled()) {
             // ponytail: a page with more groups than this is not a crowd, and the search below is linear in
             // them; past the bound every caster keeps its own row (no regression, bounded work).
             constexpr std::size_t kMaxGroupsPerPage = 64;
@@ -1619,17 +2077,25 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
                 mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
                 for (const Planned& p : shadowPasses[k].draws) {
-                    const DrawItem& item = *p.item;
-                    animated |= item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry || item.gpuJoints;
-                    mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
-                    mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
-                    mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
-                    mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
-                    // A cutoff that samples the node's own textures casts what they hold (PRD-858).
-                    if (item.nodeTextures)
-                        for (const auto& [label, texture] : *item.nodeTextures) {
-                            mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
-                        }
+                    const auto mixItem = [&](const DrawItem& item) {
+                        animated |= item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                        mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
+                        mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
+                        mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
+                        mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+                        // A cutoff that samples the node's own textures casts what they hold (PRD-858).
+                        if (item.nodeTextures)
+                            for (const auto& [label, texture] : *item.nodeTextures) {
+                                mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
+                            }
+                    };
+                    mix(reinterpret_cast<uintptr_t>(p.pipeline));
+                    if (p.members != nullptr && p.memberCount > 0) {
+                        mix(p.memberCount);
+                        for (uint32_t m = 0; m < p.memberCount; ++m) mixItem(*p.members[m]);
+                    } else {
+                        mixItem(*p.item);
+                    }
                 }
             }
             uint64_t& last = mapSignatures_[i];
@@ -1653,7 +2119,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
                 const bool masked = shadowMasked(*item.material, *item.nodes);
-                const bool fragmentBlock = masked || variantOf(item).alphaHash;
+                const bool fragmentBlock = masked || program.variant.alphaHash;
                 const uint64_t v = frameUniforms_.size();
                 const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
                 frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
@@ -1664,7 +2130,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
                     put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
                     if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
-                    putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);  // alphaTestNode's uniforms
+                    putNodes(frameUniforms_, f, program.fragmentNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);  // alphaTestNode's uniforms
                 }
                 put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
@@ -1674,7 +2140,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
                 putSkin(v, program.vertexSlots, item);
-                putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
+                putNodes(frameUniforms_, v, program.vertexNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
                 planned.vertexOffset = static_cast<uint32_t>(v);
                 planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
             }
@@ -2202,14 +2668,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             instancesUploaded = instancesUploaded || instances;
             continue;
         }
-        const uint64_t first = ranges.front().first, last = ranges.back().first + ranges.back().second;
-        uint64_t dirtyBytes = 0;
-        for (const auto& range : ranges) dirtyBytes += range.second;
-        // Mostly dirty, or many runs: one write over them all. A crowd palette has one run per moved rig, so it may take
-        // one write per rig (PRD-878: 240 walkers, about 76 moved slots a frame on ?stress).
-        if (ranges.size() > (instances ? kMaxWrites : kMaxPaletteWrites) || dirtyBytes * 2 >= last - first) {
-            ranges.assign(1, {first, last - first});
-        }
+        coalesceDirtyRanges(ranges, instances ? kMaxWrites : kMaxPaletteWrites, dirtyGapScratch_);
         storage.uploaded.resize(bytes);
         bool written = true;
         for (const auto& [offset, length] : ranges) {
@@ -2254,17 +2713,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         rebuildGroups();
     }
 
-    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
-    // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
-    const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
-        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
-        const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
-        const auto found = mapGroups_.find(vertexKey);
-        if (found != mapGroups_.end()) return found->second;
-        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
-                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                  nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
-    };
     const auto graphKeyOf = [&](const DrawItem& item) {
         std::string key;
         if (item.nodeTextures)
@@ -2274,6 +2722,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                        std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
             }
         return key;
+    };
+    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
+    // draw, in the main pass and the shadow passes alike; only resolve graphKey when vertexPerDraw holds.
+    const auto vertexGroupOf = [&](const Planned& p) -> WGPUBindGroup {
+        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
+        const std::string vertexKey =
+            "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKeyOf(*p.item);
+        const auto found = mapGroups_.find(vertexKey);
+        if (found != mapGroups_.end()) return found->second;
+        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
+                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
     };
 
     // A draw's fragment group depends on its program, its textures (identity and version, which the
@@ -2335,10 +2795,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const ShadowPass& pass : shadowPasses)
         for (const Planned& draw : pass.draws)
             if (draw.item->material->alphaHash && draw.item->map) materialTexture(*draw.item->map);
-    for (Planned& draw : velocityPlan) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+    for (Planned& draw : velocityPlan) draw.vertexGroup = vertexGroupOf(draw);
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+            draw.vertexGroup = vertexGroupOf(draw);
             if (!draw.item->material->alphaHash || !draw.item->map) continue;
             const MaterialTexture* map = materialTexture(*draw.item->map);
             const std::string key = "shadow|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
@@ -2355,8 +2815,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
         const GraphTextures* graphTextures = p.item->nodeTextures;
-        std::string graphKey = graphKeyOf(*p.item);
-        p.vertexGroup = vertexGroupOf(p, graphKey);
+        p.vertexGroup = vertexGroupOf(p);
         const DrawProbes probes = probesOf(*p.program);
         const bool viewport = probes.viewport;
         const bool postTexture = probes.postTexture;
@@ -2368,6 +2827,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             p.mapGroup = static_cast<WGPUBindGroup>(cache->mapGroup);
             continue;
         }
+        std::string graphKey = graphKeyOf(*p.item);
         if (postTexture)
             graphKey += "|post," + std::to_string(postStamp);
         if (viewport)

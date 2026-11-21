@@ -2948,6 +2948,93 @@ void alphaToCoverageMsaa() {
     CHECK(single[centre + 3] >= 127 && single[centre + 3] <= 128);
 }
 
+void alphaToCoveragePrepass() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto back = plane(4, 2);
+    const auto front = plane(2, 2);
+    const auto occluded = plane(2, 2);
+    BufferStore uvs(Scalar::F32, 8);
+    const float uvData[8] = {0, 1, 1, 1, 0, 0, 1, 0};
+    uvs.write(0, uvData, sizeof uvData);
+    auto map = std::make_shared<Texture>();
+    map->width = 4;
+    map->height = 1;
+    map->generateMipmaps = false;
+    map->minFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    map->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    map->data = {
+        255, 255, 255, 20,
+        255, 255, 255, 90,
+        255, 255, 255, 130,
+        255, 255, 255, 255,
+    };
+    map->needsUpdate();
+    shader::StandardMaterial materials[3];
+    materials[0].color = {1, 0, 0};
+    materials[1].color = {0, 1, 0};
+    materials[1].opacity = 1.0f;
+    materials[1].alphaTest = 0.4f;
+    materials[1].alphaToCoverage = true;
+    materials[2].color = {0, 0, 1};
+    std::vector<DrawItem> items(3);
+    items[0].positions = &back->positions;
+    items[0].indices = &back->indices;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -0.2, 1};
+    items[1].positions = &front->positions;
+    items[1].indices = &front->indices;
+    items[1].uvs = &uvs;
+    items[1].map = map.get();
+    items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.0, 1};
+    items[2].positions = &occluded->positions;
+    items[2].indices = &occluded->indices;
+    items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -0.5, 1};
+    for (int k = 0; k < 3; ++k) {
+        items[k].key = items[k].id = k + 1;
+        items[k].kind = MaterialKind::Basic;
+        items[k].material = &materials[k];
+    }
+    const char* priorRaw = std::getenv("TN_PREPASS");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_PREPASS", prior->c_str(), 1);
+            else unsetenv("TN_PREPASS");
+        }
+    } restore{prior};
+    const auto renderWith = [&](const char* mode, uint32_t expectedPrepassDraws) {
+        setenv("TN_PREPASS", mode, 1);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setSampleCount(4);
+        renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+        CHECK(renderer.lastFrame().prepassDraws == expectedPrepassDraws);
+        return read(renderer, events);
+    };
+    const auto off = renderWith("0", 0);
+    const auto on = renderWith("1", 1);
+    CHECK(off.size() == 16 * 16 * 4 && on.size() == off.size());
+    if (off.size() != 16 * 16 * 4 || on.size() != off.size()) return;
+    int maxDiff = 0;
+    for (std::size_t idx = 0; idx < off.size(); ++idx)
+        maxDiff = std::max(maxDiff, std::abs(int(off[idx]) - int(on[idx])));
+    CHECK(maxDiff <= 1);
+    bool sawDiscarded = false, sawPartial = false, sawFull = false;
+    for (int x = 4; x < 12; ++x) {
+        const size_t p = (8 * 16 + x) * 4;
+        const uint8_t r = on[p], g = on[p + 1], b = on[p + 2];
+        CHECK(b < 3);
+        if (r > 240 && g < 5) sawDiscarded = true;
+        if (r > 20 && r < 240 && g > 20 && g < 240) sawPartial = true;
+        if (r < 5 && g > 240) sawFull = true;
+    }
+    CHECK(sawDiscarded && sawPartial && sawFull);
+}
+
 void alphaHashCoverage() {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3912,6 +3999,146 @@ void auxTargetsAlphaTested() {
     auxTargets(false, 0.5f, 0.4f, 4);
     auxTargets(true, 0, 0, 4, true);  // an alpha-hashed draw at opacity 0 hashes every pixel away, at 4x too
 }
+
+void coalesceDirtyRangesTest() {
+    std::vector<std::pair<uint64_t, uint64_t>> ranges;
+    for (uint64_t i = 0; i < 40; ++i) ranges.emplace_back(i * 512, 256);
+    ranges.emplace_back(4ull * 1024 * 1024, 256);
+    std::vector<uint64_t> scratch;
+    Renderer::coalesceDirtyRanges(ranges, 32, scratch);
+    CHECK(ranges.size() <= 32);
+    uint64_t totalBytes = 0;
+    for (const auto& [offset, length] : ranges) totalBytes += length;
+    CHECK(totalBytes < 64ull * 1024);
+    CHECK(ranges.front().first == 0);
+    CHECK(ranges.back().first == 4ull * 1024 * 1024 && ranges.back().second == 256);
+
+    // Dense dirtiness (>50% of span) still collapses cleanly into one write.
+    ranges.clear();
+    for (uint64_t i = 0; i < 40; ++i) ranges.emplace_back(i * 512, 384);
+    Renderer::coalesceDirtyRanges(ranges, 32, scratch);
+    CHECK(ranges.size() == 1 && ranges[0].first == 0 && ranges[0].second == 39 * 512 + 384);
+}
+
+void mainInstanceFrustumCull() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    const auto quad = plane(1, 1);
+    constexpr uint32_t kCount = 200;
+    BufferStore matrices(Scalar::F32, kCount * 16);
+    BufferStore tint(Scalar::F32, kCount * 3);
+    std::vector<float> matData(kCount * 16, 0.0f);
+    std::vector<float> tintData(kCount * 3, 0.0f);
+    // 0..99 sit in front of camera (0, 0, 4) looking -Z, placed far-to-near (z = -20 .. -1 and 0)
+    // so the nearest center instance (i = 99 at z = 0) draws red/blue cleanly with front-to-back order too.
+    // 100..199 sit well behind camera (z = +10 .. +109) and must be culled in main pass while staying in shadow pass.
+    for (uint32_t i = 0; i < kCount; ++i) {
+        float* m = matData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+        if (i < 100) {
+            const float z = -20.0f + 0.2f * float(i);  // i=99 -> z=-0.2 (nearest), i=0 -> z=-20.0 (farthest)
+            m[12] = 0.0f;
+            m[13] = 0.0f;
+            m[14] = z;
+            tintData[i * 3 + 0] = i == 99 ? 1.0f : 0.0f;
+            tintData[i * 3 + 1] = i == 99 ? 0.25f : 0.8f;
+            tintData[i * 3 + 2] = i == 99 ? 0.1f : 0.9f;
+        } else {
+            m[12] = 0.0f;
+            m[13] = 0.0f;
+            m[14] = 10.0f + float(i - 100);
+            tintData[i * 3 + 0] = 0.0f;
+            tintData[i * 3 + 1] = 1.0f;
+            tintData[i * 3 + 2] = 0.0f;
+        }
+    }
+    matrices.write(0, matData.data(), matData.size() * sizeof(float));
+    tint.write(0, tintData.data(), tintData.size() * sizeof(float));
+
+    shader::StandardMaterial mat;
+    shader::MaterialNodes nodes;
+    nodes.colorNode =
+        shader::graph::vec4({shader::graph::attribute("instanceTint", shader::Type::vec(3)), shader::graph::float_(1)});
+    std::vector<DrawItem::CustomAttribute> attrs{{"instanceTint", &tint, true}};
+
+    DrawItem item;
+    item.key = item.id = 42;
+    item.kind = MaterialKind::Basic;
+    item.positions = &quad->positions;
+    item.indices = &quad->indices;
+    item.material = &mat;
+    item.nodes = &nodes;
+    item.attributes = &attrs;
+    item.instanceMatrices = &matrices;
+    item.instanceCount = kCount;
+    item.castShadow = true;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.geometryBox = Box3();
+    item.geometryBox->min.set(-0.5, -0.5, -0.05);
+    item.geometryBox->max.set(0.5, 0.5, 0.05);
+
+    LightState lights;
+    DirectLight sun = DirectLight::directional({0, 1, 0}, {1, 1, 1});
+    DirectLight::Shadow shadow;
+    shadow.width = shadow.height = 32;
+    shadow.view = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -40, 1};
+    shadow.projection = {0.01, 0, 0, 0, 0, 0.01, 0, 0, 0, 0, -0.005, 0, 0, 0, 0.5, 1};
+    shadow.matrix = shadow.projection;
+    sun.shadow = shadow;
+    lights.direct.push_back(sun);
+
+    const CameraState frontCam = camera(1);
+    CameraState pastAllCam = frontCam;
+    pastAllCam.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -50, 1};
+    pastAllCam.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 50, 1};
+
+    // Baseline with TN_INSTANCE_CULL=0 renders all 200 instances in main and shadow passes.
+    setenv("TN_INSTANCE_CULL", "0", 1);
+    std::vector<uint8_t> baselinePx;
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == uint64_t{kCount} * 2);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+        baselinePx = read(renderer, events);
+    }
+
+    // Default (TN_INSTANCE_CULL enabled): behind-camera instances culled in main pass, preserved in shadow pass,
+    // aligned perInstance custom attributes preserved, settled repeat frame copies 0 instances, 0-survivor view recovers cleanly.
+    unsetenv("TN_INSTANCE_CULL");
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+        CHECK(renderer.lastFrame().instanceCopies == 2);
+        const std::vector<uint8_t> culledPx = read(renderer, events);
+        CHECK(!culledPx.empty() && culledPx == baselinePx);
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        CHECK(renderer.lastFrame().instanceCopies == 0);
+
+        renderer.render({&item, 1}, pastAllCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 0);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        const std::vector<uint8_t> recoveredPx = read(renderer, events);
+        CHECK(recoveredPx == baselinePx);
+    }
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -3956,7 +4183,10 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest},
              {"alpha_to_coverage_msaa", alphaToCoverageMsaa},
+             {"alpha_to_coverage_prepass", alphaToCoveragePrepass},
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
-             {"indirect_record", indirectRecord})
+             {"indirect_record", indirectRecord},
+             {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
+             {"main_instance_frustum_cull", mainInstanceFrustumCull})

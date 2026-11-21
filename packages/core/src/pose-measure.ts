@@ -418,6 +418,36 @@ function getEnvelope(
 /** PRD-898 J4: which envelope's spheres the engine holds for each root. */
 const engineEnvelope = new WeakMap<Object3D, IPosedBoundsEnvelope>();
 
+/**
+ * Single-call GroundSnap execution on the owned engine (`__tnGroundSnapApply`), attaching the
+ * envelope once and keeping descendants' world matrices synchronized without a second bone walk.
+ * Returns `undefined` when the hook is absent (plain three.js or JS-only mocks), so `GroundSnap`
+ * falls back to `posedBounds` + JS world correction.
+ */
+export function groundSnapApplyNative(
+  root: Object3D,
+  meshes: readonly Object3D[] | undefined,
+  group: Object3D,
+  surfaceY: number,
+  dt: number,
+  maxRate: number | undefined,
+  enabled: boolean,
+): number | null | undefined {
+  const hook = sphereBoundsHook(root)?.groundSnapApply;
+  if (hook === undefined) return undefined;
+  const envelope = getEnvelope(root, meshes);
+  if (engineEnvelope.get(root) !== envelope) {
+    sphereBoundsHook(root)?.attach.call(
+      root,
+      [...envelope.bones.map((s) => s.bone), ...envelope.statics.map((s) => s.object)],
+      [...envelope.bones.map((s) => s.radius), ...envelope.statics.map((s) => s.radius)],
+    );
+    engineEnvelope.set(root, envelope);
+  }
+  const clearance = hook.call(root, group, surfaceY, dt, maxRate ?? -1, enabled, envelope.biasY);
+  return Number.isFinite(clearance) ? clearance : null;
+}
+
 export function posedBounds(root: Object3D, meshes?: readonly Object3D[]): IThreePoseBounds {
   const envelope = getEnvelope(root, meshes);
   const raw = envelope.raw;

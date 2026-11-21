@@ -106,6 +106,7 @@ const ENGINE_FLAGS: Readonly<Record<string, "Once" | "Live">> = {
   TN_GPU_PASSES: "Live",
   TN_SHADOW_INSTANCE_GROUPS: "Live",
   TN_SHADOW_INSTANCE_CULL: "Live",
+  TN_INSTANCE_CULL: "Live",
   TN_PREPASS: "Live",
   TN_PROGRAM_PROBES: "Once",
   TN_SHADOW_PAGE_SCAN: "Once",

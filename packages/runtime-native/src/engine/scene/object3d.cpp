@@ -504,6 +504,72 @@ void Object3D::lookAt(double x, double y, double z) {
     lookAt(scratchTarget);
 }
 
+void Object3D::billboardFace(Object3D& camera, int lockAxis) {
+    constexpr double kEpsilon = 1e-12;
+    prepareLocalTransformWrite();
+    Object3D* const parent_ = parent;
+    updateWorldMatrix(true, false);
+    camera.updateWorldMatrix(true, false);
+
+    Vector3 objectPosition, cameraPosition, direction;
+    Quaternion cameraQuaternion, objectQuaternion, parentQuaternion;
+    getWorldPosition(objectPosition);
+    camera.getWorldQuaternion(cameraQuaternion);
+
+    if (camera.type() == "OrthographicCamera") {
+        direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+    } else {
+        camera.getWorldPosition(cameraPosition);
+        direction.subVectors(cameraPosition, objectPosition);
+        if (direction.lengthSq() <= kEpsilon) {
+            direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+        }
+    }
+    if (direction.lengthSq() <= kEpsilon) direction.set(0.0, 0.0, 1.0);
+
+    if (lockAxis == 1 || lockAxis == 2 || lockAxis == 3) {
+        if (lockAxis == 1) direction.x = 0.0;
+        if (lockAxis == 2) direction.y = 0.0;
+        if (lockAxis == 3) direction.z = 0.0;
+        if (direction.lengthSq() <= kEpsilon) {
+            if (lockAxis == 3) direction.set(1.0, 0.0, 0.0);
+            else direction.set(0.0, 0.0, 1.0);
+        }
+    }
+    direction.normalize();
+
+    if (lockAxis == 1 || lockAxis == 2 || lockAxis == 3) {
+        const Vector3 forward(0.0, 0.0, 1.0);
+        objectQuaternion.setFromUnitVectors(forward, direction);
+    } else {
+        Vector3 screenUp(0.0, 1.0, 0.0);
+        screenUp.applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+        if (screenUp.lengthSq() <= kEpsilon) {
+            screenUp.set(1.0, 0.0, 0.0).applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+        }
+        if (screenUp.lengthSq() <= kEpsilon) {
+            screenUp.set(0.0, 1.0, 0.0);
+            if (std::abs(screenUp.dot(direction)) >= 1.0 - kEpsilon) screenUp.set(1.0, 0.0, 0.0);
+            screenUp.projectOnPlane(direction);
+        }
+        screenUp.normalize();
+        Vector3 screenRight;
+        screenRight.crossVectors(screenUp, direction).normalize();
+        Matrix4 basis;
+        basis.makeBasis(screenRight, screenUp, direction);
+        objectQuaternion.setFromRotationMatrix(basis);
+    }
+
+    if (parent_ == nullptr) {
+        quaternion.copy(objectQuaternion);
+    } else {
+        parent_->updateWorldMatrix(true, false);
+        parent_->getWorldQuaternion(parentQuaternion);
+        quaternion.copy(parentQuaternion).invert().multiply(objectQuaternion);
+    }
+    bump();
+}
+
 // ------------------------------------------------------------------------------ hierarchy
 
 Object3D::~Object3D() {
@@ -940,6 +1006,105 @@ Object3D& Object3D::copy(const Object3D& source) {
     renderOrder_ = source.renderOrder_;
     bump();
     return *this;
+}
+
+namespace {
+bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
+    if (!node.matrixAutoUpdate || !node.matrixWorldAutoUpdate || node.pivot.has_value())
+        return false;
+    if (isRoot) {
+        if (node.hasDeferredTransformPublication() || node.skipsGpuJointSubtree()) return false;
+    } else if (node.skipsGpuJointSubtree()) {
+        // MatrixWorldPass skips GPU-joint bone subtrees; they evaluate on GPU relative to the shifted placement.
+        return true;
+    } else if (node.hasDeferredTransformPublication()) {
+        return false;
+    }
+    for (const Object3D* child : node.children) {
+        if (!canShiftWorldYSubtree(*child, false)) return false;
+    }
+    return true;
+}
+}  // namespace
+
+bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) {
+    (void)alreadyWalkedDescendant;
+    if (!canShiftWorldYSubtree(*this, true)) return false;
+
+    const uint64_t expectedParentId = parent ? parent->id() + 1 : 0;
+    const uint64_t expectedParentRev = parent ? parent->revision() : 0;
+    const bool wasCleanSelf =
+        !matrixWorldNeedsUpdate && worldParentId_ == expectedParentId && worldParentRevision_ == expectedParentRev;
+    const Matrix4 oldWorld = matrixWorld;
+    const uint64_t selfOldRev = revision_;
+
+    prepareLocalTransformWrite();
+    if (parent == nullptr) {
+        position.y += dy;
+    } else {
+        Matrix4 parentInverse;
+        parentInverse.copy(parent->matrixWorld).invert();
+        Vector3 origin(0.0, 0.0, 0.0);
+        Vector3 target(0.0, dy, 0.0);
+        origin.applyMatrix4(parentInverse);
+        target.applyMatrix4(parentInverse);
+        position.add(target.sub(origin));
+    }
+
+    updateMatrix();
+    Matrix4 composed;
+    if (parent == nullptr) composed.copy(matrix);
+    else composed.multiplyMatrices(parent->matrixWorld, matrix);
+    bool pureYShift = wasCleanSelf;
+    if (pureYShift) {
+        for (int k = 0; k < 16; ++k) {
+            const double want = oldWorld.elements[k] + (k == 13 ? dy : 0.0);
+            if (std::abs(composed.elements[k] - want) > 1e-9) {
+                pureYShift = false;
+                break;
+            }
+        }
+    }
+    if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0)
+        bump();
+    matrixWorld.copy(composed);
+    matrixWorldNeedsUpdate = false;
+    worldParentId_ = expectedParentId;
+    worldParentRevision_ = expectedParentRev;
+    lastWorldEvaluation_ = ++matrixEvaluations_;
+    afterMatrixWorld();
+
+    // Shift only subtrees whose cached local & world state is strictly clean from this parent; any node with
+    // uncomposed local edits or unwalked parent links updates via updateWorldMatrix once instead of blind shifting.
+    auto syncOrShift = [&](auto& selfRef, Object3D& node, uint64_t pId, uint64_t pOldRev, bool canShift) -> void {
+        if (node.skipsGpuJointSubtree()) return;
+        const uint64_t nodeOldRev = node.revision_;
+        bool nodeClean = false;
+        if (canShift) {
+            const Matrix4 oldLocal = node.matrix;
+            node.materializeLocalTransform();
+            if (node.matrixAutoUpdate) node.updateMatrix();
+            const bool localUnchanged =
+                std::memcmp(oldLocal.elements.data(), node.matrix.elements.data(), sizeof(double) * 16) == 0;
+            nodeClean = localUnchanged && !node.matrixWorldNeedsUpdate &&
+                        node.worldParentId_ == pId && node.worldParentRevision_ == pOldRev;
+        }
+        if (nodeClean) {
+            node.matrixWorld.elements[13] += dy;
+            node.bump();
+            node.matrixWorldNeedsUpdate = false;
+            node.worldParentId_ = pId;
+            node.worldParentRevision_ = node.parent->revision();
+            node.lastWorldEvaluation_ = ++matrixEvaluations_;
+            node.afterMatrixWorld();
+            for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, true);
+            return;
+        }
+        node.updateWorldMatrix(false, false, true);
+        for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, false);
+    };
+    for (Object3D* c : children) syncOrShift(syncOrShift, *c, id() + 1, selfOldRev, pureYShift);
+    return true;
 }
 
 }  // namespace tn::engine

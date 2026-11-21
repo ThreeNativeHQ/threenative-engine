@@ -190,7 +190,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_fast_pan_edges=traa_fast_pan_edges
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size
-        native_engine_post_stage_is_metered=post_stage_is_metered)
+        native_engine_post_stage_is_metered=post_stage_is_metered
+        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
     # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
     if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
@@ -310,6 +311,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
+        native_engine_virtual_shadow_bounds_arvo_parity=virtual_shadow_bounds_arvo_parity
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_palette_lifetime=palette_lifetime
         native_engine_batch_compacts_in_place=batch_compacts_in_place
@@ -412,6 +414,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_cached_lamp_has_no_uniform_upload=cached_lamp_has_no_uniform_upload
         native_engine_sun_cache=sun_cache
         native_engine_lamp_atlas=lamp_atlas
+        native_engine_spot_light_frustum_cull_and_grouping=spot_light_frustum_cull_and_grouping
         native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
@@ -633,7 +636,8 @@ tn_native_engine_target(tn_engine_batch)
 target_link_libraries(tn_engine_batch PUBLIC tn_engine_lod)
 target_include_directories(tn_engine_batch PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 tn_native_engine_test(tn-native-engine-instanced-batch-test tests/native-engine/projection/instanced_batch_test.cpp
-    native_engine_batching_eligibility=batching_eligibility)
+    native_engine_batching_eligibility=batching_eligibility
+    native_engine_partial_partition_update=partial_partition_update)
 target_link_libraries(tn-native-engine-instanced-batch-test PRIVATE tn_engine_batch)
 target_include_directories(tn-native-engine-instanced-batch-test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/projection)
 if(TN_PNPM_EXECUTABLE)

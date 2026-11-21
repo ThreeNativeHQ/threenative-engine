@@ -517,6 +517,12 @@ public:
     }
     /** A render target's renderer is read through `sceneColorView()` and `readProbePixels()`, never as a finished frame: its output pass would draw an image nothing reads. */
     void skipOutputPass() { writesOutput_ = false; }
+    /** Reflection renderers can skip shadow map planning/rendering (`skipShadows_ = true`). */
+    void setSkipShadows(bool skip) { skipShadows_ = skip; }
+    /** Coalesce dirty upload ranges by merging smallest gaps first until `ranges.size() <= maxWrites`, falling back
+     *  to a single contiguous write only when `dirtyBytes * 2 >= span`. */
+    static void coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& ranges, std::size_t maxWrites,
+                                    std::vector<uint64_t>& gapScratch);
     /** three's autoClear false / clear(color, depth): the next renders load the scene colour or depth instead of clearing it. */
     void keepContents(bool color, bool depth) { keepColor_ = color; keepDepth_ = depth; }
     /** The renderer whose post render-to-texture passes this target's materials sample (a material node may read one). */
@@ -1056,6 +1062,9 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        std::vector<const shader::UniformField*> vertexNodeUniforms;
+        std::vector<const shader::UniformField*> fragmentNodeUniforms;
+        bool hasDiscard = false;
         // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
         // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
         // that filled it.
@@ -1318,6 +1327,7 @@ private:
     // handles built under an older epoch are never reused.
     uint64_t groupEpoch_ = 0;
     bool writesOutput_ = true;
+    bool skipShadows_ = false;
     WGPUTexture lut_ = nullptr;
     WGPUTextureView lutView_ = nullptr;
     WGPUSampler lutSampler_ = nullptr;
@@ -1611,6 +1621,33 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
     uint64_t instanceTop_ = 0;
     static constexpr uint64_t kInstanceSlotPlans = 4096;
+    struct CulledInstanceKey {
+        uint64_t itemKey = 0;
+        const BufferStore* matrices = nullptr;
+        bool operator==(const CulledInstanceKey&) const = default;
+    };
+    struct CulledInstanceKeyHash {
+        std::size_t operator()(const CulledInstanceKey& k) const noexcept {
+            const std::size_t h1 = std::hash<uint64_t>{}(k.itemKey);
+            const std::size_t h2 = std::hash<const BufferStore*>{}(k.matrices);
+            return h1 ^ (h2 + 0x9e3779b97f4a7c15ull + (h1 << 6) + (h1 >> 2));
+        }
+    };
+    struct CulledInstanceCache {
+        std::shared_ptr<BufferStore> matrices;
+        std::shared_ptr<BufferStore> colors;
+        std::vector<std::shared_ptr<BufferStore>> customStores;
+        std::array<uint64_t, 3> srcMatrixStamp{};
+        std::array<uint64_t, 3> srcColorStamp{};
+        std::vector<std::array<uint64_t, 3>> srcCustomStamps;
+        std::vector<uint32_t> lastIndices;
+        uint32_t srcCount = 0;
+        uint64_t lastPlanSeen = 0;
+    };
+    std::unordered_map<CulledInstanceKey, CulledInstanceCache, CulledInstanceKeyHash> culledInstances_;
+    const DrawItem* cullMainInstanceItem(const DrawItem& drawn, const Frustum& frustum, const Matrix& view,
+                                         FrameJob& job, std::vector<std::pair<uint32_t, float>>& survivors,
+                                         std::vector<uint32_t>& ordered);
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
     uint64_t morphPacks_ = 0;
@@ -1621,6 +1658,7 @@ private:
     /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
     std::vector<uint8_t> uploadedUniforms_;
     std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;
+    std::vector<uint64_t> dirtyGapScratch_;
     // Every skinned draw's bone palette this frame, one storage buffer the skinned programs index
     // from their `boneBase`; grown (and the bind groups rebuilt) like the uniform buffer.
     // Per-frame storage the vertex variants read, by binding name: `boneMatrices` (skinning),
