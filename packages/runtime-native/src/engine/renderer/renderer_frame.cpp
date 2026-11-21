@@ -302,12 +302,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 if (!local || local->isEmpty()) continue;
                 Matrix4 model; model.elements = item.matrixWorld;
-                Box3 box = *local; box.applyMatrix4(model);
+                Box3 box = shadows::affineTransformBox(*local, model);
                 if (!frustumIntersectsBox(cameraFrustum, box)) continue;
                 lampReceivers.push_back({box, item.layers});
             }
 
             const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+            const double p11 = -p[11], p15 = p[15];
             for (std::size_t i = 0; i < lights.direct.size(); ++i) {
                 const DirectLight& l = lights.direct[i];
                 if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
@@ -333,32 +334,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     Matrix4 spotVP; spotVP.multiplyMatrices(sProj, shadowView);
                     spotFrustum.setFromProjectionMatrix(spotVP, CoordinateSystem::WebGPU, false);
                 }
+                const double shadowP00 = std::abs(s.projection[0]);
                 double footprint = INFINITY;
-                const auto visit = [&](const Vector3& point) {
-                    Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
-                    if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
-                    const Vector3 offset = Vector3(point).sub(at);
-                    const double reach = offset.length();
-                    if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
-                    if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
-                    const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
-                                                      : -Vector3(point).applyMatrix4(shadowView).z;
-                    if (!(shadowDepth > s.near)) return;
-                    const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
-                    footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
-                };
                 // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
                 // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
                 for (const LampReceiver& rec : lampReceivers) {
                     if ((rec.layers & s.layersMask) == 0) continue;
                     if (hasSpotFrustum && !frustumIntersectsBox(spotFrustum, rec.box)) continue;
-                    const Box3& box = rec.box;
-                    if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
-                    for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
-                        visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
-                                      box.min.z + (box.max.z - box.min.z) * z / 4));
-                    Vector3 nearest; box.clampPoint(eye, nearest);
-                    visit(nearest);
+                    if (l.distance > 0 && rec.box.distanceToPoint(at) > l.distance) continue;
+                    shadows::accumulateLampBoxFootprint(
+                        rec.box, eye, at, axis, l.kind == DirectLight::Kind::Spot, s.cube, l.distance, l.coneCos,
+                        s.near, shadowP00, p11, p15, screenRadius, view, viewProjection, shadowView, footprint);
                 }
                 demand.footprint = std::isfinite(footprint) ? footprint : 0;
                 autoLamps.push_back(i);
@@ -960,7 +946,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
         // changed up to 41 k pixels of the forest's overview where this pair changed none. Both pipelines run the one
         // vertex stage, so the Equal test meets the depth the prepass wrote.
-        const bool equalDraw = prepass && !target.alphaToCoverage && prepassEligible(item) && prepassFragment(program) != nullptr;
+        const bool equalDraw = prepass && prepassEligible(item) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
             compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));

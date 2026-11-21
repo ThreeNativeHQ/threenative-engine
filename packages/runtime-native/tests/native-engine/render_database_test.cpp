@@ -10658,7 +10658,117 @@ void virtualShadowBoundsArvoParity() {
     }
 }
 
-TN_TEST_MAIN({"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+void lampFootprintBoxParity() {
+    PerspectiveCamera camera(55, 16.0 / 9.0, 0.5, 200);
+    camera.position.set(3.5, 4.2, 11.0);
+    camera.lookAt(0.0, 1.0, 0.0);
+    camera.updateMatrixWorld(true);
+    camera.updateProjectionMatrix();
+    const auto& p = camera.projectionMatrix.elements;
+    const double p11 = -p[11], p15 = p[15];
+    const double screenRadius = std::min(1.0 / (1280.0 * std::abs(p[0])), 1.0 / (720.0 * std::abs(p[5])));
+    Matrix4 vp;
+    vp.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
+    const Vector3 eye = camera.position;
+
+    PerspectiveCamera spotCam(60, 1, 0.5, 40);
+    spotCam.position.set(1.2, 6.5, 2.5);
+    spotCam.lookAt(0.0, 0.0, -1.0);
+    spotCam.updateMatrixWorld(true);
+    spotCam.updateProjectionMatrix();
+    const Vector3 spotAt = spotCam.position;
+    const Vector3 spotAxis = Vector3(0.0 - spotAt.x, 0.0 - spotAt.y, -1.0 - spotAt.z).normalize();
+
+    const std::vector<Box3> boxes = [&] {
+        std::vector<Box3> out;
+        uint32_t seed = 0x13579bdfu;
+        const auto rnd = [&]() {
+            seed = seed * 1664525u + 1013904223u;
+            return double(seed >> 8) / double(1u << 24);
+        };
+        for (int i = 0; i < 32; ++i) {
+            Box3 b;
+            const double cx = (rnd() - 0.5) * 18.0;
+            const double cy = (rnd() - 0.3) * 8.0;
+            const double cz = (rnd() - 0.5) * 18.0;
+            const double hx = 0.3 + rnd() * 3.5;
+            const double hy = 0.3 + rnd() * 3.5;
+            const double hz = 0.3 + rnd() * 3.5;
+            b.min.set(cx - hx, cy - hy, cz - hz);
+            b.max.set(cx + hx, cy + hy, cz + hz);
+            Matrix4 rot;
+            rot.makeRotationY(rnd() * 3.14);
+            Box3 xformed = shadows::affineTransformBox(b, rot);
+            Box3 ref = b;
+            ref.applyMatrix4(rot);
+            CHECK(xformed.min.distanceTo(ref.min) < 1e-10);
+            CHECK(xformed.max.distanceTo(ref.max) < 1e-10);
+            out.push_back(xformed);
+        }
+        return out;
+    }();
+
+    const auto referenceFor = [&](bool isSpot, bool cube, const Vector3& at, const Vector3& axis,
+                                  const Matrix4& sView, const Matrix4& sProj, double dist, double coneCos,
+                                  double nearPlane) {
+        double fp = INFINITY;
+        const auto visit = [&](const Vector3& pt) {
+            Vector4 clip(pt.x, pt.y, pt.z, 1);
+            clip.applyMatrix4(vp);
+            if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w)
+                return;
+            const Vector3 offset = Vector3(pt).sub(at);
+            const double reach = offset.length();
+            if ((dist > 0 && reach > dist) || reach == 0) return;
+            if (isSpot && offset.dot(axis) < coneCos * reach) return;
+            const double sd = cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
+                                   : -Vector3(pt).applyMatrix4(sView).z;
+            if (!(sd > nearPlane)) return;
+            const double scd = -Vector3(pt).applyMatrix4(camera.matrixWorldInverse).z;
+            fp = std::min(fp, shadows::lampFootprint(scd * p11 + p15, screenRadius, std::abs(sProj.elements[0]), sd));
+        };
+        for (const Box3& b : boxes) {
+            for (int x = 0; x < 5; ++x)
+                for (int y = 0; y < 5; ++y)
+                    for (int z = 0; z < 5; ++z)
+                        visit(Vector3(b.min.x + (b.max.x - b.min.x) * x / 4, b.min.y + (b.max.y - b.min.y) * y / 4,
+                                      b.min.z + (b.max.z - b.min.z) * z / 4));
+            Vector3 nearest;
+            b.clampPoint(eye, nearest);
+            visit(nearest);
+        }
+        return fp;
+    };
+
+    // 1. Spot light parity across all 32 randomized boxes (including early-outs as footprint tightens).
+    const double spotRef = referenceFor(true, false, spotAt, spotAxis, spotCam.matrixWorldInverse, spotCam.projectionMatrix, 25.0, std::cos(0.55), 0.5);
+    double spotFast = INFINITY;
+    for (const Box3& b : boxes) {
+        if (b.distanceToPoint(spotAt) > 25.0) continue;
+        shadows::accumulateLampBoxFootprint(
+            b, eye, spotAt, spotAxis, true, false, 25.0, std::cos(0.55), 0.5,
+            std::abs(spotCam.projectionMatrix.elements[0]), p11, p15, screenRadius,
+            camera.matrixWorldInverse, vp, spotCam.matrixWorldInverse, spotFast);
+    }
+    CHECK(std::isfinite(spotRef) && std::abs(spotFast - spotRef) <= 1e-9 * std::max(1.0, spotRef));
+
+    // 2. Cube point light parity across all 32 randomized boxes.
+    const Vector3 pointAt{-2.0, 2.5, 1.0};
+    PerspectiveCamera pointProj(90, 1, 0.2, 18);
+    pointProj.updateProjectionMatrix();
+    const double pointRef = referenceFor(false, true, pointAt, Vector3(0, 1, 0), Matrix4{}, pointProj.projectionMatrix, 18.0, 0.0, 0.2);
+    double pointFast = INFINITY;
+    for (const Box3& b : boxes) {
+        if (b.distanceToPoint(pointAt) > 18.0) continue;
+        shadows::accumulateLampBoxFootprint(
+            b, eye, pointAt, Vector3(0, 1, 0), false, true, 18.0, 0.0, 0.2,
+            std::abs(pointProj.projectionMatrix.elements[0]), p11, p15, screenRadius,
+            camera.matrixWorldInverse, vp, Matrix4{}, pointFast);
+    }
+    CHECK(std::isfinite(pointRef) && std::abs(pointFast - pointRef) <= 1e-9 * std::max(1.0, pointRef));
+}
+
+TN_TEST_MAIN({"lamp_footprint_box_parity", lampFootprintBoxParity}, {"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

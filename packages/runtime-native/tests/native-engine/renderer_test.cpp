@@ -2948,6 +2948,93 @@ void alphaToCoverageMsaa() {
     CHECK(single[centre + 3] >= 127 && single[centre + 3] <= 128);
 }
 
+void alphaToCoveragePrepass() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto back = plane(4, 2);
+    const auto front = plane(2, 2);
+    const auto occluded = plane(2, 2);
+    BufferStore uvs(Scalar::F32, 8);
+    const float uvData[8] = {0, 1, 1, 1, 0, 0, 1, 0};
+    uvs.write(0, uvData, sizeof uvData);
+    auto map = std::make_shared<Texture>();
+    map->width = 4;
+    map->height = 1;
+    map->generateMipmaps = false;
+    map->minFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    map->magFilter = static_cast<uint16_t>(TextureFilter::Linear);
+    map->data = {
+        255, 255, 255, 20,
+        255, 255, 255, 90,
+        255, 255, 255, 130,
+        255, 255, 255, 255,
+    };
+    map->needsUpdate();
+    shader::StandardMaterial materials[3];
+    materials[0].color = {1, 0, 0};
+    materials[1].color = {0, 1, 0};
+    materials[1].opacity = 1.0f;
+    materials[1].alphaTest = 0.4f;
+    materials[1].alphaToCoverage = true;
+    materials[2].color = {0, 0, 1};
+    std::vector<DrawItem> items(3);
+    items[0].positions = &back->positions;
+    items[0].indices = &back->indices;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -0.2, 1};
+    items[1].positions = &front->positions;
+    items[1].indices = &front->indices;
+    items[1].uvs = &uvs;
+    items[1].map = map.get();
+    items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0.0, 1};
+    items[2].positions = &occluded->positions;
+    items[2].indices = &occluded->indices;
+    items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -0.5, 1};
+    for (int k = 0; k < 3; ++k) {
+        items[k].key = items[k].id = k + 1;
+        items[k].kind = MaterialKind::Basic;
+        items[k].material = &materials[k];
+    }
+    const char* priorRaw = std::getenv("TN_PREPASS");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_PREPASS", prior->c_str(), 1);
+            else unsetenv("TN_PREPASS");
+        }
+    } restore{prior};
+    const auto renderWith = [&](const char* mode, uint32_t expectedPrepassDraws) {
+        setenv("TN_PREPASS", mode, 1);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setSampleCount(4);
+        renderer.render(items, wideOrtho(), LightState{}, {0.1, 0.1, 0.1, 1});
+        CHECK(renderer.lastFrame().prepassDraws == expectedPrepassDraws);
+        return read(renderer, events);
+    };
+    const auto off = renderWith("0", 0);
+    const auto on = renderWith("1", 1);
+    CHECK(off.size() == 16 * 16 * 4 && on.size() == off.size());
+    if (off.size() != 16 * 16 * 4 || on.size() != off.size()) return;
+    int maxDiff = 0;
+    for (std::size_t idx = 0; idx < off.size(); ++idx)
+        maxDiff = std::max(maxDiff, std::abs(int(off[idx]) - int(on[idx])));
+    CHECK(maxDiff <= 1);
+    bool sawDiscarded = false, sawPartial = false, sawFull = false;
+    for (int x = 4; x < 12; ++x) {
+        const size_t p = (8 * 16 + x) * 4;
+        const uint8_t r = on[p], g = on[p + 1], b = on[p + 2];
+        CHECK(b < 3);
+        if (r > 240 && g < 5) sawDiscarded = true;
+        if (r > 20 && r < 240 && g > 20 && g < 240) sawPartial = true;
+        if (r < 5 && g > 240) sawFull = true;
+    }
+    CHECK(sawDiscarded && sawPartial && sawFull);
+}
+
 void alphaHashCoverage() {
     mystral::webgpu::Context context;
     const bool initialized = context.initializeHeadless();
@@ -3956,6 +4043,7 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_transparency", alphaTransparency},
              {"alpha_test", alphaTest},
              {"alpha_to_coverage_msaa", alphaToCoverageMsaa},
+             {"alpha_to_coverage_prepass", alphaToCoveragePrepass},
              {"alpha_hash_coverage", alphaHashCoverage},
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},

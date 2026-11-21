@@ -1140,9 +1140,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     // The receiver's pixel: the world steps one pixel right and one pixel down take (outside every branch,
-    // where a derivative is defined).
-    const ExprId pixelX = f.call("dFdx", {positionWorld}), pixelY = f.call("dFdy", {positionWorld});
-    const ExprId plane = f.call("cross", {pixelX, pixelY});
+    // where a derivative is defined). Materialize via vars so WgslEmitter does not emit dpdx/dpdy lazily
+    // inside divergent per-pixel shadow branches (e.g. `if (0 < blockerCount)`).
+    const ExprId pixelX = f.load(f.var(Type::vec(3), f.call("dFdx", {positionWorld})));
+    const ExprId pixelY = f.load(f.var(Type::vec(3), f.call("dFdy", {positionWorld})));
+    const ExprId plane = f.load(f.var(Type::vec(3), f.call("cross", {pixelX, pixelY})));
     const ExprId phi = noisePhi(f, t);
     // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
     // inside the finest window reads one level, and one in a blend band reads two. The weights are the
@@ -1773,7 +1775,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.emissive = emissive;
     out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1933,7 +1937,9 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.indirectDiffuse = indirectDiffuse;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -2030,7 +2036,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = variant.background ? f.constant(1.0f) : f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);

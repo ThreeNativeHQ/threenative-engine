@@ -85,19 +85,34 @@ void fragments() {
     const shader::LightLayout lights{"D"};  // a shadowed sun: the lighting the prepass must not keep
     const auto shipped = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
     auto prepass = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
-    keepDiscardsOnly(prepass.fragment);
+    CHECK(prepass.alpha != shader::kInvalid);
+    keepDiscardsOnly(prepass.fragment, prepass.alpha);
     const auto shippedFragment = shader::buildStage(shipped.fragment, 1);
     const auto prepassFragment = shader::buildStage(prepass.fragment, 1);
     CHECK(shippedFragment.wgsl.ok() && prepassFragment.wgsl.ok());
     // The prepass cuts where the colour fragment cuts...
     CHECK(shippedFragment.wgsl.code.find("discard") != std::string::npos);
     CHECK(prepassFragment.wgsl.code.find("discard") != std::string::npos);
-    // ...and shades nothing: no shadow map read (its bindings stay declared, for the layout), far less text.
+    // ...and keeps the faded coverage alpha without any lighting or shadow reads.
+    CHECK(prepassFragment.wgsl.code.find("smoothstep") != std::string::npos);
+    CHECK(prepassFragment.wgsl.code.find("fwidth") != std::string::npos);
     CHECK(shippedFragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
     CHECK(prepassFragment.wgsl.code.find("textureSampleCompare") == std::string::npos);
-    CHECK(prepassFragment.wgsl.code.size() * 3 < shippedFragment.wgsl.code.size());
+    CHECK(prepassFragment.wgsl.code.size() * 2 < shippedFragment.wgsl.code.size());
     // One layout: the draw's bind groups and uniform offsets serve both pipelines.
     CHECK(sameLayout(prepassFragment, shippedFragment));
+
+    // Non-alphaToCoverage cutout keeps zero colour alpha cleanly.
+    cut.alphaToCoverage = false;
+    auto shippedCutout = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    auto cutoutOnly = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    keepDiscardsOnly(cutoutOnly.fragment);
+    const auto shippedCutoutFragment = shader::buildStage(shippedCutout.fragment, 1);
+    const auto cutoutFragment = shader::buildStage(cutoutOnly.fragment, 1);
+    CHECK(shippedCutoutFragment.wgsl.ok() && cutoutFragment.wgsl.ok());
+    CHECK(cutoutFragment.wgsl.code.find("discard") != std::string::npos);
+    CHECK(cutoutFragment.wgsl.code.find("textureSampleCompare") == std::string::npos);
+    CHECK(cutoutFragment.wgsl.code.size() * 3 < shippedCutoutFragment.wgsl.code.size());
 }
 
 void modes() {
@@ -127,6 +142,10 @@ void virtualShadowEarlyOut() {
     CHECK(comparePos != std::string::npos);
     CHECK(guardPos != std::string::npos);
     CHECK(guardPos < comparePos);
+    const auto dpdxPos = code.find("dpdx(");
+    CHECK(dpdxPos != std::string::npos);
+    CHECK(dpdxPos < guardPos);
+    CHECK(code.find("dpdx(", guardPos) == std::string::npos);
 }
 
 }  // namespace

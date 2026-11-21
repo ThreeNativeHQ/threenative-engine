@@ -292,8 +292,9 @@ const shader::StageModule* Renderer::prepassFragment(Program& program) {
         }
         auto& f = source.fragment;
         if (!f.diagnostics().empty()) return nullptr;
+        if (variant.alphaToCoverage && source.alpha == shader::kInvalid) return nullptr;
         const std::size_t varyings = f.varyings().size();
-        keepDiscardsOnly(f);
+        keepDiscardsOnly(f, variant.alphaToCoverage ? source.alpha : shader::kInvalid);
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
         auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
         shader::positionalGraphTextures(*module);

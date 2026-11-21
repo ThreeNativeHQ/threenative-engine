@@ -51,11 +51,13 @@ inline PipelineTarget prepassTargets(PipelineTarget& colour) {
 }
 
 /** The prepass fragment from a colour fragment built with its discards: a zero colour (the pipeline masks every
- *  channel), then every statement no discard reads pruned, so the mask, the cutoff and the alpha they read stay exactly
- *  as the colour fragment evaluates them and the lighting goes. Its uniform layout is the colour fragment's. */
-inline void keepDiscardsOnly(shader::Program& fragment) {
+ *  channel), or `vec4(0, 0, 0, alpha)` when preserving alpha-to-coverage sample masks, then every statement no
+ *  discard/alpha reads pruned, so the mask, cutoff and alpha stay exact while lighting goes. Its uniform layout is
+ *  the colour fragment's. */
+inline void keepDiscardsOnly(shader::Program& fragment, shader::ExprId alpha = shader::kInvalid) {
     fragment.output("color", fragment.construct(shader::Type::vec(4), {fragment.constant(0.f), fragment.constant(0.f),
-                                                                      fragment.constant(0.f), fragment.constant(0.f)}));
+                                                                      fragment.constant(0.f),
+                                                                      alpha != shader::kInvalid ? alpha : fragment.constant(0.f)}));
     fragment.pruneDeadStatements();
 }
 
