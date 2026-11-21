@@ -382,6 +382,73 @@ describe("WorldImpostorSurface depth march", () => {
     surface.dispose();
     atlas.dispose();
   });
+
+  it("adapts march and bisection steps by parallax footprint and skips empty final samples", () => {
+    const { surface, atlas } = makeSurface();
+    const seen = new Set<unknown>();
+    const sources: string[] = [];
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      const graph = node as {
+        readonly shaderNode?: { readonly jsFunc?: unknown };
+        readonly getChildren?: () => Iterable<unknown>;
+      };
+      const body = graph.shaderNode?.jsFunc;
+      if (typeof body === "function") sources.push(String(body));
+      if (typeof graph.getChildren === "function")
+        for (const child of graph.getChildren()) walk(child);
+    };
+    walk(surface.material.colorNode);
+    walk(surface.material.normalNode);
+    const marchSource = sources.find((text) => text.includes("parallaxPixels"));
+    expect(marchSource).toBeDefined();
+    expect(marchSource).toContain("effectiveParallax");
+    expect(marchSource).toContain("dynamicSteps");
+    expect(marchSource).toContain("bisectLimit");
+    expect(marchSource).toContain("inBounds");
+    const colorSource = sources.find((text) => text.includes("cDom"));
+    expect(colorSource).toBeDefined();
+    expect(colorSource).toMatch(/0?\.02/);
+    expect(surface.material.colorNode).toBeDefined();
+    expect(IMPOSTOR_MARCH_STEPS).toBe(32);
+    expect(IMPOSTOR_BISECTION_STEPS).toBe(10);
+    surface.dispose();
+    atlas.dispose();
+  });
+
+  it("clips the impostor march interval against halfExtents when provided", () => {
+    const atlas = new WorldImpostorAtlas(8);
+    const surface = new WorldImpostorSurface({
+      atlas,
+      center: new Vector3(0, 4, 0),
+      halfExtents: new Vector3(1.5, 4, 1.5),
+      radius: 4.5,
+      source: new MeshStandardMaterial(),
+    });
+    const seen = new Set<unknown>();
+    const sources: string[] = [];
+    const walk = (node: unknown): void => {
+      if (node === null || typeof node !== "object" || seen.has(node)) return;
+      seen.add(node);
+      const graph = node as {
+        readonly shaderNode?: { readonly jsFunc?: unknown };
+        readonly getChildren?: () => Iterable<unknown>;
+      };
+      const body = graph.shaderNode?.jsFunc;
+      if (typeof body === "function") sources.push(String(body));
+      if (typeof graph.getChildren === "function")
+        for (const child of graph.getChildren()) walk(child);
+    };
+    walk(surface.material.colorNode);
+    const marchSource = sources.find((text) => text.includes("tFront"));
+    expect(marchSource).toBeDefined();
+    expect(marchSource).toContain("tBack");
+    expect(marchSource).toContain("halfBox");
+    expect(marchSource).toContain("effectiveParallax");
+    surface.dispose();
+    atlas.dispose();
+  });
 });
 
 describe("WorldImpostorSurface far cull contract", () => {

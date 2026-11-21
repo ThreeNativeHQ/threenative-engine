@@ -197,12 +197,24 @@ export class CellGpuDress {
         : { geometry: own.geometry, material: own.material };
     return {
       ...shape,
-      material: this.lodSurface(entry.asset, level, entry.part, shape.material),
+      material: this.lodSurface(
+        entry.asset,
+        level,
+        entry.part,
+        shape.material,
+        role === "wide" ? "wide" : "own",
+      ),
     };
   }
 
   /** The material a batch of this level and part draws: `source` with the LOD gate's mask, when the asset has one. */
-  lodSurface(assetId: string, level: number, partIndex: number, source: Material): Material {
+  lodSurface(
+    assetId: string,
+    level: number,
+    partIndex: number,
+    source: Material,
+    role: "own" | "wide" = "own",
+  ): Material {
     assertSlotFree(source, assetId);
     const asset = this.#host.asset(assetId);
     const part = asset?.levels[level]?.[partIndex];
@@ -210,7 +222,7 @@ export class CellGpuDress {
       return source;
     const publishedRanges = !this.#host.gpuScene().on;
     const floor = this.#host.shadowFloorOf(assetId);
-    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}:${floor}`;
+    const key = `${assetId}:${level}:${partIndex}:${asset.distances.length}:${publishedRanges ? 1 : 0}:${floor}${role === "wide" ? ":wide" : ""}`;
     let cached = this.#host.lodMaterials().get(key);
     if (cached !== undefined && cached.source !== source) {
       cached.material.dispose();

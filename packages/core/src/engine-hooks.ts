@@ -47,9 +47,37 @@ export const SPHERE_BOUNDS_HOOK = "__tnSphereBounds";
 /** The spheres are handed to the engine once; the per-frame call then takes no arguments. */
 export const SPHERE_BOUNDS_ATTACH_HOOK = "__tnSphereBoundsAttach";
 
+/** Single-call GroundSnap measure + shift on the owned engine, avoiding JS re-measurement and bone double walks. */
+export const GROUND_SNAP_APPLY_HOOK = "__tnGroundSnapApply";
+
+/** Single-call Billboard3D facing computation on the owned engine. */
+export const BILLBOARD_FACE_HOOK = "__tnBillboardFace";
+
+type BillboardFaceHook = (camera: Object3D, lockAxis: number) => void;
+
+/**
+ * Orient `object` toward `camera` in C++ (`__tnBillboardFace`) so a billboard update crosses the
+ * bridge once instead of 9–12 times per frame.
+ * @returns false when `object` has no hook, so the caller computes the quaternion in JS
+ */
+export function billboardFace(object: Object3D, camera: Object3D, lockAxis: number): boolean {
+  const hook = (object as Object3D & Record<string, unknown>)[BILLBOARD_FACE_HOOK];
+  if (typeof hook !== "function") return false;
+  (hook as BillboardFaceHook).call(object, camera, lockAxis);
+  return true;
+}
+
 interface ISphereBoundsHooks {
   readonly attach: (objects: readonly Object3D[], radii: readonly number[]) => void;
   readonly bounds: () => readonly number[];
+  readonly groundSnapApply?: (
+    group: Object3D,
+    surfaceY: number,
+    dt: number,
+    maxRate: number,
+    enabled: boolean,
+    biasY: number,
+  ) => number;
 }
 
 /** The engine's sphere-bounds calls on `root`, or undefined on plain three.js. */
@@ -57,10 +85,14 @@ export function sphereBoundsHook(root: Object3D): ISphereBoundsHooks | undefined
   const carrier = root as Object3D & Record<string, unknown>;
   const attach = carrier[SPHERE_BOUNDS_ATTACH_HOOK];
   const bounds = carrier[SPHERE_BOUNDS_HOOK];
+  const groundSnapApply = carrier[GROUND_SNAP_APPLY_HOOK];
   return typeof attach === "function" && typeof bounds === "function"
     ? {
         attach: attach as ISphereBoundsHooks["attach"],
         bounds: bounds as ISphereBoundsHooks["bounds"],
+        ...(typeof groundSnapApply === "function"
+          ? { groundSnapApply: groundSnapApply as ISphereBoundsHooks["groundSnapApply"] }
+          : {}),
       }
     : undefined;
 }

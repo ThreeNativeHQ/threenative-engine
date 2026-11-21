@@ -136,6 +136,18 @@ describe("three's audio classes over an engine Object3D", () => {
     expect(calls).toContainEqual(["panner.z", -4]);
     expect(engineSide(voice).refreshed).toBeGreaterThan(0);
 
+    // Repeating updateAudio() with an unchanged pose emits zero redundant WebAudio ramps.
+    calls.length = 0;
+    audio.updateAudio();
+    expect(calls).toEqual([]);
+
+    // Moving the listener or playing voice resumes pose updates immediately.
+    engineSide(listener).world.set(2, 2, 3);
+    engineSide(voice).world.set(8, 0, -4);
+    audio.updateAudio();
+    expect(calls).toContainEqual(["listener.x", 2]);
+    expect(calls).toContainEqual(["panner.x", 8]);
+
     engineSide(voice).parent = null;
     calls.length = 0;
     audio.updateAudio();

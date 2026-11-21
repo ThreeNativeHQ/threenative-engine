@@ -1876,6 +1876,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);
     if (!world && targetScene) world = dynamic_cast<const Scene*>(targetScene);
+    const Matrix sceneEnvRotation = [&]() -> Matrix {
+        Matrix4 rotation;
+        if (world)
+            rotation.makeRotationFromEuler(world->environmentRotation).transpose();
+        return toArray(rotation);
+    }();
+    static constexpr Matrix kIdentityMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
@@ -1893,10 +1900,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
-            Matrix4 rotation;
-            if (world && world->environment && source.maps.find("envMap") == source.maps.end())
-                rotation.makeRotationFromEuler(world->environmentRotation).transpose();
-            item.pmremRotation = toArray(rotation);
+            item.pmremRotation = (world && world->environment && source.maps.find("envMap") == source.maps.end())
+                                     ? sceneEnvRotation
+                                     : kIdentityMatrix;
         }
         if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
         const Material& material = *static_cast<const Material*>(item.materialKey);
@@ -1904,9 +1910,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         const Texture* env = found != material.maps.end() ? found->second.get() : nullptr;
         item.envMap = env ? env : world ? world->environment.get() : nullptr;
         item.envMapIntensity = env ? material.envMapIntensity : world ? world->environmentIntensity : 1;
-        Matrix4 rotation;
-        if (!env && world) rotation.makeRotationFromEuler(world->environmentRotation).transpose();
-        item.envRotation = toArray(rotation);
+        item.envRotation = (!env && world) ? sceneEnvRotation : kIdentityMatrix;
         // three's NodeMaterial.setupEnvironment takes material.envNode before material.envMap and before
         // scene.environment (NodeMaterial.js:968-970, MeshStandardNodeMaterial.js:110-116). The program then
         // lowers the author's node alone, so the draw binds no environment map.

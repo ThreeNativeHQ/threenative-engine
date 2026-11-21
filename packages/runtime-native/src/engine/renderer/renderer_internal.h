@@ -5,6 +5,7 @@
 
 #include "engine/foundation/job_pool.h"
 #include "engine/foundation/flags.h"
+#include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
@@ -201,6 +202,28 @@ static inline bool shadowMasked(const shader::StandardMaterial& material, const 
 // resolution itself is material_uniforms.h, which resolves a field by the name hash the stage was laid
 // out with instead of comparing every field's name against every value: those string compares were 59%
 // of the shooter's frame memcmp time (#574).
+inline void putNodes(std::vector<uint8_t>& block, size_t base,
+              std::span<const shader::UniformField* const> fields,
+              const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
+    if (fields.empty()) return;
+    thread_local std::vector<shader::BoundUniform> values;
+    const std::array<double, 2> clock{time, delta};
+    shader::bindMaterialUniforms(values, nodes, clock);
+    for (const shader::UniformField* fieldPtr : fields) {
+        const auto& field = *fieldPtr;
+        if (field.shadowLightId != shader::kNoShadowLight) {
+            put(block, base, &field, lights.shadowMatrix(field.shadowLightId));
+            continue;
+        }
+        const shader::BoundUniform* found = shader::findBoundUniform(values, field);
+        if (found == nullptr) continue;
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
+            throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
+        shader::writeUniform(std::span(block).subspan(base), field, found->values);
+    }
+}
+
 inline void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
               const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
     thread_local std::vector<shader::BoundUniform> values;
@@ -356,6 +379,12 @@ inline bool shadowInstanceCullEnabled() {
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
+// Main-pass per-instance frustum culling + 16-bucket front-to-back sort (`TN_INSTANCE_CULL=0` opts out).
+inline bool instanceCullEnabled() {
+    const char* flag = flags::read<flags::InstanceCull>();
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
 // A viewport texture binding: the frame's colour or depth as drawn before this draw.
 inline bool viewportBinding(std::string_view name) {
     return name == "t_viewportColor" || name == "smp_viewportColor" || name == "t_viewportDepth" ||
@@ -464,9 +493,10 @@ struct Renderer::Planned {
     WGPUBindGroup mapGroup = nullptr;  // a mapped material's fragment group, else the program's
     WGPUBindGroup vertexGroup = nullptr;  // a vertex stage's per-draw group (graph textures), else the program's
     uint64_t slot = 0;  // a main draw's uniform slot (PRD-754), 0 when its blocks were appended
-    // PRD-888: a main draw shaded depth-Equal: its masked depth-only pipeline, drawn first in the same pass with the same
-    // groups and offsets. It moves only with `pipeline` (both follow the program), so the bundle key needs no word of it.
+    // PRD-888: a main draw shaded depth-Equal: its depth-only prepass pipeline, drawn first in the same pass with the same
+    // groups and offsets. Solid prepass draws execute before masked ones so solids reject occluded masked fragments.
     WGPURenderPipeline prepass = nullptr;
+    bool prepassSolid = false;
     // A shadow row that draws several casters in one instanced draw names them, in instance order (FM8);
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;
@@ -582,6 +612,9 @@ struct Renderer::FrameJob {
     // deques: a plan's row points at its members' array until the frame is encoded.
     std::deque<DrawItem> shadowGroupItems;
     std::deque<std::vector<const DrawItem*>> shadowGroups;
+    std::deque<DrawItem> culledMainItems;
+    std::vector<std::shared_ptr<BufferStore>> culledStores;
+    std::deque<std::vector<DrawItem::CustomAttribute>> culledAttributes;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;

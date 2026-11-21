@@ -4,9 +4,9 @@
 // (renderer/projection/instanced_batch.cpp) and core's `attachInstancedLod`, which reaches it in one
 // call (`__tnInstancedLodUpdate`, abi/bindings_scene.cpp) instead of three crossings per instance.
 //
-// The selection is packages/core/src/instanced-batch-lod.ts `controller.update`, operation for
-// operation. One addition: a frame whose levels, source matrices and mesh transform all match the
-// previous frame leaves the partitions as they are, so a settled batch re-uploads nothing.
+// The selection matches packages/core/src/instanced-batch-lod.ts `controller.update`, with
+// per-partition dirty tracking, cached world bounding spheres, and O(1) uniform-partition skips so
+// a partition whose instances keep their matrices, colours and LOD levels re-uploads nothing.
 
 #include <array>
 #include <cstddef>
@@ -24,6 +24,25 @@ namespace tn::engine::lod {
 
 /** What an instanced batch's selection keeps between frames. */
 struct InstancedLodState {
+    /** Cached world-space bounding sphere and axis max-scale for one source instance. */
+    struct CachedSphere {
+        double cx = 0;
+        double cy = 0;
+        double cz = 0;
+        double radius = 0;
+        double maxScale = 1;
+    };
+
+    /** Center AABB of all source instances inside one spatial partition, for uniform-level skips. */
+    struct PartitionBounds {
+        double minX = 0;
+        double minY = 0;
+        double minZ = 0;
+        double maxX = 0;
+        double maxY = 0;
+        double maxZ = 0;
+    };
+
     /** partition * levelCount + level, as the reference mints them. */
     std::vector<std::shared_ptr<InstancedMesh>> children;
     std::size_t levelCount = 0;
@@ -45,6 +64,24 @@ struct InstancedLodState {
     std::vector<std::byte> colorBytes;
     std::array<double, 16> meshWorld{};
     std::vector<int> scratch;
+
+    // Per-partition caches populated once per topology/source change so stationary partitions skip repacking.
+    std::vector<std::vector<uint32_t>> partitionIndices;
+    std::vector<CachedSphere> cachedSpheres;
+    std::vector<PartitionBounds> partitionBounds;
+    std::vector<int> partitionUniformLevel;
+    std::vector<double> childTriangles;
+    std::vector<uint8_t> partitionDirty;
+    std::vector<uint8_t> partitionSourceDirty;
+    std::size_t cachedMatrixLen = 0;
+    std::size_t cachedColorLen = 0;
+    uint64_t cachedMatrixStoreId = 0;
+    uint64_t cachedColorStoreId = 0;
+    const void* cachedMaterialPtr = nullptr;
+    double cachedLayerMask = -1;
+    bool cachedCastShadow = false;
+    bool cachedReceiveShadow = false;
+    bool childMetaInitialized = false;
 };
 
 /**

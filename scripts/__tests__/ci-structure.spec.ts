@@ -482,7 +482,6 @@ const reviewedWorkflows = [
   ".github/workflows/performance-regression.yml",
   ".github/workflows/pipeline-cache.yml",
   ".github/workflows/release-candidate.yml",
-  ".github/workflows/site-docs.yml",
 ] as const;
 
 /**

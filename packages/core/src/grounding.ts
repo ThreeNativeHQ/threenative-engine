@@ -1,5 +1,5 @@
 import { Matrix4, type Object3D, Vector3 } from "three";
-import { measureThreePose, posedBounds } from "./pose-measure.js";
+import { groundSnapApplyNative, measureThreePose, posedBounds } from "./pose-measure.js";
 
 export interface IGroundSnapOptions {
   /** Whether to apply the correction. Measurement and `clearance` continue when this is false. */
@@ -46,6 +46,20 @@ export class GroundSnap {
     if (!Number.isFinite(dt) || dt < 0)
       throw new Error("GroundSnap dt must be finite and non-negative.");
     validateMaxRate(this.maxRate);
+
+    const nativeClearance = groundSnapApplyNative(
+      this.model,
+      this.meshes,
+      group,
+      surfaceY,
+      dt,
+      this.maxRate,
+      this.enabled,
+    );
+    if (nativeClearance !== undefined) {
+      this.clearance = nativeClearance;
+      return;
+    }
 
     const lowest = posedBounds(this.model, this.meshes).min[1];
     if (!Number.isFinite(lowest)) {

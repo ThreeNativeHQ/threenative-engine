@@ -1140,9 +1140,11 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
     auto row = [&](int i) { return f.loadStorage(table, f.construct(Type::u32(), {f.constant(int32_t(i))})); };
     const ExprId world = shadowWorld(f, positionWorld, normalWorld, at, leaf);
     // The receiver's pixel: the world steps one pixel right and one pixel down take (outside every branch,
-    // where a derivative is defined).
-    const ExprId pixelX = f.call("dFdx", {positionWorld}), pixelY = f.call("dFdy", {positionWorld});
-    const ExprId plane = f.call("cross", {pixelX, pixelY});
+    // where a derivative is defined). Materialize via vars so WgslEmitter does not emit dpdx/dpdy lazily
+    // inside divergent per-pixel shadow branches (e.g. `if (0 < blockerCount)`).
+    const ExprId pixelX = f.load(f.var(Type::vec(3), f.call("dFdx", {positionWorld})));
+    const ExprId pixelY = f.load(f.var(Type::vec(3), f.call("dFdy", {positionWorld})));
+    const ExprId plane = f.load(f.var(Type::vec(3), f.call("cross", {pixelX, pixelY})));
     const ExprId phi = noisePhi(f, t);
     // Finest level first: a level that holds the whole weight left skips every coarser one, so a pixel
     // inside the finest window reads one level, and one in a blend band reads two. The weights are the
@@ -1291,54 +1293,56 @@ static ExprId virtualShadowFactor(Program& f, Tsl& t, std::size_t index, int lev
                     f.assign(blockerCount, f.add(f.load(blockerCount), t.f(1)));
                 });
             });
-            const ExprId ray = f.loadStorage(table, f.construct(Type::u32(), {f.add(filterIndex, t.f(1))}));
-            const ExprId perRay = f.swizzle(ray, "x");
-            const ExprId blockerGap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
-                f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
-            // The gap Unreal's shadow-ray test sees (core shadowRayOccluderGap): a ray of `rayLengthScale`
-            // view distances, `samplesPerRay` squared steps from a random start; the edge spreads by the
-            // distance of the first sample under the caster, here its mean over the start. 0 samples is off.
-            const ExprId viewDistance = f.call("length", {f.swizzle(f.mul(f.uniform("viewMatrix", Type::mat(4, 4)),
-                f.construct(Type::vec(4), {positionWorld, t.f(1)})), "xyz")});
-            const ExprId rayReach = f.mul(f.swizzle(ray, "y"), viewDistance);
-            const ExprId steps = f.call("max", {perRay, t.f(1)});
-            const ExprId x = f.call("min", {t.f(1), f.call("sqrt", {f.div(blockerGap, f.call("max", {rayReach, t.f(1e-6f)}))})});
-            const ExprId seen = f.mul(rayReach, f.select(f.less(f.mul(x, steps), t.f(1)),
-                f.div(f.mul(f.mul(f.mul(x, x), x), steps), t.f(3)),
-                f.add(f.sub(f.mul(x, x), f.div(x, steps)), f.div(t.f(1), f.mul(t.f(3), f.mul(steps, steps))))));
-            const ExprId gap = f.select(f.less(t.f(0), perRay), seen, blockerGap);
-            // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
-            // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
-            // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
-            // receiver's own pixel, as it lies in this level, in quadrature (the blur of two independent
-            // sources): a contact edge is then never sharper than the screen can show, and does not crawl
-            // as the camera moves. The pixel's reach is capped at 16 texels, since the derivatives of a
-            // quad that straddles a silhouette are the distance between two surfaces.
-            const ExprId penumbraMetres = f.mul(gap, tangent);
-            const ExprId geometric = f.construct(Type::vec(2), {f.div(penumbraMetres, width), f.div(f.div(penumbraMetres, width), aspect)});
-            const ExprId pixels = f.call("min", {f.mul(pixelUv, f.sub(f.swizzle(filter, "w"), t.f(1))),
-                f.construct(Type::vec(2), {f.mul(texel, t.f(16))})});
-            const ExprId penumbra = f.call("max", {f.construct(Type::vec(2), {f.mul(texel, t.f(0.5f))}),
-                f.call("sqrt", {f.add(f.mul(geometric, geometric), f.mul(pixels, pixels))})});
-            auto compareAt = [&](ExprId atUv, ExprId z) {
-                const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
-                const ExprId grid = f.mul(clamped, tiles);
-                const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
-                const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
-                    f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
-                const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
-                const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
-                const ExprId atlasUv = moving
-                    ? f.div(f.add(f.swizzle(mover, "xy"), f.mul(clamped, resolution)), f.swizzle(params, "z"))
-                    : f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
-                return f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
-            };
-            const VarId visibility = f.var(Type::f32(), t.f(0));
-            f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
-                const ExprId offset = f.mul(disk(i, samples), penumbra);
-                f.assign(visibility, f.add(f.load(visibility), compareAt(f.add(uv, offset), tapZ(offset))));
+            f.If(f.less(t.f(0), f.load(blockerCount)), [&] {
+                const ExprId ray = f.loadStorage(table, f.construct(Type::u32(), {f.add(filterIndex, t.f(1))}));
+                const ExprId perRay = f.swizzle(ray, "x");
+                const ExprId blockerGap = f.mul(f.call("max", {t.f(0), f.sub(baseZ,
+                    f.div(f.load(blockerSum), f.call("max", {f.load(blockerCount), t.f(1)})))}), span);
+                // The gap Unreal's shadow-ray test sees (core shadowRayOccluderGap): a ray of `rayLengthScale`
+                // view distances, `samplesPerRay` squared steps from a random start; the edge spreads by the
+                // distance of the first sample under the caster, here its mean over the start. 0 samples is off.
+                const ExprId viewDistance = f.call("length", {f.swizzle(f.mul(f.uniform("viewMatrix", Type::mat(4, 4)),
+                    f.construct(Type::vec(4), {positionWorld, t.f(1)})), "xyz")});
+                const ExprId rayReach = f.mul(f.swizzle(ray, "y"), viewDistance);
+                const ExprId steps = f.call("max", {perRay, t.f(1)});
+                const ExprId x = f.call("min", {t.f(1), f.call("sqrt", {f.div(blockerGap, f.call("max", {rayReach, t.f(1e-6f)}))})});
+                const ExprId seen = f.mul(rayReach, f.select(f.less(f.mul(x, steps), t.f(1)),
+                    f.div(f.mul(f.mul(f.mul(x, x), x), steps), t.f(3)),
+                    f.add(f.sub(f.mul(x, x), f.div(x, steps)), f.div(t.f(1), f.mul(t.f(3), f.mul(steps, steps))))));
+                const ExprId gap = f.select(f.less(t.f(0), perRay), seen, blockerGap);
+                // Where the blockers touch the receiver the penumbra is under a texel: each tap is then the
+                // hardware's bilinear compare, so the edge is about one texel wide and not stair-stepped,
+                // and the floor of the disk is half a texel. `minPenumbraPixels` (filter.w - 1) adds the
+                // receiver's own pixel, as it lies in this level, in quadrature (the blur of two independent
+                // sources): a contact edge is then never sharper than the screen can show, and does not crawl
+                // as the camera moves. The pixel's reach is capped at 16 texels, since the derivatives of a
+                // quad that straddles a silhouette are the distance between two surfaces.
+                const ExprId penumbraMetres = f.mul(gap, tangent);
+                const ExprId geometric = f.construct(Type::vec(2), {f.div(penumbraMetres, width), f.div(f.div(penumbraMetres, width), aspect)});
+                const ExprId pixels = f.call("min", {f.mul(pixelUv, f.sub(f.swizzle(filter, "w"), t.f(1))),
+                    f.construct(Type::vec(2), {f.mul(texel, t.f(16))})});
+                const ExprId penumbra = f.call("max", {f.construct(Type::vec(2), {f.mul(texel, t.f(0.5f))}),
+                    f.call("sqrt", {f.add(f.mul(geometric, geometric), f.mul(pixels, pixels))})});
+                auto compareAt = [&](ExprId atUv, ExprId z) {
+                    const ExprId clamped = f.call("clamp", {atUv, f.construct(Type::vec(2), {t.f(0)}), f.construct(Type::vec(2), {t.f(1)})});
+                    const ExprId grid = f.mul(clamped, tiles);
+                    const ExprId tile = f.call("min", {f.call("floor", {grid}), f.construct(Type::vec(2), {f.sub(tiles, t.f(1))})});
+                    const ExprId pageIndex = f.add(t.f(float(levels*9)), f.add(base,
+                        f.add(f.mul(f.swizzle(tile, "y"), tiles), f.swizzle(tile, "x"))));
+                    const ExprId entry = f.loadStorage(table, f.construct(Type::u32(), {pageIndex}));
+                    const ExprId local = f.mul(f.sub(grid, tile), f.swizzle(params, "x"));
+                    const ExprId atlasUv = moving
+                        ? f.div(f.add(f.swizzle(mover, "xy"), f.mul(clamped, resolution)), f.swizzle(params, "z"))
+                        : f.div(f.add(f.add(f.swizzle(entry, "xy"), f.construct(Type::vec(2), {f.swizzle(params, "y")})), local), f.swizzle(params, "z"));
+                    return f.select(f.less(t.f(0), f.swizzle(entry, "z")), f.sampleCompare(map, atlasUv, z), t.f(1));
+                };
+                const VarId visibility = f.var(Type::f32(), t.f(0));
+                f.Loop(f.construct(Type::i32(), {samples}), [&](ExprId i) {
+                    const ExprId offset = f.mul(disk(i, samples), penumbra);
+                    f.assign(visibility, f.add(f.load(visibility), compareAt(f.add(uv, offset), tapZ(offset))));
+                });
+                f.assign(filtered, f.div(f.load(visibility), samples));
             });
-            f.assign(filtered, f.select(f.less(t.f(0), f.load(blockerCount)), f.div(f.load(visibility), samples), t.f(1)));
         }, [&] { f.assign(filtered, pcf()); });
         return f.load(filtered);
         };
@@ -1771,7 +1775,9 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     out.emissive = emissive;
     out.indirectDiffuse = totalIndirectDiffuse;
     out.normal = n;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -1931,7 +1937,9 @@ StandardPrograms buildLit(bool phong, const VertexVariant& variant, const LightL
     out.albedo = diffuseColor;
     out.emissive = emissive;
     out.indirectDiffuse = indirectDiffuse;
-    f.output("color", materialOutput(f, variant, outgoing, materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);
@@ -2028,7 +2036,9 @@ StandardPrograms buildBasic(const VertexVariant& variant) {
     const ExprId alpha = diffuseAlpha(f, slots, variant, diffuse, texel);
     const ExprId outgoing = variant.nodes.emissiveNode ? f.add(diffuseColor, slotValue(f, slots, variant.nodes.emissiveNode, Type::vec(3), kInvalid)) : diffuseColor;
     // Background.js writes opaque output regardless of the source texture's alpha.
-    f.output("color", materialOutput(f, variant, outgoing, variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest)));
+    const ExprId finalAlpha = variant.background ? f.constant(1.0f) : materialAlpha(f, alpha, variant.alphaHash, discardCutoff(f, slots, variant), variant.alphaTest);
+    out.alpha = variant.background ? f.constant(1.0f) : f.call("max", {finalAlpha, f.constant(0.0f)});
+    f.output("color", materialOutput(f, variant, outgoing, finalAlpha));
     outputDepthNode(f, slots, variant);
     lowerMrtOutputs(out, slots, variant);
     linkNodeVaryings(out, variant, local.position, local.normal);

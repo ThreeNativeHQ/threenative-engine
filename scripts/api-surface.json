@@ -214,6 +214,7 @@
         "@threenative/core#installFilmicToneMapping": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
         "@threenative/core#installSpanProbes": "export function installSpanProbes(target: ISpanProbeTarget, root: Object3D): () => void { … }",
         "@threenative/core#InstancedBatch": "export class InstancedBatch { … }",
+        "@threenative/core#InstancedModel": "export class InstancedModel { … }",
         "@threenative/core#invalidateStatic": "export function invalidateStatic(object: Object3D): number | undefined { … }",
         "@threenative/core#isConsole": "export function isConsole(): boolean { … }",
         "@threenative/core#isMobile": "export function isMobile(): boolean { … }",
