@@ -12,11 +12,11 @@
 
 namespace tn::engine {
 
-// TN_PREPASS=1 draws the masked opaque draws depth-only first, then shades them depth-Equal with no discard. Off
-// (unset or 0) is the shipped path. Read per frame, so a page toggles both arms in one load.
+// TN_PREPASS defaults to on (`1`): draws masked opaque draws depth-only first, then shades depth-Equal.
+// `TN_PREPASS=0` is the named opt-out override; `TN_PREPASS=split` times the depth pass separately. Read per frame.
 inline bool prepassEnabled() {
     const char* flag = flags::read<flags::Prepass>();
-    return flag != nullptr && std::strcmp(flag, "0") != 0;
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
 // Lever 0: TN_PREPASS=split draws the prepass rows in their own render pass, so the timer prices the depth half apart

@@ -101,11 +101,11 @@ void fragments() {
 }
 
 void modes() {
-    // TN_PREPASS arms the one-pass arm for any value but 0; only "split" gives the depth rows their own pass.
+    // TN_PREPASS defaults on when unset; `0` opts out and `split` gives depth rows their own pass.
     setenv("TN_PREPASS", "0", 1);
     CHECK(!prepassEnabled() && !prepassSplit());
     unsetenv("TN_PREPASS");
-    CHECK(!prepassEnabled() && !prepassSplit());
+    CHECK(prepassEnabled() && !prepassSplit());
     setenv("TN_PREPASS", "1", 1);
     CHECK(prepassEnabled() && !prepassSplit());
     setenv("TN_PREPASS", "split", 1);
@@ -113,7 +113,23 @@ void modes() {
     unsetenv("TN_PREPASS");
 }
 
+void virtualShadowEarlyOut() {
+    shader::VertexVariant cut;
+    cut.map = true;
+    // '9' = 1-level VSM directional sun with sourceAngleShadowFilter active.
+    const shader::LightLayout lights{"9"};
+    const auto program = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    const auto fragment = shader::buildStage(program.fragment, 1);
+    CHECK(fragment.wgsl.ok());
+    const std::string& code = fragment.wgsl.code;
+    const auto comparePos = code.find("textureSampleCompare");
+    const auto guardPos = code.find("if ((0f < ");
+    CHECK(comparePos != std::string::npos);
+    CHECK(guardPos != std::string::npos);
+    CHECK(guardPos < comparePos);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"eligible", eligibleDraws}, {"targets", pipelineTargets}, {"fragments", fragments},
-             {"modes", modes})
+             {"modes", modes}, {"virtual_shadow_early_out", virtualShadowEarlyOut})

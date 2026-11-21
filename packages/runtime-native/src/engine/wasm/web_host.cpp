@@ -458,13 +458,12 @@ extern "C" int tnw_web_render(const tn_handle_t* sceneHandle, const tn_handle_t*
             overlayDatabase.render(target, *scene, *camera, {0, 0, 0, 0});
         } else {
             lastDrawn = renderer.get();
-            // PRD-888's arm, read every frame so a probe flips `globalThis.__tnPrepass` in one page load; it defaults
-            // from `?tnPrepass=1`. `"split"` is lever 0: the depth rows draw in their own timed pass. The renderer
-            // reads TN_PREPASS per frame (flags.h).
+            // PRD-888's masked depth prepass defaults on; `?tnPrepass=0` opts out and `?tnPrepass=split` times
+            // the depth pass separately. `globalThis.__tnPrepass` flips live per frame; renderer reads TN_PREPASS.
             const int prepassMode = EM_ASM_INT({
                 if (globalThis.__tnPrepass === undefined) {
                     const asked = new URLSearchParams(globalThis.location ? globalThis.location.search : "").get("tnPrepass");
-                    globalThis.__tnPrepass = asked === "split" ? "split" : asked === "1";
+                    globalThis.__tnPrepass = asked === "split" ? "split" : asked !== "0";
                 }
                 return globalThis.__tnPrepass === "split" ? 2 : globalThis.__tnPrepass ? 1 : 0;
             });
