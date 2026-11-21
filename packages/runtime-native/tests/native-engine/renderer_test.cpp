@@ -4019,6 +4019,126 @@ void coalesceDirtyRangesTest() {
     Renderer::coalesceDirtyRanges(ranges, 32, scratch);
     CHECK(ranges.size() == 1 && ranges[0].first == 0 && ranges[0].second == 39 * 512 + 384);
 }
+
+void mainInstanceFrustumCull() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    const auto quad = plane(1, 1);
+    constexpr uint32_t kCount = 200;
+    BufferStore matrices(Scalar::F32, kCount * 16);
+    BufferStore tint(Scalar::F32, kCount * 3);
+    std::vector<float> matData(kCount * 16, 0.0f);
+    std::vector<float> tintData(kCount * 3, 0.0f);
+    // 0..99 sit in front of camera (0, 0, 4) looking -Z, placed far-to-near (z = -20 .. -1 and 0)
+    // so the nearest center instance (i = 99 at z = 0) draws red/blue cleanly with front-to-back order too.
+    // 100..199 sit well behind camera (z = +10 .. +109) and must be culled in main pass while staying in shadow pass.
+    for (uint32_t i = 0; i < kCount; ++i) {
+        float* m = matData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+        if (i < 100) {
+            const float z = -20.0f + 0.2f * float(i);  // i=99 -> z=-0.2 (nearest), i=0 -> z=-20.0 (farthest)
+            m[12] = 0.0f;
+            m[13] = 0.0f;
+            m[14] = z;
+            tintData[i * 3 + 0] = i == 99 ? 1.0f : 0.0f;
+            tintData[i * 3 + 1] = i == 99 ? 0.25f : 0.8f;
+            tintData[i * 3 + 2] = i == 99 ? 0.1f : 0.9f;
+        } else {
+            m[12] = 0.0f;
+            m[13] = 0.0f;
+            m[14] = 10.0f + float(i - 100);
+            tintData[i * 3 + 0] = 0.0f;
+            tintData[i * 3 + 1] = 1.0f;
+            tintData[i * 3 + 2] = 0.0f;
+        }
+    }
+    matrices.write(0, matData.data(), matData.size() * sizeof(float));
+    tint.write(0, tintData.data(), tintData.size() * sizeof(float));
+
+    shader::StandardMaterial mat;
+    shader::MaterialNodes nodes;
+    nodes.colorNode =
+        shader::graph::vec4({shader::graph::attribute("instanceTint", shader::Type::vec(3)), shader::graph::float_(1)});
+    std::vector<DrawItem::CustomAttribute> attrs{{"instanceTint", &tint, true}};
+
+    DrawItem item;
+    item.key = item.id = 42;
+    item.kind = MaterialKind::Basic;
+    item.positions = &quad->positions;
+    item.indices = &quad->indices;
+    item.material = &mat;
+    item.nodes = &nodes;
+    item.attributes = &attrs;
+    item.instanceMatrices = &matrices;
+    item.instanceCount = kCount;
+    item.castShadow = true;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.geometryBox = Box3();
+    item.geometryBox->min.set(-0.5, -0.5, -0.05);
+    item.geometryBox->max.set(0.5, 0.5, 0.05);
+
+    LightState lights;
+    DirectLight sun = DirectLight::directional({0, 1, 0}, {1, 1, 1});
+    DirectLight::Shadow shadow;
+    shadow.width = shadow.height = 32;
+    shadow.view = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -40, 1};
+    shadow.projection = {0.01, 0, 0, 0, 0, 0.01, 0, 0, 0, 0, -0.005, 0, 0, 0, 0.5, 1};
+    shadow.matrix = shadow.projection;
+    sun.shadow = shadow;
+    lights.direct.push_back(sun);
+
+    const CameraState frontCam = camera(1);
+    CameraState pastAllCam = frontCam;
+    pastAllCam.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -50, 1};
+    pastAllCam.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 50, 1};
+
+    // Baseline with TN_INSTANCE_CULL=0 renders all 200 instances in main and shadow passes.
+    setenv("TN_INSTANCE_CULL", "0", 1);
+    std::vector<uint8_t> baselinePx;
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == uint64_t{kCount} * 2);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+        baselinePx = read(renderer, events);
+    }
+
+    // Default (TN_INSTANCE_CULL enabled): behind-camera instances culled in main pass, preserved in shadow pass,
+    // aligned perInstance custom attributes preserved, settled repeat frame copies 0 instances, 0-survivor view recovers cleanly.
+    unsetenv("TN_INSTANCE_CULL");
+    {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+        CHECK(renderer.lastFrame().instanceCopies == 2);
+        const std::vector<uint8_t> culledPx = read(renderer, events);
+        CHECK(!culledPx.empty() && culledPx == baselinePx);
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        CHECK(renderer.lastFrame().instanceCopies == 0);
+
+        renderer.render({&item, 1}, pastAllCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 0);
+        CHECK(renderer.lastFrame().shadowTriangles == uint64_t{kCount} * 2);
+
+        renderer.render({&item, 1}, frontCam, lights, {0, 0, 0, 1});
+        CHECK(renderer.lastFrame().triangles == 200);
+        const std::vector<uint8_t> recoveredPx = read(renderer, events);
+        CHECK(recoveredPx == baselinePx);
+    }
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4068,4 +4188,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"alpha_hash_shadow_coverage", alphaHashShadowCoverage},
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
              {"indirect_record", indirectRecord},
-             {"coalesce_dirty_ranges", coalesceDirtyRangesTest})
+             {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
+             {"main_instance_frustum_cull", mainInstanceFrustumCull})

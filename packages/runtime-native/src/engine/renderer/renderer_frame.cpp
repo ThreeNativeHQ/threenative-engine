@@ -3,6 +3,235 @@
 
 namespace tn::engine {
 
+namespace {
+
+bool extractInstanceLocalSphere(const DrawItem& drawn, Vector3& center, double& radius) {
+    if (drawn.geometryBox && !drawn.geometryBox->isEmpty()) {
+        drawn.geometryBox->getCenter(center);
+        radius = drawn.geometryBox->min.distanceTo(center);
+    } else if (drawn.shadowObject != nullptr) {
+        const auto* mesh = dynamic_cast<const Mesh*>(drawn.shadowObject);
+        if (!mesh || !mesh->geometry) return false;
+        if (!mesh->geometry->boundingSphere)
+            const_cast<BufferGeometry*>(mesh->geometry.get())->computeBoundingSphere();
+        const Sphere* sphere = mesh->geometry->boundingSphere.get();
+        if (!sphere) return false;
+        center = sphere->center;
+        radius = sphere->radius;
+    } else {
+        return false;
+    }
+    return radius >= 0.0 && std::isfinite(center.x + center.y + center.z + radius);
+}
+
+struct CulledCustomSource {
+    std::size_t attrIndex = 0;
+    const BufferStore* store = nullptr;
+    uint64_t stride = 0;
+};
+
+bool collectCustomInstanceSources(const DrawItem& drawn, uint32_t srcCount, uint64_t matrixMaxCount,
+                                  std::vector<CulledCustomSource>& out) {
+    out.clear();
+    if (!drawn.attributes || drawn.attributes->empty()) return true;
+    for (std::size_t i = 0; i < drawn.attributes->size(); ++i) {
+        const auto& attr = (*drawn.attributes)[i];
+        if (!attr.perInstance || !attr.store) continue;
+        const uint64_t bytes = attr.store->byteLength();
+        uint64_t stride = 0;
+        if (matrixMaxCount > 0 && bytes >= matrixMaxCount && bytes % matrixMaxCount == 0)
+            stride = bytes / matrixMaxCount;
+        else if (srcCount > 0 && bytes >= srcCount && bytes % srcCount == 0)
+            stride = bytes / srcCount;
+        if (stride == 0 || bytes < uint64_t{srcCount} * stride) return false;
+        out.push_back({i, attr.store, stride});
+    }
+    return true;
+}
+
+std::array<uint64_t, 3> storeStampOf(const BufferStore* s) {
+    if (!s) return {};
+    return {s->id() ^ (s->epoch() * 0x9e3779b97f4a7c15ull), s->writes(), s->version()};
+}
+
+}  // namespace
+
+const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frustum& frustum, const Matrix& view,
+                                               FrameJob& job, std::vector<std::pair<uint32_t, float>>& survivors,
+                                               std::vector<uint32_t>& ordered) {
+    if (!drawn.mainPass || drawn.transparent || drawn.indirect || drawn.boneMatrices || drawn.gpuJoints ||
+        drawn.morphGeometry || !drawn.instanceMatrices || drawn.instanceCount <= 1) {
+        return &drawn;
+    }
+    const bool hasDisp = bool(drawn.positionNode || drawn.nodes->shadowPositionNode());
+    const double dispMargin = drawn.material ? drawn.material->maxPositionOffset : 0.0;
+    if (hasDisp && dispMargin <= 0.0 && !displacedByGeometryBox(drawn)) return &drawn;
+
+    Vector3 localCenter;
+    double lr = -1.0;
+    if (!extractInstanceLocalSphere(drawn, localCenter, lr)) return &drawn;
+
+    const uint32_t srcCount = drawn.instanceCount;
+    const BufferStore* srcMatrices = drawn.instanceMatrices;
+    const BufferStore* srcColors = drawn.instanceColors;
+    if (srcMatrices->count() < uint64_t{srcCount} * 16) return &drawn;
+    if (srcColors && srcColors->count() < uint64_t{srcCount} * 3) return &drawn;
+
+    thread_local std::vector<CulledCustomSource> customSources;
+    if (!collectCustomInstanceSources(drawn, srcCount, srcMatrices->byteLength() / 64, customSources)) return &drawn;
+
+    const auto* matrices = reinterpret_cast<const float*>(srcMatrices->data());
+    const Matrix& mw = drawn.matrixWorld;
+    static constexpr Matrix kIdentity{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const bool identityModel = mw == kIdentity;
+
+    survivors.clear();
+    survivors.reserve(srcCount);
+    float minDepth = std::numeric_limits<float>::infinity();
+    float maxDepth = -std::numeric_limits<float>::infinity();
+    const double lx = localCenter.x, ly = localCenter.y, lz = localCenter.z;
+    for (uint32_t i = 0; i < srcCount; ++i) {
+        const float* m = matrices + std::size_t(i) * 16;
+        double c0x, c0y, c0z, c1x, c1y, c1z, c2x, c2y, c2z, tx, ty, tz;
+        if (identityModel) {
+            c0x = m[0]; c0y = m[1]; c0z = m[2];
+            c1x = m[4]; c1y = m[5]; c1z = m[6];
+            c2x = m[8]; c2y = m[9]; c2z = m[10];
+            tx = m[12]; ty = m[13]; tz = m[14];
+        } else {
+            c0x = mw[0] * m[0] + mw[4] * m[1] + mw[8] * m[2];
+            c0y = mw[1] * m[0] + mw[5] * m[1] + mw[9] * m[2];
+            c0z = mw[2] * m[0] + mw[6] * m[1] + mw[10] * m[2];
+            c1x = mw[0] * m[4] + mw[4] * m[5] + mw[8] * m[6];
+            c1y = mw[1] * m[4] + mw[5] * m[5] + mw[9] * m[6];
+            c1z = mw[2] * m[4] + mw[6] * m[5] + mw[10] * m[6];
+            c2x = mw[0] * m[8] + mw[4] * m[9] + mw[8] * m[10];
+            c2y = mw[1] * m[8] + mw[5] * m[9] + mw[9] * m[10];
+            c2z = mw[2] * m[8] + mw[6] * m[9] + mw[10] * m[10];
+            tx = mw[0] * m[12] + mw[4] * m[13] + mw[8] * m[14] + mw[12];
+            ty = mw[1] * m[12] + mw[5] * m[13] + mw[9] * m[14] + mw[13];
+            tz = mw[2] * m[12] + mw[6] * m[13] + mw[10] * m[14] + mw[14];
+        }
+        const double cx = c0x * lx + c1x * ly + c2x * lz + tx;
+        const double cy = c0y * lx + c1y * ly + c2y * lz + ty;
+        const double cz = c0z * lx + c1z * ly + c2z * lz + tz;
+        const double maxSq = std::max({c0x * c0x + c0y * c0y + c0z * c0z,
+                                       c1x * c1x + c1y * c1y + c1z * c1z,
+                                       c2x * c2x + c2y * c2y + c2z * c2z});
+        if (!std::isfinite(cx + cy + cz + maxSq)) {
+            survivors.emplace_back(i, 0.0f);
+            continue;
+        }
+        const double scale = std::sqrt(maxSq);
+        const double radius = (lr * scale + dispMargin * std::max(1.0, scale)) * 1.02 + 1e-3;
+        if (!frustum.intersectsSphere(Sphere(Vector3(cx, cy, cz), radius))) continue;
+        const float d = -static_cast<float>(view[2] * cx + view[6] * cy + view[10] * cz + view[14]);
+        if (d < minDepth) minDepth = d;
+        if (d > maxDepth) maxDepth = d;
+        survivors.emplace_back(i, d);
+    }
+
+    ordered.resize(survivors.size());
+    if (survivors.size() > 16 && std::isfinite(minDepth) && std::isfinite(maxDepth) && maxDepth > minDepth + 1e-3f) {
+        std::array<uint32_t, 16> counts{};
+        const float invSpan = 16.0f / (maxDepth - minDepth);
+        for (const auto& [origIdx, d] : survivors) {
+            (void)origIdx;
+            ++counts[std::size_t(std::clamp(int((d - minDepth) * invSpan), 0, 15))];
+        }
+        std::array<uint32_t, 16> offsets{};
+        for (int b = 1; b < 16; ++b)
+            offsets[std::size_t(b)] = offsets[std::size_t(b - 1)] + counts[std::size_t(b - 1)];
+        for (const auto& [origIdx, d] : survivors) {
+            const int b = std::clamp(int((d - minDepth) * invSpan), 0, 15);
+            ordered[offsets[std::size_t(b)]++] = origIdx;
+        }
+    } else {
+        for (std::size_t k = 0; k < survivors.size(); ++k) ordered[k] = survivors[k].first;
+    }
+
+    const auto matStamp = storeStampOf(srcMatrices);
+    const auto colStamp = storeStampOf(srcColors);
+    auto& cache = culledInstances_[{drawn.key, srcMatrices}];
+    cache.lastPlanSeen = planSerial_;
+    bool changed = cache.srcCount != srcCount || cache.srcMatrixStamp != matStamp || cache.srcColorStamp != colStamp ||
+                   cache.lastIndices != ordered || cache.customStores.size() != customSources.size() ||
+                   cache.srcCustomStamps.size() != customSources.size();
+    if (!changed) {
+        for (std::size_t k = 0; k < customSources.size(); ++k) {
+            if (cache.srcCustomStamps[k] != storeStampOf(customSources[k].store)) {
+                changed = true;
+                break;
+            }
+        }
+    }
+    if (changed && !ordered.empty()) {
+        const uint64_t needMat = std::max<uint64_t>(srcMatrices->count(), uint64_t{srcCount} * 16);
+        if (!cache.matrices || cache.matrices->count() < needMat)
+            cache.matrices = std::make_shared<BufferStore>(Scalar::F32, needMat);
+        auto* dstMat = reinterpret_cast<float*>(cache.matrices->data());
+        for (std::size_t k = 0; k < ordered.size(); ++k)
+            std::memcpy(dstMat + k * 16, matrices + std::size_t(ordered[k]) * 16, 16 * sizeof(float));
+        cache.matrices->needsUpdate();
+
+        if (srcColors) {
+            const uint64_t needCol = std::max<uint64_t>(srcColors->count(), uint64_t{srcCount} * 3);
+            if (!cache.colors || cache.colors->count() < needCol)
+                cache.colors = std::make_shared<BufferStore>(Scalar::F32, needCol);
+            const auto* srcCol = reinterpret_cast<const float*>(srcColors->data());
+            auto* dstCol = reinterpret_cast<float*>(cache.colors->data());
+            for (std::size_t k = 0; k < ordered.size(); ++k)
+                std::memcpy(dstCol + k * 3, srcCol + std::size_t(ordered[k]) * 3, 3 * sizeof(float));
+            cache.colors->needsUpdate();
+        } else {
+            cache.colors.reset();
+        }
+
+        cache.customStores.resize(customSources.size());
+        cache.srcCustomStamps.resize(customSources.size());
+        for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
+            const auto& cs = customSources[ci];
+            auto& dstStore = cache.customStores[ci];
+            if (!dstStore || dstStore->scalar() != cs.store->scalar() ||
+                dstStore->byteLength() < cs.store->byteLength()) {
+                dstStore = std::make_shared<BufferStore>(cs.store->scalar(), cs.store->count());
+            }
+            const std::byte* srcBytes = cs.store->data();
+            std::byte* dstBytes = dstStore->data();
+            for (std::size_t k = 0; k < ordered.size(); ++k)
+                std::memcpy(dstBytes + k * cs.stride, srcBytes + std::size_t(ordered[k]) * cs.stride, cs.stride);
+            dstStore->needsUpdate();
+            cache.srcCustomStamps[ci] = storeStampOf(cs.store);
+        }
+    }
+    if (changed) {
+        cache.srcCount = srcCount;
+        cache.srcMatrixStamp = matStamp;
+        cache.srcColorStamp = colStamp;
+        cache.lastIndices = ordered;
+    }
+
+    DrawItem& culled = job.culledMainItems.emplace_back(drawn);
+    culled.instanceCount = static_cast<uint32_t>(ordered.size());
+    if (culled.instanceCount > 0) {
+        culled.instanceMatrices = cache.matrices.get();
+        job.culledStores.push_back(cache.matrices);
+        if (cache.colors) {
+            culled.instanceColors = cache.colors.get();
+            job.culledStores.push_back(cache.colors);
+        }
+        if (!customSources.empty()) {
+            auto& attrs = job.culledAttributes.emplace_back(*drawn.attributes);
+            for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
+                attrs[customSources[ci].attrIndex].store = cache.customStores[ci].get();
+                job.culledStores.push_back(cache.customStores[ci]);
+            }
+            culled.attributes = &attrs;
+        }
+    }
+    return &culled;
+}
+
 void Renderer::coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& ranges, std::size_t maxWrites,
                                    std::vector<uint64_t>& gapScratch) {
     if (ranges.size() <= 1) return;
@@ -496,28 +725,61 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (instanceTop_ > 2 * live + 20 * 1024) { instanceSlots_.clear(); instanceTop_ = 0; }
     }
+    std::vector<const DrawItem*> mainItems(opaque.size());
+    std::vector<uint32_t> mainCapacities(opaque.size(), 0);
+    for (std::size_t idx = 0; idx < opaque.size(); ++idx) mainItems[idx] = opaque[idx].second;
+    if (!compilation) {
+        if (!job_) job_ = std::make_unique<FrameJob>();
+        job_->culledMainItems.clear();
+        job_->culledStores.clear();
+        job_->culledAttributes.clear();
+    }
+    if (instanceCullEnabled() && !compilation && !traa_) {
+        if (planSerial_ % 256 == 0) {
+            for (auto it = culledInstances_.begin(); it != culledInstances_.end();) {
+                if (planSerial_ - it->second.lastPlanSeen > kInstanceSlotPlans) it = culledInstances_.erase(it);
+                else ++it;
+            }
+        }
+        Matrix4 projViewMat;
+        projViewMat.elements = multiply(camera.projectionMatrix, view);
+        Frustum viewFrustum;
+        viewFrustum.setFromProjectionMatrix(projViewMat, CoordinateSystem::WebGPU, false);
+        std::vector<std::pair<uint32_t, float>> survivorsScratch;
+        std::vector<uint32_t> orderedScratch;
+        for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+            const DrawItem* orig = opaque[idx].second;
+            const DrawItem* culled = cullMainInstanceItem(*orig, viewFrustum, view, *job_, survivorsScratch,
+                                                          orderedScratch);
+            if (culled != orig) {
+                mainItems[idx] = culled;
+                mainCapacities[idx] = orig->instanceCount;
+            }
+        }
+    }
     instancePlanned_.clear();
     instanceDirty_.clear();
     uint32_t instanceCopies = 0;
-    for (const auto& [depth, drawn] : opaque) {
-        if (!drawn->instanceMatrices) continue;
+    const auto packInstance = [&](const DrawItem* drawn, uint32_t reserveInstances) {
+        if (!drawn->instanceMatrices) return;
         if (drawn->indirect) {  // read in place as a vertex buffer; nothing to pack
             instanceBases[drawn] = 0.0;
-            continue;
+            return;
         }
         const uint64_t floats = uint64_t{drawn->instanceCount} * 20;
+        const uint64_t slotReserve = std::max(floats, uint64_t{reserveInstances} * 20);
         const BufferStore& matrixStore = *drawn->instanceMatrices;
         const BufferStore* colorStore = drawn->instanceColors;
         InstanceSlot& slot = instanceSlots_[{matrixStore.id(), colorStore ? colorStore->id() : 0}];
         bool placed = false;
-        if (slot.count < floats) {  // new, or grown past its place: the last place grows in place, any other takes the end
+        if (slot.count < slotReserve) {  // new, or grown past its place: the last place grows in place, any other takes the end
             if (slot.count != 0 && slot.offset + slot.count == instanceTop_) {
-                instanceTop_ += floats - slot.count;
+                instanceTop_ += slotReserve - slot.count;
             } else {
                 slot.offset = instanceTop_;
-                instanceTop_ += floats;
+                instanceTop_ += slotReserve;
             }
-            slot.count = floats;
+            slot.count = slotReserve;
             placed = true;
         }
         slot.seen = planSerial_;
@@ -528,7 +790,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                   colorStore ? colorStore->epoch() : 0, colorStore ? colorStore->writes() : 0,
                                   colorStore ? colorStore->version() : 0, drawn->instanceCount};
         instancePlanned_.emplace_back(&slot, stamp);
-        if (!placed && slot.stamped && slot.stamp == stamp) continue;
+        if (!placed && slot.stamped && slot.stamp == stamp) return;
         const auto* matrices = reinterpret_cast<const float*>(matrixStore.data());
         const auto* colors = colorStore ? reinterpret_cast<const float*>(colorStore->data()) : nullptr;
         if (instances.size() < instanceTop_) instances.resize(instanceTop_);
@@ -543,6 +805,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         slot.stamped = false;  // until the upload below has gone through
         ++instanceCopies;
         instanceDirty_.emplace_back(slot.offset, floats);
+    };
+    const bool anyShadowPass = !compilation && !skipShadows_ &&
+                               std::any_of(lights.direct.begin(), lights.direct.end(),
+                                           [](const DirectLight& l) { return bool(l.shadow); });
+    for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+        const DrawItem* orig = opaque[idx].second;
+        const DrawItem* mainD = mainItems[idx];
+        if (mainD != orig) {
+            if (mainD->instanceCount > 0) packInstance(mainD, mainCapacities[idx]);
+            if (anyShadowPass && orig->castShadow && orig->instanceCount > 0) packInstance(orig, 0);
+        } else {
+            packInstance(orig, 0);
+        }
     }
     instances.resize(instanceTop_);
     struct Deform {
@@ -956,8 +1231,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
         }
     };
-    for (const auto& [depthKey, drawn] : opaque) {
-        const DrawItem& item = *drawn;
+    for (std::size_t opaqueIdx = 0; opaqueIdx < opaque.size(); ++opaqueIdx) {
+        const DrawItem& item = *mainItems[opaqueIdx];
         if (!item.mainPass) continue;
         shader::VertexVariant variant = variantOf(item);
         const std::string selective = selectiveLights(item);
@@ -1113,13 +1388,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (field.name == "spriteNoAttenuation") put(frameUniforms_, v, &field,
                 std::array<double, 1>{!item.spriteSizeAttenuation && camera.projectionMatrix[11] == -1 ? 1.0 : 0.0});
         }
-        putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
-        putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, v, program.vertexNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
+        putNodes(frameUniforms_, f, program.fragmentNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
         plan.back().prepass = prepassPipeline;
-        plan.back().prepassSolid = equalDraw && solidCandidate &&
-                                   program.fragment.wgsl.code.find("discard") == std::string::npos;
+        plan.back().prepassSolid = equalDraw && solidCandidate && !program.hasDiscard;
     }
 
     if (features().stablePasses && !compilation)
@@ -1845,7 +2119,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
                 const bool masked = shadowMasked(*item.material, *item.nodes);
-                const bool fragmentBlock = masked || variantOf(item).alphaHash;
+                const bool fragmentBlock = masked || program.variant.alphaHash;
                 const uint64_t v = frameUniforms_.size();
                 const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
                 frameUniforms_.resize(f + aligned(program.fragment.uniformBlockSize), 0);
@@ -1856,7 +2130,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     put(frameUniforms_, f, fs[kAlphaTest], std::array<double, 1>{m.alphaTest});
                     put(frameUniforms_, f, fs[kOpaque], std::array<double, 1>{0.0});
                     if (item.map) put(frameUniforms_, f, fs[kUvTransform], uvTransformOf(*item.map));
-                    putNodes(frameUniforms_, f, program.fragment, *item.nodes, frameTime_, frameDelta_, lights);  // alphaTestNode's uniforms
+                    putNodes(frameUniforms_, f, program.fragmentNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);  // alphaTestNode's uniforms
                 }
                 put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
@@ -1866,7 +2140,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 put(frameUniforms_, v, program.vertexSlots[kCameraPosition], shadowPosition);
                 put(frameUniforms_, v, program.vertexSlots[kCameraProjectionMatrix], kept.projection);
                 putSkin(v, program.vertexSlots, item);
-                putNodes(frameUniforms_, v, program.vertex, *item.nodes, frameTime_, frameDelta_, lights);
+                putNodes(frameUniforms_, v, program.vertexNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
                 planned.vertexOffset = static_cast<uint32_t>(v);
                 planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
             }
@@ -2439,17 +2713,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         rebuildGroups();
     }
 
-    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
-    // draw, in the main pass and the shadow passes alike; `graphKey` names the draw's textures.
-    const auto vertexGroupOf = [&](const Planned& p, const std::string& graphKey) -> WGPUBindGroup {
-        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
-        const std::string vertexKey = "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKey;
-        const auto found = mapGroups_.find(vertexKey);
-        if (found != mapGroups_.end()) return found->second;
-        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
-                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
-                                  nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
-    };
     const auto graphKeyOf = [&](const DrawItem& item) {
         std::string key;
         if (item.nodeTextures)
@@ -2459,6 +2722,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                        std::to_string(reinterpret_cast<uintptr_t>(gpu->sampler));
             }
         return key;
+    };
+    // A vertex stage that samples graph textures (a positionNode's displacement map) binds them per
+    // draw, in the main pass and the shadow passes alike; only resolve graphKey when vertexPerDraw holds.
+    const auto vertexGroupOf = [&](const Planned& p) -> WGPUBindGroup {
+        if (!probesOf(*p.program).vertexPerDraw) return nullptr;
+        const std::string vertexKey =
+            "vertex|" + std::to_string(reinterpret_cast<uintptr_t>(p.program)) + graphKeyOf(*p.item);
+        const auto found = mapGroups_.find(vertexKey);
+        if (found != mapGroups_.end()) return found->second;
+        return mapGroups_.emplace(vertexKey, bindGroup(p.program->layouts[0], p.program->vertex, uniformBuffer_,
+                                  lutView_, lutSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                                  nullptr, nullptr, nullptr, p.item->nodeTextures)).first->second;
     };
 
     // A draw's fragment group depends on its program, its textures (identity and version, which the
@@ -2520,10 +2795,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (const ShadowPass& pass : shadowPasses)
         for (const Planned& draw : pass.draws)
             if (draw.item->material->alphaHash && draw.item->map) materialTexture(*draw.item->map);
-    for (Planned& draw : velocityPlan) draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+    for (Planned& draw : velocityPlan) draw.vertexGroup = vertexGroupOf(draw);
     for (ShadowPass& pass : shadowPasses)
         for (Planned& draw : pass.draws) {
-            draw.vertexGroup = vertexGroupOf(draw, graphKeyOf(*draw.item));
+            draw.vertexGroup = vertexGroupOf(draw);
             if (!draw.item->material->alphaHash || !draw.item->map) continue;
             const MaterialTexture* map = materialTexture(*draw.item->map);
             const std::string key = "shadow|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
@@ -2540,8 +2815,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (Planned& p : plan) {
         const bool readsPbr = std::any_of(p.item->pbrMaps.begin(), p.item->pbrMaps.end(), [](const Texture* t) { return t; });
         const GraphTextures* graphTextures = p.item->nodeTextures;
-        std::string graphKey = graphKeyOf(*p.item);
-        p.vertexGroup = vertexGroupOf(p, graphKey);
+        p.vertexGroup = vertexGroupOf(p);
         const DrawProbes probes = probesOf(*p.program);
         const bool viewport = probes.viewport;
         const bool postTexture = probes.postTexture;
@@ -2553,6 +2827,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             p.mapGroup = static_cast<WGPUBindGroup>(cache->mapGroup);
             continue;
         }
+        std::string graphKey = graphKeyOf(*p.item);
         if (postTexture)
             graphKey += "|post," + std::to_string(postStamp);
         if (viewport)

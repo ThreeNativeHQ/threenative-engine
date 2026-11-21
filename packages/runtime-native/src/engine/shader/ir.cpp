@@ -1072,6 +1072,66 @@ void Program::linkVaryings(const Program& fragment) {
 }
 
 void Program::pruneDeadStatements() {
+    // Collapse single-lane swizzles over vector constructors bottom-up before liveness analysis so dead
+    // sibling components (e.g. vec4(rgbTex.rgb, alpha).w) stop pulling unused textures/graphs into prepass & aux passes.
+    std::vector<ExprId> remap(exprs_.size());
+    remap[0] = 0;
+    for (ExprId id = 1; id < exprs_.size(); ++id) {
+        Expr& e = exprs_[id];
+        for (uint8_t i = 0; i < e.argc; ++i) e.args[i] = remap[e.args[i]];
+        remap[id] = id;
+        while (remap[id] == id && e.op == Op::Swizzle && (e.immediate >> 8) == 1) {
+            const ExprId srcId = e.args[0];
+            if (srcId == kInvalid || exprs_[srcId].op != Op::Construct) break;
+            const Expr ctor = exprs_[srcId];
+            const size_t want = e.immediate & 3u;
+            if (ctor.argc == 1 && exprs_[ctor.args[0]].type.isScalar() &&
+                exprs_[ctor.args[0]].type.scalar == e.type.scalar) {
+                remap[id] = ctor.args[0];
+                break;
+            }
+            if (ctor.argc <= 1) break;
+            size_t cursor = 0;
+            bool matched = false;
+            for (uint8_t i = 0; i < ctor.argc; ++i) {
+                const ExprId partId = ctor.args[i];
+                const Type partType = exprs_[partId].type;
+                if (want < cursor + partType.rows) {
+                    if (partType.isScalar()) {
+                        remap[id] = partId;
+                    } else {
+                        e.args[0] = partId;
+                        e.immediate = static_cast<uint64_t>(want - cursor) | (uint64_t{1} << 8);
+                    }
+                    matched = true;
+                    break;
+                }
+                cursor += partType.rows;
+            }
+            if (!matched) break;
+        }
+    }
+    for (auto& block : blocks_) {
+        for (Stmt& s : block) {
+            switch (s.kind) {
+            case StmtKind::Output:
+            case StmtKind::Eval:
+            case StmtKind::Assign: s.b = remap[s.b]; break;
+            case StmtKind::Store:
+            case StmtKind::TextureStore:
+                s.b = remap[s.b];
+                s.c = remap[s.c];
+                break;
+            case StmtKind::If:
+            case StmtKind::Loop: s.a = remap[s.a]; break;
+            case StmtKind::Discard:
+            case StmtKind::Return:
+            case StmtKind::Break:
+            case StmtKind::Continue: break;
+            }
+        }
+    }
+
     const auto grid = [&] {
         std::vector<std::vector<uint8_t>> flags(blocks_.size());
         for (std::size_t b = 0; b < blocks_.size(); ++b) flags[b].assign(blocks_[b].size(), 0);

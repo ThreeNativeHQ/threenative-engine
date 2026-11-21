@@ -1028,21 +1028,15 @@ bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
 }  // namespace
 
 bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) {
+    (void)alreadyWalkedDescendant;
     if (!canShiftWorldYSubtree(*this, true)) return false;
 
-    if (alreadyWalkedDescendant != nullptr && alreadyWalkedDescendant != this) {
-        // Ancestors and `alreadyWalkedDescendant` were already updated by the caller; sync any sibling
-        // branches along that path before shifting all descendants' `matrixWorld` uniformly.
-        Object3D* child = alreadyWalkedDescendant;
-        while (child != nullptr && child != this) {
-            Object3D* p = child->parent;
-            if (p == nullptr) break;
-            for (Object3D* sibling : p->children) {
-                if (sibling != child && !sibling->skipsGpuJointSubtree()) sibling->updateWorldMatrix(false, true, false);
-            }
-            child = p;
-        }
-    }
+    const uint64_t expectedParentId = parent ? parent->id() + 1 : 0;
+    const uint64_t expectedParentRev = parent ? parent->revision() : 0;
+    const bool wasCleanSelf =
+        !matrixWorldNeedsUpdate && worldParentId_ == expectedParentId && worldParentRevision_ == expectedParentRev;
+    const Matrix4 oldWorld = matrixWorld;
+    const uint64_t selfOldRev = revision_;
 
     prepareLocalTransformWrite();
     if (parent == nullptr) {
@@ -1061,30 +1055,55 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
     Matrix4 composed;
     if (parent == nullptr) composed.copy(matrix);
     else composed.multiplyMatrices(parent->matrixWorld, matrix);
+    bool pureYShift = wasCleanSelf;
+    if (pureYShift) {
+        for (int k = 0; k < 16; ++k) {
+            const double want = oldWorld.elements[k] + (k == 13 ? dy : 0.0);
+            if (std::abs(composed.elements[k] - want) > 1e-9) {
+                pureYShift = false;
+                break;
+            }
+        }
+    }
     if (std::memcmp(matrixWorld.elements.data(), composed.elements.data(), sizeof(double) * 16) != 0)
         bump();
     matrixWorld.copy(composed);
     matrixWorldNeedsUpdate = false;
-    worldParentId_ = parent ? parent->id() + 1 : 0;
-    worldParentRevision_ = parent ? parent->revision() : 0;
+    worldParentId_ = expectedParentId;
+    worldParentRevision_ = expectedParentRev;
     lastWorldEvaluation_ = ++matrixEvaluations_;
     afterMatrixWorld();
 
-    // Update each descendant's world Y directly and align its parent revision with its shifted
-    // parent so the frame's MatrixWorldPass sees zero stale links; never bump localTransformWritten
-    // here so Skeleton::poseVersion() stays intact across pure world grounding shifts.
-    auto shiftDescendant = [&](auto& selfRef, Object3D& node) -> void {
+    // Shift only subtrees whose cached local & world state is strictly clean from this parent; any node with
+    // uncomposed local edits or unwalked parent links updates via updateWorldMatrix once instead of blind shifting.
+    auto syncOrShift = [&](auto& selfRef, Object3D& node, uint64_t pId, uint64_t pOldRev, bool canShift) -> void {
         if (node.skipsGpuJointSubtree()) return;
-        node.matrixWorld.elements[13] += dy;
-        node.bump();
-        node.matrixWorldNeedsUpdate = false;
-        node.worldParentId_ = node.parent ? node.parent->id() + 1 : 0;
-        node.worldParentRevision_ = node.parent ? node.parent->revision() : 0;
-        node.lastWorldEvaluation_ = ++matrixEvaluations_;
-        node.afterMatrixWorld();
-        for (Object3D* c : node.children) selfRef(selfRef, *c);
+        const uint64_t nodeOldRev = node.revision_;
+        bool nodeClean = false;
+        if (canShift) {
+            const Matrix4 oldLocal = node.matrix;
+            node.materializeLocalTransform();
+            if (node.matrixAutoUpdate) node.updateMatrix();
+            const bool localUnchanged =
+                std::memcmp(oldLocal.elements.data(), node.matrix.elements.data(), sizeof(double) * 16) == 0;
+            nodeClean = localUnchanged && !node.matrixWorldNeedsUpdate &&
+                        node.worldParentId_ == pId && node.worldParentRevision_ == pOldRev;
+        }
+        if (nodeClean) {
+            node.matrixWorld.elements[13] += dy;
+            node.bump();
+            node.matrixWorldNeedsUpdate = false;
+            node.worldParentId_ = pId;
+            node.worldParentRevision_ = node.parent->revision();
+            node.lastWorldEvaluation_ = ++matrixEvaluations_;
+            node.afterMatrixWorld();
+            for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, true);
+            return;
+        }
+        node.updateWorldMatrix(false, false, true);
+        for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, false);
     };
-    for (Object3D* c : children) shiftDescendant(shiftDescendant, *c);
+    for (Object3D* c : children) syncOrShift(syncOrShift, *c, id() + 1, selfOldRev, pureYShift);
     return true;
 }
 

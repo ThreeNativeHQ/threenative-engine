@@ -190,7 +190,29 @@ void virtualShadowEarlyOut() {
     CHECK(code.find("dpdx(", guardPos) == std::string::npos);
 }
 
+void colorNodeAlphaPrunesDeadRgbSample() {
+    namespace g = shader::graph;
+    shader::VertexVariant cut;
+    cut.alphaTest = true;
+    cut.alphaToCoverage = true;
+    cut.nodes.colorNode = g::vec4(
+        {g::swizzle(g::texture("rgbTex", g::uv()), "xyz"), g::swizzle(g::texture("alphaTex", g::uv()), "x")});
+    const shader::LightLayout lights{"D"};
+    const auto shipped = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    auto prepass = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    CHECK(prepass.alpha != shader::kInvalid);
+    keepDiscardsOnly(prepass.fragment, prepass.alpha);
+    const auto shippedFrag = shader::buildStage(shipped.fragment, 1);
+    const auto prepassFrag = shader::buildStage(prepass.fragment, 1);
+    CHECK(shippedFrag.wgsl.ok() && prepassFrag.wgsl.ok());
+    CHECK(shippedFrag.wgsl.code.find("rgbTex") != std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("rgbTex") == std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("alphaTex") != std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("discard") != std::string::npos);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"eligible", eligibleDraws}, {"targets", pipelineTargets}, {"fragments", fragments},
-             {"modes", modes}, {"virtual_shadow_early_out", virtualShadowEarlyOut})
+             {"modes", modes}, {"virtual_shadow_early_out", virtualShadowEarlyOut},
+             {"color_node_alpha_prunes_dead_rgb_sample", colorNodeAlphaPrunesDeadRgbSample})

@@ -5,6 +5,7 @@
 
 #include "engine/foundation/job_pool.h"
 #include "engine/foundation/flags.h"
+#include "engine/foundation/math/Primitives.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/shader/wgsl_strip.h"
 #include "renderer.h"
@@ -201,6 +202,28 @@ static inline bool shadowMasked(const shader::StandardMaterial& material, const 
 // resolution itself is material_uniforms.h, which resolves a field by the name hash the stage was laid
 // out with instead of comparing every field's name against every value: those string compares were 59%
 // of the shooter's frame memcmp time (#574).
+inline void putNodes(std::vector<uint8_t>& block, size_t base,
+              std::span<const shader::UniformField* const> fields,
+              const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
+    if (fields.empty()) return;
+    thread_local std::vector<shader::BoundUniform> values;
+    const std::array<double, 2> clock{time, delta};
+    shader::bindMaterialUniforms(values, nodes, clock);
+    for (const shader::UniformField* fieldPtr : fields) {
+        const auto& field = *fieldPtr;
+        if (field.shadowLightId != shader::kNoShadowLight) {
+            put(block, base, &field, lights.shadowMatrix(field.shadowLightId));
+            continue;
+        }
+        const shader::BoundUniform* found = shader::findBoundUniform(values, field);
+        if (found == nullptr) continue;
+        if (field.type.scalar == shader::Type::Scalar::Bool ||
+            found->values.size() != size_t(field.type.rows) * field.type.cols)
+            throw std::runtime_error("TN_TSL_UNIFORM_TYPE: " + field.name);
+        shader::writeUniform(std::span(block).subspan(base), field, found->values);
+    }
+}
+
 inline void putNodes(std::vector<uint8_t>& block, size_t base, const shader::StageModule& stage,
               const shader::MaterialNodes& nodes, float time, float delta, const LightState& lights) {
     thread_local std::vector<shader::BoundUniform> values;
@@ -353,6 +376,12 @@ inline bool shadowGroupsEnabled() {
 // again. Read per frame, not once, so a test and the stress lab's paired runs plan both arms in one process.
 inline bool shadowInstanceCullEnabled() {
     const char* flag = flags::read<flags::ShadowInstanceCull>();
+    return flag == nullptr || std::strcmp(flag, "0") != 0;
+}
+
+// Main-pass per-instance frustum culling + 16-bucket front-to-back sort (`TN_INSTANCE_CULL=0` opts out).
+inline bool instanceCullEnabled() {
+    const char* flag = flags::read<flags::InstanceCull>();
     return flag == nullptr || std::strcmp(flag, "0") != 0;
 }
 
@@ -583,6 +612,9 @@ struct Renderer::FrameJob {
     // deques: a plan's row points at its members' array until the frame is encoded.
     std::deque<DrawItem> shadowGroupItems;
     std::deque<std::vector<const DrawItem*>> shadowGroups;
+    std::deque<DrawItem> culledMainItems;
+    std::vector<std::shared_ptr<BufferStore>> culledStores;
+    std::deque<std::vector<DrawItem::CustomAttribute>> culledAttributes;
     WGPURenderPassColorAttachment color{};
     WGPURenderPassDepthStencilAttachment depth{};
     WGPUCommandEncoder encoder = nullptr;

@@ -4737,6 +4737,60 @@ void ground_snap_apply() {
     CHECK(*gpuValid && footObj->skipsGpuJointSubtree());
     CHECK(skeleton->poseVersion() == poseBeforeGpuSnap);
 
+    // 6. Non-GPU hierarchy: pure-Y settle + horizontal move+snap keeps Bone & sibling world matrices exact
+    // with zero redundant MatrixWorldPass recomposes.
+    tn_handle_t plainWorld{}, plainGroup{}, plainModel{}, plainBone{}, plainSibling{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &plainWorld, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &plainGroup, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &plainModel, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &plainBone, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &plainSibling, &d.value) == TN_OK);
+    addChild(plainWorld, plainGroup);
+    addChild(plainGroup, plainModel);
+    addChild(plainGroup, plainSibling);
+    addChild(plainModel, plainBone);
+    auto plainWorldObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(plainWorld)->ptr);
+    auto plainGroupObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(plainGroup)->ptr);
+    auto plainBoneObj = std::static_pointer_cast<Bone>(tn::abi::objectOf(plainBone)->ptr);
+    auto plainSiblingObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(plainSibling)->ptr);
+    plainWorldObj->position.set(0.0, 2.0, 0.0);
+    plainBoneObj->position.set(0.0, 0.5, 0.0);
+    plainSiblingObj->position.set(1.0, 0.8, 0.0);
+    const tn_value_t plainObjs[] = {ref(plainBone)};
+    tn_value_t plainList{};
+    plainList.kind = TN_VALUE_ARRAY;
+    plainList.count = 1;
+    plainList.values = plainObjs;
+    const double plainRadiiValues[] = {0.25};
+    tn_value_t plainRadii{};
+    plainRadii.kind = TN_VALUE_NUMBERS;
+    plainRadii.count = 1;
+    plainRadii.numbers = plainRadiiValues;
+    const tn_value_t plainAttach[] = {plainList, plainRadii};
+    CHECK(tn_invoke(plainModel, "__tnSphereBoundsAttach", plainAttach, 2, &out, &d.value) == TN_OK);
+    // Initial snap without prior updateMatrixWorldVisible: must compose sibling and bone accurately.
+    const tn_value_t plainSnap1[] = {ref(plainGroup), num(0.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(plainModel, "__tnGroundSnapApply", plainSnap1, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    // Horizontal move + animated bone local change followed by another snap.
+    plainGroupObj->position.x = 3.0;
+    plainBoneObj->position.x = 0.25;
+    const tn_value_t plainSnap2[] = {ref(plainGroup), num(1.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(plainModel, "__tnGroundSnapApply", plainSnap2, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    const std::array<double, 16> plainBoneAfter = plainBoneObj->matrixWorld.elements;
+    const std::array<double, 16> plainSiblingAfter = plainSiblingObj->matrixWorld.elements;
+    const uint64_t plainBoneRev = plainBoneObj->revision();
+    const uint64_t plainSiblingRev = plainSiblingObj->revision();
+    plainWorldObj->updateMatrixWorldVisible(false, true);
+    CHECK(plainBoneObj->revision() == plainBoneRev);
+    CHECK(plainSiblingObj->revision() == plainSiblingRev);
+    plainWorldObj->updateWorldMatrix(true, true, true);
+    for (int i = 0; i < 16; ++i) {
+        CHECK(std::abs(plainBoneAfter[i] - plainBoneObj->matrixWorld.elements[i]) < 1e-9);
+        CHECK(std::abs(plainSiblingAfter[i] - plainSiblingObj->matrixWorld.elements[i]) < 1e-9);
+    }
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

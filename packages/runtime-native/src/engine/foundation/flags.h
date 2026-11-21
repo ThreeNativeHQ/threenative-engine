@@ -26,6 +26,7 @@ inline constexpr Flag MaterialDiagnostics{"TN_MATERIAL_DIAGNOSTICS", Read::Once}
 inline constexpr Flag GpuPasses{"TN_GPU_PASSES", Read::Live};  // per FrameGpuTimer: the web host sets it first
 inline constexpr Flag ShadowInstanceGroups{"TN_SHADOW_INSTANCE_GROUPS", Read::Live};  // per frame: paired arms
 inline constexpr Flag ShadowInstanceCull{"TN_SHADOW_INSTANCE_CULL", Read::Live};      // per frame: paired arms
+inline constexpr Flag InstanceCull{"TN_INSTANCE_CULL", Read::Live};                   // per frame: main-pass frustum cull
 inline constexpr Flag Prepass{"TN_PREPASS", Read::Live};  // per frame: PRD-888's masked depth prepass, `1` one pass, `split` its own pass
 inline constexpr Flag ProgramProbes{"TN_PROGRAM_PROBES", Read::Once};
 inline constexpr Flag ShadowPageScan{"TN_SHADOW_PAGE_SCAN", Read::Once};

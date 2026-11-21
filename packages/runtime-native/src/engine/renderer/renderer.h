@@ -1062,6 +1062,9 @@ private:
         const shader::UniformField* vertexSlots[kSlotCount] = {};
         const shader::UniformField* fragmentSlots[kSlotCount] = {};
         std::vector<std::array<const shader::UniformField*, kLightFieldCount>> lightSlots;
+        std::vector<const shader::UniformField*> vertexNodeUniforms;
+        std::vector<const shader::UniformField*> fragmentNodeUniforms;
+        bool hasDiscard = false;
         // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
         // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
         // that filled it.
@@ -1618,6 +1621,33 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
     uint64_t instanceTop_ = 0;
     static constexpr uint64_t kInstanceSlotPlans = 4096;
+    struct CulledInstanceKey {
+        uint64_t itemKey = 0;
+        const BufferStore* matrices = nullptr;
+        bool operator==(const CulledInstanceKey&) const = default;
+    };
+    struct CulledInstanceKeyHash {
+        std::size_t operator()(const CulledInstanceKey& k) const noexcept {
+            const std::size_t h1 = std::hash<uint64_t>{}(k.itemKey);
+            const std::size_t h2 = std::hash<const BufferStore*>{}(k.matrices);
+            return h1 ^ (h2 + 0x9e3779b97f4a7c15ull + (h1 << 6) + (h1 >> 2));
+        }
+    };
+    struct CulledInstanceCache {
+        std::shared_ptr<BufferStore> matrices;
+        std::shared_ptr<BufferStore> colors;
+        std::vector<std::shared_ptr<BufferStore>> customStores;
+        std::array<uint64_t, 3> srcMatrixStamp{};
+        std::array<uint64_t, 3> srcColorStamp{};
+        std::vector<std::array<uint64_t, 3>> srcCustomStamps;
+        std::vector<uint32_t> lastIndices;
+        uint32_t srcCount = 0;
+        uint64_t lastPlanSeen = 0;
+    };
+    std::unordered_map<CulledInstanceKey, CulledInstanceCache, CulledInstanceKeyHash> culledInstances_;
+    const DrawItem* cullMainInstanceItem(const DrawItem& drawn, const Frustum& frustum, const Matrix& view,
+                                         FrameJob& job, std::vector<std::pair<uint32_t, float>>& survivors,
+                                         std::vector<uint32_t>& ordered);
     /** Counts the plans (FM2): a program's frame slab is rebuilt when this moves past the plan that wrote it. */
     uint64_t planSerial_ = 0;
     uint64_t morphPacks_ = 0;
