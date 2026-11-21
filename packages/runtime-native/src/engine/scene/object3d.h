@@ -437,6 +437,10 @@ public:
     /** Renderer traversal can consume a flat child immediately after updating it. */
     bool updateMatrixWorldSelf(bool force = false, bool identityParent = false, bool plain = false);
     virtual void updateWorldMatrix(bool updateParents, bool updateChildren, bool force = false);
+    /** Shift this object in world Y by `dy` and propagate the translation to all descendants' `matrixWorld`
+     *  without invalidating their local transforms or bumping `Skeleton::poseVersion()`. Returns false and
+     *  leaves transforms unchanged if any subtree node uses manual matrices, pivots, or deferred GPU joints. */
+    bool shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant = nullptr);
     /**
      * core's per-frame MatrixWorldPass (packages/core/src/matrix-world.ts), natively: three's walk, except that
      * with `prune` a hidden node composes only itself and its subtree waits for the first frame it shows

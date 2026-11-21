@@ -196,4 +196,53 @@ describe("GroundSnap measures once per apply", () => {
     Reflect.deleteProperty(figure, "__tnSphereBoundsAttach");
     expect(Math.abs(posedBounds(figure).min[1] - engineMin)).toBeLessThan(1e-9);
   });
+
+  it("uses __tnGroundSnapApply in one crossing when the engine provides it", async () => {
+    const { figure, character } = await walkingFigure();
+    const holder = new Group();
+    holder.position.set(1, 0.25, -2);
+    holder.add(figure);
+    const snap = new GroundSnap(figure, { maxRate: 0.75 });
+    snap.apply(figure, 0, 1 / 30);
+
+    let attaches = 0;
+    let applyCalls = 0;
+    let sphereBoundsCalls = 0;
+    const seenArgs: unknown[][] = [];
+    const carrier = figure as Object3D & Record<string, unknown>;
+    carrier.__tnSphereBoundsAttach = () => {
+      attaches += 1;
+    };
+    carrier.__tnSphereBounds = () => {
+      sphereBoundsCalls += 1;
+      return [0, 0, 0, 0, 1, 0];
+    };
+    carrier.__tnGroundSnapApply = (
+      group: Object3D,
+      surfaceY: number,
+      dt: number,
+      maxRate: number,
+      enabled: boolean,
+      biasY: number,
+    ) => {
+      applyCalls += 1;
+      seenArgs.push([group, surfaceY, dt, maxRate, enabled, biasY]);
+      return 0.125;
+    };
+
+    const walks = countWalks(figure);
+    character.update(1 / 30);
+    snap.apply(holder, 0.5, 1 / 60);
+    expect(attaches).toBe(1);
+    expect(applyCalls).toBe(1);
+    expect(sphereBoundsCalls).toBe(0);
+    expect(walks()).toBe(0);
+    expect(snap.clearance).toBe(0.125);
+    expect(seenArgs[0]?.[0]).toBe(holder);
+    expect(seenArgs[0]?.[1]).toBe(0.5);
+    expect(seenArgs[0]?.[2]).toBe(1 / 60);
+    expect(seenArgs[0]?.[3]).toBe(0.75);
+    expect(seenArgs[0]?.[4]).toBe(true);
+    expect(Number.isFinite(seenArgs[0]?.[5])).toBe(true);
+  });
 });

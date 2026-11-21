@@ -1168,6 +1168,82 @@ void registerObject3D(ClassBinding& b) {
         }
         return Value::list(std::move(box));
     };
+    // PRD- stress-perf Lever 2: single-call GroundSnap (`__tnGroundSnapApply(group, surfaceY, dt, maxRate, enabled, biasY)`).
+    // Measures the attached sphere set once, computes clamped vertical correction, and shifts `group` + descendants
+    // in place when `group` carries the model so the renderer's MatrixWorldPass skips recomposing the rig.
+    b.methods["__tnGroundSnapApply"] = [](void* self, const Args& a, Store& store) {
+        Object3D& model = *as<Object3D>(self);
+        Object3D& group = objectArg(store, a.at(0));
+        const double surfaceY = number(a.at(1));
+        const double dt = number(a.at(2));
+        const double maxRate = number(a.at(3));
+        const bool enabled = flag(a.at(4));
+        const double biasY = number(a.at(5));
+
+        const SphereSet& set = sphereSetOf(model);
+        if (set.radii.empty()) throw Unsupported{"__tnGroundSnapApply before __tnSphereBoundsAttach"};
+        for (const auto& weakObj : set.objects) {
+            if (weakObj.expired()) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+        }
+
+        auto measureLowest = [&]() -> double {
+            model.updateWorldMatrix(true, true, false);
+            double minY = std::numeric_limits<double>::infinity();
+            for (size_t i = 0; i < set.objects.size(); ++i) {
+                const std::shared_ptr<Object3D> held = set.objects[i].lock();
+                if (!held) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+                const double cy = held->matrixWorld.elements[13];
+                const double r = set.radii[i];
+                if (cy - r < minY) minY = cy - r;
+            }
+            return minY + biasY;
+        };
+
+        const double lowest = measureLowest();
+        if (!std::isfinite(lowest)) return Value::of(std::numeric_limits<double>::quiet_NaN());
+
+        bool carries = false;
+        for (const Object3D* node = &model; node != nullptr; node = node->parent) {
+            if (node == &group) {
+                carries = true;
+                break;
+            }
+        }
+
+        const double desired = surfaceY - lowest;
+        const bool hasRate = std::isfinite(maxRate) && maxRate >= 0.0;
+        const double correction = (!hasRate || desired > 0.0) ? desired : std::max(desired, -maxRate * dt);
+        const bool moved = enabled && correction != 0.0;
+        if (!moved) return Value::of(lowest - surfaceY);
+
+        auto applyPositionCorrection = [&]() {
+            group.prepareLocalTransformWrite();
+            if (group.parent == nullptr) {
+                group.position.y += correction;
+            } else {
+                group.parent->updateWorldMatrix(true, false, false);
+                Matrix4 parentInverse;
+                parentInverse.copy(group.parent->matrixWorld).invert();
+                Vector3 origin(0.0, 0.0, 0.0);
+                Vector3 target(0.0, correction, 0.0);
+                origin.applyMatrix4(parentInverse);
+                target.applyMatrix4(parentInverse);
+                group.position.add(target.sub(origin));
+            }
+            group.markLocalTransformDirty();
+        };
+
+        if (carries) {
+            if (!group.shiftWorldYInPlace(correction, &model)) applyPositionCorrection();
+            return Value::of(lowest + correction - surfaceY);
+        }
+
+        applyPositionCorrection();
+        const double lowestAfter = measureLowest();
+        return Value::of(std::isfinite(lowestAfter) ? (lowestAfter - surfaceY)
+                                                    : std::numeric_limits<double>::quiet_NaN());
+    };
+
     // PRD-898 J2: core's ModelLod selection in one call a frame. `mesh.__tnModelLodAttach(errors, local,
     // maxPixelError, hysteresis, current)` keeps a mesh's chain once; `any.__tnModelLodMeshes(meshes)` hands
     // over the batched set when it changes; `camera.__tnModelLodSelect(viewportHeight, bias)` runs
