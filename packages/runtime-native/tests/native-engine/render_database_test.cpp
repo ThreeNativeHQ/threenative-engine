@@ -10381,7 +10381,150 @@ void skinAttributeDeleteIsSeen() {
     CHECK(drawn && drawn->skinIndices == nullptr && drawn->skinIndices != indices);
 }
 
-TN_TEST_MAIN({"palette_lifetime", paletteLifetime}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+void spotLightFrustumCullAndGrouping() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+
+    struct SpotArm {
+        EventQueue events;
+        std::unique_ptr<Renderer> renderer;
+        Scene scene;
+        PerspectiveCamera camera{50, 1, 0.1, 100};
+        RenderDatabase database;
+        std::shared_ptr<BufferGeometry> casterGeo;
+        std::shared_ptr<Mesh> in1, behindMesh;
+        std::shared_ptr<Bone> behindBone;
+        std::vector<std::shared_ptr<Object3D>> keep;
+    };
+
+    const auto buildArm = [&](SpotArm& arm) {
+        arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
+        arm.renderer->setSize(192, 192);
+        arm.scene.enableTrackedTransform();
+        arm.camera.position.set(0, 4, 2);
+        arm.camera.lookAt(0, 0, -5);
+        arm.camera.updateProjectionMatrix();
+        arm.database.shadowMapEnabled = true;
+        arm.database.batching = false;
+
+        auto spot = std::make_shared<SpotLight>(Color(1, 1, 1), 60, 25, 0.45);
+        spot->position.set(0, 5, 0);
+        spot->target->position.set(0, 0, -5);
+        spot->setCastShadow(true);
+        arm.scene.add(*spot);
+        arm.scene.add(*spot->target);
+        arm.keep.push_back(spot);
+
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        auto floor = std::make_shared<Mesh>(makeBoxGeometry(30, 0.2, 30), material);
+        floor->position.set(0, -0.1, -5);
+        floor->setReceiveShadow(true);
+        arm.scene.add(*floor);
+        arm.keep.push_back(floor);
+
+        arm.casterGeo = makeBoxGeometry(0.5, 0.9, 0.5);
+        CHECK(!arm.casterGeo->boundingSphere);
+        const std::array<double, 3> xs{-1.0, 0.0, 1.0};
+        for (std::size_t i = 0; i < xs.size(); ++i) {
+            auto box = std::make_shared<Mesh>(arm.casterGeo, material);
+            box->position.set(xs[i], 0.45, -5.0);
+            box->setCastShadow(true);
+            box->frustumCulled = false;
+            arm.scene.add(*box);
+            arm.keep.push_back(box);
+            if (i == 1) arm.in1 = box;
+        }
+
+        arm.behindMesh = std::make_shared<Mesh>(arm.casterGeo, material);
+        arm.behindMesh->position.set(0, 0.45, 8.0);
+        arm.behindMesh->setCastShadow(true);
+        arm.behindMesh->frustumCulled = false;
+        arm.scene.add(*arm.behindMesh);
+
+        auto outsideCone = std::make_shared<Mesh>(arm.casterGeo, material);
+        outsideCone->position.set(16.0, 0.45, -5.0);
+        outsideCone->setCastShadow(true);
+        outsideCone->frustumCulled = false;
+        arm.scene.add(*outsideCone);
+        arm.keep.push_back(outsideCone);
+
+        auto skinnedGeo = makeBoxGeometry(0.5, 1.0, 0.5);
+        const auto vertices = skinnedGeo->attributes.at("position")->count();
+        skinnedGeo->setAttribute("skinIndex", BufferAttribute::fromDoubles(Scalar::U16, std::vector<double>(vertices * 4, 0), 4));
+        std::vector<double> weights(vertices * 4, 0);
+        for (std::size_t v = 0; v < vertices; ++v) weights[v * 4] = 1;
+        skinnedGeo->setAttribute("skinWeight", BufferAttribute::fromFloats(weights, 4));
+        arm.behindBone = std::make_shared<Bone>();
+        auto skeleton = std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{arm.behindBone});
+        auto behindSkinned = std::make_shared<SkinnedMesh>(skinnedGeo, material);
+        behindSkinned->position.set(0, 0.5, 8.0);
+        behindSkinned->setCastShadow(true);
+        behindSkinned->frustumCulled = false;
+        behindSkinned->add(*arm.behindBone);
+        arm.scene.add(*behindSkinned);
+        arm.scene.updateMatrixWorld(true);
+        behindSkinned->bind(skeleton);
+        arm.keep.push_back(behindSkinned);
+    };
+
+    std::array<SpotArm, 2> arms;
+    for (int i = 0; i < 2; ++i) buildArm(arms[i]);
+
+    setShadowInstanceLever(false);
+    arms[0].database.render(*arms[0].renderer, arms[0].scene, arms[0].camera);
+    const uint64_t ungroupedDraws = arms[0].renderer->lastFrame().lampShadowDraws;
+    const auto pixelsOff = read(*arms[0].renderer, arms[0].events);
+
+    setShadowInstanceLever(true);
+    arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
+    const uint64_t groupedDraws = arms[1].renderer->lastFrame().lampShadowDraws;
+    const auto pixelsOn = read(*arms[1].renderer, arms[1].events);
+
+    std::size_t covered = 0, differ = 0;
+    for (std::size_t p = 0; p + 3 < pixelsOff.size(); p += 4) {
+        covered += pixelsOn[p] + pixelsOn[p + 1] + pixelsOn[p + 2] > 0;
+        for (int c = 0; c < 3; ++c)
+            differ += std::abs(int(pixelsOff[p + c]) - int(pixelsOn[p + c])) > 2;
+    }
+    std::printf("spotlight cull+group: ungrouped=%llu grouped=%llu covered=%zu differ=%zu\n",
+                static_cast<unsigned long long>(ungroupedDraws), static_cast<unsigned long long>(groupedDraws),
+                covered, differ);
+    CHECK(arms[1].casterGeo->boundingSphere != nullptr);
+    CHECK(ungroupedDraws == 3);
+    CHECK(groupedDraws == 1);
+    CHECK(covered > 5000);
+    CHECK(differ == 0);
+
+    // Next still frame caches the grouped SpotLight shadow map.
+    arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
+    CHECK(arms[1].renderer->lastFrame().keptShadowMaps == 1);
+    CHECK(arms[1].renderer->lastFrame().lampShadowDraws == 0);
+
+    // Moving culled behind-light / skinned casters does not redraw or invalidate the cached SpotLight map.
+    arms[1].behindMesh->position.x = 2.0;
+    arms[1].behindBone->rotation.z = 0.25;
+    arms[1].scene.updateMatrixWorld(true);
+    arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
+    CHECK(arms[1].renderer->lastFrame().keptShadowMaps == 1);
+    CHECK(arms[1].renderer->lastFrame().lampShadowDraws == 0);
+
+    // Moving a grouped in-cone caster invalidates the signature hash and shifts the rendered shadow.
+    arms[1].in1->position.set(1.6, 0.45, -4.2);
+    arms[1].scene.updateMatrixWorld(true);
+    arms[1].database.render(*arms[1].renderer, arms[1].scene, arms[1].camera);
+    const auto pixelsMoved = read(*arms[1].renderer, arms[1].events);
+    std::size_t shiftDiff = 0;
+    for (std::size_t p = 0; p + 3 < pixelsMoved.size(); p += 4)
+        for (int c = 0; c < 3; ++c)
+            shiftDiff += std::abs(int(pixelsMoved[p + c]) - int(pixelsOn[p + c])) > 4;
+    CHECK(arms[1].renderer->lastFrame().keptShadowMaps == 0);
+    CHECK(arms[1].renderer->lastFrame().lampShadowDraws == 1);
+    CHECK(shiftDiff > 0);
+    setShadowInstanceLever(true);
+}
+
+TN_TEST_MAIN({"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

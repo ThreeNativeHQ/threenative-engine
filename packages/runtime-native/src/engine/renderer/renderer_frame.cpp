@@ -121,8 +121,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    const bool anyLampShadow = !compilation && std::any_of(lights.direct.begin(), lights.direct.end(), [&](const DirectLight& l) {
+        if (!l.shadow || l.kind == DirectLight::Kind::Directional) return false;
+        const auto index = std::size_t(&l - lights.direct.data());
+        return !virtualShadows_.count(index);
+    });
     // One stamp per pass: rigs that share a skeleton read its bones once (PRD-871).
-    const uint64_t planStamp = virtualShadows_.empty() ? 0 : Skeleton::nextPlanStamp();    for (auto& [i, shadow] : virtualShadows_) {
+    const uint64_t planStamp = (!virtualShadows_.empty() || anyLampShadow) ? Skeleton::nextPlanStamp() : 0;
+    for (auto& [i, shadow] : virtualShadows_) {
         if (compilation) continue;
         if (i >= lights.direct.size() || lights.direct[i].kind != DirectLight::Kind::Directional || !lights.direct[i].shadow)
             throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: requires a shadow-casting directional light");
@@ -238,19 +244,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     if (!compilation) virtualCut_ = false;
 
     addCpuStage(CpuVirtualPages, stageStarted);
+    // Stack-safe box-vs-frustum test (`Primitives.cpp` `Frustum::intersectsBox` holds a function-local `static Vector3`).
+    const auto frustumIntersectsBox = [](const Frustum& frustum, const Box3& box) {
+        Vector3 corner;
+        for (const Plane& plane : frustum.planes) {
+            corner.x = plane.normal.x > 0 ? box.max.x : box.min.x;
+            corner.y = plane.normal.y > 0 ? box.max.y : box.min.y;
+            corner.z = plane.normal.z > 0 ? box.max.z : box.min.z;
+            if (plane.distanceToPoint(corner) < 0) return false;
+        }
+        return true;
+    };
     // PRD-650: a lamp's map is as fine as the finest pixel footprint over the visible receivers it
     // lights (shadows/lamp_resolution.h). A shadow.mapSize other than three's 512² is the game's override.
     std::map<std::size_t, uint32_t> lampSizes;
     if (!compilation) {
-        std::vector<std::size_t> autoLamps;
-        std::vector<shadows::LampDemand> demands;
-        // The unjittered view: a pixel's footprint does not move with the TRAA subpixel offset, and a jittered
-        // frustum flips a receiver on the view's edge in and out, which reallocated the map every frame (PRD-539).
-        Matrix4 view; view.elements = unjitteredCamera.matrixWorldInverse;
-        Matrix4 viewProjection; viewProjection.elements = unjitteredCamera.projectionMatrix; viewProjection.multiply(view);
-        const auto& p = unjitteredCamera.projectionMatrix;
-        const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
-        const WGPULimits& limits = deviceLimits();
+        bool anyAutoLamp = false;
         for (std::size_t i = 0; i < lights.direct.size(); ++i) {
             const DirectLight& l = lights.direct[i];
             if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
@@ -259,40 +268,28 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const std::string note = "TN_LAMP_SHADOW_MAPSIZE_OVERRIDE: light " + std::to_string(l.id) + " keeps shadow.mapSize " +
                     std::to_string(s.width) + "x" + std::to_string(s.height) + " instead of its footprint size";
                 if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
-                continue;
+            } else {
+                anyAutoLamp = true;
             }
-            // A pose seen for the first time is still: a still lamp draws its first map at its still size.
-            uint64_t pose = 0xcbf29ce484222325ull;
-            for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
-            for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
-            auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
-            if (state->second.pose != pose) state->second = {pose, int64_t(id)};
-            shadows::LampDemand demand;
-            demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
-            demand.cube = s.cube;
-            while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
-            const Vector3 at(l.position[0], l.position[1], l.position[2]);
-            const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
-            Matrix4 shadowView; shadowView.elements = s.view;
-            double footprint = INFINITY;
-            const auto visit = [&](const Vector3& point) {
-                Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
-                if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
-                const Vector3 offset = Vector3(point).sub(at);
-                const double reach = offset.length();
-                if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
-                if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
-                const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
-                                                  : -Vector3(point).applyMatrix4(shadowView).z;
-                if (!(shadowDepth > s.near)) return;
-                const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
-                footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
-            };
-            // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
-            // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
-            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+        }
+        if (anyAutoLamp) {
+            std::vector<std::size_t> autoLamps;
+            std::vector<shadows::LampDemand> demands;
+            // The unjittered view: a pixel's footprint does not move with the TRAA subpixel offset, and a jittered
+            // frustum flips a receiver on the view's edge in and out, which reallocated the map every frame (PRD-539).
+            Matrix4 view; view.elements = unjitteredCamera.matrixWorldInverse;
+            Matrix4 viewProjection; viewProjection.elements = unjitteredCamera.projectionMatrix; viewProjection.multiply(view);
+            Frustum cameraFrustum;
+            cameraFrustum.setFromProjectionMatrix(viewProjection, CoordinateSystem::WebGPU, false);
+            const auto& p = unjitteredCamera.projectionMatrix;
+            const double screenRadius = std::min(1 / (inputWidth_ * std::abs(p[0])), 1 / (inputHeight_ * std::abs(p[5])));
+            const WGPULimits& limits = deviceLimits();
+
+            struct LampReceiver { Box3 box; uint32_t layers; };
+            std::vector<LampReceiver> lampReceivers;
+            lampReceivers.reserve(items.size());
             for (const DrawItem& item : items) {
-                if (!item.mainPass || !item.receiveShadow || (item.layers & s.layersMask) == 0) continue;
+                if (!item.mainPass || !item.receiveShadow) continue;
                 const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
                 if (!mesh || !mesh->geometry) continue;
                 std::shared_ptr<Box3> local = mesh->geometry->boundingBox;
@@ -306,19 +303,70 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!local || local->isEmpty()) continue;
                 Matrix4 model; model.elements = item.matrixWorld;
                 Box3 box = *local; box.applyMatrix4(model);
-                if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
-                for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
-                    visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
-                                  box.min.z + (box.max.z - box.min.z) * z / 4));
-                Vector3 nearest; box.clampPoint(eye, nearest);
-                visit(nearest);
+                if (!frustumIntersectsBox(cameraFrustum, box)) continue;
+                lampReceivers.push_back({box, item.layers});
             }
-            demand.footprint = std::isfinite(footprint) ? footprint : 0;
-            autoLamps.push_back(i);
-            demands.push_back(demand);
+
+            const Vector3 eye(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
+            for (std::size_t i = 0; i < lights.direct.size(); ++i) {
+                const DirectLight& l = lights.direct[i];
+                if (!l.shadow || l.kind == DirectLight::Kind::Directional || virtualShadows_.count(i)) continue;
+                const DirectLight::Shadow& s = *l.shadow;
+                if (s.width != 512 || s.height != 512) continue;
+                // A pose seen for the first time is still: a still lamp draws its first map at its still size.
+                uint64_t pose = 0xcbf29ce484222325ull;
+                for (double e : l.position) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+                for (double e : l.direction) pose = (pose ^ std::bit_cast<uint64_t>(e)) * 0x100000001b3ull;
+                auto [state, seen] = lampMotion_.try_emplace(i, LampMotion{pose, int64_t(id) - shadows::kLampActiveFrames});
+                if (state->second.pose != pose) state->second = {pose, int64_t(id)};
+                shadows::LampDemand demand;
+                demand.mobility = shadows::lampMobility(int64_t(id) - state->second.movedAt);
+                demand.cube = s.cube;
+                while (shadows::lampMipSize(demand.minMip) > limits.maxTextureDimension2D && demand.minMip < shadows::kLampMaxMip) ++demand.minMip;
+                const Vector3 at(l.position[0], l.position[1], l.position[2]);
+                const Vector3 axis = Vector3(-l.direction[0], -l.direction[1], -l.direction[2]).normalize();
+                Matrix4 shadowView; shadowView.elements = s.view;
+                Frustum spotFrustum;
+                const bool hasSpotFrustum = l.kind == DirectLight::Kind::Spot && !s.cube;
+                if (hasSpotFrustum) {
+                    Matrix4 sProj; sProj.elements = s.projection;
+                    Matrix4 spotVP; spotVP.multiplyMatrices(sProj, shadowView);
+                    spotFrustum.setFromProjectionMatrix(spotVP, CoordinateSystem::WebGPU, false);
+                }
+                double footprint = INFINITY;
+                const auto visit = [&](const Vector3& point) {
+                    Vector4 clip(point.x, point.y, point.z, 1); clip.applyMatrix4(viewProjection);
+                    if (!(clip.w > 0) || std::abs(clip.x) > clip.w || std::abs(clip.y) > clip.w || clip.z < 0 || clip.z > clip.w) return;
+                    const Vector3 offset = Vector3(point).sub(at);
+                    const double reach = offset.length();
+                    if ((l.distance > 0 && reach > l.distance) || reach == 0) return;
+                    if (l.kind == DirectLight::Kind::Spot && offset.dot(axis) < l.coneCos * reach) return;
+                    const double shadowDepth = s.cube ? std::max({std::abs(offset.x), std::abs(offset.y), std::abs(offset.z)})
+                                                      : -Vector3(point).applyMatrix4(shadowView).z;
+                    if (!(shadowDepth > s.near)) return;
+                    const double sceneDepth = -Vector3(point).applyMatrix4(view).z;
+                    footprint = std::min(footprint, shadows::lampFootprint(sceneDepth * -p[11] + p[15], screenRadius, std::abs(s.projection[0]), shadowDepth));
+                };
+                // ponytail: a 5³ grid and the camera's nearest point per receiver box; a depth-buffer reduction
+                // (Unreal's page marking) when a big receiver's grid misses the pixels nearest the camera.
+                for (const LampReceiver& rec : lampReceivers) {
+                    if ((rec.layers & s.layersMask) == 0) continue;
+                    if (hasSpotFrustum && !frustumIntersectsBox(spotFrustum, rec.box)) continue;
+                    const Box3& box = rec.box;
+                    if (l.distance > 0 && box.distanceToPoint(at) > l.distance) continue;
+                    for (int x = 0; x < 5; ++x) for (int y = 0; y < 5; ++y) for (int z = 0; z < 5; ++z)
+                        visit(Vector3(box.min.x + (box.max.x - box.min.x) * x / 4, box.min.y + (box.max.y - box.min.y) * y / 4,
+                                      box.min.z + (box.max.z - box.min.z) * z / 4));
+                    Vector3 nearest; box.clampPoint(eye, nearest);
+                    visit(nearest);
+                }
+                demand.footprint = std::isfinite(footprint) ? footprint : 0;
+                autoLamps.push_back(i);
+                demands.push_back(demand);
+            }
+            const auto sizes = shadows::lampMapSizes(demands);
+            for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
         }
-        const auto sizes = shadows::lampMapSizes(demands);
-        for (std::size_t k = 0; k < autoLamps.size(); ++k) lampSizes[autoLamps[k]] = sizes[k];
     }
     const auto mapExtent = [&](std::size_t i) {
         const auto found = lampSizes.find(i);
@@ -1049,6 +1097,70 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
 
     addCpuStage(CpuPlan, stageStarted);
     stageStarted = meterStart(cpuMetered_);
+    struct LampBounds {
+        bool ready = false;
+        bool hasSphere = false;
+        Sphere sphere{};
+        bool hasBox = false;
+        Box3 box{};
+    };
+    const auto boxDistanceToPoint = [](const Box3& box, const Vector3& point) {
+        Vector3 clamped;
+        box.clampPoint(point, clamped);
+        return clamped.distanceTo(point);
+    };
+    std::vector<LampBounds> lampBounds;
+    if (anyLampShadow) {
+        lampBounds.resize(opaque.size());
+        const std::vector<CasterRecord>* vsmRecord =
+            !virtualShadows_.empty() ? &casterRecords_.begin()->second : nullptr;
+        for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+            const DrawItem* drawn = opaque[idx].second;
+            if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) continue;
+            LampBounds& b = lampBounds[idx];
+            b.ready = true;
+            if (!drawn->shadowObject || drawn->positionNode || drawn->nodes->shadowPositionNode() ||
+                drawn->morphGeometry || drawn->gpuJoints) {
+                continue;
+            }
+            if (vsmRecord != nullptr) {
+                const std::size_t itemIndex = std::size_t(drawn - items.data());
+                if (itemIndex < vsmRecord->size() && (*vsmRecord)[itemIndex].casts) {
+                    const Box3& bounds = (*vsmRecord)[itemIndex].bounds;
+                    if (!bounds.isEmpty() && std::isfinite(bounds.min.x + bounds.min.y + bounds.min.z +
+                                                             bounds.max.x + bounds.max.y + bounds.max.z)) {
+                        b.hasBox = true;
+                        b.box = bounds;
+                    }
+                    continue;
+                }
+            }
+            if (drawn->boneMatrices != nullptr || drawn->instanceMatrices != nullptr) {
+                const auto& [bounds, diameter] =
+                    (drawn->cache ? *drawn->cache : uncachedBounds).virtualShadowBounds(*drawn, planStamp);
+                if (!bounds.isEmpty() && std::isfinite(bounds.min.x + bounds.min.y + bounds.min.z +
+                                                         bounds.max.x + bounds.max.y + bounds.max.z)) {
+                    b.hasBox = true;
+                    b.box = bounds;
+                }
+                continue;
+            }
+            const auto* mesh = dynamic_cast<const Mesh*>(drawn->shadowObject);
+            if (!mesh || !mesh->geometry) continue;
+            if (!mesh->geometry->boundingSphere)
+                const_cast<BufferGeometry*>(mesh->geometry.get())->computeBoundingSphere();
+            const Sphere* local = mesh->geometry->boundingSphere.get();
+            if (!local || !(local->radius >= 0) || !std::isfinite(local->radius)) continue;
+            Sphere world = *local;
+            Matrix4 model;
+            model.elements = drawn->matrixWorld;
+            world.applyMatrix4(model);
+            if (std::isfinite(world.center.x + world.center.y + world.center.z + world.radius)) {
+                b.hasSphere = true;
+                b.sphere = world;
+            }
+        }
+    }
     // Each shadow-casting light's depth pass: every caster through the shadow camera, back faces for
     // front-sided materials (three's _shadowSide), depth only. Order is free: depth keeps the nearest.
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
@@ -1072,22 +1184,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // frame in the stress lab the scan judged 259 pages x 1316 casters and 0.47% of them became a draw.
         const auto mayCast = [&](const DrawItem* drawn) {
             if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) return false;
-            if ((drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) == 0) return false;
-            // A caster wholly beyond the lamp camera's far plane writes no depth: skip it, so it moving there
-            // neither costs a draw nor invalidates the lamp's cached map (PRD-650).
-            if (!lamp || shadow.far <= 0 || !drawn->shadowObject || drawn->positionNode || drawn->nodes->shadowPositionNode() ||
-                drawn->boneMatrices || drawn->morphGeometry) return true;
-            const Sphere* local = drawn->shadowObject->type() == "InstancedMesh"
-                ? static_cast<const InstancedMesh*>(drawn->shadowObject)->boundingSphere.get()
-                : drawn->shadowObject->type() == "Mesh" && static_cast<const Mesh*>(drawn->shadowObject)->geometry
-                    ? static_cast<const Mesh*>(drawn->shadowObject)->geometry->boundingSphere.get() : nullptr;
-            if (!local) return true;
-            Sphere world = *local;
-            Matrix4 model; model.elements = drawn->matrixWorld;
-            world.applyMatrix4(model);
-            const auto& at = lights.direct[i].position;
-            return !(world.center.distanceTo(Vector3(at[0], at[1], at[2])) - world.radius > shadow.far);
+            return (drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) != 0;
         };
+        std::vector<std::size_t> lampCasters;
+        std::vector<const DrawItem*> spotCasters;
+        Frustum spotFrustum;
+        std::array<Frustum, 6> cubeFrustums;
+        const bool isSpotLamp = lamp && lights.direct[i].kind == DirectLight::Kind::Spot && !shadow.cube;
+        const bool isCubeLamp = lamp && shadow.cube;
+        if (isSpotLamp) {
+            Matrix4 sProj; sProj.elements = shadow.projection;
+            Matrix4 sView; sView.elements = shadow.view;
+            Matrix4 spotVP; spotVP.multiplyMatrices(sProj, sView);
+            spotFrustum.setFromProjectionMatrix(spotVP, CoordinateSystem::WebGPU, false);
+        } else if (isCubeLamp) {
+            Matrix4 sProj; sProj.elements = shadow.projection;
+            for (int face = 0; face < 6; ++face) {
+                Matrix4 fView; fView.elements = shadow.faceViews[face];
+                Matrix4 cubeVP; cubeVP.multiplyMatrices(sProj, fView);
+                cubeFrustums[face].setFromProjectionMatrix(cubeVP, CoordinateSystem::WebGPU, false);
+            }
+        }
+        if (lamp) {
+            const auto& at = lights.direct[i].position;
+            const Vector3 lightPos(at[0], at[1], at[2]);
+            if (isSpotLamp) spotCasters.reserve(opaque.size());
+            else lampCasters.reserve(opaque.size());
+            for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+                const DrawItem* drawn = opaque[idx].second;
+                if (!mayCast(drawn)) continue;
+                const LampBounds& b = lampBounds[idx];
+                if (b.hasBox) {
+                    if (shadow.far > 0 && boxDistanceToPoint(b.box, lightPos) > shadow.far) continue;
+                    if (isSpotLamp && !frustumIntersectsBox(spotFrustum, b.box)) continue;
+                } else if (b.hasSphere) {
+                    if (shadow.far > 0 && b.sphere.center.distanceTo(lightPos) - b.sphere.radius > shadow.far) continue;
+                    if (isSpotLamp && !spotFrustum.intersectsSphere(b.sphere)) continue;
+                }
+                if (isSpotLamp) spotCasters.push_back(drawn);
+                else lampCasters.push_back(idx);
+            }
+        }
         // A caster whose bounds move with its node graph, its skin or its morph targets is on every page, as the
         // scan admitted it: there is no rectangle to index it by.
         // A positionNode caster is placed by its boxes grown by the material's maxPositionOffset (see virtualShadowBounds).
@@ -1246,11 +1383,24 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             !atlas.overlaps(*page, casterOf(drawn).bounds)) continue;
                         selected.push_back(drawn);
                     }
+                } else if (lamp) {
+                    if (isSpotLamp) {
+                        selected = std::move(spotCasters);
+                    } else {
+                        for (const std::size_t idx : lampCasters) {
+                            if (isCubeLamp) {
+                                const LampBounds& b = lampBounds[idx];
+                                if (b.hasSphere && !cubeFrustums[face].intersectsSphere(b.sphere)) continue;
+                                if (b.hasBox && !frustumIntersectsBox(cubeFrustums[face], b.box)) continue;
+                            }
+                            selected.push_back(opaque[idx].second);
+                        }
+                    }
                 } else {
-                    const auto& atlas = virtualIt->second.atlas;
                     for (const auto& [depthKey, drawn] : opaque) {
                         if (!mayCast(drawn)) continue;
                         if (page) {
+                            const auto& atlas = virtualIt->second.atlas;
                             if (page->mover ? !atlas.isMover(drawn->key) : !atlas.drawsStatic(drawn->key)) continue;
                             if (!page->mover && bounded(drawn) &&
                                 casterOf(drawn).diameter < atlas.casterGate(page->level)) continue;
@@ -1477,7 +1627,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         constexpr std::size_t kNoGroup = std::size_t(-1);
         std::vector<CasterGroup> groups;
         std::vector<std::size_t> groupOf(pageCasters.size(), kNoGroup);
-        if (page != nullptr && pageCasters.size() > 1 && shadowGroupsEnabled()) {
+        if ((page != nullptr || lampMap) && pageCasters.size() > 1 && shadowGroupsEnabled()) {
             // ponytail: a page with more groups than this is not a crowd, and the search below is linear in
             // them; past the bound every caster keeps its own row (no regression, bounded work).
             constexpr std::size_t kMaxGroupsPerPage = 64;
@@ -1619,17 +1769,25 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             for (std::size_t k = firstPass; k < shadowPasses.size(); ++k) {
                 mix(reinterpret_cast<uintptr_t>(shadowPasses[k].target));
                 for (const Planned& p : shadowPasses[k].draws) {
-                    const DrawItem& item = *p.item;
-                    animated |= item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry || item.gpuJoints;
-                    mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
-                    mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
-                    mix(reinterpret_cast<uintptr_t>(p.pipeline)); mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
-                    mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
-                    // A cutoff that samples the node's own textures casts what they hold (PRD-858).
-                    if (item.nodeTextures)
-                        for (const auto& [label, texture] : *item.nodeTextures) {
-                            mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
-                        }
+                    const auto mixItem = [&](const DrawItem& item) {
+                        animated |= item.positionNode || item.nodes->shadowPositionNode() || item.boneMatrices || item.morphGeometry || item.gpuJoints;
+                        mix(item.key); mixMatrix(item.matrixWorld); mix(item.instanceCount);
+                        mixStore(item.positions); mixStore(item.indices); mixStore(item.instanceMatrices); mixStore(item.uvs);
+                        mix(reinterpret_cast<uintptr_t>(item.map)); mix(item.map ? item.map->version() : 0);
+                        mix(std::bit_cast<uint32_t>(item.material->alphaTest)); mix(std::bit_cast<uint32_t>(item.material->opacity));
+                        // A cutoff that samples the node's own textures casts what they hold (PRD-858).
+                        if (item.nodeTextures)
+                            for (const auto& [label, texture] : *item.nodeTextures) {
+                                mix(reinterpret_cast<uintptr_t>(texture)); mix(texture ? texture->version() : 0);
+                            }
+                    };
+                    mix(reinterpret_cast<uintptr_t>(p.pipeline));
+                    if (p.members != nullptr && p.memberCount > 0) {
+                        mix(p.memberCount);
+                        for (uint32_t m = 0; m < p.memberCount; ++m) mixItem(*p.members[m]);
+                    } else {
+                        mixItem(*p.item);
+                    }
                 }
             }
             uint64_t& last = mapSignatures_[i];

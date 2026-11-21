@@ -412,6 +412,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_cached_lamp_has_no_uniform_upload=cached_lamp_has_no_uniform_upload
         native_engine_sun_cache=sun_cache
         native_engine_lamp_atlas=lamp_atlas
+        native_engine_spot_light_frustum_cull_and_grouping=spot_light_frustum_cull_and_grouping
         native_engine_gpu_timer_splits_lamp_shadows=gpu_timer_splits_lamp_shadows
         native_engine_renderer_shadow_lights_follow_hierarchy=shadow_lights_follow_hierarchy
         native_engine_renderer_records_survive_siblings=records_survive_siblings
