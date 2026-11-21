@@ -50,6 +50,23 @@ export const SPHERE_BOUNDS_ATTACH_HOOK = "__tnSphereBoundsAttach";
 /** Single-call GroundSnap measure + shift on the owned engine, avoiding JS re-measurement and bone double walks. */
 export const GROUND_SNAP_APPLY_HOOK = "__tnGroundSnapApply";
 
+/** Single-call Billboard3D facing computation on the owned engine. */
+export const BILLBOARD_FACE_HOOK = "__tnBillboardFace";
+
+type BillboardFaceHook = (camera: Object3D, lockAxis: number) => void;
+
+/**
+ * Orient `object` toward `camera` in C++ (`__tnBillboardFace`) so a billboard update crosses the
+ * bridge once instead of 9–12 times per frame.
+ * @returns false when `object` has no hook, so the caller computes the quaternion in JS
+ */
+export function billboardFace(object: Object3D, camera: Object3D, lockAxis: number): boolean {
+  const hook = (object as Object3D & Record<string, unknown>)[BILLBOARD_FACE_HOOK];
+  if (typeof hook !== "function") return false;
+  (hook as BillboardFaceHook).call(object, camera, lockAxis);
+  return true;
+}
+
 interface ISphereBoundsHooks {
   readonly attach: (objects: readonly Object3D[], radii: readonly number[]) => void;
   readonly bounds: () => readonly number[];

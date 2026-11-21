@@ -1439,6 +1439,13 @@ void registerObject3D(ClassBinding& b) {
         }
         return chain();
     };
+    b.methods["__tnBillboardFace"] = [](void* self, const Args& a, Store& store) {
+        Object3D& camera = objectArg(store, a.at(0));
+        const int lockAxis =
+            a.size() > 1 && a.at(1).kind == Value::Kind::Number ? static_cast<int>(number(a.at(1))) : 0;
+        as<Object3D>(self)->billboardFace(camera, lockAxis);
+        return chain();
+    };
     b.methods["getWorldPosition"] = [](void* self, const Args& a, Store& store) {
         as<Object3D>(self)->getWorldPosition(store.ref<Vector3>(a.at(0), "Vector3"));
         return a.at(0);

@@ -402,6 +402,11 @@ public:
     Vector3& worldToLocal(Vector3& vector);
     void lookAt(const Vector3& target);
     void lookAt(double x, double y, double z);
+    /**
+     * Orient this object toward `camera` in world space and store the resulting local quaternion.
+     * `lockAxis`: 0 = unrestricted, 1 = x, 2 = y, 3 = z.
+     */
+    void billboardFace(Object3D& camera, int lockAxis = 0);
 
     // ---- hierarchy
     Object3D& add(Object3D& object);

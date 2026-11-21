@@ -1,4 +1,5 @@
 import { type Camera, Matrix4, type Object3D, Quaternion, Vector3 as Vec3 } from "three";
+import { billboardFace } from "./engine-hooks.js";
 
 export type BillboardLockAxis = "x" | "y" | "z";
 
@@ -10,6 +11,7 @@ export interface IBillboard3DOptions {
 }
 
 const EPSILON = 1e-12;
+const LOCK_AXIS_CODE: Readonly<Record<BillboardLockAxis, number>> = { x: 1, y: 2, z: 3 };
 
 /**
  * Orient one game-owned object toward a camera without owning its geometry or surface.
@@ -53,6 +55,14 @@ export class Billboard3D {
   /** Apply the current camera pose to the object and return this helper for fluent setup. */
   update(camera: Camera = this.camera): this {
     if (camera === undefined || camera === null) throw new Error("Billboard3D.camera is required.");
+    if (
+      billboardFace(
+        this.object,
+        camera,
+        this.lockAxis === undefined ? 0 : LOCK_AXIS_CODE[this.lockAxis],
+      )
+    )
+      return this;
     this.object.updateWorldMatrix(true, false);
     camera.updateWorldMatrix(true, false);
     this.object.getWorldPosition(this.#objectPosition);

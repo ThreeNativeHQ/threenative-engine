@@ -504,6 +504,72 @@ void Object3D::lookAt(double x, double y, double z) {
     lookAt(scratchTarget);
 }
 
+void Object3D::billboardFace(Object3D& camera, int lockAxis) {
+    constexpr double kEpsilon = 1e-12;
+    prepareLocalTransformWrite();
+    Object3D* const parent_ = parent;
+    updateWorldMatrix(true, false);
+    camera.updateWorldMatrix(true, false);
+
+    Vector3 objectPosition, cameraPosition, direction;
+    Quaternion cameraQuaternion, objectQuaternion, parentQuaternion;
+    getWorldPosition(objectPosition);
+    camera.getWorldQuaternion(cameraQuaternion);
+
+    if (camera.type() == "OrthographicCamera") {
+        direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+    } else {
+        camera.getWorldPosition(cameraPosition);
+        direction.subVectors(cameraPosition, objectPosition);
+        if (direction.lengthSq() <= kEpsilon) {
+            direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+        }
+    }
+    if (direction.lengthSq() <= kEpsilon) direction.set(0.0, 0.0, 1.0);
+
+    if (lockAxis == 1 || lockAxis == 2 || lockAxis == 3) {
+        if (lockAxis == 1) direction.x = 0.0;
+        if (lockAxis == 2) direction.y = 0.0;
+        if (lockAxis == 3) direction.z = 0.0;
+        if (direction.lengthSq() <= kEpsilon) {
+            if (lockAxis == 3) direction.set(1.0, 0.0, 0.0);
+            else direction.set(0.0, 0.0, 1.0);
+        }
+    }
+    direction.normalize();
+
+    if (lockAxis == 1 || lockAxis == 2 || lockAxis == 3) {
+        const Vector3 forward(0.0, 0.0, 1.0);
+        objectQuaternion.setFromUnitVectors(forward, direction);
+    } else {
+        Vector3 screenUp(0.0, 1.0, 0.0);
+        screenUp.applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+        if (screenUp.lengthSq() <= kEpsilon) {
+            screenUp.set(1.0, 0.0, 0.0).applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+        }
+        if (screenUp.lengthSq() <= kEpsilon) {
+            screenUp.set(0.0, 1.0, 0.0);
+            if (std::abs(screenUp.dot(direction)) >= 1.0 - kEpsilon) screenUp.set(1.0, 0.0, 0.0);
+            screenUp.projectOnPlane(direction);
+        }
+        screenUp.normalize();
+        Vector3 screenRight;
+        screenRight.crossVectors(screenUp, direction).normalize();
+        Matrix4 basis;
+        basis.makeBasis(screenRight, screenUp, direction);
+        objectQuaternion.setFromRotationMatrix(basis);
+    }
+
+    if (parent_ == nullptr) {
+        quaternion.copy(objectQuaternion);
+    } else {
+        parent_->updateWorldMatrix(true, false);
+        parent_->getWorldQuaternion(parentQuaternion);
+        quaternion.copy(parentQuaternion).invert().multiply(objectQuaternion);
+    }
+    bump();
+}
+
 // ------------------------------------------------------------------------------ hierarchy
 
 Object3D::~Object3D() {

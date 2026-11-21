@@ -4707,6 +4707,76 @@ void ground_snap_apply() {
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
+void billboard_face() {
+    using namespace tn::engine;
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_value_t out{};
+
+    tn_handle_t parent{}, label{}, persp{}, ortho{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &parent, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &label, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &persp, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "OrthographicCamera", nullptr, 0, &ortho, &d.value) == TN_OK);
+
+    auto parentObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(parent)->ptr);
+    auto labelObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(label)->ptr);
+    auto perspObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(persp)->ptr);
+    auto orthoObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(ortho)->ptr);
+
+    parentObj->rotation.y = 0.22;
+    parentObj->rotation.x = -0.15;
+    parentObj->add(*labelObj);
+    labelObj->position.set(1.0, 2.0, -3.0);
+
+    perspObj->position.set(5.0, 7.0, 9.0);
+    perspObj->lookAt(0.0, 0.0, 0.0);
+
+    // 1. Perspective full face with rotated parent hierarchy.
+    const tn_value_t callFull[] = {ref(persp), num(0)};
+    CHECK(tn_invoke(label, "__tnBillboardFace", callFull, 2, &out, &d.value) == TN_OK);
+    labelObj->updateWorldMatrix(true, false);
+    Vector3 labelPos, perspPos, worldFront;
+    Quaternion labelWorldQuat;
+    labelObj->getWorldPosition(labelPos);
+    perspObj->getWorldPosition(perspPos);
+    labelObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    Vector3 expectedDir;
+    expectedDir.subVectors(perspPos, labelPos).normalize();
+    CHECK(worldFront.distanceTo(expectedDir) < 1e-6);
+
+    // 2. Orthographic camera uses parallel camera facing vector.
+    orthoObj->position.set(0.0, 10.0, 10.0);
+    orthoObj->lookAt(0.0, 0.0, 0.0);
+    const tn_value_t callOrtho[] = {ref(ortho), num(0)};
+    CHECK(tn_invoke(label, "__tnBillboardFace", callOrtho, 2, &out, &d.value) == TN_OK);
+    labelObj->updateWorldMatrix(true, false);
+    labelObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    Quaternion orthoQuat;
+    orthoObj->getWorldQuaternion(orthoQuat);
+    Vector3 orthoFront(0.0, 0.0, -1.0);
+    orthoFront.applyQuaternion(orthoQuat).negate().normalize();
+    CHECK(worldFront.distanceTo(orthoFront) < 1e-6);
+
+    // 3. Y-axis lock keeps world front horizontal toward perspective camera.
+    const tn_value_t callLockY[] = {ref(persp), num(2)};
+    CHECK(tn_invoke(label, "__tnBillboardFace", callLockY, 2, &out, &d.value) == TN_OK);
+    labelObj->updateWorldMatrix(true, false);
+    labelObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    Vector3 horizExpected = expectedDir;
+    horizExpected.y = 0.0;
+    horizExpected.normalize();
+    CHECK(std::abs(worldFront.y) < 1e-6);
+    CHECK(worldFront.distanceTo(horizExpected) < 1e-6);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
 TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_field_keeps_one_lane}, {"binding_fn", binding_fn}, {"tsl_ssr_parameters", tsl_ssr_parameters}, {"tsl_texture_store", tsl_texture_store}, {"tsl_mat4_element", tsl_mat4_element}, {"body_result_lowers_once", body_result_lowers_once}, {"body_result_in_a_branch", body_result_in_a_branch}, {"join_converts_integer_parts", join_converts_integer_parts}, {"join_truncates_overflow", join_truncates_overflow}, {"struct_function_return", struct_function_return}, {"authored_output", authored_output}, {"fragment_node_vec3_is_opaque", fragment_node_vec3_is_opaque}, {"rtt_quad_depth_has_a_vertex_output", rtt_quad_depth_has_a_vertex_output}, {"post_output_depth_has_a_vertex_output", post_output_depth_has_a_vertex_output}, {"skinned_bounds_before_the_first_frame", skinned_bounds_before_the_first_frame}, {"tsl_mat2_scalar_order", tsl_mat2_scalar_order}, {"tsl_bump_map", tsl_bump_map}, {"tsl_normal_map", tsl_normal_map}, {"tsl_flat_varying", tsl_flat_varying}, {"vertex_position_world", vertex_position_world}, {"starter_post_bindings", starter_post_bindings}, {"gpu_bind_escape", gpu_bind_escape}, {"version", version}, {"handles", handles}, {"generic", generic}, {"argument_position", argument_position}, {"scene", scene}, {"frustum_intersects_object", frustum_intersects_object}, {"frustum_intersects_boxes", frustum_intersects_boxes}, {"material_witness", material_witness}, {"rig_lane_follows_morph_set", rig_lane_follows_morph_set}, {"world_records", world_records}, {"world_stale_entries", world_stale_entries}, {"tsl_storage_texture_read", tsl_storage_texture_read}, {"tsl_storage_texture_3d", tsl_storage_texture_3d}, {"tsl_cube_texture", tsl_cube_texture}, {"tsl_mixed_operands", tsl_mixed_operands}, {"compressed_texture_levels", compressed_texture_levels},
              {"unsupported_member", unsupported_member}, {"material", material}, {"light", light}, {"spot_target_in_scene", spot_target_in_scene}, {"hierarchy_revision", hierarchy_revision}, {"matrix_evaluations", matrix_evaluations}, {"source_guard", source_guard}, {"shadow_camera_in_scene", shadow_camera_in_scene}, {"lifetime", lifetime},
              {"callbacks", callbacks}, {"color_set", color_set}, {"children", children}, {"tsl_call", tsl_call}, {"tsl_uniform_value", tsl_uniform_value}, {"tsl_set_uniforms", tsl_set_uniforms}, {"tsl_reads", tsl_reads}, {"tsl_matrix_columns", tsl_matrix_columns}, {"tsl_statements", tsl_statements}, {"tsl_assign_expression_target", tsl_assign_expression_target}, {"tsl_loop_nested", tsl_loop_nested}, {"tsl_effect_parameter", tsl_effect_parameter}, {"mixer_time_field", mixer_time_field}, {"visible_field", visible_field}, {"layers_field", layers_field}, {"walk_parents", walk_parents}, {"property_bind", property_bind}, {"euler_order_field", euler_order_field}, {"object_addresses", object_addresses}, {"geometry_shapes", geometry_shapes}, {"typed_bytes", typed_bytes}, {"array_offset", array_offset}, {"data_texture_bytes", data_texture_bytes}, {"material_events", material_events}, {"attribute_view_writes", attribute_view_writes},
@@ -4716,4 +4786,5 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"projected_cull_multiple_views", projected_cull_multiple_views},
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore},
              {"instanced_lod_partial_partition", instanced_lod_partial_partition},
-             {"ground_snap_apply", ground_snap_apply})
+             {"ground_snap_apply", ground_snap_apply},
+             {"billboard_face", billboard_face})

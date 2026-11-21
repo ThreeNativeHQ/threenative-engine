@@ -519,7 +519,7 @@ export function defineBrowserClasses(
   let scheduling = new WeakMap<object, unknown>();
   // Object3D methods that move only the transform: the mirrored labels and numbers stay.
   const transformOnly =
-    /^(updateMatrix|updateMatrixWorld|updateWorldMatrix|lookAt|rotate(X|Y|Z|OnAxis|OnWorldAxis)|translate(X|Y|Z|OnAxis)|apply(Matrix4|Quaternion)|setRotationFrom\w+|localToWorld|worldToLocal|updateProjectionMatrix|__tnGroundSnapApply)$/u;
+    /^(updateMatrix|updateMatrixWorld|updateWorldMatrix|lookAt|rotate(X|Y|Z|OnAxis|OnWorldAxis)|translate(X|Y|Z|OnAxis)|apply(Matrix4|Quaternion)|setRotationFrom\w+|localToWorld|worldToLocal|updateProjectionMatrix|__tnGroundSnapApply|__tnBillboardFace)$/u;
   // `__THREENATIVE_BRIDGE_CACHE__ = false` (a page global the worker host forwards) turns the mirror, the
   // hierarchy cache and the JS Layers test off at the next safe point: the paired A/B knob.
   const knob = "__THREENATIVE_BRIDGE_CACHE__";
