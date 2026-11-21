@@ -484,6 +484,9 @@ export function unpublishedReleasePackages(
  * `npm create` read lists it. The per-version endpoint answers before that packument's CDN cache
  * does, so 0.3.10 and 0.3.11 started the clean room on it and `npm create` failed with ETARGET.
  * `npm create threenative@latest` resolves the `latest` tag first, so the tag must name it too.
+ * The tarball the packument names must also answer: in 0.3.19 the packument listed
+ * create-threenative 0.2.24 while its plain tarball URL still served a 404 for minutes, and the
+ * clean room failed E404/ETARGET.
  */
 export async function installableOnRegistry(
   name: string,
@@ -496,9 +499,11 @@ export async function installableOnRegistry(
   if (!response.ok) return false;
   const packument = (await response.json()) as {
     "dist-tags"?: Record<string, string>;
-    versions?: Record<string, unknown>;
+    versions?: Record<string, { dist?: { tarball?: string } }>;
   };
-  return packument.versions?.[version] !== undefined && packument["dist-tags"]?.latest === version;
+  const tarball = packument.versions?.[version]?.dist?.tarball;
+  if (tarball === undefined || packument["dist-tags"]?.latest !== version) return false;
+  return (await fetchImpl(tarball, { method: "HEAD" })).ok;
 }
 
 async function waitForRegistry(name: string, version: string): Promise<void> {
