@@ -407,9 +407,9 @@ describe("WorldImpostorSurface depth march", () => {
     expect(marchSource).toContain("dynamicSteps");
     expect(marchSource).toContain("bisectLimit");
     expect(marchSource).toContain("inBounds");
-    expect(marchSource?.indexOf("colorMap.depth")).toBeLessThan(
-      marchSource?.indexOf("normalMap.depth") ?? -1,
-    );
+    const colorSource = sources.find((text) => text.includes("cDom"));
+    expect(colorSource).toBeDefined();
+    expect(colorSource).toMatch(/0?\.02/);
     expect(surface.material.colorNode).toBeDefined();
     expect(IMPOSTOR_MARCH_STEPS).toBe(32);
     expect(IMPOSTOR_BISECTION_STEPS).toBe(10);

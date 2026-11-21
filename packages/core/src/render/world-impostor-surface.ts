@@ -243,23 +243,6 @@ function encodeOctahedralNode(direction: Node<"vec3">): Node<"vec2"> {
   return vec2(select(front, px, foldedX), select(front, py, foldedY));
 }
 
-/** Golus's mip-aware cutoff, read from the actual atlas UV derivatives of the sampled frames. */
-function mipThresholdNode(
-  uvs: readonly Node<"vec2">[],
-  pixels: number,
-  cutoff: number,
-  mipScale: number,
-): Node<"float"> {
-  const size = vec2(pixels, pixels);
-  let footprint: Node<"float"> | undefined;
-  for (const uv of uvs) {
-    const frame = max(length(dFdx(uv).mul(size)), length(dFdy(uv).mul(size)));
-    footprint = footprint === undefined ? frame : max(footprint, frame);
-  }
-  const scale = float(1).add(max(log2(footprint as Node<"float">), float(0)).mul(mipScale));
-  return float(cutoff).div(scale);
-}
-
 /** The projection's `[3][3]`: zero for perspective, one for orthographic (a shadow camera too). */
 function orthographicNode(): Node<"bool"> {
   const column = element(cameraProjectionMatrix as never, 3) as Node<"vec4">;
@@ -688,6 +671,8 @@ function buildFragmentNodes(
   cellX.push(select(pickA, xa, select(pickB, xb, xc)));
   cellY.push(select(pickA, ya, select(pickB, yb, yc)));
   let marched: Node<"vec4"> | undefined;
+  let marchFootprint: Node<"float"> | undefined;
+  let marchLevelNode: Node<"float"> | undefined;
   for (let index = 3; index < 4; index += 1) {
     const direction = octahedralViewNode(
       cellX[index] as Node<"float">,
@@ -720,6 +705,8 @@ function buildFragmentNodes(
       length(dFdy(footUv).mul(atlas.pixels)),
     ).toVar();
     const marchLevel = max(log2(footprint), float(0)).toVar();
+    marchFootprint = footprint;
+    marchLevelNode = marchLevel;
     const uvSpan = length(vec2(dot(ray, basis.right), dot(ray, basis.up)));
     const parallaxPixels = uvSpan
       .mul(atlas.pixels)
@@ -750,7 +737,7 @@ function buildFragmentNodes(
       If(tFront.greaterThanEqual(tBack), () => {
         const tSpan = max(tFront.sub(tBack), float(0)).toVar();
         const effectiveParallax = parallaxPixels.mul(tSpan.div(radiusUniform.mul(2))).toVar();
-        If(effectiveParallax.lessThanEqual(2.5), () => {
+        If(effectiveParallax.lessThanEqual(3.5).or(footprint.greaterThanEqual(2.5)), () => {
           const tMid = tFront.add(tBack).mul(0.5);
           const midPoint = relVarying.add(ray.mul(tMid));
           const midUv = vec2(dot(midPoint, basis.right), dot(midPoint, basis.up).negate())
@@ -763,39 +750,17 @@ function buildFragmentNodes(
             .and(midUv.y.greaterThanEqual(0))
             .and(midUv.y.lessThanEqual(1));
           If(midInBounds, () => {
-            const c0 = colorMap.depth(layer).sample(midUv).level(marchLevel).toVar();
-            If(c0.a.greaterThan(0), () => {
-              const n0 = normalMap.depth(layer).sample(midUv).level(marchLevel).toVar();
-              const hd = float(1)
-                .sub(
-                  float(1)
-                    .sub(n0.a)
-                    .div(max(c0.a, float(0.001)))
-                    .mul(2),
-                )
-                .mul(radiusUniform);
-              hitUv.assign(midUv);
-              hitT.assign(
-                clamp(
-                  hd.sub(dot(relVarying, direction)).div(max(dot(ray, direction), float(0.25))),
-                  tBack,
-                  tFront,
-                ),
-              );
-              found.assign(1);
-            });
+            hitUv.assign(midUv);
+            hitT.assign(tMid);
+            found.assign(1);
           });
         }).Else(() => {
-          const dynamicSteps = clamp(
-            ceil(effectiveParallax.mul(0.85)),
-            float(4),
-            float(steps),
-          ).toVar();
+          const dynamicSteps = clamp(ceil(effectiveParallax.mul(0.5)), float(3), float(12)).toVar();
           const dynamicStepsInt = dynamicSteps.toInt().toVar();
           const bisectLimit = select(
             effectiveParallax.greaterThan(16),
-            int(IMPOSTOR_BISECTION_STEPS),
-            select(effectiveParallax.greaterThan(8), int(7), int(6)),
+            int(6),
+            select(effectiveParallax.greaterThan(8), int(5), int(4)),
           ).toVar();
           const previousGap = float(0).toVar();
           const previousAlpha = float(0).toVar();
@@ -920,10 +885,11 @@ function buildFragmentNodes(
   }
 
   const surface = marched as Node<"vec4">;
+  const fragFootprint = marchFootprint as Node<"float">;
+  const fragLevel = marchLevelNode as Node<"float">;
   const rayOut = normalize(select(orthographicNode(), dirVarying, dirVarying.sub(relVarying)));
   const hitPoint = relVarying.add(rayOut.mul(surface.w));
   const layers: Node<"int">[] = [];
-  const sampleLevels: Node<"float">[] = [];
   for (let index = 0; index < 3; index += 1) {
     const basis = frameBasisNode(
       octahedralViewNode(cellX[index] as Node<"float">, cellY[index] as Node<"float">, grid),
@@ -936,73 +902,102 @@ function buildFragmentNodes(
       .div(radiusUniform)
       .mul(0.5)
       .add(0.5);
-    const sampleLevel = max(
-      log2(max(length(dFdx(uv).mul(atlas.pixels)), length(dFdy(uv).mul(atlas.pixels)))),
-      float(0),
-    );
     uvs.push(uv);
     layers.push(layer);
-    sampleLevels.push(sampleLevel);
   }
-  const threshold = mipThresholdNode(uvs, atlas.pixels, cutoff, mipScale);
+  const domLayer = (cellY[3] as Node<"float">)
+    .mul(grid)
+    .add(cellX[3] as Node<"float">)
+    .toInt();
+  const domUv = select(
+    pickA,
+    uvs[0] as Node<"vec2">,
+    select(pickB, uvs[1] as Node<"vec2">, uvs[2] as Node<"vec2">),
+  );
+  // Reuse the uniform-control-flow marchLevel instead of repeating 6 redundant dFdx/dFdy calls.
+  const threshold = float(cutoff).div(float(1).add(fragLevel.mul(mipScale)));
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
-  const colorSample = Fn(([foundFlag]: [Node<"float">]) => {
-    const c0 = vec4(0).toVar();
-    const c1 = vec4(0).toVar();
-    const c2 = vec4(0).toVar();
+  const colorSample = Fn(([foundFlag, fp, lvl]: [Node<"float">, Node<"float">, Node<"float">]) => {
+    const albedo = vec3(0).toVar();
+    const coverage = float(0).toVar();
     If(foundFlag.greaterThan(0.5), () => {
-      c0.assign(
-        colorMap
-          .depth(layers[0] as Node<"int">)
-          .sample(uvs[0] as Node<"vec2">)
-          .level(sampleLevels[0] as Node<"float">),
-      );
-      c1.assign(
-        colorMap
-          .depth(layers[1] as Node<"int">)
-          .sample(uvs[1] as Node<"vec2">)
-          .level(sampleLevels[1] as Node<"float">),
-      );
-      c2.assign(
-        colorMap
-          .depth(layers[2] as Node<"int">)
-          .sample(uvs[2] as Node<"vec2">)
-          .level(sampleLevels[2] as Node<"float">),
-      );
+      If(fp.greaterThanEqual(3.5), () => {
+        const cDom = colorMap.depth(domLayer).sample(domUv).level(lvl);
+        coverage.assign(cDom.a);
+        albedo.assign(cDom.rgb.div(max(cDom.a, float(1e-4))));
+      }).Else(() => {
+        const rgbSum = vec3(0).toVar();
+        const aSum = float(0).toVar();
+        If(w0.greaterThan(0.02), () => {
+          const c0 = colorMap
+            .depth(layers[0] as Node<"int">)
+            .sample(uvs[0] as Node<"vec2">)
+            .level(lvl);
+          rgbSum.addAssign(c0.rgb.mul(w0));
+          aSum.addAssign(c0.a.mul(w0));
+        });
+        If(w1.greaterThan(0.02), () => {
+          const c1 = colorMap
+            .depth(layers[1] as Node<"int">)
+            .sample(uvs[1] as Node<"vec2">)
+            .level(lvl);
+          rgbSum.addAssign(c1.rgb.mul(w1));
+          aSum.addAssign(c1.a.mul(w1));
+        });
+        If(w2.greaterThan(0.02), () => {
+          const c2 = colorMap
+            .depth(layers[2] as Node<"int">)
+            .sample(uvs[2] as Node<"vec2">)
+            .level(lvl);
+          rgbSum.addAssign(c2.rgb.mul(w2));
+          aSum.addAssign(c2.a.mul(w2));
+        });
+        coverage.assign(aSum);
+        albedo.assign(rgbSum.div(max(aSum, float(1e-4))));
+      });
     });
-    const coverage = c0.a.mul(w0).add(c1.a.mul(w1)).add(c2.a.mul(w2));
-    const safe = max(coverage, float(1e-4));
-    const albedo = c0.rgb.mul(w0).add(c1.rgb.mul(w1)).add(c2.rgb.mul(w2)).div(safe);
     return vec4(albedo, coverage);
-  })(surface.z);
-  const normalAsset = Fn(([foundFlag, coverageNode]: [Node<"float">, Node<"float">]) => {
-    const n0 = vec4(0).toVar();
-    const n1 = vec4(0).toVar();
-    const n2v = vec4(0).toVar();
-    If(foundFlag.greaterThan(0.5), () => {
-      n0.assign(
-        normalMap
-          .depth(layers[0] as Node<"int">)
-          .sample(uvs[0] as Node<"vec2">)
-          .level(sampleLevels[0] as Node<"float">),
-      );
-      n1.assign(
-        normalMap
-          .depth(layers[1] as Node<"int">)
-          .sample(uvs[1] as Node<"vec2">)
-          .level(sampleLevels[1] as Node<"float">),
-      );
-      n2v.assign(
-        normalMap
-          .depth(layers[2] as Node<"int">)
-          .sample(uvs[2] as Node<"vec2">)
-          .level(sampleLevels[2] as Node<"float">),
-      );
-    });
-    const safe = max(coverageNode, float(1e-4));
-    const encodedNormal = n0.rgb.mul(w0).add(n1.rgb.mul(w1)).add(n2v.rgb.mul(w2)).div(safe);
-    return normalize(encodedNormal.mul(2).sub(1));
-  })(surface.z, colorSample.w);
+  })(surface.z, fragFootprint, fragLevel);
+  const normalAsset = Fn(
+    ([foundFlag, coverageNode, fp, lvl]: [
+      Node<"float">,
+      Node<"float">,
+      Node<"float">,
+      Node<"float">,
+    ]) => {
+      const encodedNormal = vec3(0.5, 0.5, 1).toVar();
+      If(foundFlag.greaterThan(0.5), () => {
+        If(fp.greaterThanEqual(3.5), () => {
+          encodedNormal.assign(normalMap.depth(domLayer).sample(domUv).level(lvl).rgb);
+        }).Else(() => {
+          const nSum = vec3(0).toVar();
+          If(w0.greaterThan(0.02), () => {
+            const n0 = normalMap
+              .depth(layers[0] as Node<"int">)
+              .sample(uvs[0] as Node<"vec2">)
+              .level(lvl);
+            nSum.addAssign(n0.rgb.mul(w0));
+          });
+          If(w1.greaterThan(0.02), () => {
+            const n1 = normalMap
+              .depth(layers[1] as Node<"int">)
+              .sample(uvs[1] as Node<"vec2">)
+              .level(lvl);
+            nSum.addAssign(n1.rgb.mul(w1));
+          });
+          If(w2.greaterThan(0.02), () => {
+            const n2v = normalMap
+              .depth(layers[2] as Node<"int">)
+              .sample(uvs[2] as Node<"vec2">)
+              .level(lvl);
+            nSum.addAssign(n2v.rgb.mul(w2));
+          });
+          encodedNormal.assign(nSum.div(max(coverageNode, float(1e-4))));
+        });
+      });
+      return normalize(encodedNormal.mul(2).sub(1));
+    },
+  )(surface.z, colorSample.w, fragFootprint, fragLevel);
   return {
     albedo: colorSample.rgb,
     coverage: colorSample.w,
