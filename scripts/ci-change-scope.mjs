@@ -21,6 +21,7 @@ import {
   SHA,
   carryDeps,
   git,
+  lastGreenDevelopHead,
   promotionOnHead,
   reuseEligible,
   reuseOrKeep,
@@ -398,7 +399,9 @@ export function validateEventPlan(value, { eventName, baseRef, forceFull = false
     );
   // PRD-776: a develop push may leave the board to its promotion pull request. `ci-required` confirms
   // that pull request from the commit itself.
-  const yielded = event === "push" && target === "develop" && plan.selection === "warm";
+  // PRD-903: or, when it changed only prose since the last green develop head, run no gate at all.
+  const yielded =
+    event === "push" && target === "develop" && ["warm", "prose"].includes(plan.selection);
   // PRD-630: a main push may rest on its promotion board. `ci-required` re-decides that rule.
   const promoted = event === "push" && target === "main" && plan.selection === "reused";
   if ((!review && !queue && !yielded && !promoted) || forceFull) {
@@ -536,6 +539,39 @@ function changedPaths(options) {
   return parsed;
 }
 
+/**
+ * The workspace-dist cache key hashes these trees, so a Markdown file under them still changes the
+ * key every pull request into develop restores: such a push keeps its board to publish the entry.
+ */
+const CACHE_KEY_TREE = /^(?:packages|scripts|patches|\.github)\//u;
+
+/**
+ * PRD-903. A develop push that changes only prose since the last green develop push runs no gate:
+ * a one-line PRD edit burned 74 wall minutes and 460 machine minutes (run 44887725075). Docs are
+ * re-validated by the develop nightly and at promotion, exactly as for a Markdown-only pull request.
+ */
+export function proseSinceGreenDevelop(options, candidateSha) {
+  const base = lastGreenDevelopHead();
+  if (base === undefined) return undefined;
+  if (git(options.root, ["merge-base", "--is-ancestor", base, candidateSha]).status !== 0)
+    return undefined;
+  const parsed = changedPaths({ ...options, base, head: candidateSha });
+  if ("error" in parsed) return undefined;
+  if (
+    !parsed.paths.every((file) => pathFamily(file, true) === "prose" && !CACHE_KEY_TREE.test(file))
+  )
+    return undefined;
+  return selectionPlan(
+    "prose",
+    `all ${String(parsed.paths.length)} path(s) since the green develop head ${base.slice(0, 12)} are prose outside the cache keys`,
+    parsed.paths,
+    candidateSha,
+    false,
+    0,
+    options.target,
+  );
+}
+
 export function classify(input) {
   const options = { ...input, target: input.target?.replace(/^refs\/heads\//u, "") };
   const candidateSha =
@@ -585,6 +621,8 @@ export function classify(input) {
         0,
         target,
       );
+    const prose = options.local ? undefined : proseSinceGreenDevelop(options, candidateSha);
+    if (prose !== undefined) return prose;
     return full("a develop push qualifies the exact tree with the full board");
   }
   // Every event except a pull request and a merge group stays full, and so does every target but

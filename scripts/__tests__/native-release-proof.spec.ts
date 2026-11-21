@@ -626,7 +626,12 @@ test("at most one release proof holds runners at a time, across branches", () =>
     settings,
     /^\x20{2}group: \$\{\{ github\.ref_type == 'tag' && 'native-release-tag' \|\| \(.*\) && 'native-release-proof' \|\| format\('native-release-skip-\{0\}', github\.run_id\) \}\}$/mu,
   );
-  assert.match(settings, /^\x20{2}cancel-in-progress: false$/mu);
+  // PRD-903: only a new commit on the proving pull request cancels; a tag, a dispatch and a label
+  // never do.
+  assert.match(
+    settings,
+    /^\x20{2}cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' && github\.event\.action == 'synchronize' \}\}$/mu,
+  );
 });
 
 // PRD-630: the tag run republishes what the promotion proof built and installed.

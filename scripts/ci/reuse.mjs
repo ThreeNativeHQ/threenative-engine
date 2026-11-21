@@ -7,6 +7,7 @@
 import { spawnSync } from "node:child_process";
 import { classify, pathFamily, selectionPlan } from "../ci-change-scope.mjs";
 import { RELEASE_GATE_JOBS, applyCarried, findCarried } from "../ci-leg-carry.mjs";
+import { gh } from "../lib/gh.mjs";
 
 // PRD-481. Reuse replaces a full board only, and only for a tree a successful CI run already
 // tested. `workflow_dispatch` is the explicit audit a person asked for, so it stays full; the
@@ -64,17 +65,21 @@ function ghApi(pathname) {
     return { error: "GITHUB_REPOSITORY is missing or malformed" };
   }
   // `gh` rather than fetch: it is already on every runner, it reads GH_TOKEN from the job's own
-  // `github.token`, and one stubbed binary is one thing to assert against.
-  const result = spawnSync("gh", ["api", `repos/${repository}/${pathname}`], {
-    encoding: "utf8",
-    maxBuffer: 1024 * 1024 * 16,
-  });
-  if (result.error !== undefined || result.status !== 0) {
-    const detail = (result.stderr ?? "").trim().split("\n")[0] ?? "";
-    return { error: `the Actions API was unreadable${detail === "" ? "" : `: ${detail}`}` };
+  // `github.token`, and one stubbed binary is one thing to assert against. The shared wrapper
+  // retries a transient 5xx with a backoff (PRD-903).
+  let stdout;
+  try {
+    stdout = gh(["api", `repos/${repository}/${pathname}`]);
+  } catch (error) {
+    const detail = String(error?.message ?? "").replace(
+      /^gh api failed after \d+ attempt\(s\): /u,
+      "",
+    );
+    const first = detail.trim().split("\n")[0] ?? "";
+    return { error: `the Actions API was unreadable${first === "" ? "" : `: ${first}`}` };
   }
   try {
-    return { value: JSON.parse(result.stdout) };
+    return { value: JSON.parse(stdout) };
   } catch {
     return { error: "the Actions API answered with malformed JSON" };
   }
@@ -118,6 +123,27 @@ export function promotionOnHead(candidateSha) {
     head?.repo?.full_name === repository
     ? number
     : undefined;
+}
+
+/**
+ * PRD-903. The head of the newest green develop push run, the tree a prose-only push builds on. A
+ * newer pending run replaces an older one in the develop concurrency group, so the parent commit
+ * may never have run: the base is the last head that did. A green prose run is itself prose on top
+ * of such a head, so the chain always ends at a qualified tree. Anything unreadable is no base.
+ */
+export function lastGreenDevelopHead() {
+  const listed = ghApi(
+    "actions/workflows/ci.yml/runs?event=push&branch=develop&status=success&per_page=5",
+  );
+  if ("error" in listed || !Array.isArray(listed.value?.workflow_runs)) return undefined;
+  const run = listed.value.workflow_runs.find(
+    (row) =>
+      row?.event === "push" &&
+      row?.head_branch === "develop" &&
+      row?.conclusion === "success" &&
+      String(row?.id) !== process.env.GITHUB_RUN_ID,
+  );
+  return /^[0-9a-f]{40}$/u.test(run?.head_sha ?? "") ? run.head_sha : undefined;
 }
 
 /**

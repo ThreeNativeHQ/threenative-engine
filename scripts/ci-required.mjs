@@ -11,6 +11,7 @@ import {
   owedPlan,
   promotionOwnsCommit,
   promotionReuse,
+  proseSinceGreenDevelop,
   queueHeadReuse,
   selectionPlan,
   sourceVerdict,
@@ -67,6 +68,15 @@ try {
   )
     throw new Error(
       `CI_REQUIRED_PROMOTION_MISSING: ${plan.candidateSha} skipped the board for a promotion pull request it does not belong to`,
+    );
+  // PRD-903: a prose-only develop push ran no gate, so the verdict re-derives that diff itself.
+  if (
+    process.env.TN_CI_EVENT === "push" &&
+    plan.selection === "prose" &&
+    proseSinceGreenDevelop({ root: process.cwd() }, plan.candidateSha) === undefined
+  )
+    throw new Error(
+      `CI_REQUIRED_PROSE_UNPROVEN: ${plan.candidateSha} skipped the board, but its diff from the last green develop head is not prose-only`,
     );
   if (process.env.TN_CI_EVENT === "pull_request") {
     // The candidate is frozen by the exact base/head parent assertion below, not by the head

@@ -733,6 +733,37 @@ function classifyScope(
 }
 
 describe("CI pipeline structure", () => {
+  // PRD-903: a file the scope scripts import or read from outside the sparse checkout is caught
+  // and logged as "per-job reuse unavailable", so the board silently carried nothing on every run.
+  it("checks out every file the scope job imports or reads", () => {
+    const cone = String(workflow("ci.yml").job("scope").steps[0]?.with["sparse-checkout"])
+      .trim()
+      .split("\n");
+    // Cone mode checks out each listed directory and the files directly inside its ancestors.
+    const covered = (file: string) =>
+      cone.some((dir) => file.startsWith(`${dir}/`) || dir.startsWith(`${path.dirname(file)}/`));
+    const seen = new Set<string>();
+    const stack = ["scripts/ci-change-scope.mjs", "scripts/ci-runner-admission.mjs"];
+    const outside: string[] = [];
+    while (stack.length > 0) {
+      const file = stack.pop() ?? "";
+      if (seen.has(file)) continue;
+      seen.add(file);
+      if (!covered(file)) outside.push(file);
+      const text = readFileSync(path.join(repo, file), "utf8");
+      const imports = text.matchAll(
+        /(?:from\s*|import\(\s*)["'](\.{1,2}\/[^"']+)["']|new URL\(\s*["'](\.{1,2}\/[^"'$`]+)["']\s*,\s*import\.meta\.url/gu,
+      );
+      for (const match of imports) {
+        const target = path.normalize(path.join(path.dirname(file), match[1] ?? match[2] ?? ""));
+        if (match[1] !== undefined) stack.push(target);
+        else if (!covered(target)) outside.push(`${target} (read by ${file})`);
+      }
+    }
+    expect(seen.size).toBeGreaterThan(5);
+    expect(outside).toEqual([]);
+  });
+
   it("uses one fail-closed scope decision before expensive CI and native jobs", () => {
     const ci = workflow("ci.yml");
     const scope = ci.job("scope");
@@ -748,7 +779,7 @@ describe("CI pipeline structure", () => {
     // Scope reads only scripts/ and the kit.json files: a full blob-less checkout fetched every
     // HEAD blob (488 MB) and outlasted the 5-minute bound on a loaded runner (runs 41688746026, 41702153229).
     expect(scope.steps[0]?.with["sparse-checkout"]).toBe(
-      "scripts\npackages/create-threenative/templates\n",
+      "scripts\npackages/create-threenative/templates\npackages/runtime-native/scripts\n",
     );
 
     const full = "needs.scope.outputs.selection == 'full'";
@@ -2233,7 +2264,8 @@ describe("CI pipeline structure", () => {
     // is what let a promotion PR, a manual dispatch and a main CI completion hold the pool at
     // once. `native-release-proof.spec.ts` owns the setting; this is the structural backstop.
     expect(native).toContain("&& 'native-release-proof' ||");
-    expect(native).toContain("cancel-in-progress: false");
+    // PRD-903: only a new commit on the proving pull request cancels; a tag run never does.
+    expect(native).toContain("github.event.action == 'synchronize' }}");
     const triggers = triggerSection(native);
     // PRD-630: the promotion PR holds the one proof, and `pnpm release:ship` dispatches the tag run.
     expect(triggers).not.toContain("workflow_run:");
@@ -2256,8 +2288,11 @@ describe("CI pipeline structure", () => {
     expect(groups).toEqual([
       "${{ github.ref_type == 'tag' && 'native-release-tag' || (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}",
     ]);
-    // `false`, not a conditional: a superseded run still lets its queued consumer finish.
-    expect(concurrency).toContain("cancel-in-progress: false");
+    // PRD-903: only a new commit on a proving pull request cancels its superseded proof; a tag
+    // run, a dispatch and a label event never do.
+    expect(concurrency).toContain(
+      "cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}",
+    );
   });
 
   it("reruns only a failed CI run's failed jobs, once, and only for known flakes", async () => {
