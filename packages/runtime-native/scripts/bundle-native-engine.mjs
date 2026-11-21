@@ -5,7 +5,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync, readFileSync } from "node:fs";
 import { readFile, mkdir, rm, writeFile, rename, unlink } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { dirname, resolve, sep } from "node:path";
+import nodePath, { dirname, resolve } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
 const native = resolve(dirname(fileURLToPath(import.meta.url)), "..");
@@ -26,13 +26,21 @@ export function coreSubpathSource(coreDir, specifier) {
     throw new Error(`TN_NATIVE_ENGINE_UNBOUND: ${specifier} [${reason}]`);
   }
 }
+/**
+ * Whether `file` sits under `directory`, joined by the platform separator. A hard-coded `/` never
+ * matched a Windows importer (`D:\a\core\src\x.ts`), so the native compressed-texture facade was
+ * skipped and the browser one refused 36 `three` names on the Windows desktop build (PRD-783 AC-7).
+ */
+export function insideDirectory(file, directory, path = nodePath) {
+  return file.startsWith(`${directory}${path.sep}`);
+}
 const threeNative = dirname(require.resolve("@threenative/three-native/package.json"));
 const assetsEntry = resolve(dirname(require.resolve("@threenative/assets/package.json")), "dist/index.js");
 
 // Player facades share source with sibling packages; installed packages need their resolved roots.
 const packageImports = { name: "native-player-packages", setup(builder) {
   builder.onResolve({ filter: /^\.\.\/\.\.\/\.\.\/\.\.\/(?:three-native|core)\/src\// }, (args) => {
-    if (!args.importer.startsWith(`${player}${sep}`)) return;
+    if (!insideDirectory(args.importer, player)) return;
     const [, name, source] = /^\.\.\/\.\.\/\.\.\/\.\.\/(three-native|core)\/(.+)$/.exec(args.path);
     return { path: resolve(name === "core" ? core : threeNative, source) };
   });
@@ -246,12 +254,12 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     loader: { ".css": "empty" },
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
-        if (args.importer.startsWith(`${resolve(core, "src")}${sep}`))
+        if (insideDirectory(args.importer, resolve(core, "src")))
           return { path: resolve(player, "core-assets.mjs") };
       });
       // The browser WebGPU upload lane; the engine uploads compressed textures itself.
       builder.onResolve({ filter: /(?:^|\/)compressed-texture-preparation\.js$/ }, (args) => {
-        if (args.importer.startsWith(`${resolve(core, "src")}/`))
+        if (insideDirectory(args.importer, resolve(core, "src")))
           return { path: resolve(player, "core-compressed-texture-preparation.mjs") };
       });
       builder.onResolve({ filter: /^tn:game$/ }, () => ({ path: "game", namespace: "native-game" }));

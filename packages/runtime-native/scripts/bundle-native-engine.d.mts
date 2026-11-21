@@ -16,3 +16,6 @@ export function cookNativeEngineAssets(options: {
   /** Asset source dir; defaults to the project's `assets` config `source`. */
   source?: string;
 }): Promise<string | undefined>;
+
+/** Whether `file` sits under `directory`, joined by `path.sep` (a Windows importer uses `\`). */
+export function insideDirectory(file: string, directory: string, path?: { sep: string }): boolean;

@@ -2,13 +2,27 @@ import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 
-import { bundleNativeEngine } from "../scripts/bundle-native-engine.mjs";
+import { bundleNativeEngine, insideDirectory } from "../scripts/bundle-native-engine.mjs";
 
 const directories: string[] = [];
 afterEach(async () => {
   await Promise.all(
     directories.splice(0).map((directory) => rm(directory, { recursive: true, force: true })),
   );
+});
+
+describe("native bundle importer checks", () => {
+  // PRD-783 AC-7: a `/` suffix never matched a Windows importer, so the Windows desktop build
+  // bundled core's browser compressed-texture module and refused 36 `three` names.
+  it("matches a Windows importer under core/src", () => {
+    expect(insideDirectory("D:\\a\\core\\src\\look\\x.ts", "D:\\a\\core\\src", path.win32)).toBe(
+      true,
+    );
+    expect(insideDirectory("D:\\a\\core\\src-other\\x.ts", "D:\\a\\core\\src", path.win32)).toBe(
+      false,
+    );
+    expect(insideDirectory("/a/core/src/look/x.ts", "/a/core/src", path.posix)).toBe(true);
+  });
 });
 
 describe("starter post import bindings", () => {
