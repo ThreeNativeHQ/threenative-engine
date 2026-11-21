@@ -20,6 +20,7 @@ import {
   cameraPosition,
   cameraProjectionMatrix,
   cameraViewMatrix,
+  ceil,
   clamp,
   cross,
   dFdx,
@@ -32,6 +33,7 @@ import {
   instanceIndex,
   instancedBufferAttribute,
   instancedDynamicBufferAttribute,
+  int,
   length,
   log2,
   mat3,
@@ -674,8 +676,6 @@ function buildFragmentNodes(
   const normalMap = texture(atlas.normal);
   const steps = Math.min(atlas.pixels, IMPOSTOR_MARCH_STEPS);
   const uvs: Node<"vec2">[] = [];
-  const colors: Node<"vec4">[] = [];
-  const normals: Node<"vec4">[] = [];
   // One march, on the frame the blend weighs most; the other two read the same surface point from
   // their own view. Three marches were the far band's cost (PRD-866 AC-3).
   const [wa, wb, wc] = weights as [Node<"float">, Node<"float">, Node<"float">];
@@ -713,111 +713,170 @@ function buildFragmentNodes(
       .div(radiusUniform)
       .mul(0.5)
       .add(0.5);
-    const marchLevel = max(
-      log2(max(length(dFdx(footUv).mul(atlas.pixels)), length(dFdy(footUv).mul(atlas.pixels)))),
-      float(0),
+    const footprint = max(
+      length(dFdx(footUv).mul(atlas.pixels)),
+      length(dFdy(footUv).mul(atlas.pixels)),
     ).toVar();
+    const marchLevel = max(log2(footprint), float(0)).toVar();
+    const uvSpan = length(vec2(dot(ray, basis.right), dot(ray, basis.up)));
+    const parallaxPixels = uvSpan
+      .mul(atlas.pixels)
+      .div(max(footprint, float(1)))
+      .toVar();
     const hit = Fn(() => {
       const found = float(0).toVar();
       const hitUv = vec2(2).toVar();
       const hitT = float(0).toVar();
-      const previousGap = float(0).toVar();
-      const previousAlpha = float(0).toVar();
-      const previousT = radiusUniform.toVar();
-      Loop({ start: 0, end: steps + 1, type: "int" }, ({ i }) => {
-        const t = float(1).sub(float(i).div(steps).mul(2)).mul(radiusUniform);
-        const point = relVarying.add(ray.mul(t));
-        const sampleUv = vec2(dot(point, basis.right), dot(point, basis.up).negate())
-          .div(radiusUniform)
-          .mul(0.5)
-          .add(0.5);
-        const c = colorMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
-        const n = normalMap.depth(layer).sample(sampleUv).level(marchLevel).toVar();
-        const depth = float(1)
-          .sub(
-            float(1)
-              .sub(n.a)
-              .div(max(c.a, float(0.001)))
-              .mul(2),
-          )
-          .mul(radiusUniform);
-        const gap = dot(point, direction).sub(depth).toVar();
-        If(
-          found
-            .equal(0)
-            .and(previousAlpha.greaterThan(0))
-            .and(c.a.greaterThan(0))
-            .and(previousGap.greaterThan(0))
-            .and(gap.lessThanEqual(0)),
-          () => {
-            const front = previousT.toVar();
-            const back = t.toVar();
-            const valid = float(1).toVar();
-            Loop({ start: 0, end: IMPOSTOR_BISECTION_STEPS, type: "int" }, () => {
-              const mid = front.add(back).mul(0.5).toVar();
-              const p = relVarying.add(ray.mul(mid));
+      If(parallaxPixels.lessThanEqual(1.25), () => {
+        const footInBounds = footUv.x
+          .greaterThanEqual(0)
+          .and(footUv.x.lessThanEqual(1))
+          .and(footUv.y.greaterThanEqual(0))
+          .and(footUv.y.lessThanEqual(1));
+        If(footInBounds, () => {
+          const c0 = colorMap.depth(layer).sample(footUv).level(marchLevel).toVar();
+          const n0 = normalMap.depth(layer).sample(footUv).level(marchLevel).toVar();
+          If(c0.a.greaterThan(0), () => {
+            const hd = float(1)
+              .sub(
+                float(1)
+                  .sub(n0.a)
+                  .div(max(c0.a, float(0.001)))
+                  .mul(2),
+              )
+              .mul(radiusUniform);
+            hitUv.assign(footUv);
+            hitT.assign(
+              clamp(
+                hd.sub(dot(relVarying, direction)).div(max(dot(ray, direction), float(0.25))),
+                radiusUniform.negate(),
+                radiusUniform,
+              ),
+            );
+            found.assign(1);
+          });
+        });
+      }).Else(() => {
+        const dynamicSteps = clamp(ceil(parallaxPixels.mul(1.5)), float(4), float(steps)).toVar();
+        const dynamicStepsInt = dynamicSteps.toInt().toVar();
+        const bisectLimit = select(
+          parallaxPixels.greaterThan(16),
+          int(IMPOSTOR_BISECTION_STEPS),
+          select(parallaxPixels.greaterThan(6), int(7), int(6)),
+        ).toVar();
+        const previousGap = float(0).toVar();
+        const previousAlpha = float(0).toVar();
+        const previousT = radiusUniform.toVar();
+        Loop({ start: 0, end: steps + 1, type: "int" }, ({ i }) => {
+          If(i.greaterThan(dynamicStepsInt), () => {
+            Break();
+          });
+          const t = float(1).sub(float(i).div(dynamicSteps).mul(2)).mul(radiusUniform);
+          const point = relVarying.add(ray.mul(t));
+          const sampleUv = vec2(dot(point, basis.right), dot(point, basis.up).negate())
+            .div(radiusUniform)
+            .mul(0.5)
+            .add(0.5);
+          const inBounds = sampleUv.x
+            .greaterThanEqual(0)
+            .and(sampleUv.x.lessThanEqual(1))
+            .and(sampleUv.y.greaterThanEqual(0))
+            .and(sampleUv.y.lessThanEqual(1));
+          const c = vec4(0).toVar();
+          const n = vec4(0, 0, 0, 1).toVar();
+          If(inBounds, () => {
+            c.assign(colorMap.depth(layer).sample(sampleUv).level(marchLevel));
+            n.assign(normalMap.depth(layer).sample(sampleUv).level(marchLevel));
+          });
+          const depth = float(1)
+            .sub(
+              float(1)
+                .sub(n.a)
+                .div(max(c.a, float(0.001)))
+                .mul(2),
+            )
+            .mul(radiusUniform);
+          const gap = dot(point, direction).sub(depth).toVar();
+          If(
+            found
+              .equal(0)
+              .and(previousAlpha.greaterThan(0))
+              .and(c.a.greaterThan(0))
+              .and(previousGap.greaterThan(0))
+              .and(gap.lessThanEqual(0)),
+            () => {
+              const front = previousT.toVar();
+              const back = t.toVar();
+              const valid = float(1).toVar();
+              Loop({ start: 0, end: IMPOSTOR_BISECTION_STEPS, type: "int" }, ({ i: bi }) => {
+                If(bi.greaterThanEqual(bisectLimit), () => {
+                  Break();
+                });
+                const mid = front.add(back).mul(0.5).toVar();
+                const p = relVarying.add(ray.mul(mid));
+                const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
+                  .div(radiusUniform)
+                  .mul(0.5)
+                  .add(0.5);
+                const mc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+                const mn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
+                const md = float(1)
+                  .sub(
+                    float(1)
+                      .sub(mn.a)
+                      .div(max(mc.a, float(0.001)))
+                      .mul(2),
+                  )
+                  .mul(radiusUniform);
+                const mg = dot(p, direction).sub(md);
+                If(mc.a.lessThanEqual(0), () => {
+                  valid.assign(0);
+                });
+                If(mg.greaterThan(0), () => {
+                  front.assign(mid);
+                }).Else(() => {
+                  back.assign(mid);
+                });
+              });
+              const p = relVarying.add(ray.mul(front.add(back).mul(0.5)));
               const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
                 .div(radiusUniform)
                 .mul(0.5)
                 .add(0.5);
-              const mc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
-              const mn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
-              const md = float(1)
+              const hc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
+              const hn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
+              const hd = float(1)
                 .sub(
                   float(1)
-                    .sub(mn.a)
-                    .div(max(mc.a, float(0.001)))
+                    .sub(hn.a)
+                    .div(max(hc.a, float(0.001)))
                     .mul(2),
                 )
                 .mul(radiusUniform);
-              const mg = dot(p, direction).sub(md);
-              If(mc.a.lessThanEqual(0), () => {
-                valid.assign(0);
-              });
-              If(mg.greaterThan(0), () => {
-                front.assign(mid);
-              }).Else(() => {
-                back.assign(mid);
-              });
-            });
-            const p = relVarying.add(ray.mul(front.add(back).mul(0.5)));
-            const u = vec2(dot(p, basis.right), dot(p, basis.up).negate())
-              .div(radiusUniform)
-              .mul(0.5)
-              .add(0.5);
-            const hc = colorMap.depth(layer).sample(u).level(marchLevel).toVar();
-            const hn = normalMap.depth(layer).sample(u).level(marchLevel).toVar();
-            const hd = float(1)
-              .sub(
-                float(1)
-                  .sub(hn.a)
-                  .div(max(hc.a, float(0.001)))
-                  .mul(2),
-              )
-              .mul(radiusUniform);
-            If(
-              valid
-                .equal(1)
-                .and(hc.a.greaterThan(0))
-                .and(
-                  abs(dot(p, direction).sub(hd)).lessThanEqual(
-                    radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
+              If(
+                valid
+                  .equal(1)
+                  .and(hc.a.greaterThan(0))
+                  .and(
+                    abs(dot(p, direction).sub(hd)).lessThanEqual(
+                      radiusUniform.mul(2 / 255).div(max(hc.a, float(0.001))),
+                    ),
                   ),
-                ),
-              () => {
-                hitUv.assign(u);
-                hitT.assign(front.add(back).mul(0.5));
-                found.assign(1);
-              },
-            );
-          },
-        );
-        previousGap.assign(gap);
-        previousAlpha.assign(c.a);
-        previousT.assign(t);
-        // The first valid crossing owns the result; later samples cannot change it.
-        If(found.equal(1), () => {
-          Break();
+                () => {
+                  hitUv.assign(u);
+                  hitT.assign(front.add(back).mul(0.5));
+                  found.assign(1);
+                },
+              );
+            },
+          );
+          previousGap.assign(gap);
+          previousAlpha.assign(c.a);
+          previousT.assign(t);
+          // The first valid crossing owns the result; later samples cannot change it.
+          If(found.equal(1), () => {
+            Break();
+          });
         });
       });
       return vec4(hitUv, found, hitT);
@@ -828,6 +887,8 @@ function buildFragmentNodes(
   const surface = marched as Node<"vec4">;
   const rayOut = normalize(select(orthographicNode(), dirVarying, dirVarying.sub(relVarying)));
   const hitPoint = relVarying.add(rayOut.mul(surface.w));
+  const layers: Node<"int">[] = [];
+  const sampleLevels: Node<"float">[] = [];
   for (let index = 0; index < 3; index += 1) {
     const basis = frameBasisNode(
       octahedralViewNode(cellX[index] as Node<"float">, cellY[index] as Node<"float">, grid),
@@ -840,24 +901,78 @@ function buildFragmentNodes(
       .div(radiusUniform)
       .mul(0.5)
       .add(0.5);
+    const sampleLevel = max(
+      log2(max(length(dFdx(uv).mul(atlas.pixels)), length(dFdy(uv).mul(atlas.pixels)))),
+      float(0),
+    );
     uvs.push(uv);
-    colors.push(colorMap.depth(layer).sample(uv).mul(surface.z).toVar() as Node<"vec4">);
-    normals.push(normalMap.depth(layer).sample(uv).mul(surface.z).toVar() as Node<"vec4">);
+    layers.push(layer);
+    sampleLevels.push(sampleLevel);
   }
-
+  const threshold = mipThresholdNode(uvs, atlas.pixels, cutoff, mipScale);
   const [w0, w1, w2] = weights as [Node<"float">, Node<"float">, Node<"float">];
-  const [c0, c1, c2] = colors as [Node<"vec4">, Node<"vec4">, Node<"vec4">];
-  const [n0, n1, n2v] = normals as [Node<"vec4">, Node<"vec4">, Node<"vec4">];
-  const coverage = c0.a.mul(w0).add(c1.a.mul(w1)).add(c2.a.mul(w2));
-  const safe = max(coverage, float(1e-4));
-  const albedo = c0.rgb.mul(w0).add(c1.rgb.mul(w1)).add(c2.rgb.mul(w2)).div(safe);
-  const encodedNormal = n0.rgb.mul(w0).add(n1.rgb.mul(w1)).add(n2v.rgb.mul(w2)).div(safe);
-  const normalAsset = normalize(encodedNormal.mul(2).sub(1));
+  const colorSample = Fn(([foundFlag]: [Node<"float">]) => {
+    const c0 = vec4(0).toVar();
+    const c1 = vec4(0).toVar();
+    const c2 = vec4(0).toVar();
+    If(foundFlag.greaterThan(0.5), () => {
+      c0.assign(
+        colorMap
+          .depth(layers[0] as Node<"int">)
+          .sample(uvs[0] as Node<"vec2">)
+          .level(sampleLevels[0] as Node<"float">),
+      );
+      c1.assign(
+        colorMap
+          .depth(layers[1] as Node<"int">)
+          .sample(uvs[1] as Node<"vec2">)
+          .level(sampleLevels[1] as Node<"float">),
+      );
+      c2.assign(
+        colorMap
+          .depth(layers[2] as Node<"int">)
+          .sample(uvs[2] as Node<"vec2">)
+          .level(sampleLevels[2] as Node<"float">),
+      );
+    });
+    const coverage = c0.a.mul(w0).add(c1.a.mul(w1)).add(c2.a.mul(w2));
+    const safe = max(coverage, float(1e-4));
+    const albedo = c0.rgb.mul(w0).add(c1.rgb.mul(w1)).add(c2.rgb.mul(w2)).div(safe);
+    return vec4(albedo, coverage);
+  })(surface.z);
+  const normalAsset = Fn(([foundFlag, coverageNode]: [Node<"float">, Node<"float">]) => {
+    const n0 = vec4(0).toVar();
+    const n1 = vec4(0).toVar();
+    const n2v = vec4(0).toVar();
+    If(foundFlag.greaterThan(0.5), () => {
+      n0.assign(
+        normalMap
+          .depth(layers[0] as Node<"int">)
+          .sample(uvs[0] as Node<"vec2">)
+          .level(sampleLevels[0] as Node<"float">),
+      );
+      n1.assign(
+        normalMap
+          .depth(layers[1] as Node<"int">)
+          .sample(uvs[1] as Node<"vec2">)
+          .level(sampleLevels[1] as Node<"float">),
+      );
+      n2v.assign(
+        normalMap
+          .depth(layers[2] as Node<"int">)
+          .sample(uvs[2] as Node<"vec2">)
+          .level(sampleLevels[2] as Node<"float">),
+      );
+    });
+    const safe = max(coverageNode, float(1e-4));
+    const encodedNormal = n0.rgb.mul(w0).add(n1.rgb.mul(w1)).add(n2v.rgb.mul(w2)).div(safe);
+    return normalize(encodedNormal.mul(2).sub(1));
+  })(surface.z, colorSample.w);
   return {
-    albedo,
-    coverage,
+    albedo: colorSample.rgb,
+    coverage: colorSample.w,
     normalAsset,
-    threshold: mipThresholdNode(uvs, atlas.pixels, cutoff, mipScale),
+    threshold,
   };
 }
 
