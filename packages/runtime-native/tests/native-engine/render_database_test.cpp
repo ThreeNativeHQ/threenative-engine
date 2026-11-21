@@ -10524,7 +10524,141 @@ void spotLightFrustumCullAndGrouping() {
     setShadowInstanceLever(true);
 }
 
-TN_TEST_MAIN({"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+void virtualShadowBoundsArvoParity() {
+    auto geometry = makeBoxGeometry(2, 4, 6);
+    shader::StandardMaterial swaying;
+    swaying.maxPositionOffset = 0.25;
+    auto posNode = std::make_shared<const shader::PositionNode>();
+    // Reference local vertex bounds: [-1, -2, -3] to [1, 2, 3].
+    Box3 localBox;
+    localBox.set(Vector3(-1, -2, -3), Vector3(1, 2, 3));
+    const double localDiameter = localBox.min.distanceTo(localBox.max);
+
+    auto makeAffineMatrix = [](const Quaternion& rot, const Vector3& pos, const Vector3& scale, double shearXY) {
+        Matrix4 m;
+        m.compose(pos, rot, scale);
+        m.elements[4] += m.elements[0] * shearXY;
+        m.elements[5] += m.elements[1] * shearXY;
+        m.elements[6] += m.elements[2] * shearXY;
+        return m;
+    };
+
+    const std::array<Matrix4, 2> instMats = {
+        makeAffineMatrix(Quaternion().setFromEuler(Euler(0.3, -0.7, 0.25)), Vector3(10.0, -3.5, 4.0), Vector3(1.5, 2.0, 0.75), 0.35),
+        makeAffineMatrix(Quaternion().setFromEuler(Euler(-0.5, 1.1, -0.4)), Vector3(-6.0, 5.0, -8.0), Vector3(0.5, 3.0, 1.25), -0.2),
+    };
+
+    auto storeFromMatrices = [](const auto& mats) {
+        auto store = std::make_shared<BufferStore>(Scalar::F32, mats.size() * 16);
+        std::vector<float> raw(mats.size() * 16);
+        for (std::size_t i = 0; i < mats.size(); ++i)
+            for (int e = 0; e < 16; ++e) raw[i * 16 + e] = float(mats[i].elements[e]);
+        CHECK(store->write(0, raw.data(), raw.size() * sizeof(float)) == BufferError::None);
+        return store;
+    };
+
+    auto exactInstanceBox = [&](const Matrix4& modelMat, const Matrix4& instMat, double& outScale) {
+        Matrix4 floatInst;
+        for (int e = 0; e < 16; ++e) floatInst.elements[e] = double(float(instMat.elements[e]));
+        floatInst.premultiply(modelMat);
+        outScale = floatInst.getMaxScaleOnAxis();
+        Box3 exact = localBox;
+        exact.applyMatrix4(floatInst);
+        exact.expandByScalar(swaying.maxPositionOffset * outScale);
+        return exact;
+    };
+
+    // 1. Identity model fast path + displaced margin + non-zero shear/rotation.
+    {
+        auto instStore = storeFromMatrices(instMats);
+        Matrix4 identity;
+        DrawItem item;
+        item.positions = geometry->getAttribute("position")->store.get();
+        item.material = &swaying;
+        item.positionNode = posNode;
+        item.instanceMatrices = instStore.get();
+        item.instanceCount = 2;
+        item.matrixWorld = identity.elements;
+        DrawCache cache;
+        const auto& result = cache.virtualShadowBounds(item);
+        CHECK(cache.shadowInstanceBoxes.size() == 2);
+        double maxScale = 0;
+        for (std::size_t i = 0; i < 2; ++i) {
+            double sc = 0;
+            const Box3 expected = exactInstanceBox(identity, instMats[i], sc);
+            maxScale = std::max(maxScale, sc);
+            CHECK(cache.shadowInstanceBoxes[i].min.distanceTo(expected.min) < 1e-5);
+            CHECK(cache.shadowInstanceBoxes[i].max.distanceTo(expected.max) < 1e-5);
+            CHECK(result.first.min.x <= expected.min.x + 1e-5);
+            CHECK(result.first.max.z >= expected.max.z - 1e-5);
+        }
+        CHECK(std::abs(result.second - localDiameter * maxScale) < 1e-5);
+    }
+
+    // 2. Rotated + scaled model matrix composed with affine instances.
+    {
+        auto instStore = storeFromMatrices(instMats);
+        Matrix4 model;
+        model.compose(Vector3(-4.0, 2.0, 7.0), Quaternion().setFromEuler(Euler(0.4, 0.8, -0.3)), Vector3(2.0, 0.5, 1.5));
+        DrawItem item;
+        item.positions = geometry->getAttribute("position")->store.get();
+        item.material = &swaying;
+        item.positionNode = posNode;
+        item.instanceMatrices = instStore.get();
+        item.instanceCount = 2;
+        item.matrixWorld = model.elements;
+        DrawCache cache;
+        const auto& result = cache.virtualShadowBounds(item);
+        CHECK(cache.shadowInstanceBoxes.size() == 2);
+        Box3 expectedUnion;
+        double maxScale = 0;
+        for (std::size_t i = 0; i < 2; ++i) {
+            double sc = 0;
+            const Box3 expected = exactInstanceBox(model, instMats[i], sc);
+            maxScale = std::max(maxScale, sc);
+            CHECK(cache.shadowInstanceBoxes[i].min.distanceTo(expected.min) < 1e-5);
+            CHECK(cache.shadowInstanceBoxes[i].max.distanceTo(expected.max) < 1e-5);
+            Matrix4 unexpanded = model;
+            Matrix4 fi;
+            for (int e = 0; e < 16; ++e) fi.elements[e] = double(float(instMats[i].elements[e]));
+            unexpanded.multiply(fi);
+            Box3 ubox = localBox;
+            ubox.applyMatrix4(unexpanded);
+            expectedUnion.unionWith(ubox);
+        }
+        expectedUnion.expandByScalar(swaying.maxPositionOffset * maxScale);
+        CHECK(result.first.min.distanceTo(expectedUnion.min) < 1e-5);
+        CHECK(result.first.max.distanceTo(expectedUnion.max) < 1e-5);
+    }
+
+    // 3. Projective instance matrix falls back to full Matrix4 transformation cleanly.
+    {
+        Matrix4 proj = instMats[0];
+        proj.elements[3] = 0.02;
+        proj.elements[15] = 0.85;
+        const std::array<Matrix4, 1> mats = {proj};
+        auto instStore = storeFromMatrices(mats);
+        Matrix4 model;
+        DrawItem item;
+        item.positions = geometry->getAttribute("position")->store.get();
+        item.material = &swaying;
+        item.positionNode = posNode;
+        item.instanceMatrices = instStore.get();
+        item.instanceCount = 1;
+        item.matrixWorld = model.elements;
+        DrawCache cache;
+        const auto& result = cache.virtualShadowBounds(item);
+        double sc = 0;
+        const Box3 expected = exactInstanceBox(model, proj, sc);
+        CHECK(cache.shadowInstanceBoxes.size() == 1);
+        CHECK(cache.shadowInstanceBoxes[0].min.distanceTo(expected.min) < 1e-5);
+        CHECK(cache.shadowInstanceBoxes[0].max.distanceTo(expected.max) < 1e-5);
+        CHECK(result.first.min.distanceTo(expected.min) < 1e-5);
+        CHECK(result.first.max.distanceTo(expected.max) < 1e-5);
+    }
+}
+
+TN_TEST_MAIN({"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},

@@ -70,22 +70,86 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         const auto* matrices = reinterpret_cast<const float*>(static_cast<const BufferStore&>(*item.instanceMatrices).data());
         // FG1: a geometry with no vertices has no box to place an instance by; the draw keeps one box for all.
         const bool perInstance = !bounds.isEmpty();
+        const Vector3 center = perInstance
+            ? Vector3(0.5 * (bounds.min.x + bounds.max.x), 0.5 * (bounds.min.y + bounds.max.y),
+                      0.5 * (bounds.min.z + bounds.max.z))
+            : Vector3();
+        const Vector3 half = perInstance
+            ? Vector3(0.5 * (bounds.max.x - bounds.min.x), 0.5 * (bounds.max.y - bounds.min.y),
+                      0.5 * (bounds.max.z - bounds.min.z))
+            : Vector3();
+        const Matrix4 identityModel;
+        const bool modelIdentity = model.elements == identityModel.elements;
+        const auto& m = model.elements;
+        const bool modelAffine = m[3] == 0.0 && m[7] == 0.0 && m[11] == 0.0 && m[15] == 1.0;
         if (perInstance) shadowInstanceBoxes.reserve(item.instanceCount);
         for (uint32_t instance = 0; instance < item.instanceCount; ++instance) {
-            Matrix4 transform;
-            for (int e = 0; e < 16; ++e) transform.elements[e] = matrices[instance * 16 + e];
-            Box3 box = bounds; box.applyMatrix4(transform);
-            instances.unionWith(box);
-            transform.premultiply(model);
-            diameter = std::max(diameter, localDiameter * transform.getMaxScaleOnAxis());
+            const float* im = matrices + instance * 16;
+            const bool instAffine = im[3] == 0.0f && im[7] == 0.0f && im[11] == 0.0f && im[15] == 1.0f;
+            Matrix4 world;
+            auto& w = world.elements;
+            if (modelIdentity) {
+                for (int e = 0; e < 16; ++e) w[e] = double(im[e]);
+            } else if (modelAffine && instAffine) {
+                for (int c = 0; c < 3; ++c) {
+                    const int b = c * 4;
+                    const double t0 = double(im[b]), t1 = double(im[b + 1]), t2 = double(im[b + 2]);
+                    w[b] = m[0] * t0 + m[4] * t1 + m[8] * t2;
+                    w[b + 1] = m[1] * t0 + m[5] * t1 + m[9] * t2;
+                    w[b + 2] = m[2] * t0 + m[6] * t1 + m[10] * t2;
+                    w[b + 3] = 0.0;
+                }
+                const double t0 = double(im[12]), t1 = double(im[13]), t2 = double(im[14]);
+                w[12] = m[0] * t0 + m[4] * t1 + m[8] * t2 + m[12];
+                w[13] = m[1] * t0 + m[5] * t1 + m[9] * t2 + m[13];
+                w[14] = m[2] * t0 + m[6] * t1 + m[10] * t2 + m[14];
+                w[15] = 1.0;
+            } else {
+                for (int e = 0; e < 16; ++e) w[e] = double(im[e]);
+                world.premultiply(model);
+            }
+            const bool affine = modelIdentity
+                ? instAffine
+                : (modelAffine && instAffine) || (w[3] == 0.0 && w[7] == 0.0 && w[11] == 0.0 && w[15] == 1.0);
+            const double sx2 = w[0] * w[0] + w[1] * w[1] + w[2] * w[2];
+            const double sy2 = w[4] * w[4] + w[5] * w[5] + w[6] * w[6];
+            const double sz2 = w[8] * w[8] + w[9] * w[9] + w[10] * w[10];
+            const double maxScale = std::sqrt(std::max(sx2, std::max(sy2, sz2)));
+            diameter = std::max(diameter, localDiameter * maxScale);
             // The offset is in the geometry's own units, so each instance's reach is the margin at its scale.
-            const double instanceReach = margin * transform.getMaxScaleOnAxis();
+            const double instanceReach = margin * maxScale;
             reach = std::max(reach, instanceReach);
-            if (perInstance) shadowInstanceBoxes.push_back(Box3(bounds).applyMatrix4(transform).expandByScalar(instanceReach));
+            if (perInstance) {
+                if (affine) {
+                    const double wx = w[0] * center.x + w[4] * center.y + w[8] * center.z + w[12];
+                    const double wy = w[1] * center.x + w[5] * center.y + w[9] * center.z + w[13];
+                    const double wz = w[2] * center.x + w[6] * center.y + w[10] * center.z + w[14];
+                    const double ex = std::abs(w[0]) * half.x + std::abs(w[4]) * half.y + std::abs(w[8]) * half.z;
+                    const double ey = std::abs(w[1]) * half.x + std::abs(w[5]) * half.y + std::abs(w[9]) * half.z;
+                    const double ez = std::abs(w[2]) * half.x + std::abs(w[6]) * half.y + std::abs(w[10]) * half.z;
+                    const double minX = wx - ex, minY = wy - ey, minZ = wz - ez;
+                    const double maxX = wx + ex, maxY = wy + ey, maxZ = wz + ez;
+                    instances.min.x = std::min(instances.min.x, minX);
+                    instances.min.y = std::min(instances.min.y, minY);
+                    instances.min.z = std::min(instances.min.z, minZ);
+                    instances.max.x = std::max(instances.max.x, maxX);
+                    instances.max.y = std::max(instances.max.y, maxY);
+                    instances.max.z = std::max(instances.max.z, maxZ);
+                    Box3& instBox = shadowInstanceBoxes.emplace_back();
+                    instBox.min.set(minX - instanceReach, minY - instanceReach, minZ - instanceReach);
+                    instBox.max.set(maxX + instanceReach, maxY + instanceReach, maxZ + instanceReach);
+                } else {
+                    Box3 worldBox = bounds;
+                    worldBox.applyMatrix4(world);
+                    instances.unionWith(worldBox);
+                    shadowInstanceBoxes.push_back(Box3(worldBox).expandByScalar(instanceReach));
+                }
+            }
         }
         bounds = instances;
+    } else {
+        bounds.applyMatrix4(model);
     }
-    bounds.applyMatrix4(model);
     if (!bounds.isEmpty()) bounds.expandByScalar(reach);
     shadowBounds = {bounds, diameter};
     shadowBoundsKey = cacheable ? std::optional<ShadowBoundsKey>(key) : std::nullopt;
