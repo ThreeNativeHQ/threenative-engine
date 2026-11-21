@@ -356,13 +356,14 @@ interface IVmMaterial {
 }
 
 interface IVmAttribute {
-  array: ArrayBufferView & {
-    constructor: new (
-      length: number,
-    ) => ArrayBufferView & {
-      set: (array: ArrayBufferView, offset?: number) => void;
+  array: ArrayBufferView &
+    ArrayLike<number> & {
+      constructor: new (
+        length: number,
+      ) => ArrayBufferView & {
+        set: (array: ArrayBufferView, offset?: number) => void;
+      };
     };
-  };
   count: number;
   itemSize: number;
   normalized: boolean;
@@ -690,7 +691,7 @@ function mergeSiblingGeometries(geometries: readonly IVmGeometry[]): IVmGeometry
     let vertexOffset = 0;
     for (const geom of geometries) {
       const idx = geom.index as IVmAttribute;
-      const arr = idx.array as unknown as ArrayLike<number>;
+      const arr = idx.array;
       for (let i = 0; i < idx.count; i += 1) {
         indexBuffer[writeAt + i] = (arr[i] as number) + vertexOffset;
       }
