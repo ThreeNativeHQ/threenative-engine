@@ -1,6 +1,6 @@
 {
   "name": "threenative-engine-mcp",
-  "version": "0.2.20",
+  "version": "0.2.21",
   "license": "MIT",
   "description": "Offline MCP capability discovery for ThreeNative authoring agents.",
   "keywords": [
