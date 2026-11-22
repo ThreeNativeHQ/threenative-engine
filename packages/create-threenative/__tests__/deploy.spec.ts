@@ -26,7 +26,9 @@ interface IFakeStudio {
 }
 
 /** A stand-in for studio.threenative.com on 127.0.0.1, so no test reaches the real Studio. */
-async function fakeStudio(handler: (request: IRequestRecord) => IReply): Promise<IFakeStudio> {
+async function fakeStudio(
+  handler: (request: IRequestRecord) => IReply | Promise<IReply>,
+): Promise<IFakeStudio> {
   const requests: IRequestRecord[] = [];
   const server = createServer(async (request: IncomingMessage, response: ServerResponse) => {
     const chunks: Buffer[] = [];
@@ -38,7 +40,7 @@ async function fakeStudio(handler: (request: IRequestRecord) => IReply): Promise
       url: request.url,
     };
     requests.push(record);
-    const reply = handler(record);
+    const reply = await handler(record);
     response.statusCode = reply.status;
     response.setHeader("content-type", "application/json");
     response.end(reply.body === undefined ? "" : JSON.stringify(reply.body));
@@ -91,6 +93,25 @@ async function writeBuild(cwd: string): Promise<void> {
   await writeFile(path.join(cwd, "dist", "index.html"), "<p>hi</p>");
 }
 
+interface IShareSnapshot {
+  deployKey?: string;
+  projectId?: string;
+}
+
+/** What `.threenative/share.json` held at this instant, read from inside a fake Studio handler. */
+async function readShareFile(cwd: string): Promise<IShareSnapshot | undefined> {
+  try {
+    const text = await readFile(path.join(cwd, ".threenative", "share.json"), "utf8");
+    return JSON.parse(text) as IShareSnapshot;
+  } catch {
+    return undefined;
+  }
+}
+
+function queryOf(url: string | undefined): URLSearchParams {
+  return new URLSearchParams((url ?? "").split("?")[1] ?? "");
+}
+
 async function failureOf(run: Promise<unknown>): Promise<CliExit> {
   const failure = await run.then(
     () => undefined,
@@ -120,12 +141,15 @@ describe("threenative deploy", () => {
     expect(entries.some(({ name }) => name === "a/b.js.br")).toBe(false);
   });
 
-  it("publishes the build and keeps the same link on the next deploy", async () => {
+  it("keys the first deploy and keeps the same link on the next deploy", async () => {
     const cwd = await projectDir({ "build:web": "vite build" });
-    const site = await fakeStudio(() => ({
-      body: { projectId: "p1", shareUrl: "https://x-share.example/" },
-      status: 200,
-    }));
+    // What share.json held as each upload arrived: the key has to be written before the upload,
+    // or a reply lost on the way back would leave the retry with nothing to name the game by.
+    const shareAtRequest: (IShareSnapshot | undefined)[] = [];
+    const site = await fakeStudio(async () => {
+      shareAtRequest.push(await readShareFile(cwd));
+      return { body: { projectId: "p1", shareUrl: "https://x-share.example/" }, status: 200 };
+    });
     const lines: string[] = [];
     const options = {
       cwd,
@@ -141,19 +165,66 @@ describe("threenative deploy", () => {
     expect(site.requests[0]).toMatchObject({
       authorization: "Bearer tok-1",
       method: "PUT",
-      url: "/api/cli/share?name=game",
     });
+    const firstQuery = queryOf(site.requests[0]?.url);
+    const deployKey = firstQuery.get("key");
+    expect(deployKey).toMatch(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/u);
+    expect(firstQuery.get("name")).toBe("game");
+    expect(firstQuery.has("projectId")).toBe(false);
+    // Written before the request arrived, and the same key the request carried.
+    expect(shareAtRequest[0]).toEqual({ deployKey });
     expect(entry(site.requests[0]?.body ?? Buffer.alloc(0), "index.html")).toBe("<p>hi</p>");
     // The link alone on the last stdout line: an agent parses that line, not the prose above it.
     expect(lines.at(-1)).toBe("https://x-share.example/");
-    const shareFile = path.join(cwd, ".threenative", "share.json");
-    expect(await readFile(shareFile, "utf8")).toBe('{\n  "projectId": "p1"\n}\n');
-    expect(JSON.parse(await readFile(shareFile, "utf8"))).toEqual({ projectId: "p1" });
+    expect(await readShareFile(cwd)).toEqual({ deployKey, projectId: "p1" });
 
     const second = await deploy(options);
 
     expect(site.requests[1]?.url).toBe("/api/cli/share?name=game&projectId=p1");
+    expect(queryOf(site.requests[1]?.url).has("key")).toBe(false);
+    expect(shareAtRequest[1]).toEqual({ deployKey, projectId: "p1" });
     expect(second).toEqual(first);
+    expect(await readShareFile(cwd)).toEqual({ deployKey, projectId: "p1" });
+    await site.close();
+  });
+
+  it("retries a first deploy whose reply was lost with the same key, so it lands on one game", async () => {
+    const cwd = await projectDir({ "build:web": "vite build" });
+    let uploads = 0;
+    const site = await fakeStudio(() => {
+      uploads += 1;
+      return uploads === 1
+        ? { body: { message: "Studio fell over." }, status: 500 }
+        : { body: { projectId: "p1", shareUrl: "https://x-share.example/" }, status: 200 };
+    });
+    const options = {
+      cwd,
+      out: () => {},
+      runBuild: writeBuild,
+      studio: site.origin,
+      token: "tok-1",
+    };
+
+    const failure = await failureOf(deploy(options));
+
+    expect(failure.code).toBe(4);
+    expect(failure.message).toBe("Studio fell over.");
+    const afterFailure = await readShareFile(cwd);
+    // The key outlives the failed upload, and nothing else was written: no game id exists yet.
+    expect(afterFailure?.deployKey).toMatch(
+      /^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/u,
+    );
+    expect(Object.keys(afterFailure ?? {})).toEqual(["deployKey"]);
+
+    const retried = await deploy(options);
+
+    expect(retried).toEqual({ projectId: "p1", shareUrl: "https://x-share.example/" });
+    expect(queryOf(site.requests[1]?.url).get("key")).toBe(afterFailure?.deployKey);
+    expect(queryOf(site.requests[1]?.url).has("projectId")).toBe(false);
+    expect(await readShareFile(cwd)).toEqual({
+      deployKey: afterFailure?.deployKey,
+      projectId: "p1",
+    });
     await site.close();
   });
 

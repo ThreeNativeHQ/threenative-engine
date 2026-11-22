@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -114,6 +114,8 @@ describe("threenative login and logout", () => {
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     const saved = JSON.parse(await readFile(file, "utf8")) as { email?: string; token?: string };
     expect(saved).toMatchObject({ email: "a@b.c", token: "tok-1" });
+    // The token was renamed into place from a temp file of its own name: nothing is left beside it.
+    expect(await readdir(path.dirname(file))).toEqual(["auth.json"]);
     expect(lines.join("\n")).toContain("/account/device/?code=ABCD-EFGH");
     expect(lines.join("\n")).toContain("Signed in as a@b.c");
     expect(polls).toBe(3);

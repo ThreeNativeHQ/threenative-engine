@@ -67,11 +67,13 @@ export function cliHelp(command?: PublicCommand): string {
     return `${[
       "Usage: threenative logout",
       "",
-      "Revokes this machine's saved token on threenative.com and deletes the token file.",
+      "Revokes this machine's saved token on threenative.com first. The token file is deleted",
+      "  only once the site confirms the revocation, or says the token is already invalid.",
+      "Otherwise the file is kept and the command exits 4 (refused) or 5 (no network), so it can",
+      "  be run again and still revoke the token.",
       "With no saved token it prints 'Not signed in.' and does nothing.",
-      "A server that refuses the revocation still signs this machine out; the file goes anyway.",
       "THREENATIVE_SITE names another site origin.",
-      "Exits 0 signed out, 2 bad arguments, 4 the server refused the revocation.",
+      "Exits 0 signed out, 4 the server refused the revocation, 5 no network.",
     ].join("\n")}\n`;
   }
   if (command === "deploy") {
@@ -80,8 +82,8 @@ export function cliHelp(command?: PublicCommand): string {
       "",
       "Runs this package's build:web script with its own package manager, then uploads dist/",
       "to studio.threenative.com and prints the share link on its own line, last.",
-      ".threenative/share.json remembers the project id, so the next deploy updates the same",
-      "  link instead of making another one. Commit it with the game.",
+      ".threenative/share.json remembers the project id and the first deploy's key, so the next",
+      "  deploy updates the same link instead of making another one. Commit it with the game.",
       "THREENATIVE_STUDIO names another Studio origin; THREENATIVE_SITE is the site login uses;",
       "  THREENATIVE_TOKEN signs in for one run without a saved token.",
       "Exits 0 published, 2 bad arguments (no build:web script), 3 sign in again, 4 the server",

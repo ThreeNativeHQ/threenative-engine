@@ -4,6 +4,7 @@
  * Exit codes are shared by login, logout and deploy: 0 ok, 2 bad arguments, 3 sign in again,
  * 4 refused by the server, 5 network failure. `main()` prints the message and sets the code. */
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
@@ -119,12 +120,16 @@ async function writeAuthFile(auth: IAuthFile): Promise<void> {
   const file = authFilePath();
   await mkdir(path.dirname(file), { mode: 0o700, recursive: true });
   // Create the token 0600 beside the real file and rename it over: a rename replaces the
-  // destination atomically, so no window leaves the new token in a world-readable inode.
-  // A crashed run can leave a temp file behind, and `wx` refuses to reuse it.
-  const tmp = `${file}.tmp`;
-  await rm(tmp, { force: true });
-  await writeFile(tmp, `${JSON.stringify(auth, null, 2)}\n`, { flag: "wx", mode: 0o600 });
-  await rename(tmp, file);
+  // destination atomically, so no window leaves the new token in a world-readable inode. The
+  // temp name is unique per write, so two logins sharing one config directory never share it.
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, `${JSON.stringify(auth, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+    await rename(tmp, file);
+  } catch (error) {
+    await rm(tmp, { force: true });
+    throw error;
+  }
 }
 
 function openBrowser(link: string): void {

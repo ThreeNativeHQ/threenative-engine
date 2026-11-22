@@ -1,6 +1,7 @@
 /** `threenative deploy`: build the web bundle, pack it and PUT it to Studio's share endpoint,
  * which is what turns a game into a link a friend can open. */
 import { spawn } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CliExit, request, requireToken, serverMessage } from "./account.js";
@@ -79,6 +80,8 @@ interface IProjectManifest {
 }
 
 interface IShareFile {
+  /** 36-char UUID sent as `key` on the first deploy, so a lost reply retries onto one game. */
+  deployKey?: string;
   projectId?: string;
 }
 
@@ -88,6 +91,11 @@ async function readJson<T>(file: string): Promise<T | undefined> {
   } catch {
     return undefined;
   }
+}
+
+async function writeShareFile(file: string, share: IShareFile): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  await writeFile(file, `${JSON.stringify(share, null, 2)}\n`);
 }
 
 export interface IDeployOptions {
@@ -126,9 +134,25 @@ export async function deploy(options: IDeployOptions = {}): Promise<IDeployResul
 
   const sharePath = path.join(cwd, ".threenative", "share.json");
   const previous = await readJson<IShareFile>(sharePath);
-  const existing = previous?.projectId;
+  const previousProject = typeof previous?.projectId === "string" ? previous.projectId : "";
+  const previousKey =
+    typeof previous?.deployKey === "string" && previous.deployKey !== ""
+      ? previous.deployKey
+      : undefined;
   const query = new URLSearchParams({ name: manifest.name });
-  if (typeof existing === "string" && existing !== "") query.set("projectId", existing);
+  // Later deploys name the game they already own. A first deploy has no id yet, so it sends a key
+  // Studio can recognize the game by instead — written to share.json before the upload, so a reply
+  // lost on the way back still lands on that same game when this command runs again.
+  let deployKey = previousKey;
+  if (previousProject !== "") {
+    query.set("projectId", previousProject);
+  } else {
+    if (deployKey === undefined) {
+      deployKey = randomUUID();
+      await writeShareFile(sharePath, { deployKey });
+    }
+    query.set("key", deployKey);
+  }
 
   const reply = await request(studio, `/api/cli/share?${query.toString()}`, {
     // fetch's BodyInit wants a plain view, not Node's Buffer subclass.
@@ -156,14 +180,15 @@ export async function deploy(options: IDeployOptions = {}): Promise<IDeployResul
     );
 
   const result = reply.body as { projectId?: unknown; shareUrl?: unknown };
-  const projectId = typeof result?.projectId === "string" ? result.projectId : "";
+  const savedProject = typeof result?.projectId === "string" ? result.projectId : "";
   const shareUrl = typeof result?.shareUrl === "string" ? result.shareUrl : "";
   if (shareUrl === "") throw new CliExit(4, "The server returned no share link.");
-  if (existing !== projectId) {
-    await mkdir(path.dirname(sharePath), { recursive: true });
-    await writeFile(sharePath, `${JSON.stringify({ projectId }, null, 2)}\n`);
-  }
+  const saved: IShareFile = {};
+  if (savedProject !== "") saved.projectId = savedProject;
+  if (deployKey !== undefined) saved.deployKey = deployKey;
+  if (previous?.projectId !== saved.projectId || previous?.deployKey !== saved.deployKey)
+    await writeShareFile(sharePath, saved);
   // The link alone, last: an agent parses this line, not the prose above it.
   out(shareUrl);
-  return { projectId, shareUrl };
+  return { projectId: savedProject, shareUrl };
 }
