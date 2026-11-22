@@ -1,6 +1,8 @@
 #!/usr/bin/env node
+import { CliExit, login, logout } from "./account.js";
 import { build, buildHelp, parseBuildArgs } from "./build.js";
 import { type PublicCommand, commandSummaries, threenativeCommands } from "./commands.js";
+import { deploy } from "./deploy.js";
 import {
   type DoctorMode,
   type DoctorTarget,
@@ -12,6 +14,10 @@ import { fixAuthoringLayer } from "./index.js";
 
 const DOCTOR_TARGETS: readonly DoctorTarget[] = ["web", "desktop", "android", "ios"];
 const DOCTOR_MODES: readonly DoctorMode[] = ["debug", "release"];
+
+function isPublicCommand(value: string): value is PublicCommand {
+  return threenativeCommands.some((command) => command === value);
+}
 
 export function cliHelp(command?: PublicCommand): string {
   if (command === "build") return buildHelp();
@@ -43,11 +49,50 @@ export function cliHelp(command?: PublicCommand): string {
       "Exits 0 when nothing failed, 1 when a check failed.",
     ].join("\n")}\n`;
   }
+  if (command === "login") {
+    return `${[
+      "Usage: threenative login [--no-browser]",
+      "",
+      "Opens threenative.com, asks you to authorize this machine, and saves the token it grants",
+      "in the threenative config directory, owner-only (0600).",
+      "--no-browser prints the link and the code instead of launching a browser, for signing in",
+      "  here with a browser on another machine.",
+      "THREENATIVE_TOKEN overrides the saved token for every command that needs one, so CI can",
+      "  publish without writing this file.",
+      "THREENATIVE_SITE names another site origin.",
+      "Exits 0 signed in, 2 bad arguments, 3 sign in again, 4 refused by the server, 5 no network.",
+    ].join("\n")}\n`;
+  }
+  if (command === "logout") {
+    return `${[
+      "Usage: threenative logout",
+      "",
+      "Revokes this machine's saved token on threenative.com and deletes the token file.",
+      "With no saved token it prints 'Not signed in.' and does nothing.",
+      "A server that refuses the revocation still signs this machine out; the file goes anyway.",
+      "THREENATIVE_SITE names another site origin.",
+      "Exits 0 signed out, 2 bad arguments, 4 the server refused the revocation.",
+    ].join("\n")}\n`;
+  }
+  if (command === "deploy") {
+    return `${[
+      "Usage: threenative deploy",
+      "",
+      "Runs this package's build:web script with its own package manager, then uploads dist/",
+      "to studio.threenative.com and prints the share link on its own line, last.",
+      ".threenative/share.json remembers the project id, so the next deploy updates the same",
+      "  link instead of making another one. Commit it with the game.",
+      "THREENATIVE_STUDIO names another Studio origin; THREENATIVE_SITE is the site login uses;",
+      "  THREENATIVE_TOKEN signs in for one run without a saved token.",
+      "Exits 0 published, 2 bad arguments (no build:web script), 3 sign in again, 4 the server",
+      "  refused it or the build failed, 5 no network.",
+    ].join("\n")}\n`;
+  }
   return `${[
     "Usage: threenative <command> [options]",
     "",
     "Commands:",
-    ...threenativeCommands.map((command) => `  ${command.padEnd(6)}  ${commandSummaries[command]}`),
+    ...threenativeCommands.map((command) => `  ${command.padEnd(7)}  ${commandSummaries[command]}`),
     "",
     "Run 'threenative <command> --help' for command-specific help.",
   ].join("\n")}\n`;
@@ -56,8 +101,7 @@ export function cliHelp(command?: PublicCommand): string {
 function helpFor(argv: readonly string[]): string {
   const command = argv[0];
   if (command === undefined || command.startsWith("-")) return cliHelp();
-  if (command === "build") return cliHelp("build");
-  if (command === "doctor") return cliHelp("doctor");
+  if (isPublicCommand(command)) return cliHelp(command);
   throw new Error(`Unknown threenative command '${command}'.\n${cliHelp()}`);
 }
 
@@ -134,13 +178,39 @@ export async function runDoctorCommand(
   return report.pass && kept === 0 ? 0 : 1;
 }
 
+export async function runLoginCommand(argv: readonly string[]): Promise<void> {
+  let open = true;
+  for (const arg of argv) {
+    if (arg === "--no-browser") {
+      open = false;
+      continue;
+    }
+    throw new CliExit(2, `login: unknown option '${arg}'. Try 'threenative login --no-browser'.`);
+  }
+  await login({ open });
+}
+
 export async function main(argv = process.argv.slice(2)): Promise<void> {
   if (argv.includes("--help") || argv.includes("-h")) {
     process.stdout.write(helpFor(argv));
     return;
   }
-  if (argv[0] === "doctor") {
-    process.exitCode = await runDoctorCommand(argv.slice(1));
+  const [command, ...rest] = argv;
+  if (command === "login") {
+    await runLoginCommand(rest);
+    return;
+  }
+  if (command === "logout" || command === "deploy") {
+    if (rest.length > 0) throw new CliExit(2, `${command} takes no arguments.`);
+    if (command === "logout") {
+      await logout();
+      return;
+    }
+    await deploy();
+    return;
+  }
+  if (command === "doctor") {
+    process.exitCode = await runDoctorCommand(rest);
     return;
   }
   await build(parseBuildArgs(argv));
@@ -148,5 +218,5 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
 
 main().catch((error: unknown) => {
   process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
-  process.exitCode = 1;
+  process.exitCode = error instanceof CliExit ? error.code : 1;
 });

@@ -123,7 +123,7 @@ describe("create-threenative CLI", () => {
       expect(commandHelp.stderr, command).toBe("");
       expect(commandHelp.stdout, command).toContain(`Usage: threenative ${command}`);
     }
-    expect(advertised).toEqual(["build", "doctor"]);
+    expect(advertised).toEqual(["build", "doctor", "deploy", "login", "logout"]);
 
     for (const command of ["dev", "test", "ship"]) {
       await expect(

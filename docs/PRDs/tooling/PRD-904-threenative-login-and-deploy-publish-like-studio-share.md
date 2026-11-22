@@ -66,12 +66,12 @@ Risks: the packer is copied, and the copy can drift from Studio's. `ponytail:` t
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: `threenative login` against local site `wrangler dev` opens `/account/device/?code=…`. After a scripted Authorize it writes a `0600` token file and prints the account email. proof: `pnpm exec vitest run packages/create-threenative/__tests__/login.spec.ts` (fake site) + the AC-6 run — Evidence: pending.
-- [ ] AC-2 [local]: `threenative logout` revokes the token on the site, then deletes the file. `THREENATIVE_TOKEN` wins over the file, and a refused token exits 3 with "run threenative login". proof: `login.spec.ts` — Evidence: pending.
-- [ ] AC-3 [local]: `StudioAccounts.tokenAccount` returns the account for a live device-issued token and refuses a revoked, expired or unknown token, an unverified email and an account without current terms. proof: site `pnpm vitest --config vitest.worker.config.ts worker/__tests__/studio-auth.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: `PUT /api/cli/share` with a valid token creates a project and returns a share URL. A second call with that `projectId` keeps the same URL and serves the new build. No token gets 401; no `index.html` or over 50 MB gets Studio's refusal message. proof: Studio `hosting/cloudflare` vitest — Evidence: pending.
+- [x] AC-2 [local]: `threenative logout` revokes the token on the site, then deletes the file. `THREENATIVE_TOKEN` wins over the file, and a refused token exits 3 with "run threenative login". proof: `login.spec.ts` — Evidence: `login.spec.ts` logout and env cases pass; `deploy.spec.ts` 401 exits 3; site `DELETE /api/store/token` case passes in `worker/__tests__/store-device.spec.ts`.
+- [x] AC-3 [local]: `StudioAccounts.tokenAccount` returns the account for a live device-issued token and refuses a revoked, expired or unknown token, an unverified email and an account without current terms. proof: site `pnpm vitest --config vitest.worker.config.ts worker/__tests__/studio-auth.spec.ts` — Evidence: 13/13 in `studio-auth.spec.ts`, inside the 229/229 site worker run.
+- [x] AC-4 [local]: `PUT /api/cli/share` with a valid token creates a project and returns a share URL. A second call with that `projectId` keeps the same URL and serves the new build. No token gets 401; no `index.html` or over 50 MB gets Studio's refusal message. proof: Studio `hosting/cloudflare` vitest — Evidence: `test/cli-share.spec.ts` 9/9 (create, same URL with new bytes, 401, 422 no `index.html`, 403 suspended and closed beta, 404 foreign project, 502 site down); the 50 MB refusal is `publishShare`'s own, covered by `test/share.spec.ts` in the same 359/359 run.
 - [ ] AC-5 [local]: `threenative deploy` runs `build:web`, packs `dist/` byte-for-byte like Studio's `packDirectory` on the same folder, uploads, writes `.threenative/share.json` once and prints the URL. proof: `pnpm exec vitest run packages/create-threenative/__tests__/deploy.spec.ts` — Evidence: pending.
 - [ ] AC-6 [local]: A scaffolded starter, with the local `create-threenative` tarball, local site and Studio `wrangler dev`, runs `threenative login` (scripted Authorize) then `threenative deploy` twice. The share URL serves the game's `index.html` and stays the same across both deploys. The Studio games list shows the game with that link. proof: run log in the PR — Evidence: pending.
-- [ ] AC-8 [local]: On `/account/device/?code=…`, an unverified or terms-pending account completes verify and terms and returns to the same code, then Authorize succeeds. The page names `threenative login`. proof: site `e2e/worker/store-device.spec.ts` — Evidence: pending.
+- [x] AC-8 [local]: On `/account/device/?code=…`, an unverified or terms-pending account completes verify and terms and returns to the same code, then Authorize succeeds. The page names `threenative login`. proof: site `e2e/worker/store-device.spec.ts` — Evidence: the two PRD-904 AC-8 cases pass (terms-pending accepts on `/signin/` and approves the same code; unverified lands on `/signin/` verify with the code in `next`).
 - [ ] AC-7 [shared]: After site, Studio and engine releases, a `pnpm sandbox` clean room runs `npx create-threenative` → `npx threenative login` → `npx threenative deploy` and opens the live share URL. proof: `pnpm sandbox` run log — Evidence: pending.
 
 ## Blocked on
@@ -103,18 +103,18 @@ Fill the dispatcher and route `file:line` values when each phase lands.
 #### Phase 1: sign in and out
 **Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** `packages/create-threenative/src/commands.ts`, `src/threenative.ts` (dispatch), `src/account.ts` (new: device flow, token file, `THREENATIVE_TOKEN`), `AGENTS.md` CLI surface. Site: `worker/store.ts` (bearer self-revoke), `src/components/sections/AccountDevice.tsx` and `AccountVerify.tsx` (copy, keep `?code=` through verify and terms).
-- [ ] `login`/`logout` work against a fake site — proof: `login.spec.ts` + `cli.spec.ts` lists the new commands — covers AC-1, AC-2.
-- [ ] The device page keeps the code through verify and terms — proof: site `e2e/worker/store-device.spec.ts` — covers AC-8.
+- [x] `login`/`logout` work against a fake site — proof: `login.spec.ts` + `cli.spec.ts` lists the new commands — covers AC-1, AC-2. Result: `pnpm exec vitest run packages/create-threenative/__tests__/{login,deploy,cli,cli-bin}.spec.ts` 17/17 passed; `create-threenative` typecheck exit 0.
+- [x] The device page keeps the code through verify and terms — proof: site `e2e/worker/store-device.spec.ts` — covers AC-8. Result: site `playwright test --config=playwright.worker.config.ts e2e/worker/store-device.spec.ts` 4/4 passed (Node 24); `studio-signin.spec.ts` 4/4 still pass.
 
 #### Phase 2: Studio accepts a CLI publish
 **Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** site `worker/studio-auth.ts` (`tokenAccount`). Studio `hosting/cloudflare/src/routes/cli.ts` (new: `PUT /api/cli/share`), `src/index.ts` (route before the session gate).
-- [ ] The token check passes its site tests — proof: site worker vitest — covers AC-3.
-- [ ] The CLI share route passes its Studio tests — proof: Studio `hosting/cloudflare` vitest — covers AC-4.
+- [x] The token check passes its site tests — proof: site worker vitest — covers AC-3. Result: site `vitest run --config vitest.worker.config.ts` 229/229 passed (5 new `tokenAccount` cases, 2 new device cases); site typecheck and lint exit 0. Site branch `prd-904-cli-token`.
+- [x] The CLI share route passes its Studio tests — proof: Studio `hosting/cloudflare` vitest — covers AC-4. Result: `vitest run --config hosting/cloudflare/vitest.config.ts` 359/359 passed (9 new in `test/cli-share.spec.ts`); `tsc -p hosting/cloudflare` exit 0. Studio branch `prd-904-cli-share`.
 
 #### Phase 3: `threenative deploy` end to end
 **Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** `packages/create-threenative/src/deploy.ts` (new: build, pack, upload, link file), `src/threenative.ts`, `src/commands.ts`.
-- [ ] Deploy unit behaviour — proof: `deploy.spec.ts` — covers AC-5.
+- [x] Deploy unit behaviour — proof: `deploy.spec.ts` — covers AC-5. Result: 5/5 in `deploy.spec.ts` (byte layout, same link on redeploy, 401 exits 3, 422 exits 4, no `build:web` exits 2).
 - [ ] Local end-to-end through both real Workers — proof: AC-6 run log — covers AC-6.
 - [ ] Live clean-room deploy — proof: `pnpm sandbox` — covers AC-7.
