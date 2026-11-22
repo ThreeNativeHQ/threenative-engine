@@ -5,7 +5,7 @@
  * 4 refused by the server, 5 network failure. `main()` prints the message and sets the code. */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -220,7 +220,7 @@ async function saveSignIn(origin: string, token: string): Promise<string> {
     await writeAuthFile({ token });
     throw error;
   }
-  const email = (who.body as { email?: unknown }).email;
+  const email = (who.body as { email?: unknown } | null | undefined)?.email;
   const address = typeof email === "string" ? email : "";
   await writeAuthFile(address === "" ? { token } : { email: address, token });
   if (who.status < 200 || who.status >= 300)
@@ -235,63 +235,72 @@ export interface ILogoutOptions {
 
 /** Revoke the saved token and delete the file. `THREENATIVE_TOKEN` is not touched.
  *
- * The file goes only when the server answered 200 or 401 (401 means the token is already dead,
- * so this machine is signed out either way). Any other answer, or a network failure from
- * `request()`, leaves the token saved: a token still alive on the server must not be dropped
- * from this machine, or `logout` could never revoke it again. */
+ * Each token file is claimed with one rename before its revoke, so a login in another terminal that
+ * saves meanwhile writes a new auth.json this logout never touches. A token the server did not
+ * revoke (any answer but 200 or 401, or no answer) stays in its claimed `auth.json.<id>.logout` file,
+ * and so does one whose logout was interrupted: every logout claims those leftovers too and revokes
+ * them, so a live token is never dropped from this machine while nothing can revoke it. */
 export async function logout(options: ILogoutOptions = {}): Promise<void> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = process.env;
-  const file = authFilePath(env);
-  // The file is claimed first with one rename, so a login in another terminal that saves after this
-  // point writes a new auth.json that this logout never touches.
-  const claimed = `${file}.${randomUUID()}.logout`;
-  try {
-    await rename(file, claimed);
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    out("Not signed in.");
-    return;
-  }
-  const token = (await readAuthFile(env, claimed))?.token;
-  if (typeof token !== "string" || token === "") {
-    await rm(claimed, { force: true });
-    out("Not signed in.");
-    return;
-  }
+  const claims = await claimTokenFiles(authFilePath(env));
   const origin = siteOrigin(options.site);
-  let reply: Awaited<ReturnType<typeof request>>;
+  let revoked = false;
+  let failure: CliExit | undefined;
+  for (const claimed of claims) {
+    const token = (await readAuthFile(env, claimed))?.token;
+    if (typeof token !== "string" || token === "") {
+      await rm(claimed, { force: true });
+      continue;
+    }
+    const answer = await revokeToken(origin, token);
+    if (answer === undefined) {
+      await rm(claimed, { force: true });
+      revoked = true;
+    } else failure = answer;
+  }
+  if (failure !== undefined) throw failure;
+  out(revoked ? "Signed out." : "Not signed in.");
+}
+
+/** Claims auth.json and every token file an earlier logout left, each with one rename to a name of
+ * this run's own: two logouts never revoke from, or delete, one file. */
+async function claimTokenFiles(file: string): Promise<string[]> {
+  const dir = path.dirname(file);
+  const base = path.basename(file);
+  let names: string[];
   try {
-    reply = await request(origin, "/api/store/token", {
+    names = await readdir(dir);
+  } catch {
+    return [];
+  }
+  const left = names.filter((name) => name.startsWith(`${base}.`) && name.endsWith(".logout"));
+  const claims: string[] = [];
+  for (const source of [file, ...left.map((name) => path.join(dir, name))]) {
+    const claimed = `${file}.${randomUUID()}.logout`;
+    try {
+      await rename(source, claimed);
+      claims.push(claimed);
+    } catch (error) {
+      // Gone already: never saved, or another logout claimed it first.
+      if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    }
+  }
+  return claims;
+}
+
+/** `undefined` once the site says the token is dead (200 revoked, 401 already gone), else why not. */
+async function revokeToken(origin: string, token: string): Promise<CliExit | undefined> {
+  const kept = "The token is kept, so run threenative logout again.";
+  try {
+    const reply = await request(origin, "/api/store/token", {
       headers: { authorization: `Bearer ${token}` },
       method: "DELETE",
     });
+    if (reply.status === 200 || reply.status === 401) return undefined;
+    return new CliExit(4, `Could not revoke the token (${reply.status}). ${kept}`);
   } catch (error) {
-    await restoreAuthFile(claimed, file);
-    throw error;
-  }
-  if (reply.status !== 200 && reply.status !== 401) {
-    const kept = await restoreAuthFile(claimed, file);
-    throw new CliExit(
-      4,
-      kept
-        ? `Could not revoke the token (${reply.status}). It is still saved; run threenative logout again.`
-        : `Could not revoke the token (${reply.status}), and a newer sign-in has replaced it here. Revoke it at threenative.com.`,
-    );
-  }
-  await rm(claimed, { force: true });
-  out("Signed out.");
-}
-
-/** Puts a claimed token file back after a failed revoke. `link` refuses to replace a file a newer login
- * saved meanwhile, so that sign-in wins; `false` says the old token is no longer on this machine. */
-async function restoreAuthFile(claimed: string, file: string): Promise<boolean> {
-  try {
-    await link(claimed, file);
-    return true;
-  } catch {
-    return false;
-  } finally {
-    await rm(claimed, { force: true });
+    if (!(error instanceof CliExit)) throw error;
+    return new CliExit(error.code, `${error.message} ${kept}`);
   }
 }

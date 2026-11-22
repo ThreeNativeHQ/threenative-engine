@@ -74,6 +74,18 @@ function deviceStart(userCode: string): IReply {
   };
 }
 
+/** The tokens a logout kept for its next run, from the claimed files beside auth.json. */
+async function keptTokens(file: string): Promise<string[]> {
+  const dir = path.dirname(file);
+  const names = (await readdir(dir)).filter((name) => name.endsWith(".logout"));
+  return Promise.all(
+    names.map(
+      async (name) =>
+        (JSON.parse(await readFile(path.join(dir, name), "utf8")) as { token: string }).token,
+    ),
+  );
+}
+
 describe("threenative login and logout", () => {
   let configHome: string;
 
@@ -135,6 +147,23 @@ describe("threenative login and logout", () => {
       "GET /api/store/whoami",
     ]);
     expect(site.requests.at(-1)?.authorization).toBe("Bearer tok-1");
+    await site.close();
+  });
+
+  it("saves the granted token and exits 4 when whoami answers an empty 503", async () => {
+    const site = await fakeSite((request) => {
+      if (request.url === "/api/store/device") return deviceStart("ABCD-EFGH");
+      if (request.url === "/api/store/device/token")
+        return { body: { status: "approved", token: "tok-1" }, status: 200 };
+      return { status: 503 };
+    });
+
+    const failure = await failureOf(
+      login({ open: false, out: () => {}, site: site.origin, sleep: async () => {} }),
+    );
+
+    expect(failure.code).toBe(4);
+    expect(JSON.parse(await readFile(authFilePath(), "utf8"))).toEqual({ token: "tok-1" });
     await site.close();
   });
 
@@ -226,10 +255,32 @@ describe("threenative login and logout", () => {
 
     expect(failure.code).toBe(4);
     expect(failure.message).toBe(
-      "Could not revoke the token (500). It is still saved; run threenative logout again.",
+      "Could not revoke the token (500). The token is kept, so run threenative logout again.",
     );
-    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ token: "tok-file" });
+    expect(await keptTokens(file)).toEqual(["tok-file"]);
     expect(lines).toEqual([]);
+    await site.close();
+
+    // The next logout finds the kept token and revokes it.
+    const retry = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+    await logout({ out: (line) => lines.push(line), site: retry.origin });
+    expect(retry.requests[0]?.authorization).toBe("Bearer tok-file");
+    expect(await readdir(path.dirname(file))).toEqual([]);
+    expect(lines).toEqual(["Signed out."]);
+    await retry.close();
+  });
+
+  it("revokes a token an interrupted logout left behind", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    // Ctrl+C after the claim, before the revoke: no auth.json, only the claimed file.
+    await writeFile(`${file}.left.logout`, JSON.stringify({ token: "tok-left" }));
+    const site = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+
+    await logout({ out: () => {}, site: site.origin });
+
+    expect(site.requests.map((request) => request.authorization)).toEqual(["Bearer tok-left"]);
+    expect(await readdir(path.dirname(file))).toEqual([]);
     await site.close();
   });
 
@@ -245,7 +296,8 @@ describe("threenative login and logout", () => {
 
     expect(failure.code).toBe(5);
     expect(failure.message).toContain(`Could not reach ${origin}`);
-    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ token: "tok-file" });
+    expect(failure.message).toContain("The token is kept, so run threenative logout again.");
+    expect(await keptTokens(file)).toEqual(["tok-file"]);
   });
 
   it("prefers THREENATIVE_TOKEN over the saved file", async () => {
