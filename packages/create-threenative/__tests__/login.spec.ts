@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { writeFileSync } from "node:fs";
+import { existsSync, writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
@@ -91,6 +91,7 @@ describe("threenative login and logout", () => {
 
   it("polls the device flow, saves a 0600 token file and names the account", async () => {
     let polls = 0;
+    let savedBeforeWhoami: boolean | undefined;
     const site = await fakeSite((request) => {
       if (request.url === "/api/store/device") return deviceStart("ABCD-EFGH");
       if (request.url === "/api/store/device/token") {
@@ -99,7 +100,12 @@ describe("threenative login and logout", () => {
           ? { body: { status: "pending" }, status: 200 }
           : { body: { status: "approved", token: "tok-1" }, status: 200 };
       }
-      if (request.url === "/api/store/whoami") return { body: { email: "a@b.c" }, status: 200 };
+      if (request.url === "/api/store/whoami") {
+        // Nothing is saved until the address is known: a logout racing this login can only revoke a
+        // token it read from the file, so one write leaves it nothing to bring back.
+        savedBeforeWhoami = existsSync(authFilePath());
+        return { body: { email: "a@b.c" }, status: 200 };
+      }
       return { body: { message: "unexpected request" }, status: 404 };
     });
     const lines: string[] = [];
@@ -115,6 +121,7 @@ describe("threenative login and logout", () => {
     expect((await stat(file)).mode & 0o777).toBe(0o600);
     const saved = JSON.parse(await readFile(file, "utf8")) as { email?: string; token?: string };
     expect(saved).toMatchObject({ email: "a@b.c", token: "tok-1" });
+    expect(savedBeforeWhoami).toBe(false);
     // The token was renamed into place from a temp file of its own name: nothing is left beside it.
     expect(await readdir(path.dirname(file))).toEqual(["auth.json"]);
     expect(lines.join("\n")).toContain("/account/device/?code=ABCD-EFGH");

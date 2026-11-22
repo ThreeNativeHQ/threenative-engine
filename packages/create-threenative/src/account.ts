@@ -5,7 +5,7 @@
  * 4 refused by the server, 5 network failure. `main()` prints the message and sets the code. */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -42,9 +42,12 @@ export interface IAuthFile {
   token?: string;
 }
 
-async function readAuthFile(env: NodeJS.ProcessEnv): Promise<IAuthFile | undefined> {
+async function readAuthFile(
+  env: NodeJS.ProcessEnv,
+  file = authFilePath(env),
+): Promise<IAuthFile | undefined> {
   try {
-    const parsed: unknown = JSON.parse(await readFile(authFilePath(env), "utf8"));
+    const parsed: unknown = JSON.parse(await readFile(file, "utf8"));
     return parsed !== null && typeof parsed === "object" ? (parsed as IAuthFile) : undefined;
   } catch {
     // No file, or one a person half-edited: either way this machine has no saved token.
@@ -200,17 +203,29 @@ export async function login(options: ILoginOptions = {}): Promise<void> {
   };
 
   const token = await pollForToken();
-  // Save before asking who this is: a whoami hiccup must not throw away a granted token.
-  await writeAuthFile({ token });
-  const who = await request(origin, "/api/store/whoami", {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (who.status < 200 || who.status >= 300)
-    throw new CliExit(4, serverMessage(who.body, `Could not read your account (${who.status}).`));
+  out(`Signed in as ${await saveSignIn(origin, token)}.`);
+}
+
+/** Saves a granted token with the address it belongs to, and returns that address. */
+async function saveSignIn(origin: string, token: string): Promise<string> {
+  // One write, after asking who this is: a logout in another terminal can only revoke a token it
+  // read from the file, so a second write could bring back a token that logout already revoked.
+  // A whoami hiccup still saves the granted token, without the address, before it reports.
+  let who: Awaited<ReturnType<typeof request>>;
+  try {
+    who = await request(origin, "/api/store/whoami", {
+      headers: { authorization: `Bearer ${token}` },
+    });
+  } catch (error) {
+    await writeAuthFile({ token });
+    throw error;
+  }
   const email = (who.body as { email?: unknown }).email;
   const address = typeof email === "string" ? email : "";
-  await writeAuthFile({ email: address, token });
-  out(`Signed in as ${address}.`);
+  await writeAuthFile(address === "" ? { token } : { email: address, token });
+  if (who.status < 200 || who.status >= 300)
+    throw new CliExit(4, serverMessage(who.body, `Could not read your account (${who.status}).`));
+  return address;
 }
 
 export interface ILogoutOptions {
@@ -227,24 +242,56 @@ export interface ILogoutOptions {
 export async function logout(options: ILogoutOptions = {}): Promise<void> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = process.env;
-  const token = (await readAuthFile(env))?.token;
+  const file = authFilePath(env);
+  // The file is claimed first with one rename, so a login in another terminal that saves after this
+  // point writes a new auth.json that this logout never touches.
+  const claimed = `${file}.${randomUUID()}.logout`;
+  try {
+    await rename(file, claimed);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
+    out("Not signed in.");
+    return;
+  }
+  const token = (await readAuthFile(env, claimed))?.token;
   if (typeof token !== "string" || token === "") {
+    await rm(claimed, { force: true });
     out("Not signed in.");
     return;
   }
   const origin = siteOrigin(options.site);
-  const reply = await request(origin, "/api/store/token", {
-    headers: { authorization: `Bearer ${token}` },
-    method: "DELETE",
-  });
-  if (reply.status !== 200 && reply.status !== 401)
+  let reply: Awaited<ReturnType<typeof request>>;
+  try {
+    reply = await request(origin, "/api/store/token", {
+      headers: { authorization: `Bearer ${token}` },
+      method: "DELETE",
+    });
+  } catch (error) {
+    await restoreAuthFile(claimed, file);
+    throw error;
+  }
+  if (reply.status !== 200 && reply.status !== 401) {
+    const kept = await restoreAuthFile(claimed, file);
     throw new CliExit(
       4,
-      `Could not revoke the token (${reply.status}). It is still saved; run threenative logout again.`,
+      kept
+        ? `Could not revoke the token (${reply.status}). It is still saved; run threenative logout again.`
+        : `Could not revoke the token (${reply.status}), and a newer sign-in has replaced it here. Revoke it at threenative.com.`,
     );
-  // A login in another terminal may have saved a new token while this one was being revoked: that
-  // token is live and is not the one signed out, so only the file still holding the revoked one goes.
-  // ponytail: re-read then delete, a window of microseconds; a lock file if two terminals ever race it.
-  if ((await readAuthFile(env))?.token === token) await rm(authFilePath(env), { force: true });
+  }
+  await rm(claimed, { force: true });
   out("Signed out.");
+}
+
+/** Puts a claimed token file back after a failed revoke. `link` refuses to replace a file a newer login
+ * saved meanwhile, so that sign-in wins; `false` says the old token is no longer on this machine. */
+async function restoreAuthFile(claimed: string, file: string): Promise<boolean> {
+  try {
+    await link(claimed, file);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    await rm(claimed, { force: true });
+  }
 }
