@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-904 — `threenative login` and `threenative deploy`: publish from the terminal the way Studio's Publish button does
 
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 to 3 in progress
 **Priority:** P1 — AC-1 to AC-8 are open: a game built outside Studio has no command to sign in or put it online, so an agent stops at a local build.
 **Complexity:** 7 (HIGH) — 6-10 files (+2), new module (+2), crosses the engine/site/Studio release boundaries (+2), external API: the threenative.com and Studio Workers (+1); risk: an account credential on disk.
 **Owner:** João
@@ -95,23 +95,25 @@ Fill the dispatcher and route `file:line` values when each phase lands.
 - 2026-11-21 (João): login UX: open a link, sign in with the threenative.com account, click Authorize, and the CLI detects it. The code is also accepted typed. The existing site device flow does exactly this.
 - 2026-11-21 (agent, after a Gemini 4 Neon review): the store push is not the deploy path. A new account's release is held for review (`worker/games.ts:631,649`), the build farm runs scans and an AI review, and a listing needs 1 to 5 screenshots. The share link is live in seconds.
 - 2026-11-21 (agent): the login is TypeScript in the engine, not a call to the private `tn-store` binary. Deploy no longer needs that binary, and the device flow is three `fetch` calls.
+- 2026-11-21 (agent, implementation): `tokenAccount` accepts any live `push` token, not only a device-issued one. The daily sweep deletes the `device_codes` row that links a token to its device, so "device-issued" cannot be checked after day one. A `push` token is the CLI's write key whichever way it was made. It also refuses a `full` account ban, the same check every store token read makes (PRD-820).
+- 2026-11-21 (agent, implementation): `/api/store/device/approve` now refuses an account without the current terms (`TN_API_TERMS`), beside the existing unverified check. Without it, a terms-pending account would get a token that `tokenAccount` refuses on every deploy. This also applies to `tn-store login`, under the PRD-015 consent rule.
 
 ## Execution Phases
 
 #### Phase 1: sign in and out
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** `packages/create-threenative/src/commands.ts`, `src/threenative.ts` (dispatch), `src/account.ts` (new: device flow, token file, `THREENATIVE_TOKEN`), `AGENTS.md` CLI surface. Site: `worker/store.ts` (bearer self-revoke), `src/components/sections/AccountDevice.tsx` and `AccountVerify.tsx` (copy, keep `?code=` through verify and terms).
 - [ ] `login`/`logout` work against a fake site — proof: `login.spec.ts` + `cli.spec.ts` lists the new commands — covers AC-1, AC-2.
 - [ ] The device page keeps the code through verify and terms — proof: site `e2e/worker/store-device.spec.ts` — covers AC-8.
 
 #### Phase 2: Studio accepts a CLI publish
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** site `worker/studio-auth.ts` (`tokenAccount`). Studio `hosting/cloudflare/src/routes/cli.ts` (new: `PUT /api/cli/share`), `src/index.ts` (route before the session gate).
 - [ ] The token check passes its site tests — proof: site worker vitest — covers AC-3.
 - [ ] The CLI share route passes its Studio tests — proof: Studio `hosting/cloudflare` vitest — covers AC-4.
 
 #### Phase 3: `threenative deploy` end to end
-**Status:** NOT STARTED
+**Status:** PARTIAL — phases 1 to 3 in progress
 **Files:** `packages/create-threenative/src/deploy.ts` (new: build, pack, upload, link file), `src/threenative.ts`, `src/commands.ts`.
 - [ ] Deploy unit behaviour — proof: `deploy.spec.ts` — covers AC-5.
 - [ ] Local end-to-end through both real Workers — proof: AC-6 run log — covers AC-6.
