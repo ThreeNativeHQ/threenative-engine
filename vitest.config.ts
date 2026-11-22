@@ -37,6 +37,9 @@ export default defineConfig({
   ],
   test: {
     environment: "node",
+    // `scripts/lib/gh.mjs` backs off between read retries in real time; a spec with a failing fake
+    // `gh` proves the attempt count, not the wait.
+    env: { TN_GH_RETRY_DELAY_MS: "0" },
     include: [
       "scripts/**/*.spec.ts",
       "examples/strata-terrain-preview/__tests__/**/*.spec.ts",

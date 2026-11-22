@@ -87,9 +87,12 @@ jobs:
           # blob:none still fetched every HEAD blob (488 MB) to fill the working tree, and that
           # checkout alone took 3m20s of the 5 minutes on a loaded runner (runs 41688746026,
           # 41702153229). The scripts read only scripts/ and each kit.json: about 20 MB.
+          # packages/runtime-native/scripts holds the desktop build profile that per-job carry imports;
+          # without it every run printed "per-job reuse unavailable" and carried nothing (PRD-903).
           sparse-checkout: |
             scripts
             packages/create-threenative/templates
+            packages/runtime-native/scripts
           # Until protected develop exists, retain the qualified-main scheduled flow.
           ref: ${{ github.event_name == 'schedule' && vars.TN_DEVELOP_CI_ENABLED == 'true' && 'develop' || github.sha }}
       - id: classify

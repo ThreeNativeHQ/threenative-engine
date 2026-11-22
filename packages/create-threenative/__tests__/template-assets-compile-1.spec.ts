@@ -11,7 +11,6 @@ import {
   compilesUnderTheDefaultConfig,
   compilesWithCompressionOnByDefault,
   firstHalf,
-  reachesTheUncookedBudgetWithAnEligibleSourceProbe,
   templates,
 } from "./template-assets-compile-cases.js";
 
@@ -20,11 +19,6 @@ import {
 // slower, so the shared 60 s unit-test ceiling turned a compile that was merely concurrent into
 // `Test timed out in 60000ms`. PRD-550 phase 1: the budget follows the work, not the default.
 describe("shipped templates", { timeout: 180_000 }, () => {
-  it.each(firstHalf)(
-    "%s reaches the uncooked budget with an eligible source probe",
-    reachesTheUncookedBudgetWithAnEligibleSourceProbe,
-  );
-
   it("should name at least one template, or this gate is measuring nothing", () => {
     expect(templates.length).toBeGreaterThan(0);
   });

@@ -980,6 +980,36 @@ function verifyNarrowedPlan(
   return verifyNeedsVerdict(fixture, needs);
 }
 
+/** Runs `ci-required` on a develop push plan inside the fixture. */
+const verifyWarmPlan = (fixture: IReuseFixture, plan: Record<string, unknown>) => {
+  const jobs = plan.jobs as Record<string, { required: boolean }>;
+  const needs = {
+    scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
+    ...Object.fromEntries(
+      Object.entries(jobs).map(([name, job]) => [
+        name,
+        { result: job.required ? "success" : "skipped" },
+      ]),
+    ),
+  };
+  return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
+    cwd: fixture.root,
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${path.join(fixture.root, "bin")}:${process.env.PATH}`,
+      TN_CI_NEEDS: JSON.stringify(needs),
+      TN_CI_EVENT: "push",
+      TN_CI_BASE_REF: "develop",
+      TN_FIXTURE: fixture.root,
+      TN_FIXTURE_SELF: String(SELF_RUN_ID),
+      GITHUB_ACTIONS: "true",
+      GITHUB_REPOSITORY: "three-native/fixture",
+      GITHUB_RUN_ID: String(SELF_RUN_ID),
+    },
+  });
+};
+
 describe("a develop push qualifies its tree and still warms the caches every pull request reads", () => {
   // GitHub scopes a pull request's cache to `refs/pull/N/merge`, which no other pull request can
   // read. Only a run on the base branch publishes something every pull request into develop reads,
@@ -1009,6 +1039,94 @@ describe("a develop push qualifies its tree and still warms the caches every pul
         .sort(),
     );
     expect(plan.nativeTier).toBe("full");
+  });
+
+  // PRD-903: a one-line PRD edit pushed to develop burned 74 wall minutes (run 44887725075).
+  describe("when only prose changed since the last green develop push", () => {
+    const commitOn = (fixture: IReuseFixture, files: Record<string, string>) => {
+      for (const [relative, body] of Object.entries(files)) {
+        mkdirSync(path.dirname(path.join(fixture.root, relative)), { recursive: true });
+        writeFileSync(path.join(fixture.root, relative), body);
+      }
+      const git = (...args: string[]) =>
+        spawnSync("git", args, {
+          cwd: fixture.root,
+          encoding: "utf8",
+          env: {
+            PATH: process.env.PATH,
+            GIT_AUTHOR_NAME: "prose fixture",
+            GIT_AUTHOR_EMAIL: "fixture@example.invalid",
+            GIT_COMMITTER_NAME: "prose fixture",
+            GIT_COMMITTER_EMAIL: "fixture@example.invalid",
+          },
+        });
+      expect(git("add", "--", ...Object.keys(files)).status).toBe(0);
+      expect(git("commit", "--quiet", "-m", "next").status).toBe(0);
+      return git("rev-parse", "HEAD").stdout.trim();
+    };
+    const greenDevelopHead = (fixture: IReuseFixture, sha: string) =>
+      listRuns(fixture.root, [
+        { id: 9, head_sha: sha, conclusion: "success", event: "push", head_branch: "develop" },
+      ]);
+
+    it("runs no gate for a Markdown-only push on top of the green head", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture);
+      greenDevelopHead(fixture, fixture.candidate);
+      const head = commitOn(fixture, { "docs/PRDs/note.md": "# note\n" });
+      const plan = classifyCandidate(fixture, head, { event: "push", target: "develop" });
+      expect(plan).toMatchObject({ selection: "prose", qualification: false, reusedRunId: 0 });
+      expect(String(plan.reason)).toContain(fixture.candidate.slice(0, 12));
+    });
+
+    it("keeps the board when a code commit since the green head never ran its own board", () => {
+      // A newer pending run replaces an older one in the develop group, so HEAD^ is no proof.
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture);
+      greenDevelopHead(fixture, fixture.candidate);
+      commitOn(fixture, { "src/code.ts": "export {};\n" });
+      const head = commitOn(fixture, { "docs/PRDs/note.md": "# note\n" });
+      expect(classifyCandidate(fixture, head, { event: "push", target: "develop" })).toMatchObject({
+        selection: "full",
+        qualification: true,
+      });
+    });
+
+    it("keeps the board when the prose sits in a tree the workspace-dist cache key hashes", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture);
+      greenDevelopHead(fixture, fixture.candidate);
+      const head = commitOn(fixture, { "scripts/README.md": "# scripts\n" });
+      expect(classifyCandidate(fixture, head, { event: "push", target: "develop" })).toMatchObject({
+        selection: "full",
+      });
+    });
+
+    it("passes ci-required only when the verdict re-derives the prose diff itself", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture);
+      greenDevelopHead(fixture, fixture.candidate);
+      const head = commitOn(fixture, { "docs/PRDs/note.md": "# note\n" });
+      const plan = classifyCandidate(fixture, head, { event: "push", target: "develop" });
+      expect(plan.selection).toBe("prose");
+      const accepted = verifyWarmPlan(fixture, plan);
+      expect(accepted.status, accepted.stderr).toBe(0);
+      // The green head moved back before a code commit: the same plan is no longer proved.
+      greenDevelopHead(fixture, fixture.base);
+      const refused = verifyWarmPlan(fixture, plan);
+      expect(refused.status).toBe(1);
+      expect(refused.stderr).toContain("CI_REQUIRED_PROSE_UNPROVEN");
+    });
+
+    it("keeps the board when no green develop push is listed", () => {
+      const fixture = reuseFixture();
+      fakeActionsApi(fixture);
+      listSourceRun(fixture);
+      const head = commitOn(fixture, { "docs/PRDs/note.md": "# note\n" });
+      expect(classifyCandidate(fixture, head, { event: "push", target: "develop" })).toMatchObject({
+        selection: "full",
+      });
+    });
   });
 
   describe("while a promotion pull request runs the board on the same head", () => {
@@ -1078,35 +1196,6 @@ describe("a develop push qualifies its tree and still warms the caches every pul
         classifyCandidate(fixture, fixture.candidate, { event: "push", target: "main" }),
       ).toMatchObject({ selection: "full", qualification: true });
     });
-
-    const verifyWarmPlan = (fixture: IReuseFixture, plan: Record<string, unknown>) => {
-      const jobs = plan.jobs as Record<string, { required: boolean }>;
-      const needs = {
-        scope: { result: "success", outputs: { plan: JSON.stringify(plan) } },
-        ...Object.fromEntries(
-          Object.entries(jobs).map(([name, job]) => [
-            name,
-            { result: job.required ? "success" : "skipped" },
-          ]),
-        ),
-      };
-      return spawnSync(process.execPath, [path.join(repo, "scripts/ci-required.mjs")], {
-        cwd: fixture.root,
-        encoding: "utf8",
-        env: {
-          ...process.env,
-          PATH: `${path.join(fixture.root, "bin")}:${process.env.PATH}`,
-          TN_CI_NEEDS: JSON.stringify(needs),
-          TN_CI_EVENT: "push",
-          TN_CI_BASE_REF: "develop",
-          TN_FIXTURE: fixture.root,
-          TN_FIXTURE_SELF: String(SELF_RUN_ID),
-          GITHUB_ACTIONS: "true",
-          GITHUB_REPOSITORY: "three-native/fixture",
-          GITHUB_RUN_ID: String(SELF_RUN_ID),
-        },
-      });
-    };
 
     const warmPlan = (fixture: IReuseFixture) =>
       classifyCandidate(fixture, fixture.candidate, { event: "push", target: "develop" });

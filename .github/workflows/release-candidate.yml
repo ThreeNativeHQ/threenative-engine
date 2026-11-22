@@ -58,8 +58,8 @@ jobs:
       # The root build includes the examples on the default engine, which stop at
       # TN_WASM_ENGINE_MISSING without the web Wasm engine (release run 42296982894).
       - uses: ./.github/actions/native-engine-wasm
-      - name: Build the workspace packages before comparing published bytes
-        run: pnpm build
+      # PRD-903: no workspace build here. The gate builds once, on the first package npm already
+      # serves, because only a resumed release compares published bytes with the workspace.
       - name: Write the request and workflow-derived availability
         env:
           CANDIDATE_REQUEST: ${{ inputs.candidate_request }}

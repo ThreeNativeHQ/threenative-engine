@@ -2030,6 +2030,25 @@ async function observeReleasePackage(
   return packageEntry;
 }
 
+/**
+ * PRD-903. Only a package npm already serves (`matching`, a resumed release) is compared with the
+ * workspace bytes, so the workspace is built on the first such package instead of before every
+ * candidate: a fresh cohort is all `absent` and spent 2.5 minutes on a build nothing read.
+ */
+export function buildOnFirstHash(
+  build: () => void,
+  hash: (packageName: string, version: string) => string,
+): (packageName: string, version: string) => string {
+  let built = false;
+  return (packageName, version) => {
+    if (!built) {
+      build();
+      built = true;
+    }
+    return hash(packageName, version);
+  };
+}
+
 async function resolvePackageCohort(
   repo: string,
   options: IReleaseCandidateResolutionOptions,
@@ -2037,8 +2056,10 @@ async function resolvePackageCohort(
   const registryLookup = options.registryLookup ?? registryPackageObservation;
   const localPackageHash =
     options.workspacePackageHash ??
-    ((packageName: string, version: string) =>
-      workspacePackageTreeHash(repo, packageName, version));
+    buildOnFirstHash(
+      () => void execFileSync("pnpm", ["build"], { cwd: repo, stdio: "inherit" }),
+      (packageName, version) => workspacePackageTreeHash(repo, packageName, version),
+    );
   const packages: IReleasePackage[] = [];
   for (const expectedPackage of expectedReleasePackages(repo))
     packages.push(await observeReleasePackage(expectedPackage, registryLookup, localPackageHash));

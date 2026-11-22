@@ -397,16 +397,33 @@ async function defaultArtifactSteps(): Promise<IReleaseArtifactSteps> {
  * error, and the publish preflight then refused every release prep from a clean worktree until
  * someone built them by hand. The engine rebuilds only when absent or stale.
  */
+/** Returns true when it rebuilt the web engine, which a build made before this call never saw. */
 export async function provisionReleaseArtifacts(
   repo = REPO,
   steps?: IReleaseArtifactSteps,
-): Promise<void> {
+): Promise<boolean> {
   const resolved = steps ?? (await defaultArtifactSteps());
   const runtimeRoot = path.join(repo, "packages", "runtime-native");
-  if (!resolved.webEngineCurrent(runtimeRoot)) resolved.buildWebEngine();
+  const rebuilt = !resolved.webEngineCurrent(runtimeRoot);
+  if (rebuilt) resolved.buildWebEngine();
   await resolved.ensureGradleWrapper(
     path.join(runtimeRoot, "android", "gradle", "wrapper", "gradle-wrapper.jar"),
   );
+  return rebuilt;
+}
+
+/**
+ * PRD-903. `npm-release.yml` builds the commit once and names it in `TN_RELEASE_PREBUILT`, so the
+ * proof run and the publish run of `release:ship` do not each build the same tree again (2.5
+ * minutes apiece). Only an exact HEAD match counts, and a web engine rebuilt after that build
+ * means the build is stale.
+ */
+export function builtByCaller(
+  env: NodeJS.ProcessEnv,
+  head: string,
+  provisionRebuilt: boolean,
+): boolean {
+  return !provisionRebuilt && /^[0-9a-f]{40}$/u.test(head) && env.TN_RELEASE_PREBUILT === head;
 }
 
 function runConcurrently(command: string, args: readonly string[], label: string): Promise<void> {
@@ -687,7 +704,7 @@ async function main(args: readonly string[]): Promise<void> {
   // after the publish. There is no way to tell, later, which source a published tarball was.
   // A proof is a claim about HEAD's bytes: prove from a committed tree, exactly as a publish does.
   if (publish || proveUpgrade) assertCleanPackageTree(REPO);
-  await provisionReleaseArtifacts(REPO);
+  const provisionRebuilt = await provisionReleaseArtifacts(REPO);
 
   const packages = publishSet(REPO);
   const cohort = validateReleaseCohort(REPO, packages);
@@ -727,12 +744,18 @@ async function main(args: readonly string[]): Promise<void> {
     run("pnpm", ["lint"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm lint" });
     run("pnpm", ["test"], { code: "TN_RELEASE_STEP_FAILED", cwd: REPO, label: "pnpm test" });
   }
-  run("pnpm", ["build"], {
-    code: "TN_RELEASE_STEP_FAILED",
-    cwd: REPO,
-    detail: "Nothing further was published.",
-    label: "pnpm build",
-  });
+  const head = execFileSync("git", ["rev-parse", "HEAD"], { cwd: REPO, encoding: "utf8" }).trim();
+  if (builtByCaller(process.env, head, provisionRebuilt))
+    process.stdout.write(
+      `\nSkipping pnpm build: TN_RELEASE_PREBUILT names HEAD ${head}, which the caller built.\n`,
+    );
+  else
+    run("pnpm", ["build"], {
+      code: "TN_RELEASE_STEP_FAILED",
+      cwd: REPO,
+      detail: "Nothing further was published.",
+      label: "pnpm build",
+    });
 
   // Assemble the native payload before any npm publish: a declared key with no staged binary must
   // refuse the whole release while nothing irreversible has happened, not after the cohort is up.

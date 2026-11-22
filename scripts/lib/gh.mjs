@@ -1,8 +1,9 @@
 // One `gh` call for the CI scripts, because four of them each had their own rule: one threw on a
 // non-zero exit, one only looked at stdout, one trimmed and one did not, and a failed query could
-// read as an empty answer. A read is retried once — GitHub answers 5xx under load, and a lane that
-// dies on that is a red nobody can act on — while a call that changes state never is: a retry can
-// apply it twice.
+// read as an empty answer. A read is retried twice with a backoff — GitHub answers 5xx under load,
+// and one HTTP 502 turned the 0.3.19 main push from a 1-minute reuse into a 55-minute board
+// (PRD-903) — while a call that changes state never is: a retry can apply it twice. A 4xx answer is
+// final, so it is not retried.
 import { execFileSync } from "node:child_process";
 
 /** Board and log queries return megabytes of JSON; the default 1 MB buffer truncates them. */
@@ -61,22 +62,38 @@ function label(args) {
   return `gh ${args.slice(0, 2).join(" ")}`;
 }
 
+/** A synchronous pause: every caller of this wrapper is synchronous. */
+function sleep(ms) {
+  if (ms > 0) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+/** The first wait between read attempts; `TN_GH_RETRY_DELAY_MS=0` makes specs instant. */
+function retryDelayMs() {
+  const raw = Number(process.env.TN_GH_RETRY_DELAY_MS);
+  return Number.isFinite(raw) && raw >= 0 ? raw : 2000;
+}
+
 /**
  * Runs `gh` and returns its stdout, or throws with `gh`'s own stderr.
  *
  * @param {readonly string[]} args
- * @param {{ readonly retries?: number }} [options] `retries` defaults to 1 for a read, 0 for a write.
+ * @param {{ readonly retries?: number }} [options] `retries` defaults to 2 for a read, 0 for a write.
  * @returns {string}
  */
 export function gh(args, options = {}) {
-  const retries = options.retries ?? (isRepeatableRead(args) ? 1 : 0);
+  const retries = options.retries ?? (isRepeatableRead(args) ? 2 : 0);
   let last = "";
+  let attempts = 0;
   for (let attempt = 0; attempt <= retries; attempt += 1) {
+    if (attempt > 0) sleep(retryDelayMs() * 3 ** (attempt - 1));
+    attempts += 1;
     try {
       return execFileSync("gh", args, { encoding: "utf8", maxBuffer: MAX_BUFFER });
     } catch (error) {
       last = String(error?.stderr ?? "").trim() || (error instanceof Error ? error.message : "");
+      // A 4xx is the server's final answer (missing run, no permission): asking again changes nothing.
+      if (/\bHTTP 4\d\d\b/u.test(last)) break;
     }
   }
-  throw new Error(`${label(args)} failed after ${String(retries + 1)} attempt(s): ${last}`);
+  throw new Error(`${label(args)} failed after ${String(attempts)} attempt(s): ${last}`);
 }

@@ -34,9 +34,10 @@ concurrency:
   # superseded proof is a few minutes of one runner, where running them beside each other was the
   # whole pool.
   #
-  # `cancel-in-progress: false` is unchanged and load-bearing: every cancellation in this
-  # workflow's history was a proof run killed by the next push to its own branch, and a
-  # candidate-keyed result is still valid for the SHA it was produced from.
+  # PRD-903: a new commit on a proving pull request (`synchronize`) cancels the proof in progress.
+  # The tag run reuses only the proof of its own tree, so a superseded head's proof is never read,
+  # and 43 develop proofs in 5 days ran back to back for 50 minutes each. A tag, a dispatch and a
+  # `labeled` event still never cancel: a label on the same head must not kill its running proof.
   #
   # PRD-629: a release tag run has a group of its own. A main proof run (a duplicate dispatch
   # or a `release-proof` label) held `native-release-proof` once and delayed the tag run until it
@@ -46,7 +47,7 @@ concurrency:
   # workflow (its `gates` job then refuses it), and in one shared group those no-op runs would queue
   # behind a real proof and replace a pending one, since a group keeps a single pending run.
   group: ${{ github.ref_type == 'tag' && 'native-release-tag' || (github.event_name != 'pull_request' || github.event.pull_request.base.ref == 'main' || contains(github.event.pull_request.labels.*.name, 'release-proof')) && 'native-release-proof' || format('native-release-skip-{0}', github.run_id) }}
-  cancel-in-progress: false
+  cancel-in-progress: ${{ github.event_name == 'pull_request' && github.event.action == 'synchronize' }}
 
 jobs:
   validate-tag:

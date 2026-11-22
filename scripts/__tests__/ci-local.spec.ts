@@ -182,6 +182,7 @@ describe("PRD-373 local selection", () => {
       "ci-leg-carry.mjs",
       "ci/classify.mjs",
       "ci/reuse.mjs",
+      "lib/gh.mjs",
     ]) {
       await mkdir(path.dirname(path.join(fixture.root, "scripts", name)), { recursive: true });
       await copyFile(path.join(repo, "scripts", name), path.join(fixture.root, "scripts", name));
