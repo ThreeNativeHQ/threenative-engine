@@ -1,4 +1,5 @@
 import { once } from "node:events";
+import { writeFileSync } from "node:fs";
 import { chmod, mkdir, readFile, readdir, stat, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
@@ -187,6 +188,23 @@ describe("threenative login and logout", () => {
     });
     await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
     expect(lines).toEqual(["Signed out."]);
+    await site.close();
+  });
+
+  it("keeps a token a login saved while logout was revoking the old one", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ token: "tok-old" }));
+    // A login in another terminal finishes while the revoke is in flight.
+    const site = await fakeSite(() => {
+      writeFileSync(file, JSON.stringify({ token: "tok-new" }));
+      return { body: { ok: true }, status: 200 };
+    });
+
+    await logout({ out: () => {}, site: site.origin });
+
+    expect(site.requests[0]?.authorization).toBe("Bearer tok-old");
+    expect(JSON.parse(await readFile(file, "utf8"))).toEqual({ token: "tok-new" });
     await site.close();
   });
 

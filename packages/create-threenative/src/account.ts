@@ -242,6 +242,9 @@ export async function logout(options: ILogoutOptions = {}): Promise<void> {
       4,
       `Could not revoke the token (${reply.status}). It is still saved; run threenative logout again.`,
     );
-  await rm(authFilePath(env), { force: true });
+  // A login in another terminal may have saved a new token while this one was being revoked: that
+  // token is live and is not the one signed out, so only the file still holding the revoked one goes.
+  // ponytail: re-read then delete, a window of microseconds; a lock file if two terminals ever race it.
+  if ((await readAuthFile(env))?.token === token) await rm(authFilePath(env), { force: true });
   out("Signed out.");
 }
