@@ -2,7 +2,7 @@
  * which is what turns a game into a link a friend can open. */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CliExit, request, requireToken, serverMessage } from "./account.js";
 
@@ -93,9 +93,18 @@ async function readJson<T>(file: string): Promise<T | undefined> {
   }
 }
 
+/** Written beside and renamed over, so an interrupted write never leaves a truncated file that loses
+ * the deploy key (the next deploy would then make a second game). */
 async function writeShareFile(file: string, share: IShareFile): Promise<void> {
   await mkdir(path.dirname(file), { recursive: true });
-  await writeFile(file, `${JSON.stringify(share, null, 2)}\n`);
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, `${JSON.stringify(share, null, 2)}\n`, { flag: "wx" });
+    await rename(tmp, file);
+  } catch (error) {
+    await rm(tmp, { force: true });
+    throw error;
+  }
 }
 
 export interface IDeployOptions {

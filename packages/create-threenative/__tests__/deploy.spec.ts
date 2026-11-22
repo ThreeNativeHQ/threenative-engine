@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -185,6 +185,8 @@ describe("threenative deploy", () => {
     expect(shareAtRequest[1]).toEqual({ deployKey, projectId: "p1" });
     expect(second).toEqual(first);
     expect(await readShareFile(cwd)).toEqual({ deployKey, projectId: "p1" });
+    // Written through a temp file and renamed: nothing but share.json is left behind.
+    expect(await readdir(path.join(cwd, ".threenative"))).toEqual(["share.json"]);
     await site.close();
   });
 
