@@ -13,7 +13,7 @@ interface IFakeGh {
 }
 
 /** Puts a `gh` on PATH that fails `failures` times, then answers `answer`. */
-function fakeGh(failures: number, answer = "ok\n"): IFakeGh {
+function fakeGh(failures: number, answer = "ok\n", error = "gh: server error"): IFakeGh {
   const root = makeTempDirSync("tn-gh-");
   const bin = path.join(root, "bin");
   mkdirSync(bin, { recursive: true });
@@ -28,7 +28,7 @@ function fakeGh(failures: number, answer = "ok\n"): IFakeGh {
       "count=$((count + 1))",
       `echo "$count" > "${counter}"`,
       `if [ "$count" -le ${String(failures)} ]; then`,
-      "  echo 'gh: server error' >&2",
+      `  echo '${error}' >&2`,
       "  exit 1",
       "fi",
       `printf '%b' '${answer.replace(/\n/gu, "\\n")}'`,
@@ -51,8 +51,8 @@ afterEach(() => {
   for (const fake of fakes.splice(0)) fake.restore();
 });
 
-function withFake(failures: number, answer?: string): IFakeGh {
-  const fake = fakeGh(failures, answer);
+function withFake(failures: number, answer?: string, error?: string): IFakeGh {
+  const fake = fakeGh(failures, answer, error);
   fakes.push(fake);
   return fake;
 }
@@ -73,9 +73,22 @@ describe("the gh wrapper", () => {
   it("should throw with gh's own stderr when a read keeps failing", () => {
     const fake = withFake(9);
     expect(() => gh(["run", "view", "7"])).toThrow(
-      /gh run view failed after 2 attempt\(s\): gh: server error/u,
+      /gh run view failed after 3 attempt\(s\): gh: server error/u,
     );
-    expect(fake.calls()).toBe(2);
+    expect(fake.calls()).toBe(3);
+  });
+
+  // PRD-903: one 502 on the 0.3.19 main push threw away a whole-tree reuse and ran a 55-minute board.
+  it("should outlast two transient 5xx answers on an api read", () => {
+    const fake = withFake(2, "{}\n", "gh: Server Error (HTTP 502)");
+    expect(gh(["api", "repos/a/b/actions/runs/1"])).toBe("{}\n");
+    expect(fake.calls()).toBe(3);
+  });
+
+  it("should not retry a 4xx answer, which is final", () => {
+    const fake = withFake(9, "{}\n", "gh: Not Found (HTTP 404)");
+    expect(() => gh(["api", "repos/a/b/actions/runs/1"])).toThrow(/after 1 attempt\(s\)/u);
+    expect(fake.calls()).toBe(1);
   });
 
   it("should never retry a call that changes state", () => {

@@ -222,11 +222,18 @@ if [[ "$suite_prebuilt" -eq 1 ]]; then
   # These package test scripts deliberately rebuild outputs for standalone developers. The build
   # phase already produced them here, so CI runs their pure checks below instead of hiding a second
   # build behind the recursive test walk.
+  # PRD-903: the rest also re-run, under the root vitest config, spec files that the `unit` phase
+  # (CI: the `test-unit` shards) already runs; `packages/terrain` alone was 271 s of the job.
   for tn_prebuilt_package in \
     @threenative/assets \
     @threenative/ueformat \
     @threenative/raw-unreal \
-    @threenative/metahuman; do
+    @threenative/metahuman \
+    @threenative/terrain \
+    @threenative/procedural-environment \
+    @threenative/procedural-animals \
+    @threenative/blender-bridge \
+    strata-terrain-preview; do
     package_test_command+=(--filter "!$tn_prebuilt_package")
   done
 fi
@@ -257,13 +264,15 @@ run_prebuilt_package_tests() {
   verify_prebuilt_outputs || return $?
   "${package_test_command[@]}" || return $?
 
-  pnpm --filter @threenative/assets exec publint --strict || return $?
-  pnpm --filter @threenative/ueformat exec vitest run --root ../.. ueformat/__tests__ || return $?
-  pnpm --filter @threenative/ueformat exec publint --strict || return $?
-  pnpm --filter @threenative/raw-unreal exec vitest run --root ../.. raw-unreal/__tests__ || return $?
-  pnpm --filter @threenative/raw-unreal exec publint --strict || return $?
-  pnpm --filter @threenative/metahuman exec vitest run --root ../.. metahuman/__tests__ || return $?
-  pnpm --filter @threenative/metahuman exec publint --strict || return $?
+  # Their spec files belong to the root vitest config, which the `unit` phase runs (CI: the
+  # `test-unit` shards, which `ci-structure.spec.ts` holds to the same partition), so only the
+  # checks that config cannot make run here.
+  for tn_prebuilt_package in assets ueformat raw-unreal metahuman terrain procedural-environment \
+    procedural-animals blender-bridge; do
+    pnpm --filter "@threenative/$tn_prebuilt_package" exec publint --strict || return $?
+  done
+  pnpm --filter strata-terrain-preview bake || return $?
+  pnpm --filter strata-terrain-preview test:water || return $?
 }
 
 

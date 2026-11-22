@@ -105,6 +105,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           SHA: ${{ github.event.workflow_run.head_sha }}
+          # PRD-903: the `pnpm build` above built this commit; the proof and publish runs reuse it.
+          TN_RELEASE_PREBUILT: ${{ github.event.workflow_run.head_sha }}
           TN_PLAYTEST_ALLOW_SOFTWARE: "1"
         # A rerun leaves out `--auto`, so a failed clean room cannot turn green with no new check.
         run: pnpm release:ship --yes --sha "$SHA" ${{ github.run_attempt == 1 && '--auto' || '' }}

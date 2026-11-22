@@ -1,6 +1,6 @@
 {
   "name": "@threenative/metahuman",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "license": "MIT",
   "description": "MetaHuman head expression rig: checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract.",
   "keywords": [

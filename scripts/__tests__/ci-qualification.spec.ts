@@ -196,11 +196,17 @@ describe("exact-candidate qualification minimum", () => {
       expect(
         validateEventPlan(plan, { eventName: "merge_group", baseRef: "refs/heads/develop" }),
       ).toEqual(plan);
-      for (const eventName of ["push", "schedule", "workflow_dispatch"]) {
+      for (const eventName of ["schedule", "workflow_dispatch"]) {
         expect(() => validateEventPlan(plan, { eventName, baseRef: "develop" })).toThrow(
           "CI_REQUIRED_QUALIFICATION_MINIMUM",
         );
       }
+      // PRD-903: a prose-only develop push runs no gate (`ci-required` re-derives the diff); a
+      // push to main still qualifies its tree.
+      expect(validateEventPlan(plan, { eventName: "push", baseRef: "develop" })).toEqual(plan);
+      expect(() => validateEventPlan(plan, { eventName: "push", baseRef: "main" })).toThrow(
+        "CI_REQUIRED_QUALIFICATION_MINIMUM",
+      );
       expect(() => validateEventPlan(plan, { eventName: "merge_group", baseRef: "main" })).toThrow(
         "CI_REQUIRED_QUALIFICATION_MINIMUM",
       );

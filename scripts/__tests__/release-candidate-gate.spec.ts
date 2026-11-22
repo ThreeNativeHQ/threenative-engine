@@ -14,6 +14,7 @@ import {
   type IReleaseRun,
   REQUIRED_CREDENTIALS,
   REQUIRED_HOSTED_CAPABILITIES,
+  buildOnFirstHash,
   expectedGithubSubjects,
   expectedReleasePackages,
   expectedReleaseReportReference,
@@ -741,5 +742,19 @@ describe("PRD-373 promotion is not release provenance", () => {
     expect(verdict.status).toBe("FAIL");
     expect(verdict.exitCode).toBe(1);
     expect(verdict.errors.join("\n")).toMatch(/push|main|headSha|candidate/u);
+  });
+});
+
+// PRD-903: a fresh cohort is all `absent`, so the 2.5-minute workspace build ran for nothing.
+describe("the workspace build behind a published-bytes comparison", () => {
+  it("builds once, and only when a package npm already serves is compared", () => {
+    const build = vi.fn();
+    const hash = vi.fn((name: string, version: string) => `${name}@${version}`);
+    const lazy = buildOnFirstHash(build, hash);
+    expect(build).not.toHaveBeenCalled();
+    expect(lazy("a", "1.0.0")).toBe("a@1.0.0");
+    expect(lazy("b", "1.0.0")).toBe("b@1.0.0");
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(build.mock.invocationCallOrder[0]).toBeLessThan(hash.mock.invocationCallOrder[0] ?? 0);
   });
 });
