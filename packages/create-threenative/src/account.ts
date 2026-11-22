@@ -39,6 +39,8 @@ export function authFilePath(env = process.env): string {
 
 export interface IAuthFile {
   email?: string;
+  /** The site that issued the token: logout revokes it there, whatever `THREENATIVE_SITE` says now. */
+  site?: string;
   token?: string;
 }
 
@@ -167,8 +169,8 @@ export async function login(options: ILoginOptions = {}): Promise<void> {
   const start = await request(origin, "/api/store/device", jsonPost({}));
   if (start.status !== 201)
     throw new CliExit(4, serverMessage(start.body, `Sign in failed (${start.status}).`));
-  const deviceCode = (start.body as { deviceCode?: unknown }).deviceCode;
-  const userCode = (start.body as { userCode?: unknown }).userCode;
+  const deviceCode = (start.body as { deviceCode?: unknown } | null | undefined)?.deviceCode;
+  const userCode = (start.body as { userCode?: unknown } | null | undefined)?.userCode;
   if (typeof deviceCode !== "string" || deviceCode === "")
     throw new CliExit(4, "The sign-in server sent no device code.");
   const link = `${origin}/account/device/?code=${encodeURIComponent(typeof userCode === "string" ? userCode : "")}`;
@@ -184,7 +186,7 @@ export async function login(options: ILoginOptions = {}): Promise<void> {
       if (Date.now() >= expiresAt)
         throw new CliExit(3, "The code expired. Run threenative login again.");
       const reply = await request(origin, "/api/store/device/token", jsonPost({ deviceCode }));
-      const status = (reply.body as { status?: unknown }).status;
+      const status = (reply.body as { status?: unknown } | null | undefined)?.status;
       if (reply.status >= 400 && reply.status < 500)
         throw new CliExit(
           3,
@@ -195,7 +197,7 @@ export async function login(options: ILoginOptions = {}): Promise<void> {
       const nextInterval = numberField(reply.body, "interval");
       if (nextInterval !== undefined && nextInterval > 0) interval = nextInterval;
       if (status !== "approved") continue;
-      const token = (reply.body as { token?: unknown }).token;
+      const token = (reply.body as { token?: unknown } | null | undefined)?.token;
       if (typeof token !== "string" || token === "")
         throw new CliExit(4, "The sign-in server approved without a token.");
       return token;
@@ -217,12 +219,14 @@ async function saveSignIn(origin: string, token: string): Promise<string> {
       headers: { authorization: `Bearer ${token}` },
     });
   } catch (error) {
-    await writeAuthFile({ token });
+    await writeAuthFile({ site: origin, token });
     throw error;
   }
   const email = (who.body as { email?: unknown } | null | undefined)?.email;
   const address = typeof email === "string" ? email : "";
-  await writeAuthFile(address === "" ? { token } : { email: address, token });
+  await writeAuthFile(
+    address === "" ? { site: origin, token } : { email: address, site: origin, token },
+  );
   if (who.status < 200 || who.status >= 300)
     throw new CliExit(4, serverMessage(who.body, `Could not read your account (${who.status}).`));
   return address;
@@ -244,15 +248,23 @@ export async function logout(options: ILogoutOptions = {}): Promise<void> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = process.env;
   const claims = await claimTokenFiles(authFilePath(env));
-  const origin = siteOrigin(options.site);
   let revoked = false;
   let failure: CliExit | undefined;
   for (const claimed of claims) {
-    const token = (await readAuthFile(env, claimed))?.token;
+    const auth = await readClaim(claimed);
+    if (auth instanceof CliExit) {
+      failure = auth;
+      continue;
+    }
+    const token = auth?.token;
     if (typeof token !== "string" || token === "") {
       await rm(claimed, { force: true });
       continue;
     }
+    // Revoked where it was issued: a token from one site sent to another would only earn a 401 there,
+    // which reads as "already dead" and would drop a token still live on its own site.
+    const origin =
+      typeof auth?.site === "string" && auth.site !== "" ? auth.site : siteOrigin(options.site);
     const answer = await revokeToken(origin, token);
     if (answer === undefined) {
       await rm(claimed, { force: true });
@@ -261,6 +273,27 @@ export async function logout(options: ILogoutOptions = {}): Promise<void> {
   }
   if (failure !== undefined) throw failure;
   out(revoked ? "Signed out." : "Not signed in.");
+}
+
+/** A claimed token file's contents. A file that cannot be read is kept, so a live token is never
+ * deleted unrevoked; one that is not JSON holds no token and is `undefined`, like no file at all. */
+async function readClaim(claimed: string): Promise<IAuthFile | undefined | CliExit> {
+  let text: string;
+  try {
+    text = await readFile(claimed, "utf8");
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code ?? "unknown error";
+    return new CliExit(
+      4,
+      `Could not read ${claimed} (${code}). The token is kept, so run threenative logout again.`,
+    );
+  }
+  try {
+    const parsed: unknown = JSON.parse(text);
+    return parsed !== null && typeof parsed === "object" ? (parsed as IAuthFile) : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 /** Claims auth.json and every token file an earlier logout left, each with one rename to a name of

@@ -163,7 +163,23 @@ describe("threenative login and logout", () => {
     );
 
     expect(failure.code).toBe(4);
-    expect(JSON.parse(await readFile(authFilePath(), "utf8"))).toEqual({ token: "tok-1" });
+    expect(JSON.parse(await readFile(authFilePath(), "utf8"))).toEqual({
+      site: site.origin,
+      token: "tok-1",
+    });
+    await site.close();
+  });
+
+  it("exits 4 when the token poll answers an empty 503", async () => {
+    const site = await fakeSite((request) =>
+      request.url === "/api/store/device" ? deviceStart("ABCD-EFGH") : { status: 503 },
+    );
+
+    const failure = await failureOf(
+      login({ open: false, out: () => {}, site: site.origin, sleep: async () => {} }),
+    );
+
+    expect(failure.code).toBe(4);
     await site.close();
   });
 
@@ -268,6 +284,37 @@ describe("threenative login and logout", () => {
     expect(await readdir(path.dirname(file))).toEqual([]);
     expect(lines).toEqual(["Signed out."]);
     await retry.close();
+  });
+
+  it("revokes a token on the site that issued it, whatever THREENATIVE_SITE says now", async () => {
+    const issuer = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+    const other = await fakeSite(() => ({ body: { ok: true }, status: 401 }));
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ site: issuer.origin, token: "tok-prod" }));
+
+    await logout({ out: () => {}, site: other.origin });
+
+    expect(issuer.requests.map((request) => request.authorization)).toEqual(["Bearer tok-prod"]);
+    expect(other.requests).toEqual([]);
+    await issuer.close();
+    await other.close();
+  });
+
+  it.skipIf(process.getuid?.() === 0)("keeps a token file it cannot read", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ token: "tok-locked" }), { mode: 0o000 });
+    const site = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+
+    const failure = await failureOf(logout({ out: () => {}, site: site.origin }));
+
+    expect(failure.code).toBe(4);
+    expect(failure.message).toContain("The token is kept, so run threenative logout again.");
+    expect(site.requests).toEqual([]);
+    const left = (await readdir(path.dirname(file))).filter((name) => name.endsWith(".logout"));
+    expect(left).toHaveLength(1);
+    await site.close();
   });
 
   it("revokes a token an interrupted logout left behind", async () => {

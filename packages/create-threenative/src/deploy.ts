@@ -119,14 +119,28 @@ async function claimDeployKey(file: string): Promise<string> {
     await link(tmp, file);
     return mine;
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
-    const theirs = (await readJson<IShareFile>(file))?.deployKey;
-    if (typeof theirs !== "string" || theirs === "")
-      throw new CliExit(4, `${file} exists but holds no deploy key; fix or delete it.`);
-    return theirs;
+    if ((error as NodeJS.ErrnoException).code === "EEXIST") return await theirKey(file);
+    // ponytail: a volume with no hard links (some network and FAT mounts) takes an exclusive create
+    // instead. Still one key per checkout; a deploy started in the same instant may read the file
+    // before its few bytes land and stop with exit 4. A lock file if that ever bites.
+    try {
+      await writeFile(file, `${JSON.stringify({ deployKey: mine }, null, 2)}\n`, { flag: "wx" });
+      return mine;
+    } catch (fallback) {
+      if ((fallback as NodeJS.ErrnoException).code !== "EEXIST") throw fallback;
+      return await theirKey(file);
+    }
   } finally {
     await rm(tmp, { force: true });
   }
+}
+
+/** The key another first deploy from this checkout already claimed. */
+async function theirKey(file: string): Promise<string> {
+  const theirs = (await readJson<IShareFile>(file))?.deployKey;
+  if (typeof theirs !== "string" || theirs === "")
+    throw new CliExit(4, `${file} exists but holds no deploy key; fix or delete it.`);
+  return theirs;
 }
 
 export interface IDeployOptions {
