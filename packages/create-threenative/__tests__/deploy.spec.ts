@@ -190,6 +190,30 @@ describe("threenative deploy", () => {
     await site.close();
   });
 
+  it("gives two first deploys started together one key, so they land on one game", async () => {
+    const cwd = await projectDir({ "build:web": "vite build" });
+    const site = await fakeStudio(() => ({
+      body: { projectId: "p1", shareUrl: "https://x-share.example/" },
+      status: 200,
+    }));
+    const options = {
+      cwd,
+      out: () => {},
+      runBuild: writeBuild,
+      studio: site.origin,
+      token: "tok-1",
+    };
+
+    await Promise.all([deploy(options), deploy(options)]);
+
+    const keys = site.requests.map((request) => queryOf(request.url).get("key"));
+    expect(keys).toHaveLength(2);
+    expect(keys[0]).toBeTypeOf("string");
+    expect(keys[1]).toBe(keys[0]);
+    expect(await readdir(path.join(cwd, ".threenative"))).toEqual(["share.json"]);
+    await site.close();
+  });
+
   it("retries a first deploy whose reply was lost with the same key, so it lands on one game", async () => {
     const cwd = await projectDir({ "build:web": "vite build" });
     let uploads = 0;

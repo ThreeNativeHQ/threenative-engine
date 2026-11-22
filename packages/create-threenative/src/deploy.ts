@@ -2,7 +2,7 @@
  * which is what turns a game into a link a friend can open. */
 import { spawn } from "node:child_process";
 import { randomUUID } from "node:crypto";
-import { mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
+import { link, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CliExit, request, requireToken, serverMessage } from "./account.js";
 
@@ -107,6 +107,28 @@ async function writeShareFile(file: string, share: IShareFile): Promise<void> {
   }
 }
 
+/** The first deploy's key, claimed once per checkout. `link` creates share.json only if it does not
+ * exist yet, with its whole content, so two first deploys started together agree on one key: the
+ * one that loses the link reads the winner's key instead of minting a second game. */
+async function claimDeployKey(file: string): Promise<string> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const mine = randomUUID();
+  const tmp = `${file}.${mine}.tmp`;
+  await writeFile(tmp, `${JSON.stringify({ deployKey: mine }, null, 2)}\n`, { flag: "wx" });
+  try {
+    await link(tmp, file);
+    return mine;
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== "EEXIST") throw error;
+    const theirs = (await readJson<IShareFile>(file))?.deployKey;
+    if (typeof theirs !== "string" || theirs === "")
+      throw new CliExit(4, `${file} exists but holds no deploy key; fix or delete it.`);
+    return theirs;
+  } finally {
+    await rm(tmp, { force: true });
+  }
+}
+
 export interface IDeployOptions {
   cwd?: string;
   out?: (line: string) => void;
@@ -156,10 +178,7 @@ export async function deploy(options: IDeployOptions = {}): Promise<IDeployResul
   if (previousProject !== "") {
     query.set("projectId", previousProject);
   } else {
-    if (deployKey === undefined) {
-      deployKey = randomUUID();
-      await writeShareFile(sharePath, { deployKey });
-    }
+    if (deployKey === undefined) deployKey = await claimDeployKey(sharePath);
     query.set("key", deployKey);
   }
 
