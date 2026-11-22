@@ -4,7 +4,7 @@
  * Exit codes are shared by login, logout and deploy: 0 ok, 2 bad arguments, 3 sign in again,
  * 4 refused by the server, 5 network failure. `main()` prints the message and sets the code. */
 import { spawn } from "node:child_process";
-import { chmod, mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 
@@ -71,20 +71,22 @@ export interface IReply {
   statusText: string;
 }
 
-/** One JSON request. A thrown fetch is the only thing exit code 5 means, so it is caught here. */
+/** One JSON request. A broken connection is the only thing exit code 5 means, so it is caught
+ * here: both a fetch that never connected and a body that dies after the headers arrived. */
 export async function request(
   origin: string,
   pathname: string,
   init: RequestInit = {},
 ): Promise<IReply> {
   let response: Response;
+  let text: string;
   try {
     response = await fetch(`${origin}${pathname}`, init);
+    text = await response.text();
   } catch (error) {
     const reason = error instanceof Error ? error.message : String(error);
     throw new CliExit(5, `Could not reach ${origin}: ${reason}`);
   }
-  const text = await response.text();
   let body: unknown = text;
   try {
     body = text === "" ? undefined : JSON.parse(text);
@@ -116,9 +118,13 @@ function jsonPost(value: unknown): RequestInit {
 async function writeAuthFile(auth: IAuthFile): Promise<void> {
   const file = authFilePath();
   await mkdir(path.dirname(file), { mode: 0o700, recursive: true });
-  await writeFile(file, `${JSON.stringify(auth, null, 2)}\n`, { mode: 0o600 });
-  // writeFile keeps the mode of a file that already exists, so tighten it again.
-  await chmod(file, 0o600);
+  // Create the token 0600 beside the real file and rename it over: a rename replaces the
+  // destination atomically, so no window leaves the new token in a world-readable inode.
+  // A crashed run can leave a temp file behind, and `wx` refuses to reuse it.
+  const tmp = `${file}.tmp`;
+  await rm(tmp, { force: true });
+  await writeFile(tmp, `${JSON.stringify(auth, null, 2)}\n`, { flag: "wx", mode: 0o600 });
+  await rename(tmp, file);
 }
 
 function openBrowser(link: string): void {
@@ -207,7 +213,12 @@ export interface ILogoutOptions {
   site?: string;
 }
 
-/** Revoke the saved token and delete the file. `THREENATIVE_TOKEN` is not touched. */
+/** Revoke the saved token and delete the file. `THREENATIVE_TOKEN` is not touched.
+ *
+ * The file goes only when the server answered 200 or 401 (401 means the token is already dead,
+ * so this machine is signed out either way). Any other answer, or a network failure from
+ * `request()`, leaves the token saved: a token still alive on the server must not be dropped
+ * from this machine, or `logout` could never revoke it again. */
 export async function logout(options: ILogoutOptions = {}): Promise<void> {
   const out = options.out ?? ((line: string) => process.stdout.write(`${line}\n`));
   const env = process.env;
@@ -217,20 +228,15 @@ export async function logout(options: ILogoutOptions = {}): Promise<void> {
     return;
   }
   const origin = siteOrigin(options.site);
-  let warning: string | undefined;
-  try {
-    const reply = await request(origin, "/api/store/token", {
-      headers: { authorization: `Bearer ${token}` },
-      method: "DELETE",
-    });
-    // 401 means the server already forgot this token: this machine is signed out either way.
-    if (reply.status !== 200 && reply.status !== 401)
-      warning = `Could not revoke the token online (${reply.status}).`;
-  } catch (error) {
-    if (!(error instanceof CliExit) || error.code !== 5) throw error;
-    warning = `${error.message} The token was not revoked online, but this machine is signed out.`;
-  }
+  const reply = await request(origin, "/api/store/token", {
+    headers: { authorization: `Bearer ${token}` },
+    method: "DELETE",
+  });
+  if (reply.status !== 200 && reply.status !== 401)
+    throw new CliExit(
+      4,
+      `Could not revoke the token (${reply.status}). It is still saved; run threenative logout again.`,
+    );
   await rm(authFilePath(env), { force: true });
-  if (warning !== undefined) out(warning);
   out("Signed out.");
 }

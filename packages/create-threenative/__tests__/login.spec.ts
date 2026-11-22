@@ -1,5 +1,5 @@
 import { once } from "node:events";
-import { mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, readFile, stat, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -128,6 +128,29 @@ describe("threenative login and logout", () => {
     await site.close();
   });
 
+  it("tightens an existing world-readable token file when signing in again", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ token: "tok-old" }));
+    await chmod(file, 0o644);
+    const site = await fakeSite((request) => {
+      if (request.url === "/api/store/device") return deviceStart("NEW1-CODE");
+      if (request.url === "/api/store/device/token")
+        return { body: { status: "approved", token: "tok-new" }, status: 200 };
+      if (request.url === "/api/store/whoami") return { body: { email: "n@b.c" }, status: 200 };
+      return { body: { message: "unexpected request" }, status: 404 };
+    });
+
+    await login({ open: false, out: () => {}, site: site.origin, sleep: async () => {} });
+
+    expect((await stat(file)).mode & 0o777).toBe(0o600);
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({
+      email: "n@b.c",
+      token: "tok-new",
+    });
+    await site.close();
+  });
+
   it("asks you to log in again when the code expired", async () => {
     const site = await fakeSite((request) =>
       request.url === "/api/store/device"
@@ -163,6 +186,39 @@ describe("threenative login and logout", () => {
     await expect(stat(file)).rejects.toMatchObject({ code: "ENOENT" });
     expect(lines).toEqual(["Signed out."]);
     await site.close();
+  });
+
+  it("keeps the token file when the server refuses the revoke", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ token: "tok-file" }));
+    const site = await fakeSite(() => ({ body: { message: "Server exploded." }, status: 500 }));
+    const lines: string[] = [];
+
+    const failure = await failureOf(logout({ out: (line) => lines.push(line), site: site.origin }));
+
+    expect(failure.code).toBe(4);
+    expect(failure.message).toBe(
+      "Could not revoke the token (500). It is still saved; run threenative logout again.",
+    );
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ token: "tok-file" });
+    expect(lines).toEqual([]);
+    await site.close();
+  });
+
+  it("keeps the token file when the site is unreachable", async () => {
+    const file = authFilePath();
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, JSON.stringify({ token: "tok-file" }));
+    const site = await fakeSite(() => ({ body: {}, status: 200 }));
+    const origin = site.origin;
+    await site.close();
+
+    const failure = await failureOf(logout({ out: () => {}, site: origin }));
+
+    expect(failure.code).toBe(5);
+    expect(failure.message).toContain(`Could not reach ${origin}`);
+    expect(JSON.parse(await readFile(file, "utf8"))).toMatchObject({ token: "tok-file" });
   });
 
   it("prefers THREENATIVE_TOKEN over the saved file", async () => {
