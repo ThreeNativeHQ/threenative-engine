@@ -341,6 +341,31 @@ describe("threenative login and logout", () => {
     },
   );
 
+  it.skipIf(process.getuid?.() === 0)(
+    "refuses to say signed out when it cannot see a kept token",
+    async () => {
+      const file = authFilePath();
+      const dir = path.dirname(file);
+      await mkdir(dir, { recursive: true });
+      // An earlier logout kept this token after a refused revoke; the directory then lost read access.
+      await writeFile(`${file}.kept.logout`, JSON.stringify({ token: "tok-kept" }));
+      await chmod(dir, 0o300);
+      const site = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+
+      let failure: CliExit;
+      try {
+        failure = await failureOf(logout({ out: () => {}, site: site.origin }));
+      } finally {
+        await chmod(dir, 0o700);
+      }
+
+      expect(failure.code).toBe(4);
+      expect(failure.message).toContain("Restore read access");
+      expect(site.requests).toEqual([]);
+      await site.close();
+    },
+  );
+
   it("revokes a token an interrupted logout left behind", async () => {
     const file = authFilePath();
     await mkdir(path.dirname(file), { recursive: true });

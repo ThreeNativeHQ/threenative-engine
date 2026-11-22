@@ -304,10 +304,13 @@ async function claimTokenFiles(file: string): Promise<string[]> {
   // A directory this user cannot list can still hold an auth.json it can rename by name, so a failed
   // listing only skips the leftovers; it never reads as "not signed in".
   let names: string[] = [];
+  let unlisted: string | undefined;
   try {
     names = await readdir(dir);
-  } catch {
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
     // No directory: the rename below finds no auth.json either.
+    if (code !== "ENOENT") unlisted = code ?? "unknown error";
   }
   const left = names.filter((name) => name.startsWith(`${base}.`) && name.endsWith(".logout"));
   const claims: string[] = [];
@@ -321,6 +324,13 @@ async function claimTokenFiles(file: string): Promise<string[]> {
       if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
     }
   }
+  // Nothing to claim by name, and the leftovers an earlier logout kept cannot be seen: saying "not
+  // signed in" here could leave a live token behind.
+  if (claims.length === 0 && unlisted !== undefined)
+    throw new CliExit(
+      4,
+      `Could not list ${dir} (${unlisted}), so a token an earlier logout kept may still be there. Restore read access to it, then run threenative logout again.`,
+    );
   return claims;
 }
 
