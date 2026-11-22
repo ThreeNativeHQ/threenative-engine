@@ -28,6 +28,7 @@ import {
   DiscreteLodPlugin,
   type IModelLodPolicy,
   TN_DISCRETE_LOD,
+  lodChainOf,
   markStreamedGeometry,
   upgradeStreamedGeometry,
 } from "./model-lod.js";
@@ -1875,9 +1876,12 @@ function stampAssetProvenance(value: unknown, logicalPath: string): void {
     // An instanced batch is built from a model's geometry and the root never enters the scene, so
     // the geometry carries the stamp too. `BufferGeometry.copy` shares `userData`, so clones keep it.
     root.traverse((object) => {
-      const geometry = (object as Object3D & { geometry?: { userData?: Record<string, unknown> } })
-        .geometry;
-      if (geometry?.userData !== undefined) geometry.userData[GEOMETRY_ASSET_KEY] ??= logicalPath;
+      const geometry = (object as Object3D & { geometry?: BufferGeometry }).geometry;
+      if (geometry?.userData === undefined) return;
+      geometry.userData[GEOMETRY_ASSET_KEY] ??= logicalPath;
+      for (const level of lodChainOf(geometry)?.levels ?? []) {
+        if (level.userData !== undefined) level.userData[GEOMETRY_ASSET_KEY] ??= logicalPath;
+      }
     });
   }
 }

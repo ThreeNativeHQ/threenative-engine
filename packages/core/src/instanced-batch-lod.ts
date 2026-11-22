@@ -7,6 +7,7 @@ import {
   Sphere,
   Vector3,
 } from "three";
+import { copyAssetProvenance, preserveAssetProvenance } from "./asset-provenance.js";
 import {
   DISCRETE_LOD_DEFAULT_HYSTERESIS,
   type IModelLodController,
@@ -142,6 +143,9 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
   carrier.boundingSphere = base.boundingSphere;
   carrier.setIndex([]);
   carrier.setDrawRange(0, 0);
+  copyAssetProvenance(base.userData, carrier.userData);
+  preserveAssetProvenance(base.userData, mesh.userData);
+  for (const level of levels) preserveAssetProvenance(base.userData, level.userData);
   mesh.geometry = carrier;
   const groups = spatialPartitions(mesh);
   const spareCapacity = mesh.instanceMatrix.count - mesh.count;

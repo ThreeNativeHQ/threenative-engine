@@ -12,6 +12,7 @@ import type { IResolvedAsset } from "../src/assets.js";
 import { createAssetLoader } from "../src/assets.js";
 import { defineGame } from "../src/game.js";
 import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
+import { DiscreteLodPlugin, TN_DISCRETE_LOD, lodChainOf } from "../src/model-lod.js";
 import { playtest } from "../src/playtest.js";
 import { Scene } from "../src/scene.js";
 import type { ICtx } from "../src/scene.js";
@@ -205,6 +206,71 @@ describe("loader provenance for the off-screen measurement", () => {
 
     expect(assets.resolved.get("tree.glb")).toMatchObject({ bytes: 70_000, kind: "model" });
     expect((root.children[0] as Mesh).geometry.userData[GEOMETRY_ASSET_KEY]).toBe("tree.glb");
+  });
+
+  it("stamps every LOD level in a baked chain and preserves stamps across chain clones", async () => {
+    const model = placed("", 0);
+    const mesh = model.children[0] as Mesh;
+    const base = mesh.geometry;
+    base.setIndex([0, 1, 2, 0, 2, 3, 4, 5, 6, 4, 6, 7]);
+    const plugin = new DiscreteLodPlugin();
+    plugin.setParser({
+      associations: new Map([[mesh, { meshes: 0, primitives: 0 }]]),
+      getDependency: async () => ({ array: new Uint32Array([0, 1, 2]) }),
+      json: {
+        meshes: [
+          {
+            primitives: [
+              {
+                extensions: {
+                  [TN_DISCRETE_LOD]: {
+                    schemaVersion: 1,
+                    lod0Triangles: 4,
+                    counts: [1],
+                    errors: [0.2],
+                    absoluteErrors: [0.2],
+                    indices: [0],
+                  },
+                },
+              },
+            ],
+          },
+        ],
+      },
+    } as never);
+    await plugin.afterRoot({});
+    plugin.attach(model, undefined);
+
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({
+              version: 1,
+              entries: {
+                "rock.glb": { output: "rock.a1.glb", kind: "model", bytes: 20_000, passes: [] },
+              },
+            }),
+          ),
+      ),
+    );
+    const assets = createAssetLoader({ basePath: "/assets", model: async () => model });
+    const loaded = await assets.model<Group>("rock.glb");
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    const loadedMesh = loaded.children[0] as Mesh;
+    const chain = lodChainOf(loadedMesh.geometry);
+    expect(chain?.levels.length).toBe(2);
+    expect(chain?.levels.every((level) => level.userData[GEOMETRY_ASSET_KEY] === "rock.glb")).toBe(
+      true,
+    );
+    const cloned = loadedMesh.geometry.clone();
+    expect(
+      lodChainOf(cloned)?.levels.every(
+        (level) => level.userData[GEOMETRY_ASSET_KEY] === "rock.glb",
+      ),
+    ).toBe(true);
   });
 
   it("should record the shared images a model load downloads beside its own file", async () => {

@@ -23,6 +23,8 @@ struct Leaf {
 void eligibleDraws() {
     Leaf leaf;
     CHECK(prepassEligible(leaf.item));
+    CHECK(prepassMaskedEligible(leaf.item));
+    CHECK(!prepassSolidEligible(leaf.item));
     Leaf transparent;  // blended over what is behind it: refused
     transparent.item.transparent = true;
     CHECK(!prepassEligible(transparent.item));
@@ -38,9 +40,35 @@ void eligibleDraws() {
     Leaf hashed;
     hashed.material.alphaHash = true;
     CHECK(!prepassEligible(hashed.item));
-    Leaf solid;  // nothing cuts it: early depth already works
+    Leaf solid;  // plain untextured single solid skips prepass to avoid double pipeline compiles and draws
+    solid.item.kind = MaterialKind::Standard;
     solid.material.alphaTest = 0;
+    CHECK(!prepassSolidEligible(solid.item));
     CHECK(!prepassEligible(solid.item));
+    Leaf heavySolid;  // textured / node-shaded / instanced lit solid runs first in prepass so terrain/rocks cull foliage
+    heavySolid.item.kind = MaterialKind::Standard;
+    heavySolid.material.alphaTest = 0;
+    shader::MaterialNodes solidNodes;
+    solidNodes.colorNode = shader::graph::vec4({shader::graph::float_(1), shader::graph::float_(1),
+                                              shader::graph::float_(1), shader::graph::float_(1)});
+    heavySolid.item.nodes = &solidNodes;
+    CHECK(prepassEligible(heavySolid.item));
+    CHECK(prepassSolidEligible(heavySolid.item));
+    CHECK(!prepassMaskedEligible(heavySolid.item));
+    Leaf basicSolid;
+    basicSolid.item.kind = MaterialKind::Basic;
+    basicSolid.material.alphaTest = 0;
+    CHECK(!prepassSolidEligible(basicSolid.item));
+    CHECK(!prepassEligible(basicSolid.item));
+    Leaf customFragment;
+    customFragment.item.kind = MaterialKind::Standard;
+    customFragment.material.alphaTest = 0;
+    shader::MaterialNodes customNodes;
+    customNodes.fragmentNode = shader::graph::vec4({shader::graph::float_(1), shader::graph::float_(0),
+                                                    shader::graph::float_(0), shader::graph::float_(1)});
+    customFragment.item.nodes = &customNodes;
+    CHECK(!prepassSolidEligible(customFragment.item));
+    CHECK(!prepassEligible(customFragment.item));
     Leaf line;
     line.item.topology = WGPUPrimitiveTopology_LineList;
     CHECK(!prepassEligible(line.item));
@@ -85,27 +113,56 @@ void fragments() {
     const shader::LightLayout lights{"D"};  // a shadowed sun: the lighting the prepass must not keep
     const auto shipped = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
     auto prepass = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
-    keepDiscardsOnly(prepass.fragment);
+    CHECK(prepass.alpha != shader::kInvalid);
+    keepDiscardsOnly(prepass.fragment, prepass.alpha);
     const auto shippedFragment = shader::buildStage(shipped.fragment, 1);
     const auto prepassFragment = shader::buildStage(prepass.fragment, 1);
     CHECK(shippedFragment.wgsl.ok() && prepassFragment.wgsl.ok());
     // The prepass cuts where the colour fragment cuts...
     CHECK(shippedFragment.wgsl.code.find("discard") != std::string::npos);
     CHECK(prepassFragment.wgsl.code.find("discard") != std::string::npos);
-    // ...and shades nothing: no shadow map read (its bindings stay declared, for the layout), far less text.
+    // ...and keeps the faded coverage alpha without any lighting or shadow reads.
+    CHECK(prepassFragment.wgsl.code.find("smoothstep") != std::string::npos);
+    CHECK(prepassFragment.wgsl.code.find("fwidth") != std::string::npos);
     CHECK(shippedFragment.wgsl.code.find("textureSampleCompare") != std::string::npos);
     CHECK(prepassFragment.wgsl.code.find("textureSampleCompare") == std::string::npos);
-    CHECK(prepassFragment.wgsl.code.size() * 3 < shippedFragment.wgsl.code.size());
+    CHECK(prepassFragment.wgsl.code.size() * 2 < shippedFragment.wgsl.code.size());
     // One layout: the draw's bind groups and uniform offsets serve both pipelines.
     CHECK(sameLayout(prepassFragment, shippedFragment));
+
+    // Non-alphaToCoverage cutout keeps zero colour alpha cleanly.
+    cut.alphaToCoverage = false;
+    auto shippedCutout = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    auto cutoutOnly = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    keepDiscardsOnly(cutoutOnly.fragment);
+    const auto shippedCutoutFragment = shader::buildStage(shippedCutout.fragment, 1);
+    const auto cutoutFragment = shader::buildStage(cutoutOnly.fragment, 1);
+    CHECK(shippedCutoutFragment.wgsl.ok() && cutoutFragment.wgsl.ok());
+    CHECK(cutoutFragment.wgsl.code.find("discard") != std::string::npos);
+    CHECK(cutoutFragment.wgsl.code.find("textureSampleCompare") == std::string::npos);
+    CHECK(cutoutFragment.wgsl.code.size() * 3 < shippedCutoutFragment.wgsl.code.size());
+
+    // Solid opaque draw prepass compiles a minimal constant-zero fragment with identical layout.
+    shader::VertexVariant solidVar;
+    solidVar.map = true;
+    auto shippedSolid = shader::buildStandard(shader::StandardMaterial{}, solidVar, lights);
+    auto solidPrepass = shader::buildStandard(shader::StandardMaterial{}, solidVar, lights);
+    keepDiscardsOnly(solidPrepass.fragment);
+    const auto shippedSolidFrag = shader::buildStage(shippedSolid.fragment, 1);
+    const auto solidPrepassFrag = shader::buildStage(solidPrepass.fragment, 1);
+    CHECK(shippedSolidFrag.wgsl.ok() && solidPrepassFrag.wgsl.ok());
+    CHECK(solidPrepassFrag.wgsl.code.find("discard") == std::string::npos);
+    CHECK(solidPrepassFrag.wgsl.code.find("textureSampleCompare") == std::string::npos);
+    CHECK(solidPrepassFrag.wgsl.code.size() * 3 < shippedSolidFrag.wgsl.code.size());
+    CHECK(sameLayout(solidPrepassFrag, shippedSolidFrag));
 }
 
 void modes() {
-    // TN_PREPASS arms the one-pass arm for any value but 0; only "split" gives the depth rows their own pass.
+    // TN_PREPASS defaults on when unset; `0` opts out and `split` gives depth rows their own pass.
     setenv("TN_PREPASS", "0", 1);
     CHECK(!prepassEnabled() && !prepassSplit());
     unsetenv("TN_PREPASS");
-    CHECK(!prepassEnabled() && !prepassSplit());
+    CHECK(prepassEnabled() && !prepassSplit());
     setenv("TN_PREPASS", "1", 1);
     CHECK(prepassEnabled() && !prepassSplit());
     setenv("TN_PREPASS", "split", 1);
@@ -113,7 +170,49 @@ void modes() {
     unsetenv("TN_PREPASS");
 }
 
+void virtualShadowEarlyOut() {
+    shader::VertexVariant cut;
+    cut.map = true;
+    // '9' = 1-level VSM directional sun with sourceAngleShadowFilter active.
+    const shader::LightLayout lights{"9"};
+    const auto program = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    const auto fragment = shader::buildStage(program.fragment, 1);
+    CHECK(fragment.wgsl.ok());
+    const std::string& code = fragment.wgsl.code;
+    const auto comparePos = code.find("textureSampleCompare");
+    const auto guardPos = code.find("if ((0f < ");
+    CHECK(comparePos != std::string::npos);
+    CHECK(guardPos != std::string::npos);
+    CHECK(guardPos < comparePos);
+    const auto dpdxPos = code.find("dpdx(");
+    CHECK(dpdxPos != std::string::npos);
+    CHECK(dpdxPos < guardPos);
+    CHECK(code.find("dpdx(", guardPos) == std::string::npos);
+}
+
+void colorNodeAlphaPrunesDeadRgbSample() {
+    namespace g = shader::graph;
+    shader::VertexVariant cut;
+    cut.alphaTest = true;
+    cut.alphaToCoverage = true;
+    cut.nodes.colorNode = g::vec4(
+        {g::swizzle(g::texture("rgbTex", g::uv()), "xyz"), g::swizzle(g::texture("alphaTex", g::uv()), "x")});
+    const shader::LightLayout lights{"D"};
+    const auto shipped = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    auto prepass = shader::buildStandard(shader::StandardMaterial{}, cut, lights);
+    CHECK(prepass.alpha != shader::kInvalid);
+    keepDiscardsOnly(prepass.fragment, prepass.alpha);
+    const auto shippedFrag = shader::buildStage(shipped.fragment, 1);
+    const auto prepassFrag = shader::buildStage(prepass.fragment, 1);
+    CHECK(shippedFrag.wgsl.ok() && prepassFrag.wgsl.ok());
+    CHECK(shippedFrag.wgsl.code.find("rgbTex") != std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("rgbTex") == std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("alphaTex") != std::string::npos);
+    CHECK(prepassFrag.wgsl.code.find("discard") != std::string::npos);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"eligible", eligibleDraws}, {"targets", pipelineTargets}, {"fragments", fragments},
-             {"modes", modes})
+             {"modes", modes}, {"virtual_shadow_early_out", virtualShadowEarlyOut},
+             {"color_node_alpha_prunes_dead_rgb_sample", colorNodeAlphaPrunesDeadRgbSample})

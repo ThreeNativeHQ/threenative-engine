@@ -49,6 +49,7 @@ export interface IAttributeSync {
   rangeOf(method: string, args: readonly unknown[], itemSize: number): readonly [number, number];
   syncRange(attribute: object, entry: { array: TypedArray }, offset: number, count: number): void;
   syncFull(attribute: object, entry: { array: TypedArray }): void;
+  syncRecords(attributes: readonly object[], ops: unknown): void;
   instanceItem(
     mesh: object,
     attribute: string,
@@ -63,6 +64,130 @@ export interface IAttributeSync {
   ): boolean;
 }
 
+interface IRecordDirtyPlan {
+  readonly from: number[];
+  readonly to: number[];
+  readonly full: boolean[];
+}
+
+function addDirtySpan(plan: IRecordDirtyPlan, slot: number, start: number, end: number): boolean {
+  if (!Number.isSafeInteger(start) || !Number.isSafeInteger(end) || start < 0 || end < start)
+    return false;
+  if (end > start) {
+    if (start < (plan.from[slot] as number)) plan.from[slot] = start;
+    if (end > (plan.to[slot] as number)) plan.to[slot] = end;
+  }
+  return true;
+}
+
+function advanceGatherOp(
+  opList: ArrayLike<number>,
+  at: number,
+  slot: number,
+  plan: IRecordDirtyPlan,
+): number {
+  if (at + 4 > opList.length) return -1;
+  const stride = opList[at + 2] as number;
+  const blocks = opList[at + 3] as number;
+  if (
+    !Number.isSafeInteger(stride) ||
+    stride < 1 ||
+    !Number.isSafeInteger(blocks) ||
+    blocks < 0 ||
+    at + 4 + blocks * 2 > opList.length
+  )
+    return -1;
+  let total = 0;
+  for (let b = 0; b < blocks; b += 1) {
+    const count = opList[at + 5 + b * 2] as number;
+    if (!Number.isSafeInteger(count) || count < 0) return -1;
+    total += count;
+  }
+  return addDirtySpan(plan, slot, 0, total * stride) ? at + 4 + blocks * 2 : -1;
+}
+
+function advanceLanesOp(
+  opList: ArrayLike<number>,
+  at: number,
+  slot: number,
+  plan: IRecordDirtyPlan,
+): number {
+  if (at + 4 > opList.length) return -1;
+  const lanesCount = opList[at + 3] as number;
+  if (!Number.isSafeInteger(lanesCount) || lanesCount < 0 || at + 4 + lanesCount > opList.length)
+    return -1;
+  plan.full[slot] = true;
+  return at + 4 + lanesCount;
+}
+
+function stepRecordOp(
+  opList: ArrayLike<number>,
+  at: number,
+  slotCount: number,
+  plan: IRecordDirtyPlan,
+): number {
+  const code = opList[at];
+  const slot = opList[at + 1] as number;
+  if (!Number.isSafeInteger(slot) || slot < 0 || slot >= slotCount) return -1;
+  switch (code) {
+    case 1: {
+      if (at + 5 > opList.length) return -1;
+      const start = opList[at + 2] as number;
+      const count = opList[at + 3] as number;
+      return addDirtySpan(plan, slot, start, start + count) ? at + 5 : -1;
+    }
+    case 2: {
+      if (at + 4 > opList.length) return -1;
+      const start = opList[at + 2] as number;
+      const count = opList[at + 3] as number;
+      return addDirtySpan(plan, slot, start, start + count) ? at + 4 : -1;
+    }
+    case 3: {
+      if (at + 5 > opList.length) return -1;
+      const to = opList[at + 3] as number;
+      const count = opList[at + 4] as number;
+      return addDirtySpan(plan, slot, to, to + count) ? at + 5 : -1;
+    }
+    case 4: {
+      if (at + 4 > opList.length) return -1;
+      const count = opList[at + 3] as number;
+      return addDirtySpan(plan, slot, 0, count) ? at + 4 : -1;
+    }
+    case 5:
+      return advanceGatherOp(opList, at, slot, plan);
+    case 6:
+      return at + 4 <= opList.length ? at + 4 : -1;
+    case 7:
+      return at + 5 <= opList.length ? at + 5 : -1;
+    case 8:
+      return advanceLanesOp(opList, at, slot, plan);
+    default:
+      return -1;
+  }
+}
+
+function collectRecordDirty(ops: unknown, slotCount: number): IRecordDirtyPlan | undefined {
+  if (
+    ops === null ||
+    ops === undefined ||
+    typeof ops !== "object" ||
+    typeof (ops as ArrayLike<number>).length !== "number"
+  )
+    return undefined;
+  const opList = ops as ArrayLike<number>;
+  const plan: IRecordDirtyPlan = {
+    from: new Array<number>(slotCount).fill(Number.POSITIVE_INFINITY),
+    to: new Array<number>(slotCount).fill(0),
+    full: new Array<boolean>(slotCount).fill(false),
+  };
+  for (let at = 0; at < opList.length; ) {
+    const next = stepRecordOp(opList, at, slotCount, plan);
+    if (next <= at) return undefined;
+    at = next;
+  }
+  return plan;
+}
+
 export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
   const { runtime, refOf } = host;
   // three's `attribute.array` is the attribute's own JS typed array (PRD-540): the array the
@@ -72,7 +197,7 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
   // later game edit to the array wins, and `needsUpdate` sends the array to the engine. A read hands
   // the game the array, so the attribute is `pending` until its array is written back before the next
   // engine call (a per-vertex setter reads no kept array and flushes nothing).
-  const { attributeArray, attributeWrite } = runtime;
+  const { attributeArray, attributeReadInto, attributeWrite } = runtime;
   const arrays = new WeakMap<object, { array: TypedArray }>();
   const itemSizes = new WeakMap<object, number>();
   // Shape survives data uploads and transform calls; only copy/replacement changes it.
@@ -132,6 +257,21 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
         `TN_NATIVE_ATTRIBUTE_RANGE: [${String(offset)}, ${String(count)}) is not a valid element range`,
       );
     if (offset + count > entry.array.length) return;
+    if (attributeReadInto !== undefined) {
+      const copied = attributeReadInto.call(
+        runtime,
+        refOf(attribute),
+        entry.array,
+        offset,
+        count,
+        offset,
+      );
+      if (copied !== count)
+        throw new TypeError(
+          `TN_NATIVE_ATTRIBUTE_SYNC: attributeReadInto gave ${String(copied)} elements for [${String(offset)}, ${String(count)})`,
+        );
+      return;
+    }
     const fresh = attributeArray?.call(runtime, refOf(attribute), offset, count);
     if (fresh === undefined || fresh.length !== count)
       throw new TypeError(
@@ -140,10 +280,48 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
     entry.array.set(fresh, offset);
   };
   const syncFull = (attribute: object, entry: { array: TypedArray }): void => {
+    if (attributeReadInto !== undefined) {
+      try {
+        const copied = attributeReadInto.call(
+          runtime,
+          refOf(attribute),
+          entry.array,
+          0,
+          undefined,
+          0,
+        );
+        if (copied === entry.array.length) return;
+      } catch (error) {
+        if (!(error instanceof RangeError)) throw error;
+      }
+    }
     const fresh = attributeArray?.call(runtime, refOf(attribute));
     if (fresh === undefined) return;
     if (fresh.length === entry.array.length) entry.array.set(fresh);
     else entry.array = fresh;
+  };
+  const syncRecords = (attributes: readonly object[], ops: unknown): void => {
+    const plan = collectRecordDirty(ops, attributes.length);
+    if (plan === undefined) {
+      for (const attribute of attributes) {
+        const entry = arrays.get(attribute);
+        if (entry !== undefined) syncFull(attribute, entry);
+      }
+      return;
+    }
+    for (let slot = 0; slot < attributes.length; slot += 1) {
+      const attribute = attributes[slot] as object;
+      const entry = arrays.get(attribute);
+      if (entry === undefined) continue;
+      if (plan.full[slot]) {
+        syncFull(attribute, entry);
+        continue;
+      }
+      const from = plan.from[slot] as number;
+      const to = plan.to[slot] as number;
+      if (from >= to || from >= entry.array.length) continue;
+      syncRange(attribute, entry, from, Math.min(to, entry.array.length) - from);
+    }
   };
   // three's `InstancedMesh.setMatrixAt`/`setColorAt` write the mesh's own `instanceMatrix`/
   // `instanceColor` array item (`index * 16`, `index * 3`); the engine's mesh-level call writes only
@@ -243,6 +421,7 @@ export function defineAttributeSync(host: IAttributeSyncHost): IAttributeSync {
     rangeOf,
     syncRange,
     syncFull,
+    syncRecords,
     instanceItem,
     writeItemAt,
   };

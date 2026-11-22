@@ -601,6 +601,144 @@ void batchingEligibility() {
     CHECK(differ == 0);
 }
 
+/**
+ * Unchanged spatial partitions keep their child instanceMatrix/instanceColor versions and revisions
+ * across partial LOD transitions and in-place single-partition source writes, while changed
+ * partitions and mesh matrixWorld moves stay exact.
+ */
+void partialPartitionUpdate() {
+    auto lod0 = makeBoxGeometry(); // 12 triangles
+    auto lod1 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod1->setAttribute(entry.first, entry.second);
+    lod1->setIndexFromArray({0, 1, 2, 0, 2, 3}); // 2 triangles
+    auto lod2 = std::make_shared<BufferGeometry>();
+    for (const auto& entry : lod0->attributes) lod2->setAttribute(entry.first, entry.second);
+    lod2->setIndexFromArray({0, 1, 2}); // 1 triangle
+
+    BatchOptions options{lod0, material()};
+    options.lods = std::vector<AuthoredLod>{{40, lod1}, {140, lod2}};
+    auto batch = makeBatch(std::move(options));
+    uint32_t idx = 0;
+    for (int i = 0; i < 8; ++i) {
+        Spot nearCluster(-100.0 + i * 0.25, 0.0, 0.0);
+        batch->place(nearCluster.placement, idx);
+    }
+    for (int i = 0; i < 8; ++i) {
+        Spot farCluster(100.0 + i * 0.25, 0.0, 0.0);
+        batch->place(farCluster.placement, idx);
+    }
+    auto root = std::make_shared<Group>();
+    BuildOptions build;
+    build.name = "partial";
+    build.parent = root.get();
+    build.castShadow = true;
+    const Build built = batch->build(build);
+    InstancedMesh& mesh = *built.mesh;
+    for (uint32_t i = 0; i < 16; ++i) mesh.setColorAt(i, Color(double(i) / 16.0, 0.5, 0.25));
+    root->updateMatrixWorld(true);
+
+    // 16 instances -> limit = ceil(sqrt(16)) = 4 -> 4 spatial cells (cells 0..1 at x=-100, cells 2..3 at x=+100),
+    // each with 3 levels = 12 children in partition * 3 + level order.
+    CHECK(mesh.children.size() == 12);
+
+    auto snapshot = [&]() {
+        struct ChildSnap {
+            uint32_t matrixVer, colorVer, count;
+            uint64_t rev;
+        };
+        std::vector<ChildSnap> out;
+        for (const Object3D* obj : mesh.children) {
+            const auto* c = static_cast<const InstancedMesh*>(obj);
+            out.push_back({c->instanceMatrix->version(), c->instanceColor ? c->instanceColor->version() : 0u,
+                           c->count, c->revision()});
+        }
+        return out;
+    };
+
+    const auto camera = lodCamera();
+    camera->position.set(-100, 0, 10);
+    camera->updateMatrixWorld();
+    const double t1 = updateInstancedLods(*root, *camera, 1080);
+    // Cells 0..1 (8 instances) at LOD0 (12 tris) + cells 2..3 (8 instances) at LOD2 (1 tri) = 104
+    CHECK(t1 == 104.0);
+    const auto s1 = snapshot();
+
+    // Move camera so ONLY cells 0..1 transition LOD0 -> LOD1; cells 2..3 remain at LOD2 (>= 140m).
+    camera->position.set(-100, 0, 60);
+    camera->updateMatrixWorld();
+    const double t2 = updateInstancedLods(*root, *camera, 1080);
+    CHECK(t2 == 24.0); // 8 * 2 + 8 * 1
+    const auto s2 = snapshot();
+    // Cells 2..3 (children 6..11) MUST NOT bump matrix/color versions or revision.
+    for (std::size_t c = 6; c < 12; ++c) {
+        CHECK(s2[c].matrixVer == s1[c].matrixVer);
+        CHECK(s2[c].colorVer == s1[c].colorVer);
+        CHECK(s2[c].rev == s1[c].rev);
+    }
+    // Cell 0 & 1 should have moved into LOD1 (children 1 and 4).
+    CHECK(s2[1].matrixVer > s1[1].matrixVer);
+    CHECK(s2[4].matrixVer > s1[4].matrixVer);
+
+    // Mutate one instance in-place in cell 0 ONLY (without calling setNeedsUpdate).
+    mesh.setMatrixAt(0, translation(-100, 2, 0));
+    const double t3 = updateInstancedLods(*root, *camera, 1080);
+    CHECK(t3 == 24.0);
+    const auto s3 = snapshot();
+    CHECK(s3[1].matrixVer > s2[1].matrixVer);
+    // Cell 1 (children 3..5) and Cells 2..3 (children 6..11) remain completely untouched.
+    for (std::size_t c = 3; c < 12; ++c) {
+        CHECK(s3[c].matrixVer == s2[c].matrixVer);
+        CHECK(s3[c].colorVer == s2[c].colorVer);
+        CHECK(s3[c].rev == s2[c].rev);
+    }
+
+    // Move parent meshWorld: local x=-100 moves to world x=+100 (dist ~209 from camera at x=-100 -> LOD2).
+    root->position.set(200, 0, 0);
+    root->updateMatrixWorld(true);
+    const double t4 = updateInstancedLods(*root, *camera, 1080);
+    CHECK(t4 == 16.0); // all 16 at LOD2 (1 tri each)
+    for (const Object3D* obj : mesh.children) CHECK(obj->matrixWorld.elements[12] == 200.0);
+
+    // Also verify baked chainErrors multi-partition skips untouched distant partitions.
+    LodChain chain;
+    BatchOptions chainOpts{bakedGeometry(chain), material()};
+    chain.errors = {0, 0.25};
+    chainOpts.chain = chain;
+    auto chainBatch = makeBatch(std::move(chainOpts));
+    uint32_t ci = 0;
+    for (int i = 0; i < 8; ++i) {
+        Spot nearSpot(-100.0 + i * 0.25, 0.0, 0.0);
+        chainBatch->place(nearSpot.placement, ci);
+    }
+    for (int i = 0; i < 8; ++i) {
+        Spot farSpot(200.0 + i * 0.25, 0.0, -300.0);
+        chainBatch->place(farSpot.placement, ci);
+    }
+    auto croot = std::make_shared<Group>();
+    BuildOptions cbuild;
+    cbuild.parent = croot.get();
+    const Build cbuilt = chainBatch->build(cbuild);
+    croot->updateMatrixWorld(true);
+    const auto ccam = lodCamera();
+    ccam->position.set(-100, 0, 2);
+    ccam->updateMatrixWorld();
+    const double ct1 = updateInstancedLods(*croot, *ccam, 1080);
+    CHECK(ct1 > 0);
+    std::vector<uint32_t> cver1;
+    for (const Object3D* obj : cbuilt.mesh->children)
+        cver1.push_back(static_cast<const InstancedMesh*>(obj)->instanceMatrix->version());
+    ccam->position.set(-100, 0, 80);
+    ccam->updateMatrixWorld();
+    const double ct2 = updateInstancedLods(*croot, *ccam, 1080);
+    CHECK(ct2 < ct1);
+    // Distant cluster children keep identical matrix versions.
+    for (std::size_t c = cbuilt.mesh->children.size() / 2; c < cbuilt.mesh->children.size(); ++c) {
+        const auto* child = static_cast<const InstancedMesh*>(cbuilt.mesh->children[c]);
+        CHECK(child->instanceMatrix->version() == cver1[c]);
+    }
+}
+
 } // namespace
 
-TN_TEST_MAIN({"batching_eligibility", batchingEligibility})
+TN_TEST_MAIN({"batching_eligibility", batchingEligibility},
+             {"partial_partition_update", partialPartitionUpdate})

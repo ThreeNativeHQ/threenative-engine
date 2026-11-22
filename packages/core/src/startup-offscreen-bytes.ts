@@ -1,6 +1,6 @@
 import { Box3, type Camera, Frustum, Matrix4, type Object3D } from "three";
+import { readAssetProvenance } from "./asset-provenance.js";
 import type { IResolvedAsset } from "./assets.js";
-import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 
 /** Why a file the reveal waited for shows nothing at the reveal. */
 export type OffscreenReason = "hidden" | "not-placed" | "outside-view";
@@ -46,11 +46,6 @@ export const STARTUP_OFFSCREEN_FIX =
 
 const TOP_FILES = 5;
 
-function stampOf(userData: unknown): string | undefined {
-  const stamped = (userData as Record<string, unknown> | undefined)?.[GEOMETRY_ASSET_KEY];
-  return typeof stamped === "string" && stamped !== "" ? stamped : undefined;
-}
-
 /**
  * Which logical paths have an object in the scene, and whether any of them shows.
  *
@@ -68,8 +63,10 @@ function holders(root: Object3D, camera: Camera): Map<string, { shown: boolean; 
   const visit = (object: Object3D, hidden: boolean): void => {
     const isHidden = hidden || !object.visible;
     const geometry = (object as Object3D & { geometry?: { userData?: unknown } }).geometry;
-    for (const path of new Set([stampOf(object.userData), stampOf(geometry?.userData)])) {
-      if (path === undefined) continue;
+    for (const path of new Set([
+      ...readAssetProvenance(object.userData),
+      ...readAssetProvenance(geometry?.userData),
+    ])) {
       const entry = found.get(path) ?? { placed: false, shown: false };
       found.set(path, entry);
       if (isHidden) continue;
@@ -208,8 +205,11 @@ export function measureUnusedModels(
     const paths = new Set<string>();
     root.traverse((object) => {
       const geometry = (object as Object3D & { geometry?: { userData?: unknown } }).geometry;
-      for (const path of [stampOf(object.userData), stampOf(geometry?.userData)])
-        if (path !== undefined) paths.add(path);
+      for (const path of [
+        ...readAssetProvenance(object.userData),
+        ...readAssetProvenance(geometry?.userData),
+      ])
+        paths.add(path);
     });
     return paths;
   });

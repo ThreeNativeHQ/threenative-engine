@@ -239,6 +239,8 @@ struct StandardPrograms {
      *  geometry normal. The normal post target holds it for a draw whose material authors a normalNode
      *  (Renderer::auxFragment). kInvalid for an unlit program. */
     ExprId normal = kInvalid;
+    /** Clamped post-discard final alpha (`max(materialAlpha, 0)`) for alphaToCoverage depth prepasses. */
+    ExprId alpha = kInvalid;
     /** The material's custom MRT slots, lowered in this program's order: one expression per MaterialNodes::mrt entry.
      *  The colour program declares what they read and writes none of them; Renderer::auxFragment writes them. */
     std::vector<ExprId> mrt;

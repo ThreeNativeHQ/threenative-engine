@@ -111,6 +111,16 @@ class Mesh : public Object3D {
   protected:
     friend class Box3;
     virtual const Box3& cachedBounds();
+
+  private:
+    mutable bool raycastSphereValid_ = false;
+    mutable bool raycastInvValid_ = false;
+    mutable std::array<double, 16> raycastWorld_{};
+    mutable const BufferGeometry* raycastGeo_ = nullptr;
+    mutable Vector3 raycastLocalCenter_{};
+    mutable double raycastLocalRadius_ = -1.0;
+    mutable Sphere raycastWorldSphere_{};
+    mutable Matrix4 raycastWorldInv_{};
 };
 
 /** three's Line: its geometry's vertices drawn as one connected line strip, unlit. */

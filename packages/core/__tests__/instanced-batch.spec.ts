@@ -14,6 +14,7 @@ import {
   Vector3,
 } from "three";
 import { describe, expect, it, vi } from "vitest";
+import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
 import { InstancedBatch } from "../src/instanced-batch.js";
 import {
   DiscreteLodPlugin,
@@ -21,6 +22,11 @@ import {
   lodChainOf,
   updateModelLods,
 } from "../src/model-lod.js";
+import { parkMesh } from "../src/render/mesh-pool.js";
+import {
+  measureStartupOffscreenBytes,
+  measureUnusedModels,
+} from "../src/startup-offscreen-bytes.js";
 
 function batch(): InstancedBatch {
   return new InstancedBatch({
@@ -438,5 +444,63 @@ describe("InstancedBatch LOD on the owned engine (PRD-898 J3)", () => {
       Reflect.deleteProperty(proto, "__tnInstancedLodAttach");
       Reflect.deleteProperty(proto, "__tnInstancedLodUpdate");
     }
+  });
+});
+
+describe("InstancedBatch provenance preservation", () => {
+  it("copies geometry provenance onto the built InstancedMesh and clears stale stamps on pooled reuse", () => {
+    const stampedGeometry = new BoxGeometry(1, 1, 1);
+    stampedGeometry.userData[GEOMETRY_ASSET_KEY] = "props/barrier.glb";
+    const material = new MeshBasicMaterial();
+
+    const first = new InstancedBatch({ geometry: stampedGeometry, material });
+    first.place({ position: [0, 0, -5] });
+    const mesh = first.build({ name: "barriers" });
+    expect(mesh?.userData[GEOMETRY_ASSET_KEY]).toBe("props/barrier.glb");
+    if (mesh === undefined) throw new Error("expected built mesh");
+
+    // Parking and reusing the same geometry/material pool slot with an unstamped clone must clear stale stamps.
+    parkMesh(mesh);
+    mesh.userData[GEOMETRY_ASSET_KEY] = "stale/old.glb";
+    delete stampedGeometry.userData[GEOMETRY_ASSET_KEY];
+    const second = new InstancedBatch({ geometry: stampedGeometry, material });
+    second.place({ position: [1, 0, -5] });
+    const reused = second.build({ into: mesh });
+    expect(reused?.userData[GEOMETRY_ASSET_KEY]).toBeUndefined();
+  });
+
+  it("preserves provenance across carrier and AutoLOD rungs when instances switch to coarse levels", async () => {
+    const geometry = await bakedGeometry();
+    geometry.userData[GEOMETRY_ASSET_KEY] = "trees/oak.glb";
+    for (const level of lodChainOf(geometry)?.levels ?? []) {
+      level.userData[GEOMETRY_ASSET_KEY] = "trees/oak.glb";
+    }
+    const batch = new InstancedBatch({ geometry, material: new MeshBasicMaterial() });
+    batch.place({ position: [0, 0, -100] });
+    const scene = new Group();
+    const mesh = batch.build({ name: "oaks", parent: scene });
+    if (mesh === undefined) throw new Error("missing batch");
+    scene.updateMatrixWorld(true);
+
+    updateModelLods(scene, lodCamera(), 1080);
+
+    expect(mesh.userData[GEOMETRY_ASSET_KEY]).toBe("trees/oak.glb");
+    expect(mesh.geometry.userData[GEOMETRY_ASSET_KEY]).toBe("trees/oak.glb");
+    expect(
+      lodChainOf(geometry)?.levels.every(
+        (level) => level.userData[GEOMETRY_ASSET_KEY] === "trees/oak.glb",
+      ),
+    ).toBe(true);
+
+    const resolved = new Map([
+      [
+        "trees/oak.glb",
+        { bytes: 12_000, kind: "model" as const, url: "/trees/oak.glb", via: "manifest" as const },
+      ],
+    ]);
+    expect(measureUnusedModels(resolved, scene, 60_000)).toBeUndefined();
+    const offscreen = measureStartupOffscreenBytes(resolved, scene, lodCamera());
+    expect(offscreen.visibleBytes).toBe(12_000);
+    expect(offscreen.offscreenBytes).toBe(0);
   });
 });

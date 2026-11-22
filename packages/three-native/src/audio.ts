@@ -94,6 +94,7 @@ export function defineAudioClasses(engine: IAudioEngine) {
     filter: AudioNode | null = null;
     timeDelta = 0;
     #last: number | undefined;
+    #lastPose: Float64Array | undefined;
 
     constructor() {
       super();
@@ -151,6 +152,35 @@ export function defineAudioClasses(engine: IAudioEngine) {
       this.matrixWorld.decompose(position, quaternion, scale);
       forward.set(0, 0, -1).applyQuaternion(quaternion);
       up.set(0, 1, 0).applyQuaternion(quaternion);
+      const last = this.#lastPose;
+      if (
+        last !== undefined &&
+        last[0] === position.x &&
+        last[1] === position.y &&
+        last[2] === position.z &&
+        last[3] === forward.x &&
+        last[4] === forward.y &&
+        last[5] === forward.z &&
+        last[6] === up.x &&
+        last[7] === up.y &&
+        last[8] === up.z
+      ) {
+        return;
+      }
+      let next = last;
+      if (next === undefined) {
+        next = new Float64Array(9);
+        this.#lastPose = next;
+      }
+      next[0] = position.x;
+      next[1] = position.y;
+      next[2] = position.z;
+      next[3] = forward.x;
+      next[4] = forward.y;
+      next[5] = forward.z;
+      next[6] = up.x;
+      next[7] = up.y;
+      next[8] = up.z;
       if (listener.positionX) {
         const end = this.context.currentTime + this.timeDelta;
         const ramp = (name: string, value: number) =>
@@ -433,6 +463,7 @@ export function defineAudioClasses(engine: IAudioEngine) {
 
   class PositionalAudio extends Audio<PannerNode> {
     panner: PannerNode;
+    #lastPose: Float64Array | undefined;
 
     constructor(listener: AudioListener) {
       super(listener);
@@ -501,6 +532,29 @@ export function defineAudioClasses(engine: IAudioEngine) {
       if (refresh) this.updateWorldMatrix(true, false);
       this.matrixWorld.decompose(position, quaternion, scale);
       orientation.set(0, 0, 1).applyQuaternion(quaternion);
+      const last = this.#lastPose;
+      if (
+        last !== undefined &&
+        last[0] === position.x &&
+        last[1] === position.y &&
+        last[2] === position.z &&
+        last[3] === orientation.x &&
+        last[4] === orientation.y &&
+        last[5] === orientation.z
+      ) {
+        return;
+      }
+      let next = last;
+      if (next === undefined) {
+        next = new Float64Array(6);
+        this.#lastPose = next;
+      }
+      next[0] = position.x;
+      next[1] = position.y;
+      next[2] = position.z;
+      next[3] = orientation.x;
+      next[4] = orientation.y;
+      next[5] = orientation.z;
       const panner = this.panner as LegacyPanner;
       if (panner.positionX) {
         const end = this.context.currentTime + this.listener.timeDelta;

@@ -495,4 +495,41 @@ describe("the hooks one draw reads", () => {
       [undefined, [42], [fog[TSL_NODE], glow[TSL_NODE]]],
     ]);
   });
+
+  it("caches compute kernel reads per hooked/object list and invalidates when uniforms grow", () => {
+    const { runtime } = setup();
+    const reads = vi.fn(
+      (_root: unknown, _kernels: readonly number[], candidates: readonly number[]) =>
+        candidates.length > 0 ? [candidates.length - 1] : [],
+    );
+    runtime.reads = reads;
+    const tsl = defineTsl(runtime);
+    const uniform = tsl.exports.uniform as (value: unknown) => {
+      [TSL_NODE]: number;
+      onRenderUpdate(callback: () => number): unknown;
+    };
+    let a = 1;
+    uniform(0).onRenderUpdate(() => ++a);
+    const matA = { elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] };
+    // Unwatched object via custom getter/accessor so it enters `objects`.
+    const watchedMatrix = new Proxy(matA, {}) as { elements: number[] };
+    Object.defineProperty(watchedMatrix, "isMatrix4", { value: true });
+    uniform(watchedMatrix);
+
+    tsl.sync({ frameId: 1, kernels: [77] });
+    tsl.sync({ frameId: 2, kernels: [77] });
+    tsl.sync({ frameId: 3, kernels: [77] });
+    // Called once for `updating` and once for `objectNodes`, then cached across frames 2 & 3.
+    expect(reads).toHaveBeenCalledTimes(2);
+
+    // Registering a new matrix uniform invalidates the compute reads cache for objects.
+    const matB = Object.defineProperty(
+      { elements: [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1] },
+      "isMatrix4",
+      { value: true },
+    );
+    uniform(matB);
+    tsl.sync({ frameId: 4, kernels: [77] });
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
 });

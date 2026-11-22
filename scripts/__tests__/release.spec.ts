@@ -427,23 +427,35 @@ describe("pnpm release publishing", () => {
   it("waits for the install packument, not the per-version endpoint", async () => {
     // 0.3.10 and 0.3.11: the version endpoint answered first, and `npm create` in the clean room
     // read a packument that did not list the new version yet (ETARGET).
-    const requests: { url: string; accept: string }[] = [];
-    const registry = (versions: Record<string, unknown>, latest: string) =>
+    const requests: { url: string; accept: string; method: string }[] = [];
+    const tgz = (version: string) => ({ dist: { tarball: `https://tgz.test/${version}.tgz` } });
+    const registry = (versions: Record<string, unknown>, latest: string, tarballStatus = 200) =>
       (async (url: string | URL | Request, init?: RequestInit) => {
-        requests.push({ url: String(url), accept: new Headers(init?.headers).get("accept") ?? "" });
+        requests.push({
+          url: String(url),
+          accept: new Headers(init?.headers).get("accept") ?? "",
+          method: init?.method ?? "GET",
+        });
+        if (String(url).startsWith("https://tgz.test/"))
+          return new Response(null, { status: tarballStatus });
         return new Response(JSON.stringify({ "dist-tags": { latest }, versions }), { status: 200 });
       }) as typeof fetch;
-    const missing = registry({ "0.2.14": {} }, "0.2.14");
-    const untagged = registry({ "0.2.14": {}, "0.2.15": {} }, "0.2.14");
-    const ready = registry({ "0.3.11": {} }, "0.3.11");
+    const missing = registry({ "0.2.14": tgz("0.2.14") }, "0.2.14");
+    const untagged = registry({ "0.2.14": tgz("0.2.14"), "0.2.15": tgz("0.2.15") }, "0.2.14");
+    // 0.3.19: create-threenative 0.2.24 was listed and tagged while its tarball still served 404.
+    const unserved = registry({ "0.2.24": tgz("0.2.24") }, "0.2.24", 404);
+    const ready = registry({ "0.3.11": tgz("0.3.11") }, "0.3.11");
 
     expect(await installableOnRegistry("create-threenative", "0.2.15", missing)).toBe(false);
     expect(await installableOnRegistry("create-threenative", "0.2.15", untagged)).toBe(false);
+    expect(await installableOnRegistry("create-threenative", "0.2.24", unserved)).toBe(false);
     expect(await installableOnRegistry("@threenative/core", "0.3.11", ready)).toBe(true);
-    expect(requests.at(-1)).toEqual({
+    expect(requests.at(-2)).toEqual({
       url: "https://registry.npmjs.org/@threenative%2fcore",
       accept: "application/vnd.npm.install-v1+json",
+      method: "GET",
     });
+    expect(requests.at(-1)).toMatchObject({ url: "https://tgz.test/0.3.11.tgz", method: "HEAD" });
   });
 });
 

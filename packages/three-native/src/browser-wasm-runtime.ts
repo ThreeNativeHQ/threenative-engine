@@ -498,6 +498,27 @@ export function createWasmRuntime(abi: TnAbiModule): IBrowserRuntime {
           );
         return target.subarray(from, from + length).slice();
       }),
+    attributeReadInto: (self, dest, offset, count, destOffset) =>
+      withAttributeView(self, (target) => {
+        const from = offset === undefined ? 0 : offset;
+        const into = destOffset === undefined ? 0 : destOffset;
+        const length = count === undefined ? target.length - from : count;
+        if (
+          !Number.isSafeInteger(from) ||
+          !Number.isSafeInteger(length) ||
+          !Number.isSafeInteger(into) ||
+          from < 0 ||
+          length < 0 ||
+          into < 0 ||
+          from + length > target.length ||
+          into + length > dest.length
+        )
+          throw new RangeError(
+            `TN_NATIVE_ATTRIBUTE_RANGE: [${String(from)}, ${String(length)}) into [${String(into)}, ${String(dest.length)}) is outside ${String(target.length)} elements`,
+          );
+        dest.set(target.subarray(from, from + length) as never, into);
+        return length;
+      }),
     attributeWrite: (self, array, offset) =>
       withAttributeView(self, (target) => {
         // An omitted offset writes the whole attribute, so the array must be its exact data; an

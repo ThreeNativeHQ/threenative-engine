@@ -194,8 +194,26 @@ Vector3& Mesh::getVertexPosition(uint64_t index, Vector3& target) const {
 bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
     if (!material || !geometry) return true;
     if (!geometry->boundingSphere) geometry->computeBoundingSphere();
+    const Sphere& localSphere = *geometry->boundingSphere;
+    const bool sameWorld = raycastSphereValid_ && raycastWorld_ == matrixWorld.elements;
+    if (!sameWorld) {
+        raycastWorld_ = matrixWorld.elements;
+        raycastSphereValid_ = false;
+        raycastInvValid_ = false;
+    }
     Sphere sphere;
-    sphere.copy(*geometry->boundingSphere).applyMatrix4(matrixWorld);
+    if (sameWorld && raycastGeo_ == geometry.get() &&
+        raycastLocalCenter_.x == localSphere.center.x && raycastLocalCenter_.y == localSphere.center.y &&
+        raycastLocalCenter_.z == localSphere.center.z && raycastLocalRadius_ == localSphere.radius) {
+        sphere = raycastWorldSphere_;
+    } else {
+        sphere.copy(localSphere).applyMatrix4(matrixWorld);
+        raycastGeo_ = geometry.get();
+        raycastLocalCenter_ = localSphere.center;
+        raycastLocalRadius_ = localSphere.radius;
+        raycastWorldSphere_ = sphere;
+        raycastSphereValid_ = true;
+    }
     Ray local;
     local.copy(caster.ray).recast(caster.near);
     Vector3 sphereHit;
@@ -204,8 +222,11 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
         const double range = caster.far - caster.near;
         if (local.origin.distanceToSquared(sphereHit) > range * range) return true;
     }
-    Matrix4 inverse;
-    inverse.copy(matrixWorld).invert();
+    if (!raycastInvValid_) {
+        raycastWorldInv_.copy(matrixWorld).invert();
+        raycastInvValid_ = true;
+    }
+    const Matrix4& inverse = raycastWorldInv_;
     local.copy(caster.ray).applyMatrix4(inverse);
     if (geometry->boundingBox && !local.intersectsBox(*geometry->boundingBox)) return true;
     const auto position = geometry->getAttribute("position");

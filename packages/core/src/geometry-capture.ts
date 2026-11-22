@@ -354,7 +354,9 @@ function assetOf(object: Object3D): string | undefined {
     if (typeof stamped === "string" && stamped !== "") return stamped;
     node = node.parent;
   }
-  return undefined;
+  const geometry = (object as Object3D & { geometry?: { userData?: unknown } }).geometry;
+  const stamped = (geometry?.userData as Record<string, unknown> | undefined)?.[GEOMETRY_ASSET_KEY];
+  return typeof stamped === "string" && stamped !== "" ? stamped : undefined;
 }
 
 /**

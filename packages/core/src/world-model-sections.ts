@@ -1,4 +1,9 @@
 import { type Box3, type BufferGeometry, type Material, type Mesh, Vector3 } from "three";
+import {
+  ancestorAssetProvenance,
+  readAssetProvenance,
+  writeAssetProvenance,
+} from "./asset-provenance.js";
 import { baseGeometryOf } from "./model-lod.js";
 
 /** One material section of a mesh: the whole mesh, or one group of a multi-material mesh. */
@@ -56,6 +61,11 @@ export function sectionGeometry(
   const centre = box.getCenter(new Vector3());
   const centred = options.centreXZ === true;
   geometry.translate(centred ? -centre.x : 0, -box.min.y, centred ? -centre.z : 0);
+  if (readAssetProvenance(geometry.userData).length === 0) {
+    // `BufferGeometry.copy` shares `userData`; detach it so the stamp never lands on the source.
+    geometry.userData = { ...geometry.userData };
+    writeAssetProvenance(geometry.userData, ancestorAssetProvenance(mesh));
+  }
   return geometry;
 }
 

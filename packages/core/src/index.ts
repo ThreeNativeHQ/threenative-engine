@@ -446,6 +446,37 @@ export type {
   IInstancedPlacement,
 } from "./instanced-batch.js";
 /**
+ * Instance an entire multi-mesh, multi-material static model across many placements in spatial
+ * cells, keeping every child transform, baked AutoLOD chain and loader asset provenance intact.
+ *
+ * `InstancedBatch` instances one `(geometry, material)` primitive at a time; an imported model is a
+ * tree of child meshes, nested transforms and multi-material groups. Calling `InstancedModel`
+ * extracts every static part in source space, groups placements into XZ frustum-cullable spatial
+ * cells (default 48 m), preserves baked `TN_discrete_lod` chains on single-material meshes, and
+ * carries `tnAssetPath` provenance onto the built `InstancedMesh` batches so `TN_ASSET_UNUSED` and
+ * `TN_STARTUP_OFFSCREEN_BYTES` recognize instanced scenery without manual `userData` bookkeeping.
+ *
+ * @situation instance a loaded multi-mesh glTF prop or building many times across a level
+ * @situation replace repeated `clone()` calls on static glTF buildings, barriers or roadside scenery with instanced batches
+ * @situation bucket scattered or instanced multi-part models into spatial cells for frustum culling
+ * @constraint static meshes only: skinned meshes are skipped and an empty source throws; the game supplies source meshes, transforms and materials
+ * @constraint multi-material sections clone the base geometry per draw-range slice; single-material parts share the base geometry and its baked AutoLOD chain
+ * @constraint placing after build() throws, and build() returns an empty array when nothing was placed
+ * @override cellSize sets the XZ spatial cell edge in metres (default 48), or false for one bucket across all placements
+ * @override autoLod, skip, castShadow and receiveShadow pass through cleanly to the underlying meshes
+ * @example const trees = new InstancedModel({ source: model.scene, cellSize: 48 });
+ * trees.place({ position: [x, 0, z], rotation: [0, yaw, 0], scale });
+ * trees.build({ castShadow: true, name: "trees", parent: ctx.scene });
+ */
+export {
+  INSTANCED_MODEL_DEFAULT_CELL_SIZE,
+  InstancedModel,
+} from "./instanced-model.js";
+export type {
+  IInstancedModelBuildOptions,
+  IInstancedModelOptions,
+} from "./instanced-model.js";
+/**
  * Merge pieces a game authored out of primitives into one buffer, keeping each piece's own look.
  *
  * `InstancedBatch` collapses many copies of one shape; this collapses many *different* shapes that

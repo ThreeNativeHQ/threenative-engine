@@ -136,4 +136,26 @@ describe("Billboard3D", () => {
       () => new Billboard3D(label, { camera: new PerspectiveCamera(), lockAxis: "q" as never }),
     ).toThrow("Billboard3D.lockAxis");
   });
+
+  it("delegates to __tnBillboardFace once when provided by the owned engine", () => {
+    const camera = new PerspectiveCamera();
+    const label = new Group();
+    let worldCalls = 0;
+    label.updateWorldMatrix = () => {
+      worldCalls += 1;
+    };
+    const seen: unknown[] = [];
+    Object.assign(label, {
+      __tnBillboardFace(this: unknown, cam: unknown, lock: number) {
+        seen.push(this, cam, lock);
+        return this;
+      },
+    });
+    new Billboard3D(label, { camera }).update();
+    new Billboard3D(label, { camera, lockAxis: "x" }).update();
+    new Billboard3D(label, { camera, lockAxis: "y" }).update();
+    new Billboard3D(label, { camera, lockAxis: "z" }).update();
+    expect(seen).toEqual([label, camera, 0, label, camera, 1, label, camera, 2, label, camera, 3]);
+    expect(worldCalls).toBe(0);
+  });
 });

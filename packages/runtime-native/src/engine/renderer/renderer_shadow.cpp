@@ -83,6 +83,7 @@ bool Renderer::ensureVirtualShadowMap(std::size_t light) {
 }
 
 void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
+    if (skipShadows_) return;
     // Unreal's texel rule on this view: a size change rebuilds that light's atlas.
     const WGPULimits limits = tanHalfFov > 0 && width_ > 0 ? deviceLimits() : WGPULimits{};
     const auto measured = [&](const shadows::AtlasOptions& options, const auto& shadow) {

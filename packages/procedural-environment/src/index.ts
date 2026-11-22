@@ -994,10 +994,13 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
  * @constraint units are metres, +Y up; stock roads fit a 24 m grid, and custom straights and bends export updated socket positions, directions, widths and lane centres in the root node's extras
  * @constraint roadWidth and markings apply to straight and curve; roadLength applies to straight; bendAngle, bendRadius and bendSide apply to curve; roadSurface applies to socketed road modules
  * @constraint bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export
+ * @constraint only bake road tiles (`straight`, `curve`, `cross`, `tee`, `alley`, `grid`, `pit`, `cul-de-sac`) when assembling the drivable carriageway from kit tiles; when a level builds its own spline or terrain road, bake scenery modules instead (`detail: 1, dressing: false` keeps draw counts low)
+ * @constraint `emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; `opaqueGlass: true` converts transmissive architectural glass to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass
  * @requires npm i -D @threenative/procedural-environment
- * @example await bakeCity({ module: "cross", out: "assets/city" });
- * @example await bakeCity({ module: "curve", bendAngle: 55, bendRadius: 24, bendSide: "left", roadWidth: 12, sidewalk: false, curb: false, out: "assets/city" });
- * @example await bakeCity({ module: "apartments", seed: 7, floors: 8, out: "assets/city" });
+ * @example await bakeCity({ module: "office", detail: 1, dressing: false, out: "assets/city" });
+ * @example await bakeCity({ module: "civic-ad", detail: 1, text: "GRAND PRIX", emissiveSigns: true, out: "assets/city" });
+ * @example // Modular-road layout built from kit tiles:
+ * await bakeCity({ module: "cross", out: "assets/city" });
  */
 export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> {
   const ids = cityModules().map((module) => module.id);
