@@ -301,11 +301,13 @@ async function readClaim(claimed: string): Promise<IAuthFile | undefined | CliEx
 async function claimTokenFiles(file: string): Promise<string[]> {
   const dir = path.dirname(file);
   const base = path.basename(file);
-  let names: string[];
+  // A directory this user cannot list can still hold an auth.json it can rename by name, so a failed
+  // listing only skips the leftovers; it never reads as "not signed in".
+  let names: string[] = [];
   try {
     names = await readdir(dir);
   } catch {
-    return [];
+    // No directory: the rename below finds no auth.json either.
   }
   const left = names.filter((name) => name.startsWith(`${base}.`) && name.endsWith(".logout"));
   const claims: string[] = [];

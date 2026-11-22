@@ -214,6 +214,27 @@ describe("threenative deploy", () => {
     await site.close();
   });
 
+  it("waits for a share.json another first deploy has created but not yet written", async () => {
+    const cwd = await projectDir({ "build:web": "vite build" });
+    const site = await fakeStudio(() => ({
+      body: { projectId: "p1", shareUrl: "https://x-share.example/" },
+      status: 200,
+    }));
+    const file = path.join(cwd, ".threenative", "share.json");
+    await mkdir(path.dirname(file), { recursive: true });
+    await writeFile(file, "");
+    const theirs = "11111111-2222-4333-8444-555555555555";
+    const late = new Promise<void>((done) => setTimeout(done, 100)).then(() =>
+      writeFile(file, JSON.stringify({ deployKey: theirs })),
+    );
+
+    await deploy({ cwd, out: () => {}, runBuild: writeBuild, studio: site.origin, token: "tok-1" });
+    await late;
+
+    expect(queryOf(site.requests[0]?.url).get("key")).toBe(theirs);
+    await site.close();
+  });
+
   it("retries a first deploy whose reply was lost with the same key, so it lands on one game", async () => {
     const cwd = await projectDir({ "build:web": "vite build" });
     let uploads = 0;

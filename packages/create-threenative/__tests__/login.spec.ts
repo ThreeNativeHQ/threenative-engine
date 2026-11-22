@@ -317,6 +317,30 @@ describe("threenative login and logout", () => {
     await site.close();
   });
 
+  it.skipIf(process.getuid?.() === 0)(
+    "revokes auth.json in a directory it cannot list",
+    async () => {
+      const file = authFilePath();
+      const dir = path.dirname(file);
+      await mkdir(dir, { recursive: true });
+      await writeFile(file, JSON.stringify({ token: "tok-hidden" }));
+      await chmod(dir, 0o300);
+      const site = await fakeSite(() => ({ body: { ok: true }, status: 200 }));
+      const lines: string[] = [];
+
+      try {
+        await logout({ out: (line) => lines.push(line), site: site.origin });
+      } finally {
+        await chmod(dir, 0o700);
+      }
+
+      expect(site.requests.map((request) => request.authorization)).toEqual(["Bearer tok-hidden"]);
+      expect(lines).toEqual(["Signed out."]);
+      expect(await readdir(dir)).toEqual([]);
+      await site.close();
+    },
+  );
+
   it("revokes a token an interrupted logout left behind", async () => {
     const file = authFilePath();
     await mkdir(path.dirname(file), { recursive: true });

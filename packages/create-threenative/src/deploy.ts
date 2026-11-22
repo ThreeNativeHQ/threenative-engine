@@ -127,20 +127,25 @@ async function claimDeployKey(file: string): Promise<string> {
       await writeFile(file, `${JSON.stringify({ deployKey: mine }, null, 2)}\n`, { flag: "wx" });
       return mine;
     } catch (fallback) {
-      if ((fallback as NodeJS.ErrnoException).code !== "EEXIST") throw fallback;
-      return await theirKey(file);
+      if ((fallback as NodeJS.ErrnoException).code === "EEXIST") return await theirKey(file);
+      // Created but not written: an empty share.json would stop every later deploy, so it goes.
+      await rm(file, { force: true });
+      throw fallback;
     }
   } finally {
     await rm(tmp, { force: true });
   }
 }
 
-/** The key another first deploy from this checkout already claimed. */
+/** The key another first deploy from this checkout already claimed. Without hard links its file can
+ * exist a moment before its bytes do, so an empty read is retried for about a second. */
 async function theirKey(file: string): Promise<string> {
-  const theirs = (await readJson<IShareFile>(file))?.deployKey;
-  if (typeof theirs !== "string" || theirs === "")
-    throw new CliExit(4, `${file} exists but holds no deploy key; fix or delete it.`);
-  return theirs;
+  for (let attempt = 0; attempt < 40; attempt += 1) {
+    const theirs = (await readJson<IShareFile>(file))?.deployKey;
+    if (typeof theirs === "string" && theirs !== "") return theirs;
+    await new Promise((done) => setTimeout(done, 25));
+  }
+  throw new CliExit(4, `${file} exists but holds no deploy key; fix or delete it.`);
 }
 
 export interface IDeployOptions {
