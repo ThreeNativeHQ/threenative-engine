@@ -81,12 +81,12 @@ builds locally can still fail there — check it before claiming the scaffold wo
 
 ## CLI surface
 
-Two `threenative` commands, ever: `build` (`--target web|desktop|android|ios`) and `doctor`
+The `threenative` commands are `build` (`--target web|desktop|android|ios`) and `doctor`
 (`--text` prints the person-readable report; it checks rather than builds, borrowed whole from
 `npm doctor` and `flutter doctor`). `__tests__/cli.spec.ts` derives the advertised list from the
-real executable and rejects anything else, so this document cannot outgrow the binary. A third
-command needs the owner decision made again — v1 shipped 178 command forms and a 2,477-word root
-help. The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]`; its flags stay
+real executable and rejects anything else, so this document cannot outgrow the binary. A new
+command borrows its name from an established CLI (`npm`, `wrangler`, `vercel`), never a new word.
+The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]`; its flags stay
 boring: `--template`, `--no-install`, and the `--*-package` overrides CI uses to test against
 local tarballs. `pnpm dev` inside a generated project is a package script, never a CLI command.
 
