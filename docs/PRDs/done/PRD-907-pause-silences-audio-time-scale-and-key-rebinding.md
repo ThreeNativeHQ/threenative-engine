@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-907 — Pause silences audio, games get a time scale, and players can rebind keys
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-11-23)
 **Priority:** P2 — Phases 1 to 3 are open: the kart and racing kits keep playing sound while paused, slow motion has no supported path, and no options menu can remap a key.
 **Complexity:** 3 (LOW) — 3-4 files in `packages/core/src`, no new package, no platform seam.
 **Owner:** João
@@ -35,13 +35,15 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found three ga
 
 - [x] `game.pause()` pauses the audio bus and `resume()` resumes it. `pause({ audio: false })` keeps it on and prints `TN_PAUSE_AUDIO_KEPT`. proof: `pnpm exec vitest run packages/core/__tests__/game-pause.spec.ts`, red before the change
   result: ✅ `game-pause.spec.ts` 4 cases (3 red before the change; the fourth, a bus the game paused itself stays paused across a double pause, red against the first draft). Neighbour audio and game specs 103 passed.
-- [ ] The racing kit is silent while paused. proof: racing playtest scenario that sends the `pause` intent and asserts `audio.paused === true` in the runtime snapshot (`pnpm test:templates`, racing kit only)
+- [x] The racing kit is silent while paused. proof: racing playtest scenario that sends the `pause` intent and asserts `audio.paused === true` in the runtime snapshot (`pnpm test:templates`, racing kit only)
+  result: ✅ `racing/playtests/pause-silences-audio.playtest.json` passes in `TN_TEMPLATE_ONLY=racing,kart,puzzle TN_KIT_CONTRACT=0 pnpm test:templates` (WebGPU, NVIDIA Turing). It clicks the HUD pause control and reads the new `audio` playtest resource: `silent` false while racing, true after the pause and 60 ticks later, and `state.paused` true. `silent` is the bus-level flag (every live bus paused, false with no bus); the snapshot's `paused` field counts held voices, so it was not the right observable. The racing kit handled a `pause` intent but no UI sent one: the HUD now carries a pause/resume button (`data-tn-interactive`).
 
 ### Phase 2 — Time scale
 
 - [x] `ctx.timeScale = 0.5` gives half the ticks per wall second with the same `step`. `0` freezes the simulation. A non-finite value throws `TN_TIME_SCALE_INVALID`. proof: `pnpm exec vitest run packages/core/__tests__/loop-time-scale.spec.ts`
   result: ✅ `loop-time-scale.spec.ts` 7 cases, red before: 230 vs 115 ticks over the same 3.84 s at step 1/60, 0 freezes with rendering running, NaN/Infinity/-1 throw. All 13 `FixedStepLoop` specs, 165 passed.
-- [ ] A playtest scenario with `timeScale = 0.5` advances a timer half as far in the same wall time. proof: scenario under `packages/playtest`, run with `--browser-recipe webgpu`
+- [x] A playtest scenario with `timeScale = 0.5` advances a timer half as far in the same wall time. proof: scenario under `packages/playtest`, run with `--browser-recipe webgpu`
+  result: ✅ `examples/abyss-framework/playtests/time-scale-half.playtest.json` passes with `--browser-recipe webgpu --headed` (adapter nvidia/turing): fixed updates per wall second at scale 0.5 over the scale-1 rate = 0.505 (bound 0.4 to 0.6).
 
 ### Phase 3 — Key rebinding
 
@@ -54,7 +56,8 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found three ga
 
 - [x] AC-1: `pause`, `timeScale` and `setBinding` each have a row in `packages/core/capabilities.json` with an example. proof: `pnpm build`, then `engine_search_capabilities "slow motion"` and `"rebind keys"` return the rows
   result: ✅ rows `game.pause`, `ctx.timeScale`, `InputMap.setBinding`; `searchCapabilities` returns `ctx.timeScale` for "slow motion", `InputMap.setBinding` for "rebind keys", `game.pause` first for "pause the game and mute the sound".
-- [ ] AC-2: No kit regresses. proof: `pnpm test:templates` for kart, racing and puzzle
+- [x] AC-2: No kit regresses. proof: `pnpm test:templates` for kart, racing and puzzle
+  result: ✅ `TN_TEMPLATE_ONLY=racing,kart,puzzle TN_KIT_CONTRACT=0 pnpm test:templates`: 47 scenarios, 0 failed, exit 0, 2026-11-23.
 
 ## Blocked on
 
