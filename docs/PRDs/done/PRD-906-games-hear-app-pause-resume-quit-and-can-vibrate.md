@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-906 — Games hear app pause, resume and quit, and can vibrate, on every runtime
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-11-22)
 **Priority:** P1 — Phase 1 and Phase 2 are open: a mobile game cannot save when the OS sends it to the background, cannot offer Quit, and has no rumble or vibration on any platform.
 **Complexity:** 6 (MEDIUM) — 5-8 files, crosses core and the C++ host, plus one Android emulator proof.
 **Owner:** João
