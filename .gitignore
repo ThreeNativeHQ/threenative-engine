@@ -223,6 +223,11 @@ tools/unreal-reference/Intermediate/
 tools/unreal-reference/DerivedDataCache/
 tools/unreal-reference/Content/
 tools/unreal-reference/captures/
+tools/unreal-reference/character-dynamics/Saved/
+tools/unreal-reference/character-dynamics/Intermediate/
+tools/unreal-reference/character-dynamics/Binaries/
+tools/unreal-reference/character-dynamics/DerivedDataCache/
+tools/unreal-reference/character-dynamics/Content/
 tools/unreal-reference/gi/**/__pycache__/
 # The terrain preview's opt-in engine build (pnpm build:engine) writes here.
 examples/strata-terrain-preview/dist-engine/

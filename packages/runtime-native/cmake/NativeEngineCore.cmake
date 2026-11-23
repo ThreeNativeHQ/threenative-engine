@@ -488,7 +488,8 @@ tn_native_engine_test(tn-native-engine-shader-ir-test tests/native-engine/shader
     native_engine_tsl_ir_storage_textures=storage_textures
     native_engine_tsl_ir_order=order
     native_engine_tsl_ir_types=types
-    native_engine_tsl_unsupported=unsupported)
+    native_engine_tsl_unsupported=unsupported
+    native_engine_tsl_ir_workgroup_memory=workgroup_memory)
 target_link_libraries(tn-native-engine-shader-ir-test PRIVATE tn_engine_shader)
 
 tn_native_engine_test(tn-native-engine-material-uniforms-test tests/native-engine/material_uniforms_test.cpp

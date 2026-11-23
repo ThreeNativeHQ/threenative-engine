@@ -244,7 +244,7 @@ uint32_t effectiveShadowLayersMask(const Camera& shadowCamera, const Camera& mai
     return (shadowMask & 0xFFFFFFFEu) == 0 ? Layers::bits(mainCamera.layers().mask) : shadowMask;
 }
 
-/** How many PbrMaps a material reads: Standard its four, Physical also its specular and clearcoat maps, others none. */
+/** How many PbrMaps a material reads: Standard its four, Physical also its specular, clearcoat and anisotropy maps, others none. */
 int pbrMapsRead(const Material& material) {
     return material.type == MaterialType::Physical ? shader::kPbrMapCount
            : material.type == MaterialType::Standard ? shader::kStandardPbrMapCount : 0;
@@ -315,6 +315,7 @@ shader::StandardMaterial paramsOf(const Material& m) {
     p.transmission = float(m.transmission);
     p.iridescence = float(m.iridescence);
     p.anisotropy = float(m.anisotropy);
+    p.anisotropyRotation = float(m.anisotropyRotation);
     p.dispersion = float(m.dispersion);
     return p;
 }

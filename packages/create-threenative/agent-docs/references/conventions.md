@@ -143,6 +143,15 @@ Default: measure a clip before rewriting it. Override: `clipPoseError`; `clipTra
 
 `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching.
 
+<a id="skinned-cloth"></a>
+## Cape and skirt cloth
+
+Default: skinned cloth follows the skin where its mask is 1 and clears the body. Override: `bodyColliders`; `cloth`. Reports: TN_SOFTBODY_RESET.
+
+`bodyColliders: false` turns body collision off and an explicit capsule list replaces the measured one; `cloth` picks the mask source.
+
+Give `SoftBody3D` the cloth as a `SkinnedMesh` bound to the character's skeleton. The red vertex colour is the mask by default: 1 follows the skin, 0 simulates. The node measures one capsule per body bone from the character's other skinned meshes and shrinks each one until the cloth's rest pose clears it, so a cape that fits at rest starts at rest. It simulates in world space with Unreal Chaos Cloth's stock inertia (velocity scales 0.75), damping, tethers and aerodynamics. A teleport, a turn past 90° in one step, or `reset()` snaps the cloth to the body and logs `TN_SOFTBODY_RESET` with the cause. `debug()` reports `bodyCapsules` and `maskSource`.
+
 <a id="rough-diffuse"></a>
 ## Rough diffuse
 

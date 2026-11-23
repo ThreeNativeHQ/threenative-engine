@@ -120,7 +120,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "b481f869ef53eab5c55f9b99f7b8516cb914d49fda831c3697ddf07cdca77c63",
   },
   adventure: {
-    shared: "f7a27ba525b548a47183931fbdc00d9c74b241b712738b3f77e4bcd074d989b2",
+    shared: "c2587541155c013a69bf20f9f79b293a225abc700d15d059fa5d243047775e8a",
     kit: "245f731799f22ab8a612a950b5a351c62f4ea58b231bf7c92282001011c618f3",
   },
   collectathon: {
@@ -173,7 +173,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   starter: {
     shared: "4507b737826751e93a68aa61f42695d50851b4daa3806b622015902ec9c60845",
-    kit: "9d92248de62d8b849ffc28c01b0d5f6ec54854a108f2d8226c7c54db3705ce91",
+    kit: "dcc1744325b7a52efe76f7d62fc4578dac46b6ef9f6f47adc81f4d8335d85aa4",
   },
   "tower-defense": {
     shared: "3f404df3fad204579c2e2dcfb56f17eb8f16d4eb1024623c78b99f65dbe1dea5",

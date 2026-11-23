@@ -396,7 +396,7 @@ int main() {
          R"({"extensions":{"KHR_materials_volume":{"thicknessFactor":2,"attenuationDistance":3}}})",
          R"({"extensions":{"KHR_materials_sheen":{"sheenColorFactor":[1,0,0],"sheenColorTexture":{"index":0},"sheenRoughnessTexture":{"index":0}}}})",
          R"({"extensions":{"KHR_materials_iridescence":{"iridescenceFactor":0.3,"iridescenceTexture":{"index":0},"iridescenceThicknessTexture":{"index":0}}}})",
-         R"({"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.7,"anisotropyTexture":{"index":0}}}})",
+         R"({"extensions":{"KHR_materials_anisotropy":{"anisotropyStrength":0.7,"anisotropyRotation":0.6,"anisotropyTexture":{"index":0}}}})",
          R"({"extensions":{"KHR_materials_dispersion":{"dispersion":0.4}}})",
          R"({"extensions":{"EXT_materials_bump":{"bumpFactor":2,"bumpTexture":{"index":0}}}})", R"({})"});
     const auto physicalOf = [&](const char* node) { return materialIn(physicalExtensions, node); };
@@ -429,8 +429,8 @@ int main() {
         if (iridescent->iridescence != 0.3 || !iridescent->maps.count("iridescenceMap") || !iridescent->maps.count("iridescenceThicknessMap")) {
             std::printf("iridescence: factor or maps not read\n"); ++differ;
         }
-        if (anisotropic->anisotropy != 0.7 || !anisotropic->maps.count("anisotropyMap")) {
-            std::printf("anisotropy: strength or map not read\n"); ++differ;
+        if (anisotropic->anisotropy != 0.7 || anisotropic->anisotropyRotation != 0.6 || !anisotropic->maps.count("anisotropyMap")) {
+            std::printf("anisotropy: strength, rotation or map not read\n"); ++differ;
         }
         if (dispersive->dispersion != 0.4) { std::printf("dispersion: not read\n"); ++differ; }
         if (bumpy->bumpScale != 2 || !bumpy->maps.count("bumpMap")) { std::printf("bump: factor or map not read\n"); ++differ; }

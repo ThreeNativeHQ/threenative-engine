@@ -1,0 +1,66 @@
+---
+prd_contract: v1
+---
+
+# PRD-910 — A running character proves its cape and hair in one scene
+
+**Status:** DONE (2026-11-23, PR #717; the deferred criteria live in PRD-914)
+**Complexity:** 6 (HIGH) — new example and probe (+2), Unreal reference scene with Chaos Cloth and a groom (+2), owned-engine bind-group bug (+2)
+**Owner:** João
+**Depends on:** none. Epic: [character dynamics](README.md).
+
+## Context
+
+The owner does not trust the cloth and hair code because nothing validated it on a moving body. The incumbent proof, `examples/prd243-cloth`, is a flag on a pole. A flag never tests skinned pins, inertia, body collision or teleport, which are the cases that break a cape. The baseline run on 2026-11-22 (see the epic README) shows `SoftBody3D` stretching to 2.4× its length and passing through the legs.
+
+## Solution
+
+`examples/character-dynamics` is the one proof scene for the epic. The CC0 mannequin (`examples/abyss-framework/assets/mannequin.glb`, an Unreal-Manny bone layout with idle, walk, jog, sprint and jump clips) runs a fixed script on the fixed step:
+
+| Phase | Ticks | Motion |
+|---|---|---|
+| settle | 90 | idle |
+| jog | 90 | 3.4 m/s straight |
+| jogTurn | 120 | 3.4 m/s, yaw 1.5 rad/s |
+| sprint | 90 | 5.6 m/s |
+| hardStop | 60 | 0 m/s in one tick |
+| jump | 75 | 4.2 m/s up, ballistic |
+| snapTurn | 45 | 180° in one tick |
+| teleport | 45 | 8 m in one tick |
+
+The probe prints one `TN_CHARACTER_DYNAMICS:` line per run. For the cape, it records per phase the hem offset in the body frame, the hem trail angle from world down, the max edge stretch, and the cape vertices inside a torso capsule. For hair, it records the tip offset from the head frame, the max segment stretch, and the hair vertices inside a head sphere. `?arm=` picks the implementation, so every later PRD adds an arm, and the incumbent stays the control. The owned Wasm engine renders by default. `TN_ENGINE=threejs` is the upstream control.
+
+The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth and groom defaults: the same mannequin skeleton (Manny), the same cape grid and pin row, the same script and camera, and the same probe numbers from an editor Python export. The numbers are compared, not the pixels.
+
+## Acceptance Criteria
+
+- [x] AC-1: Each arm prints a finite `TN_CHARACTER_DYNAMICS` line for all eight phases on the owned engine, with no console error. proof: `node packages/playtest/dist/runner/cli.js examples/character-dynamics/playtests/baseline.playtest.json --url http://127.0.0.1:5291 --server-command "pnpm --filter character-dynamics dev --host 127.0.0.1 --port 5291 --strictPort" --browser-recipe webgpu --headed` — 2026-11-23: `?arm=softbody`, `?arm=cloth` and `?arm=hair` each exit 0 with `"finite":true` for all eight phases and 0 console errors, owned engine, adapter vendor nvidia.
+- [x] AC-2: The Unreal reference record exists for the same eight phases, with its run spread over 3 runs. proof: `tools/unreal-reference/character-dynamics/reference.json`, read by `examples/character-dynamics/__tests__/reference.spec.ts` — 2026-11-23, cape half met: `tools/unreal-reference/character-dynamics/reference.json` holds the eight phases from 3 separate Chaos Cloth runs on Manny (fixed 1/60 s step, byte-identical, spread 0: stock Chaos is deterministic); `reference.spec.ts` 12/12. Settle stretch 11.7%, moving phases 57-326% (stock 1 iteration, 1 substep). Hair half met the same day: `hair` (stock `FAnimNode_SpringBone`, tip 1.9-3.7 m, no length limit) and `hairAnimDynamics` (stock `FAnimNode_AnimDynamics` chain, plus the named `swing` and `swingWorld` override arms; tip 0.45-0.87 m at hard stop and snap turn), 3 runs each, byte-identical; `reference.spec.ts` 16/16 (red first on the old record). Every stage is deterministic, so every spread is 0.
+
+## Execution Phases
+
+#### Phase 1: The scene measures the cape
+
+- [x] The mannequin runs the eight-phase script with a cape, and the probe prints cape metrics per phase. proof: the AC-1 command — 2026-11-22: 640 frames, all phases finite, owned engine on NVIDIA Turing (adapter checked). Hem offset 0.42–0.75 m, stretch up to 141%, up to 29 vertices in the torso (table in the epic README).
+- [x] The upstream three.js arm runs the same scene and gives the same numbers within noise. proof: `TN_ENGINE=threejs` + the AC-1 command — 2026-11-22: max stretch 135% against 141% on the owned engine.
+- [x] The owned engine renders the scene with no `createBindGroup` error. Today it logs `Failed to read the 'resource' property from 'GPUBindGroupEntry': Required member is undefined` 3 times from `WebGPURenderer.render` (`packages/three-native/src/browser-renderer.ts:555`). Name the layer, fix it in the engine, and add a conformance case. proof: `pnpm parity --only-tests softbody-character` plus the AC-1 command with `noConsoleErrors` green. — 2026-11-22: engine layer. A draw planned before the frame's first uniform upload had no uniform arena yet, so `Renderer::bindGroup` built a group with an undefined buffer; it now builds none and the upload rebuilds the groups (`packages/runtime-native/src/engine/renderer/renderer_output.cpp`, commit 10821ab30). Red-green: the AC-1 run logged 3 `createBindGroup` errors before and 0 after. `pnpm parity --only-tests softbody-character --engine threenative --target web` passes on both engines. ⚠️ The conformance row does not go red without the fix (its first frame already uploads uniforms), so the AC-1 scenario is the red-green proof, not the row.
+
+#### Phase 2: The scene measures hair and fails closed
+
+- [x] A hair arm puts a ponytail chain and a fringe of cards on the head, and the probe prints hair metrics per phase. proof: the AC-1 command. — 2026-11-23, open on the fringe look only: `?arm=hair` swings the `SpringBoneChain3D` ponytail and `?arm=strands` swings 64 `HairStrands3D` guides drawn as ribbon cards whose position node reads the solver buffer; both print `hairStretch`, `hairInsideHead` and `hairTipOffset` per phase. The cards still use a plain material; PRD-909's `createHairCardMaterial` needs a strand atlas first. `?cape=0` hides the cape so the back of the head reads. Closed 2026-11-23: the cards now wear `createHairCardMaterial` with a 40-strand atlas and tangent map (`examples/character-dynamics/src/hair-atlas.ts`; `?hairMat=plain` is the control), the ponytail is one skinned tube, and `acceptance-hair.playtest.json` exits 0 on `?arm=hair` and `?arm=strands` with every step measured (`hairSamples` asserted per phase). The look itself is PRD-909 AC-1 (parked on the groom).
+- [x] The probe math has a unit check: a known cape pose gives a known stretch, trail and penetration count. proof: `pnpm --filter character-dynamics test` — 2026-11-22: 5 tests pass (stretch 0.5, trail 0/45/90°, capsule count 2); red control 0.4 vs 0.5 failed first.
+
+#### Phase 3: The Unreal reference
+
+- [x] The UE 5.8.3 scene is built with stock defaults: Manny, a Chaos Cloth cape with the same grid and pin row, physics-asset capsules, a groom or a SpringBone ponytail, and the same script. proof: `tools/unreal-reference/character-dynamics/build_scene.py` runs in the 5.8.3 editor and writes `scene.json`. — 2026-11-23: `build_scene.py` (TN_UE_MODE=build) imports the game's `mannequin.glb` (UE mannequin skeleton) with stock Interchange, adds the 10x18 cape section with the top-row pin mask and the six ponytail bones, generates the physics asset, and writes `scene.json`; the cape capsules take the game's rest-clearance rule (`README.md`, named override).
+- [x] The editor export writes the same per-phase metrics over 3 runs. proof: AC-2. — 2026-11-23: `reference.ts run` plays the script 3 times in fresh worlds and `metrics` writes the cape, SpringBone and AnimDynamics blocks; see AC-2.
+
+## Blocked on
+
+- none.
+
+## Decisions
+
+- 2026-11-22 (agent): the incumbent gets its best chance in the baseline. Its frame follows `spine_03` by hand and its gravity turns into that frame, because `SoftBody3D` cannot be parented under a bone. A worse baseline would prove nothing.
+- 2026-11-22 (agent): the metrics are behavioural numbers, not pixels, because the claim is about motion. A visual judge still runs on the PRD-911 and PRD-912 captures.
+- 2026-11-23, owner ("Land with deferrals" on PR #717): moved to PRD-914 (`docs/PRDs/Unreal/PRD-914-character-dynamics-meets-the-bars-the-epic-deferred.md`), open, with its evidence: The playtest asserts the per-phase bounds that PRD-911 and PRD-912 set, read from `GameState.phases`. The incumbent arm fails them. proof: `examples/character-dynamics/playtests/acceptance.playtest.json` (red on `?arm=softbody`, green on the new arms). — 2026-11-23, still open: the bounds ship as `acceptance-cloth.playtest.json` and `acceptance-hair.playtest.json` (one per new arm). Cloth: red on `?arm=softbody` (13 of 16 bounds fail), and also red on `?arm=cloth` (stretch 11–16% in jog, jogTurn, sprint and hard stop; PRD-911 AC-1). Hair: green on `?arm=hair`, but the rigid incumbent also passes it, because rigid hair neither stretches nor enters the head; the tip-swing bound from the Unreal reference (PRD-912 AC-3) is the one that will fail it. Update 2026-11-23: the ponytail rig sat inside the neck and upper back (its anchor was 0.1 m behind a Head bone at the top of the neck); it now starts on the back of the skull, and the hair collides with the `neck_01`, `spine_03`, `spine_02` and upper-arm capsules. The hair scenario is now red on the rigid incumbent (`?arm=softbody`: 3 points inside the body) and green on `?arm=hair` and `?arm=strands`. Still open: cloth AC-1 (PRD-911).

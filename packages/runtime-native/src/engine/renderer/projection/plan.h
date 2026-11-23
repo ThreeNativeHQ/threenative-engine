@@ -217,7 +217,8 @@ inline bool sameUniforms(const Material& a, const Material& b) {
             (a.clearcoat == b.clearcoat) & (a.clearcoatRoughness == b.clearcoatRoughness) &
             (a.clearcoatNormalScale.x == b.clearcoatNormalScale.x) & (a.clearcoatNormalScale.y == b.clearcoatNormalScale.y) &
             (a.sheen == b.sheen) & (a.transmission == b.transmission) &
-            (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) & (a.dispersion == b.dispersion) &
+            (a.iridescence == b.iridescence) & (a.anisotropy == b.anisotropy) &
+            (a.anisotropyRotation == b.anisotropyRotation) & (a.dispersion == b.dispersion) &
             (a.envMapIntensity == b.envMapIntensity) & (a.normalScale.x == b.normalScale.x) &
             (a.normalScale.y == b.normalScale.y) & (a.aoMapIntensity == b.aoMapIntensity) & (a.bumpScale == b.bumpScale)) &&
            a.positionNode == b.positionNode && a.nodes == b.nodes &&
@@ -301,6 +302,7 @@ inline std::size_t uniformHash(const Material& m) {
                      m.transmission,
                      m.iridescence,
                      m.anisotropy,
+                     m.anisotropyRotation,
                      m.dispersion,
                      m.envMapIntensity,
                      double(m.fog),

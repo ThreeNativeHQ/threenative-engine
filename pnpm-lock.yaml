@@ -384,6 +384,34 @@ importers:
         specifier: 'catalog:'
         version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
 
+  examples/character-dynamics:
+    dependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@threenative/playtest':
+        specifier: workspace:*
+        version: link:../../packages/playtest
+      three:
+        specifier: 0.187.0
+        version: 0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119)
+    devDependencies:
+      '@types/three':
+        specifier: 0.187.0
+        version: 0.187.0
+      '@typescript/native':
+        specifier: 'catalog:'
+        version: typescript@7.0.2
+      typescript:
+        specifier: 'catalog:'
+        version: '@typescript/typescript6@6.0.2'
+      vite:
+        specifier: 'catalog:'
+        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
+      vitest:
+        specifier: 'catalog:'
+        version: 4.1.10(@types/node@20.19.43)(@vitest/coverage-v8@4.1.10)(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
+
   examples/constrained-ik:
     dependencies:
       '@threenative/core':
@@ -1522,7 +1550,7 @@ importers:
     devDependencies:
       '@tailwindcss/vite':
         specifier: 'catalog:'
-        version: 4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
+        version: 4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
@@ -1543,7 +1571,7 @@ importers:
         version: '@typescript/typescript6@6.0.2'
       vite:
         specifier: 'catalog:'
-        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
+        version: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
 
   packages/raw-unreal:
     dependencies:
@@ -5796,13 +5824,6 @@ snapshots:
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
 
-  '@tailwindcss/vite@4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))':
-    dependencies:
-      '@tailwindcss/node': 4.3.3(patch_hash=e5decbc72f46c0747e26e2ca910e92936f157872011d75fbd32d3d3bcf0d3c1a)
-      '@tailwindcss/oxide': 4.3.3
-      tailwindcss: 4.3.3
-      vite: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
-
   '@tailwindcss/vite@4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))':
     dependencies:
       '@tailwindcss/node': 4.3.3(patch_hash=e5decbc72f46c0747e26e2ca910e92936f157872011d75fbd32d3d3bcf0d3c1a)
@@ -7545,21 +7566,6 @@ snapshots:
     optionalDependencies:
       '@types/node': 20.19.43
       esbuild: 0.27.0
-      fsevents: 2.3.3
-      jiti: 2.7.0
-      tsx: 4.23.5
-      yaml: 2.9.1
-
-  vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.7)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1):
-    dependencies:
-      lightningcss: 1.33.0
-      picomatch: 4.0.5
-      postcss: 8.5.25
-      rolldown: 1.2.1
-      tinyglobby: 0.2.17
-    optionalDependencies:
-      '@types/node': 20.19.43
-      esbuild: 0.27.7
       fsevents: 2.3.3
       jiti: 2.7.0
       tsx: 4.23.5

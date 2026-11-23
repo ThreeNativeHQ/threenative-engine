@@ -1438,7 +1438,10 @@ export function defineBrowserClasses(
             : {}),
       };
       Object.defineProperty(accessors, property, accessor);
-      if (materialClass) own.push({ key: property, descriptor: { ...accessor, enumerable: true } });
+      // three hides `id` (`Object.defineProperty(this, "id", { value })`), so a copy loop never
+      // writes the getter-only field.
+      if (materialClass)
+        own.push({ key: property, descriptor: { ...accessor, enumerable: property !== "id" } });
     }
     // A dotted path whose head is no member of its own (three's plain `morphAttributes` object) is
     // a holder made per read, as the V8 adapter makes it: each tail reads and writes the full path.

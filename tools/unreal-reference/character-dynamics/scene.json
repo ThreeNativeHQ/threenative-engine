@@ -1,0 +1,334 @@
+{
+  "prd": "PRD-910",
+  "unreal": "5.8.3-58210709+++UE5+Release-5.8",
+  "built_by": "tools/unreal-reference/character-dynamics/build_scene.py (TN_UE_MODE=build)",
+  "assets": {
+    "source": "examples/character-dynamics/public/mannequin.glb (dequantized; bind pose baked to the rest pose in metres)",
+    "body": "Saved/gen/body.glb -> /Game/CharDyn/Body",
+    "mesh": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_cape.mannequin_cape",
+    "bodyPhysicsAsset": "/Game/CharDyn/Body/body/SkeletalMeshes/body_PhysicsAsset.body_PhysicsAsset",
+    "importer": "Interchange glTF, stock pipeline (AssetImportTask automated)",
+    "clips": {
+      "Idle_Loop": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeIdle_Loop.mannequin_capeIdle_Loop",
+        "lengthSeconds": 2.5,
+        "frames": 75
+      },
+      "Jog_Fwd_Loop": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeJog_Fwd_Loop.mannequin_capeJog_Fwd_Loop",
+        "lengthSeconds": 0.9333333373069763,
+        "frames": 28
+      },
+      "Jump_Land": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeJump_Land.mannequin_capeJump_Land",
+        "lengthSeconds": 1.2666666507720947,
+        "frames": 38
+      },
+      "Jump_Loop": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeJump_Loop.mannequin_capeJump_Loop",
+        "lengthSeconds": 2.5,
+        "frames": 75
+      },
+      "Jump_Start": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeJump_Start.mannequin_capeJump_Start",
+        "lengthSeconds": 1.3333333730697632,
+        "frames": 40
+      },
+      "Sprint_Loop": {
+        "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_capeSprint_Loop.mannequin_capeSprint_Loop",
+        "lengthSeconds": 0.6666666865348816,
+        "frames": 20
+      }
+    }
+  },
+  "cape": {
+    "section": 2,
+    "particles": 209,
+    "pinned": 11,
+    "maxDistanceCm": 1000,
+    "grid": "11 x 19 vertices, 0.5 m x 0.62 * height, top row pinned, skinned 100% to spine_03 (game.ts)"
+  },
+  "cloth": {
+    "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_cape.mannequin_cape:Cape",
+    "referenceBone": "spine_03",
+    "physicsAsset": "/Game/CharDyn/Body/body/SkeletalMeshes/body_PhysicsAsset.body_PhysicsAsset",
+    "particles": 209,
+    "configs": {
+      "ChaosClothConfig": {
+        "massMode": "Density",
+        "uniformMass": 0.0001500000071246177,
+        "totalMass": 0.5,
+        "density": 0.3499999940395355,
+        "minPerParticleMass": 9.999999747378752e-5,
+        "edgeStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "bendingStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "bUseBendingElements": false,
+        "bucklingRatio": 0,
+        "bucklingStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "flatnessRatio": {
+          "low": 0,
+          "high": 1
+        },
+        "areaStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "volumeStiffness": 0,
+        "tetherStiffness": {
+          "low": 1,
+          "high": 1
+        },
+        "tetherScale": {
+          "low": 1,
+          "high": 1
+        },
+        "bUseGeodesicDistance": true,
+        "shapeTargetStiffness": 0,
+        "collisionThickness": 1,
+        "frictionCoefficient": 0.800000011920929,
+        "bUseCCD": false,
+        "bUseSelfCollisions": false,
+        "selfCollisionThickness": 2,
+        "selfCollisionFriction": 0,
+        "bUseSelfIntersections": false,
+        "bUseSelfCollisionSpheres": false,
+        "selfCollisionSphereRadius": 0.5,
+        "selfCollisionSphereStiffness": 1,
+        "selfCollisionSphereRadiusCullMultiplier": 1,
+        "bUseLegacyBackstop": false,
+        "dampingCoefficient": 0.009999999776482582,
+        "localDampingCoefficient": 0,
+        "bUsePointBasedWindModel": false,
+        "drag": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bEnableOuterDrag": false,
+        "outerDrag": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "lift": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bEnableOuterLift": false,
+        "outerLift": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bUseGravityOverride": false,
+        "gravityScale": 1,
+        "gravity": {
+          "x": 0,
+          "y": 0,
+          "z": -980.6649780273438
+        },
+        "pressure": {
+          "low": 0,
+          "high": 1
+        },
+        "animDriveStiffness": {
+          "low": 0,
+          "high": 1
+        },
+        "animDriveDamping": {
+          "low": 0,
+          "high": 1
+        },
+        "velocityScaleSpace": "ReferenceBoneSpace",
+        "linearVelocityScale": {
+          "x": 0.75,
+          "y": 0.75,
+          "z": 0.75
+        },
+        "bEnableLinearVelocityClamping": false,
+        "maxLinearVelocity": {
+          "x": 1000,
+          "y": 1000,
+          "z": 1000
+        },
+        "bEnableLinearAccelerationClamping": false,
+        "maxLinearAcceleration": {
+          "x": 60000,
+          "y": 60000,
+          "z": 60000
+        },
+        "angularVelocityScale": 0.75,
+        "bEnableAngularVelocityClamping": false,
+        "maxAngularVelocity": 200,
+        "bEnableAngularAccelerationClamping": false,
+        "maxAngularAcceleration": 12000,
+        "fictitiousForcesModel": "FullScale",
+        "fictitiousAngularScale": 1,
+        "bUseTetrahedralConstraints": false,
+        "bUseThinShellVolumeConstraints": false,
+        "bUseContinuousCollisionDetection": false
+      },
+      "ChaosClothSharedSimConfig": {
+        "iterationCount": 1,
+        "maxIterationCount": 10,
+        "subdivisionCount": 1,
+        "bUseLocalSpaceSimulation": true,
+        "bUseXPBDConstraints": false
+      }
+    }
+  },
+  "bodies": [
+    {
+      "bone": "pelvis",
+      "shapes": ["capsule r=15.02 length=18.84"]
+    },
+    {
+      "bone": "spine_02",
+      "shapes": ["capsule r=12.91 length=16.83"]
+    },
+    {
+      "bone": "spine_03",
+      "shapes": ["capsule r=19.96 length=23.19"]
+    },
+    {
+      "bone": "Head",
+      "shapes": ["capsule r=12.27 length=15.69"]
+    },
+    {
+      "bone": "upperarm_l",
+      "shapes": ["capsule r=7.51 length=32.62"]
+    },
+    {
+      "bone": "hand_l",
+      "shapes": ["capsule r=8.86 length=11.47"]
+    },
+    {
+      "bone": "upperarm_r",
+      "shapes": ["capsule r=7.51 length=32.62"]
+    },
+    {
+      "bone": "hand_r",
+      "shapes": ["capsule r=8.86 length=11.47"]
+    },
+    {
+      "bone": "thigh_l",
+      "shapes": ["capsule r=9.33 length=25.36"]
+    },
+    {
+      "bone": "calf_l",
+      "shapes": ["capsule r=8.30 length=25.25"]
+    },
+    {
+      "bone": "foot_l",
+      "shapes": ["capsule r=7.13 length=15.31"]
+    },
+    {
+      "bone": "thigh_r",
+      "shapes": ["capsule r=9.33 length=25.36"]
+    },
+    {
+      "bone": "calf_r",
+      "shapes": ["capsule r=8.30 length=25.25"]
+    },
+    {
+      "bone": "foot_r",
+      "shapes": ["capsule r=7.13 length=15.31"]
+    }
+  ],
+  "refBones": {
+    "root": [0, 0, 0],
+    "pelvis": [0, -5.009999432754697, 91.66999772565518],
+    "spine_01": [0, -1.559999574990698, 105.05000550732714],
+    "spine_02": [0, -0.040000348025472476, 117.36000440845186],
+    "spine_03": [0, -0.4900002904344376, 131.48002655422582],
+    "neck_01": [0, -1.0499983435109073, 148.76003450236462],
+    "Head": [0, 0.5099997847924556, 156.8700335491521],
+    "ponytail_1": [1.3654440641403196, -14.719038927837431, 168.49810791858658],
+    "ponytail_2": [1.3419132679700847, -18.119716234582455, 161.46712196460211],
+    "ponytail_3": [1.31838247179985, -21.520393928960715, 154.43612409599143],
+    "ponytail_4": [1.2948516756296153, -24.92106864468235, 147.40512613047235],
+    "ponytail_5": [1.2713208794593807, -28.321745951427403, 140.37414017648794],
+    "ponytail_6": [1.2477900832891458, -31.722423645805648, 133.34314230787717],
+    "clavicle_l": [1.8800001152327852, 7.140000973310663, 145.79003019586645],
+    "upperarm_l": [19.19000011285425, -6.540007778069082, 144.08002185925707],
+    "lowerarm_l": [46.6300014627082, -7.010002921745098, 144.08000624567816],
+    "hand_l": [73.88999758127392, -6.5399965424269055, 144.08001045602765],
+    "index_01_l": [85.87998527475642, -3.4499922804431833, 143.88002933731593],
+    "index_02_l": [89.94998269995565, -3.4499950776277615, 143.8800306970763],
+    "index_03_l": [93.42998339035326, -3.449998178173047, 143.88003227496145],
+    "index_04_leaf_l": [96.4399894371833, -3.450002192390798, 143.88003266713253],
+    "middle_01_l": [86.04998447630355, -6.019992901688795, 144.12003120717864],
+    "middle_02_l": [90.27997958573027, -6.219991456212881, 144.12003181201823],
+    "middle_03_l": [93.66998484235738, -6.369990799701242, 144.12000482495716],
+    "middle_04_leaf_l": [97.10998260170476, -6.529989859111595, 144.12001208767163],
+    "pinky_01_l": [84.65998574996227, -10.61999426361055, 143.92004276915907],
+    "pinky_02_l": [88.6799860983505, -10.889995410051313, 143.92003976792722],
+    "pinky_03_l": [91.43998599017573, -11.07999414935, 143.92001507627276],
+    "pinky_04_leaf_l": [94.24998997945973, -11.269994052918634, 143.92000117932088],
+    "ring_01_l": [85.79998597767799, -8.249993978355064, 144.0900344413514],
+    "ring_02_l": [89.72999189530361, -8.389992554082738, 144.09004480231135],
+    "ring_03_l": [92.81998603715566, -8.49999163146893, 144.09005361021218],
+    "ring_04_leaf_l": [95.99998347729205, -8.619990627880298, 144.09006300283562],
+    "thumb_01_l": [76.6199875797641, -3.1799954361949574, 141.8000309526301],
+    "thumb_02_l": [80.03998274678193, -1.4100032910795335, 139.8800339259658],
+    "thumb_03_l": [83.93996751322402, 0.6099951679574076, 137.69001647894905],
+    "thumb_04_leaf_l": [87.18996340521518, 2.289995420542567, 135.8700132257592],
+    "clavicle_r": [-1.8800001152327852, 7.140000973310663, 145.79003019586645],
+    "upperarm_r": [-19.19000011285425, -6.540007778069082, 144.08002185925707],
+    "lowerarm_r": [-46.629998099389546, -7.010003814926392, 144.07999452119026],
+    "hand_r": [-73.88998554442301, -6.539996650678802, 144.0799971353988],
+    "index_01_r": [-85.87997910051408, -3.4499911964688295, 143.8800173607596],
+    "index_02_r": [-89.9499824840856, -3.4499946172747684, 143.880030650243],
+    "index_03_r": [-93.42998317269407, -3.449997986505309, 143.88004415657556],
+    "index_04_leaf_r": [-96.43997133659336, -3.4500015385695235, 143.88004455522182],
+    "middle_01_r": [-86.0499727872229, -6.019991907442034, 144.1200191624688],
+    "middle_02_r": [-90.27997438331043, -6.219990789352067, 144.12003139701793],
+    "middle_03_r": [-93.66997970471643, -6.369990001805945, 144.12001630791042],
+    "middle_04_leaf_r": [-97.10998371292978, -6.52998982737185, 144.12001143315166],
+    "pinky_01_r": [-84.65997497572029, -10.619993338282853, 143.92003003332024],
+    "pinky_02_r": [-88.6799749098722, -10.889992890555362, 143.9200275645154],
+    "pinky_03_r": [-91.43998007723148, -11.07999137216683, 143.92002711233775],
+    "pinky_04_leaf_r": [-94.24997754865501, -11.26999023875618, 143.9200374843383],
+    "ring_01_r": [-85.7999800560021, -8.249993161087787, 144.09002141786684],
+    "ring_02_r": [-89.72998645891086, -8.389992007900616, 144.09004355312146],
+    "ring_03_r": [-92.81998659587951, -8.499991547278512, 144.09005235057685],
+    "ring_04_leaf_r": [-95.99998401715138, -8.619990433083444, 144.0900498154494],
+    "thumb_01_r": [-76.61997942594732, -3.1799929863141756, 141.80001983991704],
+    "thumb_02_r": [-80.03997158498204, -1.4099965179724734, 139.88002117823078],
+    "thumb_03_r": [-83.93995406596196, 0.6099953998171657, 137.69001935258817],
+    "thumb_04_leaf_r": [-87.1899503463312, 2.289989401860936, 135.87002728685889],
+    "thigh_l": [8.900000154972076, 0.13999979249705063, 93.20999905207523],
+    "calf_l": [8.900001411003275, -0.1399949616213334, 53.18000557362802],
+    "foot_l": [8.900000070745529, -3.5799908345977265, 10.370000624494361],
+    "ball_l": [8.900000626933688, 11.32001467449664, 1.520001243948558],
+    "ball_leaf_l": [8.899999882727238, 19.21001839072973, 1.5200035151389173],
+    "thigh_r": [-8.900000154972076, 0.13999979249705063, 93.20999905207523],
+    "calf_r": [-8.900001450048272, -0.13999506956947982, 53.18000558229041],
+    "foot_r": [-8.900000096665378, -3.5799907106204323, 10.370006662421867],
+    "ball_r": [-8.90000074397346, 11.320015424575187, 1.520007129165542],
+    "ball_leaf_r": [-8.899999998063697, 19.2100198856541, 1.5200093991609656]
+  },
+  "defaults": {
+    "solver": "Chaos Cloth stock configs (UChaosClothConfig, UChaosClothSharedSimConfig) as created by the clothing factory; values in cloth.configs",
+    "component": "USkeletalMeshComponent stock: TeleportDistanceThreshold 300 cm, TeleportRotationThreshold 0 (off), bResetAfterTeleport true (SkeletalMeshComponent.cpp:471-473)",
+    "gravity": "world gravity, -980 cm/s^2 (UPhysicsSettings default)",
+    "step": "1/60 s, the world ticked by hand (World->Tick), one tick per script step"
+  },
+  "overrides": {
+    "maxDistanceMask": "0 cm on the top row (11 pinned vertices), 1000 cm elsewhere: the painted mask the brief asks for (the factory creates it all 0)",
+    "collisionPhysicsAsset": "the body-only import's generated physics asset (see assets.bodyPhysicsAsset), not the caped mesh's",
+    "visibilityBasedAnimTickOption": "AlwaysTickPoseAndRefreshBones: nothing renders offscreen, so bones must refresh unrendered (harness, not a cloth parameter)",
+    "bWaitForParallelClothTask": "true: GetCurrentClothingData_GameThread requires it (harness, read-out only)"
+  },
+  "differences": {
+    "crossfade": "the game's AnimationPlayer smoothstep crossfade is replayed by UCharDynAnimInstance; Unreal blends the poses with FAnimationRuntime::BlendPosesTogether (normalised quaternion blend) where three.js accumulates slerps, and samples the Interchange-resampled clips",
+    "readback": "Unreal reads the simulated positions every tick for the same tick's pose; the game reads a GPU readback every 2 frames and matches it to the pose of the step that produced it",
+    "gravity": "-9.80 m/s^2 in Unreal, -9.81 m/s^2 in the game"
+  }
+}

@@ -246,6 +246,11 @@ describe("SoftBody3D cloth", () => {
     expect(() => new SoftBody3D(arrayed, flagOptions() as never)).toThrow(/node material/u);
   });
 
+  it("builds a multi-copy readback for a probe and takes nothing before a sample lands", () => {
+    const cloth = buildCloth({ readbackEveryFrames: 1, readbackInFlight: 3 });
+    expect(cloth.takeSamples()).toStrictEqual([]);
+  });
+
   it("reports an undefined sample and debug counters before any readback lands", async () => {
     const cloth = buildCloth({ readbackEveryFrames: 1 });
     expect(cloth.sample).toBeUndefined();

@@ -826,6 +826,7 @@ class Builder {
         to.transmission = from.transmission;
         to.iridescence = from.iridescence;
         to.anisotropy = from.anisotropy;
+        to.anisotropyRotation = from.anisotropyRotation;
         to.dispersion = from.dispersion;
         to.bumpScale = from.bumpScale;
         to.maps = from.maps;
@@ -919,7 +920,7 @@ class Builder {
             }
             // The extensions below set Material fields the standard program does not draw yet, so the renderer
             // refuses the mesh by name (TN_NATIVE_MATERIAL_UNSUPPORTED). Parameters with no Material field
-            // (sheenColor, sheenRoughness, iridescenceIOR and thickness range, anisotropyRotation, volume
+            // (sheenColor, sheenRoughness, iridescenceIOR and thickness range, volume
             // thickness and attenuation) are not stored. KHR_materials_volume only shapes transmission, so
             // it adds nothing here: a volume without transmission draws as plain PBR, as in three.
             // GLTFMaterialsSheenExtension: sheen is on (1) as soon as the extension is present.
@@ -945,6 +946,8 @@ class Builder {
             if (const Value* anisotropy = member(extensions, "KHR_materials_anisotropy")) {
                 if (member(anisotropy, "anisotropyStrength"))
                     material->anisotropy = number(member(anisotropy, "anisotropyStrength"), 0);
+                if (member(anisotropy, "anisotropyRotation"))
+                    material->anisotropyRotation = number(member(anisotropy, "anisotropyRotation"), 0);
                 assignTexture(*material, "anisotropyMap", member(anisotropy, "anisotropyTexture"));
             }
             // GLTFMaterialsDispersionExtension

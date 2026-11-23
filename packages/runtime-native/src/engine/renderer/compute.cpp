@@ -372,10 +372,20 @@ const shader::Program& loweredProgram(const graph::Node& node) {
     program->setWorkgroup(workgroup, groups > 65535 ? 65535 * workgroup : 0);
     {
         shader::tsl::Build build(*program);
-        const shader::ExprId index = shader::tsl::instanceIndex().id;
-        const shader::ExprId limit = program->construct(shader::Type::u32(), {program->constant(static_cast<int32_t>(count))});
-        // A thread past the count writes nothing, so the last workgroup's spare threads never count.
-        program->If(program->less(index, limit), [&] { graph::lower(node->args[0], *program); });
+        if (graph::usesBarrier(node->args[0])) {
+            // A barrier needs uniform control flow, so the thread-count guard below cannot wrap it: every thread of every
+            // workgroup runs, and the count must fill whole workgroups (PRD-913).
+            if (count % workgroup != 0)
+                throw std::runtime_error("TN_COMPUTE_BARRIER_COUNT: a kernel with a barrier runs whole workgroups; count " + std::to_string(count) +
+                                         " is not a multiple of " + std::to_string(workgroup) +
+                                         (node->name.empty() ? "" : " (compute node " + node->name + ")"));
+            graph::lower(node->args[0], *program);
+        } else {
+            const shader::ExprId index = shader::tsl::instanceIndex().id;
+            const shader::ExprId limit = program->construct(shader::Type::u32(), {program->constant(static_cast<int32_t>(count))});
+            // A thread past the count writes nothing, so the last workgroup's spare threads never count.
+            program->If(program->less(index, limit), [&] { graph::lower(node->args[0], *program); });
+        }
     }
     if (!program->ok()) {
         const shader::Diagnostic& d = program->diagnostics().front();

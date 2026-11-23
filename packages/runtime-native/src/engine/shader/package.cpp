@@ -96,6 +96,7 @@ StageModule buildStage(const Program& program, uint32_t group) {
         module.bindings.push_back(Binding{group, binding++, BindingKind::Uniform, "u", module.uniformBlockSize});
     }
     for (const auto& storage : program.storage_) {
+        if (storage.workgroupCount != 0) continue;  // workgroup memory is declared in the shader, not bound
         const Layout element = uniformLayout(storage.element);
         module.bindings.push_back(
             Binding{group, binding++, BindingKind::Storage, "s_" + storage.name, roundUp(element.size, element.align)});

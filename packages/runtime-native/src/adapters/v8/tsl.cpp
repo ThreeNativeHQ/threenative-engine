@@ -159,6 +159,13 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
+    // three's `.compute(count, [size])`: a one-element array is the 1D workgroup size, the number the ABI takes.
+    if (name == "compute" && index == 1 && value->IsArray()) {
+        const auto list = value.As<v8::Array>();
+        v8::Local<v8::Value> only;
+        if (list->Length() == 1 && list->Get(ctx, 0).ToLocal(&only) && only->IsNumber())
+            return abi::TslArg::of(only.As<v8::Number>()->Value());
+    }
     // texture(engineTexture, uv) samples that texture itself (textureLoad loads from it); a plain object names a material map.
     if (texture || textureLoad) {
         tn_handle_t handle{};
@@ -336,6 +343,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(2); statement();
         return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
     }
+    if (name == "workgroupBarrier" || name == "storageBarrier" || name == "textureBarrier") {  // textureBarrier: the shared table refuses it by name
+        arity(0);
+        if (name != "textureBarrier") statement();
+        return result(scoped(name.c_str(), nullptr, {}));
+    }
     if (name == "Break" || name == "Continue" || name == "Return") {
         if (name == "Return" && info.Length() > 0) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
         arity(0); statement();
@@ -345,6 +357,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         if (info.Length() > 1) throw std::runtime_error("expected an optional condition");
         statement();
         return result(scoped("Discard", nullptr, info.Length() ? std::vector<abi::TslArg>{abi::TslArg::of(arg(0))} : std::vector<abi::TslArg>{}));
+    }
+    if (name == "discard" && call.method) {  // three's node.discard(): Discard(node), the node as the condition
+        arity(0); statement();
+        return result(scoped("Discard", nullptr, {receiver}));
     }
     if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
         arity(call.method ? 0 : 1); statement();
@@ -635,6 +651,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "ElseIf",
                              "setName",
                              "toVar",
+                             "discard",
                              "assign",
                              "element",
                              "toAtomic",
@@ -722,7 +739,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform", "setUniforms",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "cubeTexture", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
+                             "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor", "atomicStore", "atomicLoad", "workgroupArray", "workgroupBarrier", "storageBarrier", "textureBarrier", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "cubeTexture", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

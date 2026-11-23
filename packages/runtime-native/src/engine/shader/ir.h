@@ -34,6 +34,8 @@ struct Type {
 };
 
 enum class Stage : uint8_t { Vertex, Fragment, Compute };
+/** What a compute barrier orders: the workgroup's shared memory (`workgroupBarrier()`) or its storage writes (`storageBarrier()`). */
+enum class BarrierScope : uint8_t { Workgroup, Storage };
 
 using ExprId = uint32_t;
 using VarId = uint32_t;
@@ -133,6 +135,14 @@ public:
      *  another read-modify-write builtin from kAtomicFunctions (atomicMax, ...); the Expr keeps it above the buffer. */
     ExprId atomicAdd(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current(), uint8_t function = 0);
     void store(uint32_t buffer, ExprId index, ExprId value, Where where = Where::current());
+    /**
+     * Memory the threads of one workgroup share (WGSL `var<workgroup> s_name: array<element, count>`), in a compute stage.
+     * It is no binding: it reads and writes through loadStorage and store like a buffer, and a thread sees another
+     * thread's write only after a barrier. The same name, element and count answer the same array.
+     */
+    uint32_t workgroupArray(std::string_view name, Type element, uint32_t count, Where where = Where::current());
+    /** `workgroupBarrier()` or `storageBarrier()`: every thread of the workgroup reaches it before any goes on. Compute only. */
+    void barrier(BarrierScope scope, Where where = Where::current());
     /** A sampled 2D float texture and its sampler, bound together. */
     /** A write-only storage texture binding; `volume` declares it 3D (three's Storage3DTexture). */
     uint32_t storageTexture2d(std::string_view name, std::string_view format, bool volume = false);
@@ -235,7 +245,7 @@ private:
     friend class WgslEmitter;
     friend StageModule buildStage(const Program& program, uint32_t group);
 
-    enum class StmtKind : uint8_t { Eval, Assign, Store, TextureStore, Discard, If, Loop, Output, Break, Continue, Return };
+    enum class StmtKind : uint8_t { Eval, Assign, Store, TextureStore, Discard, If, Loop, Output, Break, Continue, Return, Barrier };
     struct Stmt {
         StmtKind kind;
         uint32_t a = 0;  // var, buffer, condition, or count
@@ -251,6 +261,7 @@ private:
         std::string name;
         Type element;
         bool atomic = false;
+        uint32_t workgroupCount = 0;  // not 0: workgroup memory of this many elements, bound to nothing
     };
 
     ExprId fail(std::string_view node, std::string reason, const Where& where);

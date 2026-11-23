@@ -54,3 +54,26 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+## frostbitten-hair-webgpu
+
+- Upstream: <https://github.com/Scthe/frostbitten-hair-webgpu>
+- Pinned commit: `4478dd129525ff7db92978178b55f760716cbd72` (2024-09-27)
+- Licence: MIT, Copyright (c) 2024 Marcin Matuszczyk
+- Used by: `HairStrands3D` in `@threenative/core` (PRD-912)
+- What was ported: `src/passes/simulation/hairSimIntegrationPass.wgsl.ts` and its `shaderImpl/`
+  snippets — Verlet integration and the length, global-shape, local-shape and sphere-collision
+  constraints, transliterated to TSL in `packages/core/src/hair-strands.ts`, which carries the full
+  licence text in its header.
+- What was not ported: the density and velocity grids, the SDF collider, the wind gusts, the software
+  rasteriser and the tile-based order-independent transparency.
+
+## threejs-hair-shader
+
+- Upstream: <https://github.com/creategamecharacters/threejs-hair-shader>
+- Pinned commit: `f0d6cf0d4d309c55b9c5d11370e0a04d04ad05d3` (2026-10-01)
+- Licence: MIT, Copyright (c) 2026 Sander Mørch-Jensen
+- Used by: the starter template's generated `src/render/effects/hair.ts` (PRD-909)
+- What was taken: `src/hair-shader.js`, vendored byte for byte as
+  `packages/create-threenative/templates/starter/src/render/effects/vendor/hair-shader.js` below its full
+  licence header. It is generated user source, so every generated project carries the notice too.

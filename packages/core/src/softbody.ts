@@ -1,4 +1,4 @@
-import { type BufferGeometry, Matrix4, Mesh, Vector3, Vector4 } from "three";
+import { type BufferGeometry, Matrix4, Mesh, type SkinnedMesh, Vector3, Vector4 } from "three";
 import {
   Fn,
   If,
@@ -23,12 +23,19 @@ import type { IComputeDriven } from "./compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "./gpu-readback.js";
 import type { IRendererLike } from "./renderer.js";
 import {
+  type ISkinnedClothState,
+  type ISkinnedSoftBody3DOptions,
+  type SoftBodyResetCause,
+  createSkinnedCloth,
+} from "./softbody-skinned.js";
+import {
   type IClothReferenceOptions,
   type IClothTopology,
   type IClothTopologyOptions,
   buildClothTopology,
   simulateClothReference,
 } from "./softbody-topology.js";
+import { windAt } from "./wind-field.js";
 
 export type { IClothReferenceOptions, IClothTopology, IClothTopologyOptions };
 export { buildClothTopology, simulateClothReference };
@@ -54,6 +61,8 @@ export interface ISoftBody3DOptions extends IClothTopologyOptions {
   readonly timeStep?: number;
   /** Throttled GPU position readback for gameplay/proof; zero disables it. */
   readonly readbackEveryFrames?: number;
+  /** Copies of the GPU state kept in flight for `takeSamples()`; default 1, the gameplay path. */
+  readonly readbackInFlight?: number;
 }
 
 interface IClothBuffers {
@@ -310,6 +319,12 @@ function clothPass(options: {
  * position buffers, and replaces only the cloned material's position node. It adds no material,
  * colour, texture, wind, stiffness, damping, or pinning default.
  *
+ * Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)
+ * pins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos
+ * Cloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured
+ * from the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that
+ * carries the cloth with no velocity (`TN_SOFTBODY_RESET`).
+ *
  * @situation make a flag, cape, or curtain move as cloth
  * @situation simulate a deforming surface while keeping one edge pinned
  * @situation simulate cloth sails blowing in the wind
@@ -319,7 +334,22 @@ function clothPass(options: {
  * @constraint Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost
  * @override timeStep follows the engine 1/60-second convention unless the game overrides it
  * @override readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
+ * @override readbackInFlight keeps up to N copies in flight so a probe sees every step; default 1
  * @example const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });
+ * @situation put a cape on a character
+ * @situation cape on a character that trails when it runs
+ * @situation make a skirt, coat tails or a tabard move on an animated character
+ * @situation cloth on a skinned mesh
+ * @situation cloth sticks to the body or passes through the legs
+ * @situation cloth stretches too much on a running character
+ * @constraint a skinned source simulates in world space: add the SoftBody3D to the scene root
+ * @constraint a skinned source needs an indexed geometry, at least one vertex with mask 1, and pins weighted to at most 8 bones
+ * @override cloth picks the mask (a color channel or one number per vertex); default "color.r", else leaf-bone vertices simulate
+ * @override bodyColliders "auto" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off
+ * @override velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)
+ * @override extremeDeformationEdgeRatio resets the cloth when an edge stretches past this ratio (off, as in Unreal); needs readbackEveryFrames
+ * @override stretchStiffness (1), bendStiffness (0.25), damping (≈0.603 /s, Chaos 0.01 per 60 Hz step), drag and lift (0.035, Chaos per-triangle), fluidDensity (1.225), density (0.35 kg/m²), tetherSlack (0), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)
+ * @example const cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: "color.r" }));
  */
 export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven {
   readonly processCadence = "fixed" as const;
@@ -331,16 +361,58 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
   readonly wind: Vector3;
   readonly uniqueVertexCount: number;
   readonly springCount: number;
-  readonly #buffers: IClothBuffers;
-  readonly #forces: UniformArrayNode<"vec4">;
+  readonly #buffers: IClothBuffers | undefined;
+  readonly #forces: UniformArrayNode<"vec4"> | undefined;
   readonly #collision: IClothCollisionState | undefined;
+  readonly #skinned: ISkinnedClothState | undefined;
   readonly #readback: GPUReadback | undefined;
   readonly #ownedMaterial: NodeMaterial;
   #renderer: IRendererLike | undefined;
   #released = false;
   #steps = 0;
 
-  constructor(mesh: Mesh, options: ISoftBody3DOptions) {
+  constructor(mesh: Mesh, options: ISoftBody3DOptions);
+  constructor(mesh: SkinnedMesh, options?: ISkinnedSoftBody3DOptions);
+  constructor(mesh: Mesh, input: ISoftBody3DOptions | ISkinnedSoftBody3DOptions = {}) {
+    if ((mesh as SkinnedMesh).isSkinnedMesh === true) {
+      const skinnedOptions = input as ISkinnedSoftBody3DOptions;
+      const material = nodeMaterial(mesh);
+      const skinned = createSkinnedCloth(mesh as SkinnedMesh, skinnedOptions);
+      material.positionNode = skinned.positions.element(
+        skinned.originalToUnique.element(vertexIndex),
+      );
+      super(mesh.geometry, material);
+      this.#ownedMaterial = material;
+      this.#buffers = undefined;
+      this.#forces = undefined;
+      this.#collision = undefined;
+      this.#skinned = skinned;
+      this.stiffness = skinnedOptions.stretchStiffness ?? 1;
+      this.damping = skinnedOptions.damping ?? 0.5;
+      this.timeStep = skinnedOptions.timeStep ?? 1 / 60;
+      this.gravity = skinned.gravity;
+      this.wind = skinned.wind;
+      this.uniqueVertexCount = skinned.uniqueVertexCount;
+      this.springCount = skinned.springCount;
+      this.warmupNodes = skinned.nodes;
+      const every = skinnedOptions.readbackEveryFrames ?? 0;
+      if (!Number.isInteger(every) || every < 0)
+        throw new Error("SoftBody3D.readbackEveryFrames must be a non-negative integer.");
+      this.#readback =
+        every > 0
+          ? new GPUReadback({
+              attribute: skinned.positions.value,
+              everyFrames: every,
+              maxInFlight: skinnedOptions.readbackInFlight ?? 1,
+            })
+          : undefined;
+      if (skinnedOptions.hideSource !== false) mesh.visible = false;
+      this.frustumCulled = false;
+      this.matrixAutoUpdate = false;
+      this.addEventListener("removed", this.#onRemoved);
+      return;
+    }
+    const options = input as ISoftBody3DOptions;
     const topology = buildClothTopology(mesh.geometry, options);
     const gravity = vector("gravity", options.gravity);
     const wind = vector("wind", options.wind);
@@ -374,6 +446,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
     );
     super(mesh.geometry, material);
     this.#ownedMaterial = material;
+    this.#skinned = undefined;
     this.#buffers = buffers;
     this.#forces = forces;
     this.#collision = collisionState;
@@ -430,6 +503,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
         ? new GPUReadback({
             attribute: buffers.positionsA.value,
             everyFrames: readbackEveryFrames,
+            maxInFlight: options.readbackInFlight ?? 1,
           })
         : undefined;
     this.frustumCulled = false;
@@ -444,6 +518,18 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
     return this.#steps;
   }
 
+  /** Why a skinned cloth last reset ("teleport", "manual" or "extremeDeformation"), if it has. */
+  get lastReset(): SoftBodyResetCause | undefined {
+    return this.#skinned?.lastReset;
+  }
+
+  /** Put a skinned cloth back in its rest pose on the body at the next step. */
+  reset(): void {
+    if (this.#skinned === undefined)
+      throw new Error("SoftBody3D.reset needs a skinned source mesh.");
+    this.#skinned.requestReset();
+  }
+
   /** Latest asynchronous GPU positions and their age, when readback was requested. */
   get sample(): IGPUReadbackSample | undefined {
     const sample = this.#readback?.sample;
@@ -454,12 +540,38 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
     };
   }
 
+  /**
+   * Every landed GPU position sample since the last call, oldest first, for a probe that must see
+   * each step. Empty without `readbackEveryFrames`.
+   */
+  takeSamples(): IGPUReadbackSample[] {
+    const samples = this.#readback?.take();
+    if (samples === undefined) return [];
+    return Array.from(samples, (sample) => ({
+      data: compactClothVec3Readback(sample.data, this.uniqueVertexCount),
+      staleFrames: sample.staleFrames,
+    }));
+  }
+
   debug(): Record<string, unknown> {
     return {
       released: this.#released,
       softBodySteps: this.#steps,
       springCount: this.springCount,
       uniqueVertexCount: this.uniqueVertexCount,
+      ...(this.#skinned === undefined
+        ? {}
+        : {
+            skinned: true,
+            maskSource: this.#skinned.maskSource,
+            bodyCapsules: this.#skinned.capsules.length,
+            substeps: this.#skinned.substeps,
+            singleDispatch: this.#skinned.singleDispatch,
+            fictitiousAngularVelocity: this.#skinned.spin.toArray(),
+            teleportDistance: this.#skinned.teleportDistance,
+            lastReset: this.#skinned.lastReset,
+            resets: this.#skinned.resets,
+          }),
       readbackPending: this.#readback?.pending,
       readbackStats: this.#readback?.stats,
       sampleStaleFrames: this.#readback?.staleFrames,
@@ -475,8 +587,21 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
   process(renderer = this.#renderer): void {
     if (this.#released) return;
     if (renderer === undefined) throw new Error("SoftBody3D is not attached to a renderer.");
-    (this.#forces.array[0] as Vector4).set(this.gravity.x, this.gravity.y, this.gravity.z, 0);
-    (this.#forces.array[1] as Vector4).set(this.wind.x, this.wind.y, this.wind.z, 0);
+    const skinned = this.#skinned;
+    if (skinned !== undefined) {
+      if (this.parent !== null && (this.parent as { isScene?: boolean }).isScene !== true)
+        throw new Error(
+          "SoftBody3D on a skinned mesh simulates in world space; add it to the scene root.",
+        );
+      if (skinned.windFromScene) windAt(this.parent, skinned.wind);
+      skinned.step((nodes) => renderer.compute(nodes), this.#readback?.data);
+      this.#steps += 1;
+      this.#readback?.request(renderer);
+      return;
+    }
+    const forces = this.#forces as UniformArrayNode<"vec4">;
+    (forces.array[0] as Vector4).set(this.gravity.x, this.gravity.y, this.gravity.z, 0);
+    (forces.array[1] as Vector4).set(this.wind.x, this.wind.y, this.wind.z, 0);
     const collision = this.#collision;
     if (collision !== undefined) {
       this.updateWorldMatrix(true, false);
@@ -507,7 +632,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
     this.removeEventListener("removed", this.#onRemoved);
     this.#renderer = undefined;
     for (const node of this.warmupNodes) node.dispose();
-    for (const buffer of Object.values(this.#buffers)) buffer.value.dispose();
+    for (const buffer of Object.values(this.#buffers ?? {})) buffer.value.dispose();
     this.#readback?.dispose();
     this.#ownedMaterial.dispose();
     this.#released = true;

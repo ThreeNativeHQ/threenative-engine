@@ -98,6 +98,10 @@ private:
     std::unordered_map<const NodeData*, std::pair<uint32_t, ExprId>> temps_;
     std::unordered_map<const NodeData*, std::vector<ExprId>> aggregates_;
     std::unordered_map<const NodeData*, VarId> vars_;
+    // Workgroup arrays by node, named by first use; a Fn call's lowering shares the map, so two arrays never share a name.
+    std::shared_ptr<std::unordered_map<const NodeData*, uint32_t>> workgroups_ =
+        std::make_shared<std::unordered_map<const NodeData*, uint32_t>>();
+    uint32_t workgroupArray(const Node& array);
     // three r187's assignable nodes (Node.toAssignable): an expression a Fn assigns after making it, as SkyMesh's
     // `Lin.mulAssign(...)`. The engine declares the variable at the first assignment, from the node's value there;
     // later reads load it. The pair is the declaring scope and the variable.
@@ -210,7 +214,7 @@ std::vector<ExprId> Lowerer::aggregate(Node node) {
     std::vector<ExprId> values;
     if (node->kind == Kind::Call) {
         Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
-        invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+        invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_; invocation.workgroups_ = workgroups_;
         invocation.analyze(node->args.at(0));
         values = invocation.aggregate(node->args.at(0));
     } else if (node->kind == Kind::Struct) {
@@ -302,7 +306,7 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::Call: {
             Lowerer invocation(program_, inputs_, toneMapping_, srgb_, custom_);
-            invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_;
+            invocation.vars_ = vars_; invocation.loopIndex_ = loopIndex_; invocation.workgroups_ = workgroups_;
             invocation.analyze(d.args.at(0));
             invocation.returnType_ = d.type;
             invocation.doneVar_ = program_.var(Type::boolean(), program_.constant(false));
@@ -583,6 +587,8 @@ ExprId Lowerer::emit(Node node) {
         }
         case Kind::StorageElement:
             return program_.loadStorage(ensureStorage(d), index(node));
+        case Kind::WorkgroupElement:
+            return program_.loadStorage(workgroupArray(d.args[1]), index(node));
         case Kind::VarRead: { const auto variable = ensureVar(d.args[0]); return variable == noVar ? kInvalid : program_.load(variable); }
         case Kind::LoopIndex: {
             const auto found = loopIndex_.find(&d);
@@ -609,6 +615,11 @@ VarId Lowerer::ensureVar(Node var) {
     return id;
 }
 
+uint32_t Lowerer::workgroupArray(const Node& array) {
+    const auto held = workgroups_->emplace(array.get(), static_cast<uint32_t>(workgroups_->size())).first;
+    return program_.workgroupArray("workgroup" + std::to_string(held->second), array->type, static_cast<uint32_t>(array->bits));
+}
+
 uint32_t Lowerer::ensureStorage(const NodeData& element) {
     return program_.storageBuffer(element.name, element.type, element.atomic ? *element.atomic : element.bits == 1);
 }
@@ -619,6 +630,7 @@ void Lowerer::statement(Node node) {
         case Kind::Break: program_.breakLoop(); return;
         case Kind::Continue: program_.continueLoop(); return;
         case Kind::Discard: program_.discard(); return;
+        case Kind::Barrier: program_.barrier(s.bits == 1 ? BarrierScope::Storage : BarrierScope::Workgroup); return;
         case Kind::Body: {
             // A Fn body run at its call (TslScopes scope:close): an expression read of its value later in this scope
             // finds it lowered and runs its statements no second time.
@@ -690,6 +702,8 @@ void Lowerer::statement(Node node) {
             } else if (target->kind == Kind::StorageElement) {
                 const uint32_t buffer = ensureStorage(*target);
                 program_.store(buffer, index(target), convert(expression(s.args[1]), target->type));
+            } else if (target->kind == Kind::WorkgroupElement) {
+                program_.store(workgroupArray(target->args[1]), index(target), convert(expression(s.args[1]), target->type));
             } else {
                 auto held = assigned_.find(target.get());
                 if (held == assigned_.end()) {
@@ -1222,6 +1236,19 @@ const std::vector<const NodeData*>& computeBindingNodes(const Graph& graph) {
         graph->memo.computeBindings = std::move(list);
     }
     return *graph->memo.computeBindings;
+}
+
+bool usesBarrier(const Graph& graph) {
+    std::unordered_set<const NodeData*> seen;
+    const std::function<bool(const Node&)> visit = [&](const Node& n) {
+        if (!n || !seen.insert(n.get()).second) return false;
+        if (n->kind == Kind::Barrier) return true;
+        for (const auto* children : {&n->args, &n->body, &n->otherwise})
+            for (const auto& child : *children)
+                if (visit(child)) return true;
+        return false;
+    };
+    return visit(graph);
 }
 
 std::vector<Node> uniformNodes(const Graph& graph) {

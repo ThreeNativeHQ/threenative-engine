@@ -389,6 +389,9 @@ WGPUBindGroup Renderer::bindGroup(WGPUBindGroupLayout layout, const shader::Stag
             !storages_.count(b.name.substr(2))) return nullptr;
         if (b.kind == shader::BindingKind::Uniform) {
             e.buffer = gpu_.buffer(uniforms);
+            // A draw planned before the frame's first uniform upload (uniformCapacity_ == 0) has no arena yet; the
+            // upload allocates it and rebuildGroups drops the cached per-draw groups, so build none now.
+            if (e.buffer == nullptr) return nullptr;
             e.size = stage.uniformBlockSize;
         } else if (b.kind == shader::BindingKind::Storage && externalStorage_.count(b.name.substr(2))) {
             const auto& [buffer, bytes] = externalStorage_.at(b.name.substr(2)); // a positionNode's buffer

@@ -81,6 +81,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Stride sync** `#stride-sync`: on. Override: `strideSync: false`.
 - **Held prop** `#attach`: `attachToBone`. Override: a portable `Bone` named `RightHand`.
 - **Rigged assets** `#rigged`: `.glb` in `assets/`; `AnimationPlayer` drives clips. Override: `ctx.assets.model("hero.glb")` in `Scene.load()`.
+- **Cape and skirt cloth** `#skinned-cloth`: skinned cloth follows the skin where its mask is 1 and clears the body. Override: `bodyColliders`; `cloth`. Marker: `TN_SOFTBODY_RESET`.
 - **Unlit foliage** `#unlit-foliage`: warns. Override: `material.userData.tnUnlitOk = true`. Marker: `TN_UNLIT_FOLIAGE`.
 - **Material backlight** `#backlight`: none, as in stock Unreal. Override: `rimGain`; `fillGain`.
 - **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.

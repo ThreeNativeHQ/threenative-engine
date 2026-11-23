@@ -347,7 +347,11 @@ export async function bindWebEngine(
     updatePasses = passes.updateFramePasses;
     Object.assign(bound, passes);
   }
-  return bindUpstreamExports(names, engineCatalog, bound);
+  const exported = bindUpstreamExports(names, engineCatalog, bound);
+  // three/webgpu's `TSL` is the three/tsl namespace (`export * as TSL`); here one namespace serves
+  // all three modules, so it already holds every TSL name.
+  exported.TSL = exported;
+  return exported;
 }
 
 /**

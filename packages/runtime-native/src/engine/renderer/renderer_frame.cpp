@@ -1025,6 +1025,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.pbrMaps[k]) v.pbrMaps |= static_cast<uint16_t>(1u << k);
         // three's useClearcoat: a physical material with clearcoat > 0 builds the clearcoat layer.
         v.clearcoat = item.kind == MaterialKind::Physical && item.material && item.material->clearcoat > 0;
+        // three's useAnisotropy: a physical material with anisotropy > 0 builds the anisotropic GGX.
+        v.anisotropy = item.kind == MaterialKind::Physical && item.material && item.material->anisotropy > 0;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
         return v;
     };
@@ -1360,6 +1362,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         put(frameUniforms_, f, fs[kClearcoat], std::array<double, 1>{m.clearcoat});
         put(frameUniforms_, f, fs[kClearcoatRoughness], std::array<double, 1>{m.clearcoatRoughness});
         put(frameUniforms_, f, fs[kClearcoatNormalScale], std::array<double, 2>{m.clearcoatNormalScale[0], m.clearcoatNormalScale[1]});
+        // materialAnisotropyVector (MaterialNode.js:829-839): anisotropy * (cos rotation, sin rotation).
+        put(frameUniforms_, f, fs[kAnisotropyVector],
+            std::array<double, 2>{m.anisotropy * std::cos(m.anisotropyRotation), m.anisotropy * std::sin(m.anisotropyRotation)});
         put(frameUniforms_, f, fs[kBumpScale], std::array<double, 1>{m.bumpScale});
         if (item.background) put(frameUniforms_, f, fs[kBackgroundRotation], item.backgroundRotation);
         if (item.fog) {

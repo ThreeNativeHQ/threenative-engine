@@ -487,6 +487,19 @@
       "required": true
     },
     {
+      "id": "material-anisotropy",
+      "title": "material anisotropy: the anisotropic GGX highlight, its rotation and its map",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-anisotropy.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 7.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "13-texture-material",
       "title": "texture material",
       "category": "materials",
@@ -2407,6 +2420,20 @@
       "required": false
     },
     {
+      "id": "workgroup-reduction",
+      "title": "compute kernel summing 64 threads through workgroup memory and barriers (PRD-913)",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/workgroup-reduction.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "tsl-fn-out-param",
       "title": "TSL Fn assigning an out argument, made inside a Fn and at the top level",
       "category": "webgpu-tsl",
@@ -2429,6 +2456,45 @@
       "tolerance": {
         "pixelMismatchRatio": 0.03,
         "perceptualDeltaE": 4.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "softbody-character",
+      "title": "softbody character: the skinned SoftBody3D cape solver runs 60 steps on a moving three-bone character and draws the same cloth on every host",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/softbody-character.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.02,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "hair-guides",
+      "title": "hair guides: the HairStrands3D solver runs 60 steps on a moving, turning head and its cards draw the same hair on every host",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/hair-guides.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
+      "id": "hair-cards",
+      "title": "hair cards: the starter template's coverage-masked card material draws the HairStrands3D solver's 60-step hair on every host",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/hair-cards.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.03,
+        "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
       "required": false

@@ -1,0 +1,55 @@
+{
+  "name": "character-dynamics-perf",
+  "schemaVersion": 1,
+  "subject": "the character-dynamics scene at 1080p with the probe off, run with --live-clock so each frame advances one real frame of simulation; TN_FRAME_BUDGET gpuOther holds every compute pass (PRD-911 AC-5, PRD-912 AC-4)",
+  "target": "web",
+  "viewport": {
+    "width": 1920,
+    "height": 1080
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitFrames": 120,
+      "screenshot": "settled"
+    },
+    {
+      "kind": "wait",
+      "label": "script",
+      "waitFrames": 600
+    },
+    {
+      "kind": "wait",
+      "label": "steady",
+      "waitFrames": 1800,
+      "screenshot": "done"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "complete",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "finite",
+        "equals": true,
+        "allowTrivial": "finite starts true and must stay true through all eight phases"
+      }
+    ]
+  }
+}
