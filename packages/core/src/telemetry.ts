@@ -164,7 +164,7 @@ export function installTelemetry(options: ITelemetryOptions | undefined): void {
 /** Stops reporting, putting back the exact `console.warn` / `console.error` install replaced. */
 export function uninstallTelemetry(): void {
   if (installed === undefined) return;
-  const scope = globalThis as unknown as Partial<IListenable>;
+  const scope: Partial<IListenable> = globalThis as Partial<IListenable>;
   for (const [type, listener] of installed.listeners) scope.removeEventListener?.(type, listener);
   console.warn = installed.console.warn;
   console.error = installed.console.error;
@@ -243,7 +243,7 @@ function textOf(args: readonly unknown[]): string | undefined {
 
 /** The `error` and `unhandledrejection` listeners, for a host whose global is an event target. */
 function listen(record: Report): Array<readonly [type: string, listener: Listener]> {
-  const scope = globalThis as unknown as Partial<IListenable>;
+  const scope: Partial<IListenable> = globalThis as Partial<IListenable>;
   if (
     typeof scope.addEventListener !== "function" ||
     typeof scope.removeEventListener !== "function"
