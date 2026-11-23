@@ -157,12 +157,16 @@ def run():
     sequences = clips(found)
     names = list(sequences)
     count = int(os.environ.get("TN_UE_RUNS", "3"))
-    for index in range(1, count + 1):
-        out = os.path.join(RUNS, f"run-{index}.json")
-        result = unreal.CharDynProbeLibrary.run_drive(mesh, [sequences[n] for n in names], names, os.path.join(GEN, "drive.json"), out)
+    # TN_UE_PERTURB="1,2,3": the perturbation runs. Run k starts every free cloth particle and
+    # ponytail_2..6 k * 1e-4 cm off along a fixed pseudo-random unit vector each (CharDynProbe.h).
+    perturb = [int(k) for k in os.environ.get("TN_UE_PERTURB", "").split(",") if k]
+    jobs = [(f"perturb-{k}", k * 1e-4) for k in perturb] or [(f"run-{i}", 0.0) for i in range(1, count + 1)]
+    for name, cm in jobs:
+        out = os.path.join(RUNS, f"{name}.json")
+        result = unreal.CharDynProbeLibrary.run_drive(mesh, [sequences[n] for n in names], names, os.path.join(GEN, "drive.json"), out, cm)
         if result:
-            raise RuntimeError(f"run {index}: {result}")
-        log(f"run {index} -> {out}")
+            raise RuntimeError(f"{name}: {result}")
+        log(f"{name} (perturb {cm} cm) -> {out}")
 
 
 try:

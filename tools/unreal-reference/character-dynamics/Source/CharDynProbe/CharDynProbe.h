@@ -43,6 +43,18 @@ struct FCharDynDynamicsArm
 };
 
 /**
+ * One more FAnimNode_SpringBone chain over ponytail_2..6 with named option overrides, on its own copy
+ * of the animated pose. Like the AnimDynamics arms, its output is recorded, not applied.
+ */
+struct FCharDynSpringArm
+{
+	FString Name;
+	TArray<FAnimNode_SpringBone> Springs;
+	/** ponytail_1..6 as the chain wrote them on the last evaluation (component space, cm). */
+	TArray<FVector> Bones;
+};
+
+/**
  * Plays clips the way the game's AnimationPlayer does (packages/core/src/animation.ts play/update):
  * a play fades every contributing clip out and the new one in over `fade` seconds with a
  * smoothstep weight; a clip already playing in the same mode keeps playing; each tick advances
@@ -58,11 +70,12 @@ public:
 	void Play(UAnimSequence* Clip, float Fade, bool bOnce);
 	void Advance(float DeltaSeconds);
 	/** Puts the ponytail springs and AnimDynamics arms back in their just-initialized state (no time pending). */
-	void ResetSprings();
+	void ResetSprings(float PerturbCm = 0.f);
 	/** What a teleporting SetActorLocation (ETeleportType::TeleportPhysics) does to an AnimGraph's
 	 * AnimDynamics nodes (SkeletalMeshComponent.cpp:5350-5354, AnimInstanceProxy.cpp:3280-3289). */
 	void TeleportDynamics();
 	const TArray<FCharDynDynamicsArm>& DynamicsArms();
+	const TArray<FCharDynSpringArm>& SpringArms();
 	FIntPoint UpdatesAndEvaluations();
 
 	TArray<FCharDynLayer> Outgoing;
@@ -94,6 +107,11 @@ struct FCharDynAnimProxy : public FAnimInstanceProxy
 	TArray<FAnimNode_SpringBone> Springs;
 	/** PRD-912 AC-3: FAnimNode_AnimDynamics in chain mode, stock and with named overrides. */
 	TArray<FCharDynDynamicsArm> Dynamics;
+	/** Recorded SpringBone arms with option overrides (PRD-912 AC-3 `hairSpringBoneRotate`). */
+	TArray<FCharDynSpringArm> SpringArms;
+	/** Perturbation run: the next evaluation moves ponytail_2..6 by PerturbCm along a fixed pseudo-random unit vector each. */
+	float PerturbCm = 0.f;
+	bool bPerturbNext = false;
 	/** Initialize_AnyThread the arms on the next evaluation (graph init, or ResetSprings). */
 	bool bInitDynamics = true;
 	/** Harness check: updates and evaluations so far (each tick must add one of each). */
@@ -125,9 +143,11 @@ public:
 	 * Spawns the mesh in a fresh game world, replays drive.json at its fixed step (actor
 	 * transform and clip plays per tick), and writes the simulated cape (grid order, world cm),
 	 * the spine_03 frame and the torso capsule ends per tick to `OutPath`. Returns "" or an
-	 * "ERROR ..." string.
+	 * "ERROR ..." string. `PerturbCm` > 0 is the perturbation run: every free cloth particle starts
+	 * PerturbCm along its own fixed unit vector (FRandomStream(1000 + particle).VRand()), and
+	 * ponytail_2..6 start PerturbCm along theirs (FRandomStream(90000 + bone index).VRand()).
 	 */
 	UFUNCTION(BlueprintCallable, Category = "CharDyn")
 	static FString RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSequence*>& Clips, const TArray<FString>& ClipNames,
-		const FString& DrivePath, const FString& OutPath);
+		const FString& DrivePath, const FString& OutPath, float PerturbCm);
 };

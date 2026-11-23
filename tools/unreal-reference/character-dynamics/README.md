@@ -4,17 +4,18 @@ This folder holds the Unreal side of `examples/character-dynamics`. A stock Chao
 
 ```mermaid
 flowchart LR
-  P[prepare<br/>node] --> B[build<br/>editor] --> D[drive<br/>node] --> R[run x3<br/>editor] --> M[metrics<br/>node + probe.ts]
+  P[prepare<br/>node] --> B[build<br/>editor] --> D[drive<br/>node] --> R[run x3<br/>editor] --> X[perturb x3<br/>editor] --> M[metrics<br/>node + probe.ts]
   P -- body.glb, mannequin_cape.glb, cape.json --> B
   B -- scene.json: bone map, configs --> D
   D -- drive.json: per-tick root + clip plays --> R
   R -- runs/run-N.json: cape, spine_03, capsules, Head frame, ponytail --> M
+  X -- runs/perturb-N.json: the same, from a start moved 1e-4 cm x N --> M
   M --> J[reference.json]
 ```
 
 | File | Job |
 |---|---|
-| `reference.ts` | Node stages `prepare`, `build`, `drive`, `run`, `metrics` (`all` runs them in order). It holds the game.ts `SCRIPT` and frame loop, and it imports `examples/character-dynamics/src/probe.ts` for the metrics. |
+| `reference.ts` | Node stages `prepare`, `build`, `drive`, `run`, `perturb`, `metrics` (`all` runs them in order). It holds the game.ts `SCRIPT` and frame loop, and it imports `examples/character-dynamics/src/probe.ts` for the metrics. |
 | `build_scene.py` | Editor Python. `TN_UE_MODE=build` imports the GLBs, makes the cloth and writes `scene.json`. `TN_UE_MODE=run` plays `drive.json` 3 times. |
 | `Source/CharDynProbe` | The C++ editor module. `CreateCapeCloth` is the editor's "Create Clothing Data from Section" plus "Apply" path. `RunDrive` creates a game world and ticks it by hand. `UCharDynAnimInstance` replays the game's crossfade, and its proxy runs the ponytail springs and the AnimDynamics arms. Python cannot create cloth from a section or read the simulated positions. |
 | `build_module.py` | Compiles the module against `$UE_ROOT` through a symlink shadow of the engine. See "Why a shadow engine". |
@@ -25,7 +26,8 @@ flowchart LR
 ```sh
 export UE_ROOT=$HOME/UnrealEngine-5.8.3
 python3 tools/unreal-reference/character-dynamics/build_module.py      # once, ~1 min (+1 min UHT on a fresh shadow)
-pnpm exec tsx tools/unreal-reference/character-dynamics/reference.ts   # = all: prepare, build, drive, run, metrics
+pnpm exec tsx tools/unreal-reference/character-dynamics/reference.ts   # = all: prepare, build, drive, run, perturb, metrics
+pnpm exec biome format --write tools/unreal-reference/character-dynamics/reference.json   # the committed file is biome-formatted
 cd examples/character-dynamics && pnpm exec vitest run __tests__/reference.spec.ts
 ```
 
@@ -136,6 +138,77 @@ AnimDynamics keeps the swing in the same range as the game: the AC-3 phases give
 
 Side view of the cape at the end of settle, the hard-stop peak and the snap-turn peak: `~/Downloads/character-dynamics-unreal-reference/unreal-cape-settle-hardstop-snapturn.png` (made from `Saved/runs/run-1.json`).
 
+### Perturbation spread (AC-3 band)
+
+`perturbation` in `reference.json`. Chaos Cloth, `FAnimNode_SpringBone` and `FAnimNode_AnimDynamics` are deterministic, so the 3-run spread above is 0 and a band of "reference ± spread" has no width. The spread of a chaotic deterministic system is its sensitivity to a float-level change of the start, and the committed record gets it from a named run mode (`reference.ts perturb`, `TN_UE_PERTURB=1,2,3`). The rule:
+
+- **Cloth.** Run k moves every free particle (all but the pinned top row, grid row 0) by k x 1e-4 cm along its own fixed unit vector, `FRandomStream(1000 + particle index).VRand()`. `RunDrive` edits the cloth asset's physical-mesh vertices in memory before it makes the clothing actors, and restores them after the run. The pinned row stays on the skin.
+- **Ponytail.** Run k moves ponytail_2 to ponytail_6 by k x 1e-4 cm along `FRandomStream(90000 + chain index 1..5).VRand()` in component space. The move happens in the one evaluation that places the chains (after `ResetSprings`), so the SpringBone chain, every SpringBone option arm and every AnimDynamics arm start off their bones by the same amount.
+- **Same everything else.** The script, the step and the rest lengths (the unperturbed run's) do not change. 1e-4 cm is 13 float32 steps at 100 cm.
+- **Numbers.** Each cell holds `unperturbed`, `min`, `max`, `spread` = max - min and `runs` = [unperturbed, perturbed 1, 2, 3]. The unperturbed values are the committed ones (`reference.spec.ts` checks it). The unperturbed runs also equal the runs of the earlier record: the 3 new `run-N.json` match the old ones tick for tick, apart from the new `hairSpringArms` field.
+- **Effect (measured at tick 1, 100, 300 and 500 of perturbed run 1).** The cloth difference grows from 1e-4 cm to 3e-4 cm (tick 10), 5e-4 cm (tick 100), 0.15 cm (tick 300) and 2.6 cm (tick 500). The stock SpringBone chain forgets the start (9e-5 cm at tick 1, 1e-7 cm at tick 500), so its spread is 0. The locked AnimDynamics `stock` arm has a spread of 0. The `swing` arm differs by 2 cm at tick 100 and 17 cm at tick 300.
+
+Cape (unperturbed [min, max] ± spread over the unperturbed run and 3 perturbed runs):
+
+| Phase | hemOffset (m) | hemTrail (deg) | maxStretch | bodyPenetration |
+|---|---|---|---|---|
+| settle | 0.000 [0.000, 0.000] ±0.000 | 2.5 [2.5, 2.5] ±0.0 | 0.117 [0.116, 0.117] ±0.000 | 0 [0, 0] ±0 |
+| jog | 1.048 [1.048, 1.048] ±0.000 | 93.2 [93.2, 93.2] ±0.0 | 0.668 [0.668, 0.670] ±0.002 | 0 [0, 0] ±0 |
+| jogTurn | 0.987 [0.987, 0.987] ±0.001 | 88.4 [88.4, 88.4] ±0.0 | 1.170 [1.170, 1.176] ±0.006 | 0 [0, 0] ±0 |
+| sprint | 1.264 [1.264, 1.265] ±0.001 | 124.4 [124.4, 124.5] ±0.1 | 1.250 [1.248, 1.269] ±0.021 | 0 [0, 0] ±0 |
+| hardStop | 0.417 [0.417, 0.426] ±0.009 | 30.9 [30.9, 31.2] ±0.3 | 0.846 [0.845, 0.854] ±0.009 | 0 [0, 0] ±0 |
+| jump | 0.572 [0.572, 0.620] ±0.048 | 51.6 [51.6, 55.7] ±4.1 | 0.576 [0.570, 0.660] ±0.090 | 0 [0, 0] ±0 |
+| snapTurn | 1.828 [1.828, 1.836] ±0.008 | 176.3 [176.3, 176.8] ±0.5 | 3.222 [3.213, 3.684] ±0.471 | 1 [1, 3] ±2 |
+| teleport | 0.016 [0.016, 0.016] ±0.000 | 2.8 [2.8, 2.8] ±0.0 | 0.084 [0.084, 0.084] ±0.000 | 0 [0, 0] ±0 |
+
+The band is narrow for most cells: the cape is sensitive in the late phases (jump and snapTurn), not in the early ones. Its hem path in jog and sprint moves by 0.1 degree or less, so a game that matches the reference there is held to the reference.
+
+### Ponytail on SpringBone options (PRD-912 AC-3)
+
+`hairSpringBoneRotate` in `reference.json`, 3 runs and the perturbation spread. The brief asked for the stock SpringBone options that come closest to `SpringBoneChain3D` (spring 50 and 4, a 1/120 s step, segment lengths kept, bones turned toward the particles). Each arm is a second SpringBone chain (ponytail_2 to ponytail_6) on its own copy of the animated pose, beside the stock chain. Its output is recorded, not applied, so the cape and the stock chain do not change. Reading `AnimNode_SpringBone.cpp` gave these facts:
+
+- **Translation off is not an option.** With `bTranslateX/Y/Z` all false the node returns before it computes anything (`:102-105`), so rotation alone moves nothing. At least one translate flag stays on.
+- **Rotation feeds back.** `bRotateX/Y/Z` turns the bone by the angle between parent-to-target and parent-to-spring (`:206-221`), and the next bone's target hangs off the turned bone. `SpringBoneChain3D` turns the bones only as output: its targets use the rest rotations. So rotation moves the stock chain away from the game's model, and the `rotate` arm shows it (settle stretch 3.2 against 0.6 for the stock chain).
+- **The only stock bound on the stretch is the displacement limit.** `bLimitDisplacement` clamps the bone to `MaxDisplacement` of its target (`:177-187`) and rewrites its velocity (`:188-189`). The header calls it "how long a bone can stretch beyond its length in the ref-pose" (`AnimNode_SpringBone.h:28`). The stretch is then at most MaxDisplacement / rest length. No option gives a stretch of 0 with free swing, because the clamp is a sphere around the target and not a length constraint on the parent-to-bone segment.
+
+| Arm | Override (one line each) |
+|---|---|
+| `rotate` | `bRotateX/Y/Z` true. The option the brief named. |
+| `limitHalf` | `bLimitDisplacement` true, `MaxDisplacement` 3.9 cm. Half a rest segment (7.81 cm: 5 back, 6 down) bounds the stretch at 50%. |
+| `limitFull` | `bLimitDisplacement` true, `MaxDisplacement` 7.8 cm. One rest segment bounds the stretch at 100%, a swing of 60 degrees per segment. |
+| `rotateLimitHalf` | `rotate` and `limitHalf`. |
+| `rotateLimitFull` | `rotate` and `limitFull`. |
+
+The two limit values are structural (half and one rest segment), not fitted to the game's swing. No arm has a body collider, so every limit arm hangs through the back capsules (hairInsideHead 4 to 5). `limitFull` is the arm closest to the game's model in kind: it bounds the stretch and has no rotation feedback. Which arm bounds AC-3 is the owner's decision.
+
+Hard stop (hairTipOffset (m) / hairStretch / hairInsideHead, unperturbed [min, max] ± spread over the unperturbed run and 3 perturbed runs):
+
+| Arm | hairTipOffset (m) | hairStretch | hairInsideHead |
+|---|---|---|---|
+| SpringBone (stock) | 1.905 [1.905, 1.905] ±0.000 | 14.460 [14.460, 14.460] ±0.000 | 3 [3, 3] ±0 |
+| `rotate` | 1.917 [1.917, 1.917] ±0.000 | 14.568 [14.568, 14.568] ±0.000 | 3 [3, 3] ±0 |
+| `limitHalf` | 0.208 [0.206, 0.247] ±0.041 | 0.497 [0.466, 0.497] ±0.032 | 4 [4, 5] ±1 |
+| `limitFull` | 0.374 [0.371, 0.398] ±0.026 | 0.875 [0.875, 0.996] ±0.121 | 5 [5, 5] ±0 |
+| `rotateLimitHalf` | 0.229 [0.229, 0.246] ±0.016 | 0.497 [0.496, 0.498] ±0.002 | 4 [4, 5] ±1 |
+| `rotateLimitFull` | 0.701 [0.666, 0.701] ±0.035 | 0.873 [0.824, 0.953] ±0.129 | 5 [5, 5] ±0 |
+| AnimDynamics `swing` | 0.540 [0.493, 0.572] ±0.079 | 0.485 [0.298, 0.897] ±0.599 | 5 [5, 5] ±0 |
+| AnimDynamics `swingWorld` | 0.711 [0.711, 0.825] ±0.114 | 0.872 [0.823, 0.872] ±0.050 | 5 [5, 5] ±0 |
+
+Snap turn:
+
+| Arm | hairTipOffset (m) | hairStretch | hairInsideHead |
+|---|---|---|---|
+| SpringBone (stock) | 3.676 [3.676, 3.676] ±0.000 | 29.602 [29.602, 29.602] ±0.000 | 2 [2, 2] ±0 |
+| `rotate` | 3.789 [3.789, 3.789] ±0.000 | 30.017 [30.017, 30.017] ±0.000 | 2 [2, 2] ±0 |
+| `limitHalf` | 0.281 [0.262, 0.281] ±0.019 | 0.498 [0.497, 0.499] ±0.002 | 4 [4, 4] ±0 |
+| `limitFull` | 0.388 [0.388, 0.409] ±0.022 | 0.965 [0.960, 0.971] ±0.011 | 4 [4, 5] ±1 |
+| `rotateLimitHalf` | 0.289 [0.289, 0.301] ±0.012 | 0.497 [0.497, 0.499] ±0.002 | 4 [4, 4] ±0 |
+| `rotateLimitFull` | 0.687 [0.660, 0.696] ±0.036 | 0.965 [0.962, 0.977] ±0.015 | 5 [4, 5] ±1 |
+| AnimDynamics `swing` | 0.806 [0.806, 0.830] ±0.023 | 1.320 [0.731, 1.320] ±0.589 | 5 [5, 5] ±0 |
+| AnimDynamics `swingWorld` | 0.796 [0.759, 0.875] ±0.117 | 2.706 [2.363, 3.051] ±0.688 | 5 [4, 5] ±1 |
+
+The tip offset is measured from the tip's spot at the end of settle, as in the other blocks. The stock chain and `rotate` forget the perturbation (spread 0), because the spring damps a 1e-4 cm start away. The arms with a clamp, and AnimDynamics, keep it.
+
 ### What changed in the second pass, and why
 
 1. **The settled cape stretched 253%. Cause: stock capsules overlap the rest cape.** The particle map was correct. At tick 1, 141 of 209 particles sat within 0.2 cm of their grid position (177 after the fix), and the pinned row followed `spine_03` within 0.09 cm in every tick. The displaced particles sat in patches next to capsules. The generated `spine_03` capsule has a radius of 19.96 cm. The cape hangs 13.79 cm from the capsule axis, so 34 rest vertices were inside it. Pelvis held 7, `upperarm_r` 13, `hand_r` 3 and `calf_r` 4 (`restClearance` in `reference.json`). Collision and the pins fought from the first step. Edge 23-34 measured 3.3 times its rest length at tick 1. Fix: the capsule rest-clearance override, which is the game's rule. Settle stretch went from 2.533 to 0.117. Teleport stretch went from 2.754 to 0.084. Tick 1 now shows 1.7%.
@@ -145,5 +218,5 @@ Side view of the cape at the end of settle, the hard-stop peak and the snap-turn
 
 ### Not done
 
-- **The AC-3 bound.** The AnimDynamics block exists (see above). The owner picks the arm (`stock`, `swing` or `swingWorld`), and the game's AC-3 check then reads `hairAnimDynamics.arm.<arm>`. No Unreal arm has a body collider, so hairInsideHead has no Unreal bound.
+- **The AC-3 bound.** The AnimDynamics block and the SpringBone option block exist (see above). The owner picks the arm (`stock`, `swing` or `swingWorld` in `hairAnimDynamics.arm`, or one of `hairSpringBoneRotate.arm`), and the game's AC-3 check then reads that arm, with its `perturbation` spread as the band. No Unreal arm has a body collider, so hairInsideHead has no Unreal bound.
 - **A collider arm.** AnimDynamics collides only with planar and spherical limits (`bUsePlanarLimit`, `SphericalLimits`). A sphere limit on `Head` and `spine_03` would be a further named override. It is not built.

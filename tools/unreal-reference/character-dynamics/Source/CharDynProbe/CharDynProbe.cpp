@@ -97,12 +97,17 @@ void UCharDynAnimInstance::Advance(float Dt)
 	}
 }
 
-void UCharDynAnimInstance::ResetSprings()
+void UCharDynAnimInstance::ResetSprings(float PerturbCm)
 {
 	// Initialize_AnyThread's reset (AnimNode_SpringBone.cpp:46): the next evaluation with no time
 	// pending places each spring on its bone (:117-122).
 	FCharDynAnimProxy& Proxy = GetProxyOnGameThread<FCharDynAnimProxy>();
 	for (FAnimNode_SpringBone& Spring : Proxy.Springs) Spring.RemainingTime = 0.f;
+	for (FCharDynSpringArm& Arm : Proxy.SpringArms)
+		for (FAnimNode_SpringBone& Spring : Arm.Springs) Spring.RemainingTime = 0.f;
+	// Perturbation run: the evaluation that places the chain starts ponytail_2..6 off their bones.
+	Proxy.PerturbCm = PerturbCm;
+	Proxy.bPerturbNext = PerturbCm > 0.f;
 	// The AnimDynamics arms: Initialize_AnyThread on the next evaluation zeroes the time debt and
 	// requests ResetPhysics (AnimNode_AnimDynamics.cpp:248-268), so InitPhysics places every body on
 	// its bone of that pose (:1002-1196).
@@ -112,6 +117,11 @@ void UCharDynAnimInstance::ResetSprings()
 void UCharDynAnimInstance::TeleportDynamics()
 {
 	for (FCharDynDynamicsArm& Arm : GetProxyOnGameThread<FCharDynAnimProxy>().Dynamics) Arm.Node.ResetDynamics(ETeleportType::TeleportPhysics);
+}
+
+const TArray<FCharDynSpringArm>& UCharDynAnimInstance::SpringArms()
+{
+	return GetProxyOnGameThread<FCharDynAnimProxy>().SpringArms;
 }
 
 FIntPoint UCharDynAnimInstance::UpdatesAndEvaluations()
@@ -167,6 +177,30 @@ void FCharDynAnimProxy::Initialize(UAnimInstance* InAnimInstance)
 		}
 		if (Arm.Name == TEXT("swingWorld")) Node.SimulationSpace = AnimPhysSimSpaceType::World;
 	}
+	// PRD-912 AC-3 `hairSpringBoneRotate`: more SpringBone chains with named option overrides, on their
+	// own copy of the pose. SpringBoneChain3D keeps each segment at its rest length and turns the
+	// bones; the stock node translates the bone and stretches. `rotate` turns on bRotateX/Y/Z (the
+	// bone then swings by the angle between parent-to-target and parent-to-spring, and its children
+	// hang off the turned bone, :206-221). `limit*` turn on bLimitDisplacement, which clamps the bone
+	// to MaxDisplacement of its target (:177-187): the only stock option that bounds the stretch.
+	// MaxDisplacement is half and one rest segment (7.81 cm: 5 back, 6 down). Translation off is not an
+	// option: with all three translate flags off the node returns before it computes anything (:102-105).
+	SpringArms.Reset();
+	struct FSpringArmSpec { const TCHAR* Name; bool bRotate; double MaxDisplacement; };
+	for (const FSpringArmSpec& Spec : { FSpringArmSpec{ TEXT("rotate"), true, 0.0 }, FSpringArmSpec{ TEXT("limitHalf"), false, 3.9 }, FSpringArmSpec{ TEXT("limitFull"), false, 7.8 },
+		FSpringArmSpec{ TEXT("rotateLimitHalf"), true, 3.9 }, FSpringArmSpec{ TEXT("rotateLimitFull"), true, 7.8 } })
+	{
+		FCharDynSpringArm& Arm = SpringArms.AddDefaulted_GetRef();
+		Arm.Name = Spec.Name;
+		for (int32 B = 1; B < GHairCount; ++B)
+		{
+			FAnimNode_SpringBone& Spring = Arm.Springs.AddDefaulted_GetRef();
+			Spring.SpringBone.BoneName = GHairBones[B];
+			Spring.bRotateX = Spring.bRotateY = Spring.bRotateZ = Spec.bRotate;
+			Spring.bLimitDisplacement = Spec.MaxDisplacement > 0.0;
+			Spring.MaxDisplacement = Spec.MaxDisplacement;
+		}
+	}
 	bInitDynamics = true;
 }
 
@@ -183,6 +217,12 @@ void FCharDynAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeco
 		Spring.PreUpdate(InAnimInstance);
 		Spring.UpdateInternal(FAnimationUpdateContext(this, DeltaSeconds));
 	}
+	for (FCharDynSpringArm& Arm : SpringArms)
+		for (FAnimNode_SpringBone& Spring : Arm.Springs)
+		{
+			Spring.PreUpdate(InAnimInstance);
+			Spring.UpdateInternal(FAnimationUpdateContext(this, DeltaSeconds));
+		}
 	// AnimDynamics: PreUpdate on the game thread, then UpdateInternal caches the tick's delta as the
 	// step (AnimNode_AnimDynamics.cpp:270-276, 1380-1454). Adaptive substepping is off by default
 	// (:26), so each tick is one step of that delta, capped at MaxPhysicsDeltaTime 1/30 s (:663, 691-701).
@@ -235,6 +275,25 @@ bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
 		FComponentSpacePoseContext CS(this);
 		CS.Pose.InitPose(Output.Pose);
 		TArray<FBoneTransform> Transforms;
+		// Perturbation run: the evaluation that places the chain moves ponytail_2..6 off their bones, each
+		// by PerturbCm along its own fixed unit vector. Every bone's component-space pose is read first and
+		// set once, parent first, so each bone moves by exactly its own offset.
+		const bool bPerturb = bPerturbNext;
+		bPerturbNext = false;
+		auto Perturb = [&](FCSPose<FCompactPose>& Pose)
+		{
+			if (!bPerturb) return;
+			TArray<FBoneTransform> Moved;
+			for (int32 B = 1; B < GHairCount; ++B)
+			{
+				const FCompactPoseBoneIndex Index = Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(FName(GHairBones[B]))));
+				FTransform T = Pose.GetComponentSpaceTransform(Index);
+				T.AddToTranslation(FRandomStream(90000 + B).VRand() * PerturbCm);
+				Moved.Add(FBoneTransform(Index, T));
+			}
+			Pose.LocalBlendCSBoneTransforms(Moved, 1.f);
+		};
+		Perturb(CS.Pose);
 		// The AnimDynamics arms read the animated pose, before the springs, and record their output.
 		if (bInitDynamics)
 		{
@@ -252,6 +311,28 @@ bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
 			Transforms.Reset();
 			Arm.Node.EvaluateSkeletalControl_AnyThread(CS, Transforms);
 			for (const FBoneTransform& T : Transforms) Arm.Bones.Add(T.Transform.GetLocation());
+		}
+		// The recorded SpringBone arms: each on a fresh copy of the pose, ponytail_1 as the pose has it.
+		for (FCharDynSpringArm& Arm : SpringArms)
+		{
+			FComponentSpacePoseContext ArmCS(this);
+			ArmCS.Pose.InitPose(Output.Pose);
+			Perturb(ArmCS.Pose);
+			Arm.Bones.Reset();
+			Arm.Bones.Add(ArmCS.Pose.GetComponentSpaceTransform(Bones.MakeCompactPoseIndex(FMeshPoseBoneIndex(Bones.GetPoseBoneIndexForBoneName(FName(GHairBones[0]))))).GetLocation());
+			for (FAnimNode_SpringBone& Spring : Arm.Springs)
+			{
+				Spring.SpringBone.Initialize(Bones);
+				if (!Spring.IsValidToEvaluate(GetSkeleton(), Bones))
+				{
+					UE_LOGF(LogTemp, Error, "TN_UE_CHARDYN spring arm %ls bone %ls is not in the pose", *Arm.Name, *Spring.SpringBone.BoneName.ToString());
+					continue;
+				}
+				Transforms.Reset();
+				Spring.EvaluateSkeletalControl_AnyThread(ArmCS, Transforms);
+				for (const FBoneTransform& T : Transforms) Arm.Bones.Add(T.Transform.GetLocation());
+				if (Transforms.Num()) ArmCS.Pose.LocalBlendCSBoneTransforms(Transforms, 1.f);
+			}
 		}
 		for (FAnimNode_SpringBone& Spring : Springs)
 		{
@@ -452,7 +533,7 @@ static void CapsuleEnds(const USkeletalMeshComponent* Comp, FName Bone, const FK
 }
 
 
-FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSequence*>& Clips, const TArray<FString>& ClipNames, const FString& DrivePath, const FString& OutPath)
+FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSequence*>& Clips, const TArray<FString>& ClipNames, const FString& DrivePath, const FString& OutPath, float PerturbCm)
 {
 	if (!Mesh || Clips.Num() != ClipNames.Num()) return TEXT("ERROR bad arguments");
 	FAssetCompilingManager::Get().FinishAllCompilation();
@@ -475,6 +556,17 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 	FString Error;
 	if (!GridIds(Mesh->GetImportedModel()->LODModels[0].Sections[Section], Asset->LodData[0].PhysicalMeshData.Vertices, Ids, Error)) return TEXT("ERROR ") + Error;
 	const int32 AssetIndex = Mesh->GetClothingAssetIndex(Asset->GetAssetGuid());
+	// Perturbation run: every free cloth particle (not the pinned top row, grid row 0) starts PerturbCm
+	// along its own fixed unit vector. The cloth asset is edited in memory and restored after the run;
+	// the clothing actors made below read it. The grid ids above were matched on the unperturbed data.
+	TArray<FVector3f> SavedVertices;
+	if (PerturbCm > 0.f)
+	{
+		TArray<FVector3f>& Vertices = Asset->LodData[0].PhysicalMeshData.Vertices;
+		SavedVertices = Vertices;
+		for (int32 P = 0; P < Vertices.Num(); ++P)
+			if (Ids[P] >= GCols) Vertices[P] += FVector3f(FRandomStream(1000 + P).VRand() * PerturbCm);
+	}
 
 	// A fresh game world, ticked by hand at the fixed step.
 	// CreateWorld's defaults turn physics simulation off, and with it the cloth actors
@@ -550,6 +642,14 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 					Arms->SetArrayField(Arm.Name, Points);
 				}
 				S->SetObjectField(TEXT("hairDynamics"), Arms);
+				TSharedRef<FJsonObject> SpringArmPoints = MakeShared<FJsonObject>();
+				for (const FCharDynSpringArm& Arm : Anim->SpringArms())
+				{
+					TArray<TSharedPtr<FJsonValue>> Points;
+					for (const FVector& P : Arm.Bones) Points.Append(Vec(Comp->GetComponentTransform().TransformPosition(P)));
+					SpringArmPoints->SetArrayField(Arm.Name, Points);
+				}
+				S->SetObjectField(TEXT("hairSpringArms"), SpringArmPoints);
 				const FIntPoint Counts = Anim->UpdatesAndEvaluations();
 				S->SetNumberField(TEXT("updates"), Counts.X);
 				S->SetNumberField(TEXT("evaluations"), Counts.Y);
@@ -610,7 +710,7 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 			// pose by this zero-length evaluation, as InitAnim's zero tick places them when the graph's
 			// entry pose is Idle_Loop (SkeletalMeshComponent.cpp:1213-1216; the game builds its
 			// SpringBoneChain3D on that pose). Less than one 1/120 s step is pending before tick 1.
-			Anim->ResetSprings();
+			Anim->ResetSprings(PerturbCm);
 			Comp->TickAnimation(0.f, false);
 			Comp->RefreshBoneTransforms();
 			// Named override, applied in both engines (game.ts: measureBodyCapsules(capeSkin, 16, restWorld,
@@ -717,6 +817,7 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 			}
 		}
 	}
+	if (SavedVertices.Num()) Asset->LodData[0].PhysicalMeshData.Vertices = SavedVertices;
 	if (UPhysicsAsset* Body = Asset->PhysicsAsset)
 		for (USkeletalBodySetup* Setup : Body->SkeletalBodySetups)
 			if (const FKAggregateGeom* Geom = Setup ? SavedGeom.Find(Setup->BoneName) : nullptr) Setup->AggGeom = *Geom;

@@ -11,7 +11,9 @@
  *   drive    Saved/gen/drive.json: the game.ts SCRIPT replayed tick by tick (root motion, clip
  *            plays), mapped into Unreal space with the bone fit from scene.json.
  *   run      editor: build_scene.py plays drive.json 3 times at a fixed 1/60 s step.
- *   metrics  Saved/runs/run-N.json -> reference.json, with the game's own probe math (probe.ts).
+ *   perturb  editor: the same script 3 more times, each run k starting the cloth particles and the
+ *            ponytail chain k * 1e-4 cm off (AC-3 perturbation spread; see `perturbation` in reference.json).
+ *   metrics  Saved/runs/run-N.json and perturb-N.json -> reference.json, with the game's own probe math (probe.ts).
  *
  * The ponytail (PRD-912 AC-3) is the game's 6-bone chain under Head, added in `prepare` to the caped
  * mesh only, and simulated by stock FAnimNode_SpringBone nodes in the CharDynProbe anim proxy.
@@ -35,6 +37,9 @@ const GEN = path.join(HERE, "Saved/gen");
 const RUNS = path.join(HERE, "Saved/runs");
 const UPROJECT = path.join(HERE, "CharacterDynamicsReference.uproject");
 const RUN_COUNT = 3;
+/** AC-3 perturbation spread: run k starts the cloth particles and ponytail_2..6 k * PERTURB_CM off (CharDynProbe.h). */
+const PERTURB_RUNS = [1, 2, 3];
+const PERTURB_CM = 1e-4;
 
 // three and the probe load from the example that owns them (the same ESM three probe.ts imports).
 const THREE = (await import(
@@ -89,6 +94,18 @@ const HAIR_BONES = 6;
 const HAIR_METRICS = ["hairTipOffset", "hairStretch", "hairInsideHead"] as const;
 /** CharDynProbe FCharDynAnimProxy::Dynamics: the FAnimNode_AnimDynamics arms of one run. */
 const DYNAMICS_ARMS = ["stock", "swing", "swingWorld"] as const;
+/**
+ * CharDynProbe FCharDynAnimProxy::SpringArms: recorded FAnimNode_SpringBone chains with option overrides
+ * (PRD-912 AC-3 `hairSpringBoneRotate`). rotate = bRotateX/Y/Z; limit* = bLimitDisplacement with
+ * MaxDisplacement 3.9 cm (half a rest segment) or 7.8 cm (one).
+ */
+const SPRING_ARMS = [
+  "rotate",
+  "limitHalf",
+  "limitFull",
+  "rotateLimitHalf",
+  "rotateLimitFull",
+] as const;
 /** game.ts measureHair: the clearance countInsideCapsules adds to each hair collider. */
 const HAIR_THICKNESS = 0.005;
 /** game.ts COLLIDER_THICKNESS, metres: the probe's shrink and the rest clearance of every capsule. */
@@ -536,6 +553,8 @@ interface ISample {
   hair: number[];
   /** ponytail_1 .. ponytail_6 (world cm) per AnimDynamics arm, evaluated beside the springs. */
   hairDynamics?: Record<string, number[]>;
+  /** ponytail_1 .. ponytail_6 (world cm) per recorded SpringBone arm with option overrides. */
+  hairSpringArms?: Record<string, number[]>;
   /** Proxy updates and evaluations so far: each tick must add one of each (AnimDynamics steps per evaluation). */
   updates?: number;
   evaluations?: number;
@@ -548,7 +567,13 @@ interface IRun {
   ue: Record<string, unknown>;
 }
 
-function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
+function metricsOfRun(
+  run: IRun,
+  cape: ICape,
+  map: ReturnType<typeof fitMap>,
+  /** The unperturbed run's t = 0 SpringBone chain: a perturbed run measures against the same rest lengths. */
+  restInitialHair: number[] = run.initial.hair,
+) {
   const toThree = (p: number[], k = 0) =>
     new Vector3(p[k] as number, p[k + 1] as number, p[k + 2] as number).applyMatrix4(map.inverse);
   // A rigid frame in three space from Unreal origin + axes: conjugate by the fitted map.
@@ -595,7 +620,7 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
     return out;
   };
   // game.ts hairRestLengths: the segment lengths on the Idle_Loop t = 0 pose.
-  const restHair = hairOf(run.initial.hair, "SpringBone");
+  const restHair = hairOf(restInitialHair, "SpringBone");
   const hairRestLengths = Array.from({ length: HAIR_BONES - 1 }, (_, k) =>
     new Vector3()
       .fromArray(restHair, k * 3)
@@ -605,7 +630,7 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
   // game.ts measureHair, per chain: the tip in the Head frame, the segment stretch, and the
   // simulated points (all but the root) inside the head, back and shoulder capsules.
   type HairMetrics = Record<(typeof HAIR_METRICS)[number], number>;
-  const sources = ["springBone", ...DYNAMICS_ARMS] as const;
+  const sources = ["springBone", ...DYNAMICS_ARMS, ...SPRING_ARMS] as const;
   const hairPhases = Object.fromEntries(
     sources.map((s) => [s, {} as Record<string, HairMetrics>]),
   ) as Record<(typeof sources)[number], Record<string, HairMetrics>>;
@@ -663,7 +688,9 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
         const hair =
           source === "springBone"
             ? hairOf(sample.hair, `tick ${tick} SpringBone`)
-            : hairOf(sample.hairDynamics?.[source], `tick ${tick} AnimDynamics ${source}`);
+            : (SPRING_ARMS as readonly string[]).includes(source)
+              ? hairOf(sample.hairSpringArms?.[source], `tick ${tick} SpringBone arm ${source}`)
+              : hairOf(sample.hairDynamics?.[source], `tick ${tick} AnimDynamics ${source}`);
         const h = hairPhases[source][phase.name] as HairMetrics;
         const tipLocal = new Vector3().fromArray(hair, (HAIR_BONES - 1) * 3).applyMatrix4(toHead);
         if (phase.name === "settle") hairRestTip[source] = tipLocal.clone();
@@ -704,6 +731,29 @@ function spreads(perRun: Record<string, Record<string, number>>[], metrics: read
   return phases;
 }
 
+/**
+ * AC-3 perturbation spread: per phase and metric, the value of the unperturbed run and of each
+ * perturbed run, with min, max and spread = max - min over all of them. The runs are [unperturbed,
+ * perturbed 1, 2, 3], so the spread is the metric's sensitivity to a float-level start change.
+ */
+function perturbationSpreads(
+  perRun: Record<string, Record<string, number>>[],
+  metrics: readonly string[],
+) {
+  const phases: Record<string, Record<string, unknown>> = {};
+  for (const phase of SCRIPT) {
+    const entry: Record<string, unknown> = {};
+    for (const metric of metrics) {
+      const runs = perRun.map((p) => (p[phase.name] as Record<string, number>)[metric] as number);
+      const min = Math.min(...runs);
+      const max = Math.max(...runs);
+      entry[metric] = { unperturbed: runs[0], min, max, spread: max - min, runs };
+    }
+    phases[phase.name] = entry;
+  }
+  return phases;
+}
+
 function metrics(): void {
   const cape = readJson<ICape>(path.join(GEN, "cape.json"));
   const scene = readJson<IScene & Record<string, unknown>>(path.join(HERE, "scene.json"));
@@ -712,6 +762,11 @@ function metrics(): void {
     readJson<IRun>(path.join(RUNS, `run-${r + 1}.json`)),
   );
   const perRun = runs.map((run) => metricsOfRun(run, cape, map));
+  const restInitialHair = (runs[0] as IRun).initial.hair;
+  const perturbed = PERTURB_RUNS.map((k) =>
+    metricsOfRun(readJson<IRun>(path.join(RUNS, `perturb-${k}.json`)), cape, map, restInitialHair),
+  );
+  const withPerturbed = [perRun[0] as (typeof perRun)[number], ...perturbed];
   const phases = spreads(
     perRun.map((r) => r.phases),
     METRICS,
@@ -725,6 +780,51 @@ function metrics(): void {
       ),
     ]),
   );
+  const springArms = Object.fromEntries(
+    SPRING_ARMS.map((arm) => [
+      arm,
+      spreads(
+        perRun.map((r) => r.hairPhases[arm]),
+        HAIR_METRICS,
+      ),
+    ]),
+  );
+  const CAPE_METRICS = ["hemOffset", "hemTrail", "maxStretch", "bodyPenetration"] as const;
+  const perturbation = {
+    prd: "PRD-911 AC-3 / PRD-912 AC-3",
+    why: "Chaos Cloth, FAnimNode_SpringBone and FAnimNode_AnimDynamics are deterministic, so the 3-run spread of the blocks above is 0. A float-level change in the start state is what moves a chaotic system, so this block is the honest spread: the metric over the unperturbed run and 3 perturbed runs",
+    rule: `run k (k = ${PERTURB_RUNS.join(", ")}) starts every free cloth particle (all but the pinned top row, grid row 0) k * ${PERTURB_CM} cm along its own fixed unit vector, FRandomStream(1000 + particle index).VRand(), by editing the cloth asset's physical-mesh vertices in memory before the clothing actors are made. It also starts ponytail_2..6 k * ${PERTURB_CM} cm along FRandomStream(90000 + chain index 1..5).VRand() in component space, by moving them in the evaluation that places the chains, so the SpringBone chain, every SpringBone arm and every AnimDynamics arm start off their bones by the same amount. Nothing else changes: same script, same step, same rest lengths (the unperturbed run's)`,
+    offsetsCm: PERTURB_RUNS.map((k) => Number((k * PERTURB_CM).toPrecision(12))),
+    runs: "[unperturbed, perturbed 1, perturbed 2, perturbed 3]; the unperturbed values equal the 3 identical runs of the blocks above",
+    command:
+      "pnpm exec tsx tools/unreal-reference/character-dynamics/reference.ts perturb (TN_UE_PERTURB=1,2,3), then metrics",
+    cape: perturbationSpreads(
+      withPerturbed.map((r) => r.phases),
+      CAPE_METRICS,
+    ),
+    springBone: perturbationSpreads(
+      withPerturbed.map((r) => r.hairPhases.springBone),
+      HAIR_METRICS,
+    ),
+    animDynamics: Object.fromEntries(
+      DYNAMICS_ARMS.map((arm) => [
+        arm,
+        perturbationSpreads(
+          withPerturbed.map((r) => r.hairPhases[arm]),
+          HAIR_METRICS,
+        ),
+      ]),
+    ),
+    springBoneRotate: Object.fromEntries(
+      SPRING_ARMS.map((arm) => [
+        arm,
+        perturbationSpreads(
+          withPerturbed.map((r) => r.hairPhases[arm]),
+          HAIR_METRICS,
+        ),
+      ]),
+    ),
+  };
   const record = {
     prd: "PRD-910",
     scene: "examples/character-dynamics (?arm=cloth probe definitions)",
@@ -794,6 +894,25 @@ function metrics(): void {
       arm: dynamicsArms,
     },
     phases,
+    hairSpringBoneRotate: {
+      prd: "PRD-912 AC-3",
+      node: "FAnimNode_SpringBone, one per simulated bone (ponytail_2..6), parent first, as the stock chain above, with named option overrides per arm. Each arm runs on its own copy of the animated pose beside the stock chain; its output is recorded, not applied, so the cape and the stock chain do not change",
+      why: "SpringBoneChain3D keeps every segment at its rest length and turns the bones. The stock translate-only chain stretches to metres. These are the stock options that bear on that: rotation (bRotateX/Y/Z) and the displacement limit (bLimitDisplacement, MaxDisplacement)",
+      notAnOption:
+        "translation off: with bTranslateX/Y/Z all false the node returns before it computes anything (AnimNode_SpringBone.cpp:102-105), so rotation alone moves nothing",
+      arms: {
+        rotate:
+          "bRotateX/Y/Z true, everything else stock. The bone turns by the angle between parent-to-target and parent-to-spring (:206-221), and the next bone's target hangs off the turned bone",
+        limitHalf:
+          "bLimitDisplacement true, MaxDisplacement 3.9 cm (half the 7.81 cm rest segment): the bone stays within 3.9 cm of its target (:177-187), the only stock bound on the stretch",
+        limitFull: "bLimitDisplacement true, MaxDisplacement 7.8 cm (one rest segment)",
+        rotateLimitHalf: "rotate plus limitHalf",
+        rotateLimitFull: "rotate plus limitFull",
+      },
+      restLengths: "the SpringBone block's: segment lengths on the Idle_Loop t = 0 pose",
+      arm: springArms,
+    },
+    perturbation,
   };
   writeFileSync(path.join(HERE, "reference.json"), `${JSON.stringify(record, null, 2)}\n`);
   for (const phase of SCRIPT) {
@@ -802,6 +921,19 @@ function metrics(): void {
       `TN_UE_CHARDYN ${phase.name.padEnd(9)} ${METRICS.map((m) => `${m}=${p[m]?.mean.toFixed(3)} [${p[m]?.min.toFixed(3)}, ${p[m]?.max.toFixed(3)}]`).join(" ")}`,
     );
   }
+  for (const arm of SPRING_ARMS)
+    for (const phase of SCRIPT) {
+      const p =
+        (
+          springArms[arm] as Record<
+            string,
+            Record<string, { mean: number; min: number; max: number }>
+          >
+        )[phase.name] ?? {};
+      console.log(
+        `TN_UE_CHARDYN springBone.${arm.padEnd(15)} ${phase.name.padEnd(9)} ${HAIR_METRICS.map((m) => `${m}=${p[m]?.mean.toFixed(3)}`).join(" ")}`,
+      );
+    }
   for (const arm of DYNAMICS_ARMS)
     for (const phase of SCRIPT) {
       const p =
@@ -818,7 +950,7 @@ function metrics(): void {
 }
 
 // --- the editor ---------------------------------------------------------------------------
-async function editor(mode: "build" | "run"): Promise<void> {
+async function editor(mode: "build" | "run", extraEnv: Record<string, string> = {}): Promise<void> {
   const ueRoot = process.env.UE_ROOT ?? fail("set UE_ROOT to the Unreal 5.8.3 install");
   const binary = path.join(ueRoot, "Engine/Binaries/Linux/UnrealEditor");
   if (!existsSync(binary)) fail(`${binary} not found`);
@@ -839,7 +971,7 @@ async function editor(mode: "build" | "run"): Promise<void> {
         `-ExecCmds=py ${path.join(HERE, "build_scene.py")}`,
       ],
       {
-        env: { ...process.env, TN_UE_MODE: mode, TN_UE_RUNS: String(RUN_COUNT) },
+        env: { ...process.env, TN_UE_MODE: mode, TN_UE_RUNS: String(RUN_COUNT), ...extraEnv },
         stdio: ["ignore", "inherit", "inherit"],
       },
     );
@@ -858,6 +990,7 @@ const stages: Record<string, () => Promise<void> | void> = {
   build: () => editor("build"),
   drive,
   run: () => editor("run"),
+  perturb: () => editor("run", { TN_UE_PERTURB: PERTURB_RUNS.join(",") }),
   metrics,
 };
 if (stage === "all") for (const s of Object.values(stages)) await s();
