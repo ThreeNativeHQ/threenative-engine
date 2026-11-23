@@ -40,6 +40,8 @@ enum class Kind : uint8_t {
     Body, Var, Assign, If, Loop, RenderTexture, TextureSize, TextureLoad, Call, Return, Break, Continue, Discard, PostEffect,
     Pmrem, ScreenUv, Reflector, ViewportDepth, StructType, Struct, StructMember, RenderOutput, PipelineOutput,
     Compute, StorageTexture, TextureStore,
+    /** r187's workgroupArray(type, count): `type` the element, `bits` the count. WorkgroupElement: args {index, array}. Barrier: `bits` 0 workgroup, 1 storage. */
+    WorkgroupArray, WorkgroupElement, Barrier,
 };
 
 enum class UnOp : uint8_t { Negate };
@@ -314,6 +316,8 @@ uint64_t uniformMapBuilds();
  * and its structure does not change. Read each node's object at the use, since `.value` replaces a texture.
  */
 const std::vector<const NodeData*>& computeBindingNodes(const Graph& graph);
+/** True when a compute body holds a workgroup or storage barrier, which WGSL accepts only where every thread of the group arrives. */
+bool usesBarrier(const Graph& graph);
 /** How many graphs computeBindingNodes() has walked in this process; a steady frame walks none. */
 uint64_t computeBindingWalks();
 /** Every uniform node reachable from the graph, in first-visit order, found once per graph; a node

@@ -336,6 +336,11 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         arity(2); statement();
         return result(scoped(name.c_str(), nullptr, {abi::TslArg::of(arg(0)), abi::TslArg::of(arg(1))}));
     }
+    if (name == "workgroupBarrier" || name == "storageBarrier" || name == "textureBarrier") {  // textureBarrier: the shared table refuses it by name
+        arity(0);
+        if (name != "textureBarrier") statement();
+        return result(scoped(name.c_str(), nullptr, {}));
+    }
     if (name == "Break" || name == "Continue" || name == "Return") {
         if (name == "Return" && info.Length() > 0) throw std::runtime_error("Return(value) is not supported; Return() ends a compute kernel");
         arity(0); statement();
@@ -727,7 +732,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "dFdx", "dFdy", "lengthSq", "viewportSharedTexture", "viewportDepthTexture", "linearDepth",
                              "toneMappingColor", "ao", "ssr", "denoise", "smaa", "bloom", "traa", "film", "lut3D", "renderOutput", "pipelineOutput", "struct", "luminance", "viewZToOrthographicDepth", "viewZToPerspectiveDepth", "logarithmicDepthToViewZ", "oneMinus", "varying", "setUniform", "setUniforms",
                              "mx_noise_float", "mx_worley_noise_float", "mx_worley_noise_vec2", "pmremTexture", "reflector", "transformDirection",
-                             "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor", "atomicStore", "atomicLoad", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "cubeTexture", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
+                             "atomicAdd", "atomicSub", "atomicMax", "atomicMin", "atomicAnd", "atomicOr", "atomicXor", "atomicStore", "atomicLoad", "workgroupArray", "workgroupBarrier", "storageBarrier", "textureBarrier", "lightShadowMatrix", "lights", "wgslFunction", "texture3D", "cubeTexture", "getViewPosition", "bumpMap", "normalMap", "transformNormalToView", "property", "varyingProperty", "instanceMatrix", "radians", "degrees", "inverseSqrt", "ceil", "sinh", "cosh", "tan", "tanh", "asin", "asinh", "acos", "acosh", "atanh", "sign", "round", "reciprocal", "trunc", "transpose", "determinant", "inverse", "difference", "pow2", "pow3", "pow4", "transformNormalByViewMatrix", "transformNormalByInverseViewMatrix", "cbrt", "saturate", "refract", "faceForward", "rand", "mixElement", "smoothstepElement", "stepElement", "faceforward", "inversesqrt", "notEqual", "xor", "bitAnd", "bitNot", "bitOr", "bitXor", "shiftLeft", "shiftRight", "incrementBefore", "decrementBefore", "increment", "decrement", "mat3", "mat4"})
         module->Set(context, str(isolate_, name), function(context, name, false)->GetFunction(context).ToLocalChecked())
             .Check();
     for (auto& [name, node] : abi::tslConstants())

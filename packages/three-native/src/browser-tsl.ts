@@ -727,6 +727,21 @@ export function defineTsl(
       statement(name);
       return wrap(call(name, null, args));
     };
+  // r187's workgroup memory (gpgpu/WorkgroupInfoNode.js, BarrierNode.js): workgroupArray(type, count).element(i) is a
+  // compute-stage array the workgroup shares, and the two barriers are statements. textureBarrier, and any other
+  // barrier form, has no engine mapping and fails by name.
+  exports.workgroupArray = (type: unknown, count: unknown) =>
+    wrap(call("workgroupArray", null, [type, count]));
+  for (const name of ["workgroupBarrier", "storageBarrier"])
+    exports[name] = () => {
+      statement(name);
+      return wrap(call(name, null, []));
+    };
+  exports.textureBarrier = () => {
+    throw new TypeError(
+      "TN_TSL_BARRIER_UNSUPPORTED: textureBarrier is not supported; use workgroupBarrier or storageBarrier",
+    );
+  };
   // three's node.discard() (addMethodChaining): Discard(node), the node as the condition.
   prototype.discard = function (this: ITslNode) {
     statement("Discard");

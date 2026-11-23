@@ -37,7 +37,7 @@ export const compute = (node, count, workgroupSize) =>
 // three's lights([...]) takes one array; each light crosses as its own engine object.
 export const lights = (list = []) => globalThis.tsl.lights(...list);
 export const {
-  atomicAdd, atomicSub, atomicMax, atomicMin, atomicAnd, atomicOr, atomicXor, atomicStore, atomicLoad, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
+  atomicAdd, atomicSub, atomicMax, atomicMin, atomicAnd, atomicOr, atomicXor, atomicStore, atomicLoad, workgroupArray, workgroupBarrier, storageBarrier, textureBarrier, Break, Continue, Return, Discard, log, lightShadowMatrix, attribute, uv, renderOutput, If, Loop, luminance, viewZToOrthographicDepth, viewZToPerspectiveDepth, logarithmicDepthToViewZ, vertexIndex,
   add, sub, mul, div, negate, lessThan, greaterThan, equal, lessThanEqual, greaterThanEqual, and, or, not, all, any, abs, sin, cos,
   floor, fract, sqrt, exp, exp2, log2, normalize, length, min, max, pow, step, dot,
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,

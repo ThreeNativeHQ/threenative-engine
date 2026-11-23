@@ -223,6 +223,13 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     if (method && name == "element") {
         arity(1);
         const auto matrix = lhs();
+        if (matrix->kind == g::Kind::WorkgroupArray) {
+            auto element = std::make_shared<g::NodeData>();
+            element->kind = g::Kind::WorkgroupElement;
+            element->type = matrix->type;
+            element->args = {arg(0), matrix};
+            return element;
+        }
         if (matrix->type != Type::mat(4, 4)) throw std::runtime_error("element needs a mat4 node");
         if (args[0].kind == TslArg::Kind::Number &&
             (number(args[0]) < 0 || number(args[0]) > 3 || number(args[0]) != std::floor(number(args[0]))))
@@ -269,6 +276,19 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
         if (!node || node->kind != g::Kind::StorageElement || !node->atomic ||
             (node->type != Type::u32() && node->type != Type::i32())) throw std::runtime_error("toAtomic requires int or uint storage");
         *node->atomic = true; return node;
+    }
+    // r187's workgroupArray(type, count): memory the threads of one workgroup share, read and assigned through
+    // `.element(index)`. The lowering names each array by first use, so a kernel's key holds no process-wide count.
+    if (!method && name == "workgroupArray") {
+        arity(2);
+        if (args[0].kind != TslArg::Kind::String || args[1].kind != TslArg::Kind::Number || number(args[1]) < 1 ||
+            number(args[1]) != std::floor(number(args[1])))
+            throw std::runtime_error("workgroupArray needs an element type and a whole count of at least 1");
+        auto array = std::make_shared<g::NodeData>();
+        array->kind = g::Kind::WorkgroupArray;
+        array->type = type(text(args[0]));
+        array->bits = static_cast<uint64_t>(number(args[1]));
+        return array;
     }
     if (!method && name == "storage:element") {  // instancedArray(n, type).setName(name).element(index)
         if (args.size() != 3 && args.size() != 4) throw std::runtime_error("storage element needs name, type, index and optional atomic flag");
@@ -1659,7 +1679,8 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         const bool expression = target->kind == g::Kind::Unary || target->kind == g::Kind::Binary ||
             target->kind == g::Kind::Math || target->kind == g::Kind::Join || target->kind == g::Kind::Convert ||
             target->kind == g::Kind::Select || target->kind == g::Kind::Call;
-        if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement && !expression)
+        if (target->kind != g::Kind::Var && target->kind != g::Kind::StorageElement &&
+            target->kind != g::Kind::WorkgroupElement && !expression)
             throw std::runtime_error(target->kind == g::Kind::Attribute || target->kind == g::Kind::Varying
                 ? name + " requires a variable or storage element: " + target->name +
                       " is a read here (normalLocal, tangentLocal and positionPrevious are not written back)"
@@ -1669,6 +1690,19 @@ bool TslScopes::call(const std::string& name, const TslArg* receiver, const std:
         block.assign(target, value);
         statements.push_back(block.node()->body[0]);
         out = target;
+        return true;
+    }
+    // r187's workgroupBarrier() and storageBarrier() (gpgpu/BarrierNode.js): statements in a compute kernel. textureBarrier
+    // and any other barrier have no engine mapping.
+    if (name == "textureBarrier")
+        throw std::runtime_error("TN_TSL_BARRIER_UNSUPPORTED: textureBarrier is not supported; use workgroupBarrier or storageBarrier");
+    if (name == "workgroupBarrier" || name == "storageBarrier") {
+        arity(0);
+        auto node = std::make_shared<g::NodeData>();
+        node->kind = g::Kind::Barrier;
+        node->bits = name == "storageBarrier";
+        open().back().statements.push_back(node);
+        out = node;
         return true;
     }
     // r185's Break(), Continue() and Return(): a loop or kernel ends early. `Return(value)` belongs to a Fn that

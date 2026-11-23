@@ -2420,6 +2420,20 @@
       "required": false
     },
     {
+      "id": "workgroup-reduction",
+      "title": "compute kernel summing 64 threads through workgroup memory and barriers (PRD-913)",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/workgroup-reduction.js",
+      "browserRecipe": "webgpu",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 3
+      },
+      "desktopGate": false,
+      "required": false
+    },
+    {
       "id": "tsl-fn-out-param",
       "title": "TSL Fn assigning an out argument, made inside a Fn and at the top level",
       "category": "webgpu-tsl",

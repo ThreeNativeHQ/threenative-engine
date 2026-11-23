@@ -152,6 +152,51 @@ it("routes TextureNode.bias with an authored negative float", () => {
   ]);
 });
 
+describe("Wasm TSL workgroup memory (PRD-913)", () => {
+  interface IWorkgroupExports {
+    Fn(callback: () => void): () => INode;
+    workgroupArray(type: string, count: number): INode & { element(index: unknown): INode };
+    workgroupBarrier(): INode;
+    storageBarrier(): INode;
+    textureBarrier(): INode;
+  }
+  const names = (runtime: ITslRuntime) => vi.mocked(runtime.call).mock.calls.map(([name]) => name);
+
+  it("declares workgroup memory by element type and count, and reads an element through the node", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as IWorkgroupExports;
+    const shared = exports.workgroupArray("float", 64);
+    expect(runtime.call).toHaveBeenLastCalledWith("workgroupArray", null, [
+      { kind: "string", text: "float" },
+      { kind: "number", number: 64 },
+    ]);
+    shared.element(3);
+    expect(runtime.call).toHaveBeenLastCalledWith("element", shared[TSL_NODE], [
+      { kind: "number", number: 3 },
+    ]);
+  });
+
+  it("maps workgroupBarrier and storageBarrier to engine statements inside a Fn", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as IWorkgroupExports;
+    exports.Fn(() => {
+      exports.workgroupBarrier();
+      exports.storageBarrier();
+    })();
+    expect(names(runtime)).toEqual(expect.arrayContaining(["workgroupBarrier", "storageBarrier"]));
+    expect(() => exports.workgroupBarrier()).toThrow("statement outside Fn");
+  });
+
+  it("refuses textureBarrier by name, before any engine call", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as IWorkgroupExports;
+    expect(() => exports.Fn(() => exports.textureBarrier())()).toThrow(
+      /TN_TSL_BARRIER_UNSUPPORTED/u,
+    );
+    expect(names(runtime)).not.toContain("textureBarrier");
+  });
+});
+
 describe("Wasm modelWorldMatrix", () => {
   it("uses one engine-provided mat4 node for multiplication and column selection", () => {
     const { tsl, runtime } = setup();
