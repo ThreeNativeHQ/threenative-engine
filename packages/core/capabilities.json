@@ -3810,6 +3810,7 @@
       "overrides": [
         "timeStep follows the engine 1/60-second convention unless the game overrides it",
         "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it",
+        "readbackInFlight keeps up to N copies in flight so a probe sees every step; default 1",
         "cloth picks the mask (a color channel or one number per vertex); default \"color.r\", else leaf-bone vertices simulate",
         "bodyColliders \"auto\" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off",
         "velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)",

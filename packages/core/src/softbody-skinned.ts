@@ -140,6 +140,8 @@ export interface ISkinnedSoftBody3DOptions {
   readonly extremeDeformationEdgeRatio?: number;
   /** Copy positions to the CPU every N steps; 0 (default) never reads back. */
   readonly readbackEveryFrames?: number;
+  /** Copies of the GPU state kept in flight for `takeSamples()`; default 1, the gameplay path. */
+  readonly readbackInFlight?: number;
 }
 
 function boneTable(mesh: SkinnedMesh): Float32Array {

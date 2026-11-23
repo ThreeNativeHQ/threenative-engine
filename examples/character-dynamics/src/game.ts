@@ -104,6 +104,16 @@ const SCRIPT: readonly IPhase[] = [
   { name: "snapTurn", ticks: 45, clip: "Idle_Loop", speed: 0, snapYaw: Math.PI },
   { name: "teleport", ticks: 45, clip: "Idle_Loop", speed: 0, teleport: 8 },
 ];
+/** After the script, the scene idles until every script step's readback has been measured. */
+const DRAIN: IPhase = {
+  name: "drain",
+  ticks: Number.POSITIVE_INFINITY,
+  clip: "Idle_Loop",
+  speed: 0,
+};
+const MAX_DRAIN_TICKS = 240;
+/** A pinned row further than this from its body-frame rest is a sample from another pose, in metres. */
+const POSE_MISMATCH = 0.05;
 
 interface IPhaseMetrics {
   /** Largest hem-centroid move away from its settled spot, in the body (spine_03) frame, metres. */
@@ -327,7 +337,8 @@ class CharacterDynamics extends Scene<IState> {
       damping: 2,
       gravity: [0, -GRAVITY, 0] as [number, number, number],
       wind: [0, 0, 0] as [number, number, number],
-      readbackEveryFrames: 2,
+      readbackEveryFrames: 1,
+      readbackInFlight: 64,
     };
     // PlaneGeometry has no duplicate positions, so SoftBody3D's welded order is the vertex order.
     const restLengths: number[] = [];
@@ -520,7 +531,8 @@ class CharacterDynamics extends Scene<IState> {
           pointsPerStrand: STRAND_POINTS,
           bone: head,
           colliders: hairCapsules,
-          readbackEveryFrames: 2,
+          readbackEveryFrames: 1,
+          readbackInFlight: 64,
           // Named overrides from the URL, for tuning runs: ?airDrag=0&iterations=8
           ...strandTuning(),
         }),
@@ -664,7 +676,8 @@ class CharacterDynamics extends Scene<IState> {
       cloth = ctx.add(
         new SoftBody3D(capeSkin, {
           cloth: "color.r",
-          readbackEveryFrames: 2,
+          readbackEveryFrames: 1,
+          readbackInFlight: 64,
           ...tuning,
           ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),
         }),
@@ -747,8 +760,12 @@ class CharacterDynamics extends Scene<IState> {
     let vy = 0;
     let finite = true;
     let restHem: Vector3 | undefined;
+    let restTop: Vector3 | undefined;
     let complete = false;
     let tick = 0;
+    let scriptEndStep = Number.POSITIVE_INFINITY;
+    let lastMeasuredStep = -1;
+    let drainTicks = 0;
     const forward = new Vector3();
     let speed = 0;
     const world = new Vector3();
@@ -781,6 +798,8 @@ class CharacterDynamics extends Scene<IState> {
       readonly capsules: IProbeCapsule[];
       readonly hairCapsules: IProbeCapsule[];
       readonly toHead: Matrix4;
+      /** The phase whose step produced the sample: a stale sample counts toward that phase. */
+      readonly phase: string;
     }
     const poses = new Map<number, IPose>();
     const capsulesNow = (capsules: readonly ISoftBodyCapsule[]): IProbeCapsule[] =>
@@ -801,21 +820,31 @@ class CharacterDynamics extends Scene<IState> {
       };
     };
     let steps = 0;
-    const recordPose = (): void => {
+    const recordPose = (phase: string): void => {
       steps++;
       poses.set(steps, {
+        phase,
         toBody: capeMatrix.clone().invert(),
         clothWorld: cloth.matrixWorld.clone(),
         ...bonePose(),
       });
       poses.delete(steps - 120);
     };
-    const measure = (metrics: IPhaseMetrics, phaseName: string): void => {
-      const sample = cloth.sample;
-      if (sample === undefined) return;
-      // This step's process has not run yet: the newest sample is from step (steps - 1 - staleFrames).
-      const pose = poses.get(steps - 1 - sample.staleFrames);
+    // Every landed readback is measured, not only the newest: under the stepped playtest clock a
+    // copy takes tens of steps to land, and a per-phase max over the newest sample alone missed most
+    // steps (and the 45-step teleport phase entirely).
+    const measure = (): void => {
+      for (const sample of cloth.takeSamples()) measureSample(sample);
+    };
+    const measureSample = (sample: { data: Float32Array; staleFrames: number }): void => {
+      // This step's process has not run yet: the sample is from step (steps - 1 - staleFrames).
+      const sampleStep = steps - 1 - sample.staleFrames;
+      lastMeasuredStep = Math.max(lastMeasuredStep, sampleStep);
+      const pose = poses.get(sampleStep);
       if (pose === undefined) return;
+      const phaseName = pose.phase;
+      const metrics = phases[phaseName];
+      if (metrics === undefined) return;
       const data = sample.data;
       for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
       // The cloth arm samples world positions; the probe measures the hem in the body frame.
@@ -824,7 +853,15 @@ class CharacterDynamics extends Scene<IState> {
       const topC = centroid(data, top);
       const hemWorld = hemC.clone().applyMatrix4(pose.clothWorld);
       const topWorld = topC.clone().applyMatrix4(pose.clothWorld);
-      if (toBody !== undefined) hemC.applyMatrix4(toBody);
+      if (toBody !== undefined) {
+        // The pinned top row rides spine_03, so in the body frame it sits still. A sample whose top
+        // row is elsewhere is not from this pose: the teleport's CPU reset write can reach the buffer
+        // before a deferred copy lands, which read as 8 m of hem offset. Skip it; coverage counts it.
+        const topBody = topC.clone().applyMatrix4(toBody);
+        if (phaseName === "settle" && restTop === undefined) restTop = topBody.clone();
+        if (restTop !== undefined && topBody.distanceTo(restTop) > POSE_MISMATCH) return;
+        hemC.applyMatrix4(toBody);
+      }
       if (phaseName === "settle") restHem = hemC.clone();
       if (restHem !== undefined)
         metrics.hemOffset = Math.max(metrics.hemOffset, hemC.distanceTo(restHem));
@@ -855,15 +892,18 @@ class CharacterDynamics extends Scene<IState> {
     const headPosition = new Vector3();
     const headOrientation = new Quaternion();
     let hairRestTip: Vector3 | undefined;
-    const measureStrands = (
-      metrics: IPhaseMetrics,
-      phaseName: string,
+    const measureStrands = (hair: HairStrands3D): void => {
+      for (const sample of hair.takeSamples()) measureStrandSample(hair, sample);
+    };
+    const measureStrandSample = (
       hair: HairStrands3D,
+      sample: { data: Float32Array; staleFrames: number },
     ): void => {
-      const sample = hair.sample;
-      if (sample === undefined) return;
       const pose = poses.get(steps - 1 - sample.staleFrames);
       if (pose === undefined) return;
+      const phaseName = pose.phase;
+      const metrics = phases[phaseName];
+      if (metrics === undefined) return;
       const data = sample.data;
       for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
       const n = hair.pointsPerStrand;
@@ -887,7 +927,7 @@ class CharacterDynamics extends Scene<IState> {
     };
     const measureHair = (metrics: IPhaseMetrics, phaseName: string): void => {
       if (strands !== undefined) {
-        measureStrands(metrics, phaseName, strands);
+        measureStrands(strands);
         return;
       }
       readHairWorld();
@@ -920,7 +960,7 @@ class CharacterDynamics extends Scene<IState> {
       // probes here, before this tick moves anything.
       const solved = poses.get(steps);
       if (solved !== undefined) poses.set(steps, { ...solved, ...bonePose() });
-      const phase = SCRIPT[phaseIndex] as IPhase;
+      const phase = SCRIPT[phaseIndex] ?? DRAIN;
       // Character root motion: the clips play in place, the script moves the body.
       character.rotation.y += (phase.yawRate ?? 0) * STEP;
       forward.copy(facing).applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y);
@@ -949,19 +989,27 @@ class CharacterDynamics extends Scene<IState> {
       followBone();
       placeCape();
       placeCamera();
-      recordPose();
-      measure(phases[phase.name] as IPhaseMetrics, phase.name);
-      measureHair(phases[phase.name] as IPhaseMetrics, phase.name);
-      phaseTick++;
-      if (phaseTick >= phase.ticks) {
-        phaseIndex++;
-        phaseTick = 0;
-        if (phaseIndex >= SCRIPT.length) complete = true;
-        else enterPhase(SCRIPT[phaseIndex] as IPhase);
+      recordPose(phase.name);
+      measure();
+      const scriptMetrics = phases[phase.name];
+      if (scriptMetrics !== undefined) measureHair(scriptMetrics, phase.name);
+      if (phaseIndex >= SCRIPT.length) {
+        // Drain: the script is over, but its last steps' readbacks are still in flight. Keep idling
+        // until the last script step is measured, or fail closed past the cap with what landed.
+        drainTicks++;
+        if (lastMeasuredStep >= scriptEndStep || drainTicks >= MAX_DRAIN_TICKS) complete = true;
+      } else {
+        phaseTick++;
+        if (phaseTick >= phase.ticks) {
+          phaseIndex++;
+          phaseTick = 0;
+          if (phaseIndex >= SCRIPT.length) scriptEndStep = steps;
+          else enterPhase(SCRIPT[phaseIndex] as IPhase);
+        }
       }
       const state: IState = {
         arm: armName,
-        phase: complete ? "done" : (SCRIPT[phaseIndex] as IPhase).name,
+        phase: complete ? "done" : (SCRIPT[phaseIndex] ?? DRAIN).name,
         tick: ++tick,
         complete,
         finite,

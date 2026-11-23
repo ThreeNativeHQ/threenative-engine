@@ -61,6 +61,8 @@ export interface ISoftBody3DOptions extends IClothTopologyOptions {
   readonly timeStep?: number;
   /** Throttled GPU position readback for gameplay/proof; zero disables it. */
   readonly readbackEveryFrames?: number;
+  /** Copies of the GPU state kept in flight for `takeSamples()`; default 1, the gameplay path. */
+  readonly readbackInFlight?: number;
 }
 
 interface IClothBuffers {
@@ -326,6 +328,7 @@ function clothPass(options: {
  * @constraint Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost
  * @override timeStep follows the engine 1/60-second convention unless the game overrides it
  * @override readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
+ * @override readbackInFlight keeps up to N copies in flight so a probe sees every step; default 1
  * @example const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });
  *
  * Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)
@@ -398,7 +401,11 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
         throw new Error("SoftBody3D.readbackEveryFrames must be a non-negative integer.");
       this.#readback =
         every > 0
-          ? new GPUReadback({ attribute: skinned.positions.value, everyFrames: every })
+          ? new GPUReadback({
+              attribute: skinned.positions.value,
+              everyFrames: every,
+              maxInFlight: skinnedOptions.readbackInFlight ?? 1,
+            })
           : undefined;
       if (skinnedOptions.hideSource !== false) mesh.visible = false;
       this.frustumCulled = false;
@@ -497,6 +504,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
         ? new GPUReadback({
             attribute: buffers.positionsA.value,
             everyFrames: readbackEveryFrames,
+            maxInFlight: options.readbackInFlight ?? 1,
           })
         : undefined;
     this.frustumCulled = false;
@@ -531,6 +539,19 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
       data: compactClothVec3Readback(sample.data, this.uniqueVertexCount),
       staleFrames: sample.staleFrames,
     };
+  }
+
+  /**
+   * Every landed GPU position sample since the last call, oldest first, for a probe that must see
+   * each step. Empty without `readbackEveryFrames`.
+   */
+  takeSamples(): IGPUReadbackSample[] {
+    const samples = this.#readback?.take();
+    if (samples === undefined) return [];
+    return samples.map((sample) => ({
+      data: compactClothVec3Readback(sample.data, this.uniqueVertexCount),
+      staleFrames: sample.staleFrames,
+    }));
   }
 
   debug(): Record<string, unknown> {

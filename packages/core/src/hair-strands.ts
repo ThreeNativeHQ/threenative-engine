@@ -102,6 +102,8 @@ export interface IHairStrands3DOptions {
   readonly teleportDistance?: number;
   /** Throttled GPU position readback for proofs; zero (default) disables it. */
   readonly readbackEveryFrames?: number;
+  /** Copies of the GPU state kept in flight for `takeSamples()`; default 1, the gameplay path. */
+  readonly readbackInFlight?: number;
 }
 
 function check(name: string, value: number, min: number, max = Number.POSITIVE_INFINITY): number {
@@ -408,7 +410,13 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
     if (!Number.isInteger(every) || every < 0)
       throw new Error("HairStrands3D.readbackEveryFrames must be a non-negative integer.");
     this.#readback =
-      every > 0 ? new GPUReadback({ attribute: now.value, everyFrames: every }) : undefined;
+      every > 0
+        ? new GPUReadback({
+            attribute: now.value,
+            everyFrames: every,
+            maxInFlight: options.readbackInFlight ?? 1,
+          })
+        : undefined;
     this.addEventListener("removed", this.#onRemoved);
   }
 
@@ -420,6 +428,19 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
       data: compactClothVec3Readback(sample.data, this.restLengths.length),
       staleFrames: sample.staleFrames,
     };
+  }
+
+  /**
+   * Every landed world position sample since the last call, oldest first, for a probe that must
+   * see each step. Empty without `readbackEveryFrames`.
+   */
+  takeSamples(): IGPUReadbackSample[] {
+    const samples = this.#readback?.take();
+    if (samples === undefined) return [];
+    return samples.map((sample) => ({
+      data: compactClothVec3Readback(sample.data, this.restLengths.length),
+      staleFrames: sample.staleFrames,
+    }));
   }
 
   get released(): boolean {

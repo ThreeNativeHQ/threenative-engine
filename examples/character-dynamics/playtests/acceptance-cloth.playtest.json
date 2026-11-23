@@ -72,7 +72,7 @@
     {
       "kind": "wait",
       "label": "done",
-      "waitTicks": 65,
+      "waitTicks": 300,
       "release": true
     }
   ],
@@ -94,6 +94,47 @@
         "path": "finite",
         "equals": true,
         "allowTrivial": "finite starts true and must stay true through all eight phases"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.samples",
+        "gte": 67,
+        "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.samples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.samples",
+        "gte": 90
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.samples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.samples",
+        "gte": 45
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.samples",
+        "gte": 56
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.samples",
+        "gte": 33
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.samples",
+        "gte": 33
       },
       {
         "id": "GameState",

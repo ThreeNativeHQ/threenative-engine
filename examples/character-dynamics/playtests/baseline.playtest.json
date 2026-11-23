@@ -72,7 +72,7 @@
     {
       "kind": "wait",
       "label": "done",
-      "waitTicks": 65,
+      "waitTicks": 300,
       "release": true
     }
   ],

@@ -80,6 +80,17 @@ describe("HairStrands3D", () => {
     expect(fixed.wind.toArray()).toEqual([0, 0, 1]);
   });
 
+  it("builds a multi-copy readback for a probe and takes nothing before a sample lands", () => {
+    const { bone, guides } = head();
+    const hair = new HairStrands3D(guides, {
+      pointsPerStrand: 8,
+      bone,
+      readbackEveryFrames: 1,
+      readbackInFlight: 3,
+    });
+    expect(hair.takeSamples()).toStrictEqual([]);
+  });
+
   it("fails closed on a ragged guide array, a zero-length segment, too many colliders or a nested parent", () => {
     const { scene, root, bone, guides } = head();
     expect(() => new HairStrands3D(guides.subarray(3), { pointsPerStrand: 8, bone })).toThrow(
