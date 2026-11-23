@@ -485,39 +485,48 @@ class CharacterDynamics extends Scene<IState> {
           ...strandTuning(),
         }),
       );
-      // One ribbon card per guide: two vertices per guide point, spread across the head's left-right
-      // axis and tapering to the tip. The position node reads the solver's buffer, so nothing reads back.
-      const cardPoint = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2);
-      const cardAcross = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2 * 3);
-      const cardUv = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2 * 2);
+      // Three ribbon cards per guide, a groom's layers: two vertices per guide point, spread across the
+      // head's left-right axis and tapering to the tip. Each layer sits 4 mm further out from the head and
+      // reads the atlas at its own U offset, so the coverage of one layer fills the gaps of the next. The
+      // position node reads the solver's buffer, so nothing reads back.
+      const LAYERS = 3;
+      const vertices = LAYERS * STRAND_COUNT * STRAND_POINTS * 2;
+      const cardPoint = new Float32Array(vertices);
+      const cardLayer = new Float32Array(vertices);
+      const cardAcross = new Float32Array(vertices * 3);
+      const cardUv = new Float32Array(vertices * 2);
       const acrossHead = across.clone().transformDirection(head.matrixWorld.clone().invert());
       const triangles: number[] = [];
-      for (let g = 0; g < STRAND_COUNT; g++)
-        for (let p = 0; p < STRAND_POINTS; p++) {
-          const v = (g * STRAND_POINTS + p) * 2;
-          const half = 0.012 * (1 - (0.5 * p) / (STRAND_POINTS - 1));
-          for (const side of [0, 1]) {
-            cardPoint[v + side] = g * STRAND_POINTS + p;
-            cardUv.set([side, p / (STRAND_POINTS - 1)], (v + side) * 2);
-            acrossHead
-              .clone()
-              .multiplyScalar(side === 0 ? -half : half)
-              .toArray(cardAcross, (v + side) * 3);
+      for (let layer = 0; layer < LAYERS; layer++)
+        for (let g = 0; g < STRAND_COUNT; g++)
+          for (let p = 0; p < STRAND_POINTS; p++) {
+            const v = ((layer * STRAND_COUNT + g) * STRAND_POINTS + p) * 2;
+            const half = 0.012 * (1 - (0.5 * p) / (STRAND_POINTS - 1));
+            for (const side of [0, 1]) {
+              cardPoint[v + side] = g * STRAND_POINTS + p;
+              cardLayer[v + side] = layer;
+              cardUv.set([side + layer * 0.37, p / (STRAND_POINTS - 1)], (v + side) * 2);
+              acrossHead
+                .clone()
+                .multiplyScalar(side === 0 ? -half : half)
+                .toArray(cardAcross, (v + side) * 3);
+            }
+            if (p + 1 < STRAND_POINTS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
           }
-          if (p + 1 < STRAND_POINTS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
-        }
       const cardGeometry = new BufferGeometry();
       cardGeometry.setAttribute(
         "position",
         new BufferAttribute(new Float32Array(cardPoint.length * 3), 3),
       );
       cardGeometry.setAttribute("guidePoint", new BufferAttribute(cardPoint, 1));
+      cardGeometry.setAttribute("layer", new BufferAttribute(cardLayer, 1));
       cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
       cardGeometry.setAttribute("uv", new BufferAttribute(cardUv, 2));
       cardGeometry.setIndex(triangles);
       // PRD-909's card material from the starter template's generated `src/render/hair.ts`, with a
       // generated strand atlas; each pass reads the solver buffer in its position node.
-      const cardPosition = strands.positions
+      const headCentre = headFrame.mul(vec4(0, 0, 0, 1)).xyz;
+      const cardBase = strands.positions
         .element(attribute("guidePoint", "float").toUint())
         // The head frame carries the rig's import scale: take its direction, keep the authored width.
         .add(
@@ -525,12 +534,13 @@ class CharacterDynamics extends Scene<IState> {
             length(attribute("across", "vec3")),
           ),
         );
+      const cardPosition = cardBase.add(
+        normalize(cardBase.sub(headCentre)).mul(attribute("layer", "float").mul(0.004)),
+      );
       // Hair-card normals point out from the head, the usual card trick: the cards carry no normal
       // attribute, and three's (0, 1, 0) fallback faces down on the back faces the camera sees.
       const cardNormal = normalize(
-        cameraViewMatrix.mul(
-          vec4(varying(normalize(cardPosition.sub(headFrame.mul(vec4(0, 0, 0, 1)).xyz))), 0),
-        ).xyz,
+        cameraViewMatrix.mul(vec4(varying(normalize(cardPosition.sub(headCentre))), 0)).xyz,
       );
       const atlas = strandAtlas();
       // `?hairMat=plain` is PRD-909 AC-1's control: a stock material cut by the same coverage.

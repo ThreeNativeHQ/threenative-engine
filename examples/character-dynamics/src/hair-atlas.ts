@@ -1,4 +1,11 @@
-import { DataTexture, LinearFilter, NoColorSpace, RGBAFormat, UnsignedByteType } from "three";
+import {
+  DataTexture,
+  LinearFilter,
+  NoColorSpace,
+  RGBAFormat,
+  RepeatWrapping,
+  UnsignedByteType,
+} from "three";
 
 /**
  * A strand data atlas in the layout `createHairCardMaterial` reads: R coverage, G root (0) to tip
@@ -38,6 +45,8 @@ export function strandAtlas(strands = 40, width = 128, height = 256): DataTextur
   }
   const texture = new DataTexture(data, width, height, RGBAFormat, UnsignedByteType);
   texture.colorSpace = NoColorSpace;
+  // Card layers read the atlas at their own U offset.
+  texture.wrapS = RepeatWrapping;
   texture.magFilter = LinearFilter;
   texture.minFilter = LinearFilter;
   texture.needsUpdate = true;
