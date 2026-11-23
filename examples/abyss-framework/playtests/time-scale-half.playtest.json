@@ -1,0 +1,18 @@
+{
+  "name": "abyss-framework-time-scale-half",
+  "schemaVersion": 1,
+  "target": "web",
+  "clock": "wall-clock",
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "artifacts": { "screenshots": false },
+  "steps": [
+    { "kind": "wait", "label": "at-scale-one", "waitTicks": 180, "release": true },
+    { "kind": "input", "label": "half", "press": "KeyT", "holdTicks": 30, "release": true },
+    { "kind": "wait", "label": "at-half", "waitTicks": 240, "release": true }
+  ],
+  "assert": {
+    "diagnostics": { "noConsoleErrors": true, "runtimeReady": true },
+    "resources": [{ "id": "state", "path": "stepRateRatio", "gte": 0.4, "lte": 0.6 }]
+  }
+}

@@ -29,6 +29,8 @@ const game = defineGame<AbyssState>({
       up: ["KeyW", "ArrowUp"],
     },
     pulse: { keys: ["Space"], pointer: true },
+    // Slow motion, for the scenario that proves `ctx.timeScale` halves the tick rate.
+    slow: { keys: ["KeyT"] },
     start: { keys: ["Enter"] },
     zoom: { gamepadAxes: [3], pinch: true, scroll: true },
   },

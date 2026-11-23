@@ -1,6 +1,6 @@
 import { PerspectiveCamera, AudioContext as ThreeAudioContext } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { AudioBus } from "../src/audio.js";
+import { AudioBus, audioRuntimeSnapshot } from "../src/audio.js";
 import { type IGame, defineGame } from "../src/game.js";
 import { Scene } from "../src/scene.js";
 
@@ -92,6 +92,32 @@ describe("IGame.pause audio", () => {
     } finally {
       warn.mockRestore();
       bus.dispose();
+    }
+  });
+
+  it("reports the mix silenced only when every live bus is paused", () => {
+    stubAudioContext();
+    const game = newGame();
+    // An empty registry is not a silenced mix: nothing was paused, nothing was measured.
+    expect(audioRuntimeSnapshot().silent).toBe(false);
+    const one = newBus();
+    const two = newBus();
+    try {
+      expect(audioRuntimeSnapshot().silent).toBe(false);
+      game.pause();
+      expect(audioRuntimeSnapshot().silent).toBe(true);
+      // A bus built during the pause is not silence the pause can claim.
+      const late = newBus();
+      try {
+        expect(audioRuntimeSnapshot().silent).toBe(false);
+      } finally {
+        late.dispose();
+      }
+      game.resume();
+      expect(audioRuntimeSnapshot().silent).toBe(false);
+    } finally {
+      one.dispose();
+      two.dispose();
     }
   });
 

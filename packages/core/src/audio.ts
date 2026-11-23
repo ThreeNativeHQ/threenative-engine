@@ -123,6 +123,16 @@ export interface IAudioRuntimeSnapshot {
    */
   readonly paused: number;
   /**
+   * Whether every live bus is paused, and there is at least one to be paused.
+   *
+   * `paused` above counts held voices, so it reads zero for a paused bus whose voices had all
+   * ended — a scene that stopped its engine before the menu opened. This is the bus-level answer
+   * a "pause silences the game" check needs, and it is false with no live bus: an empty registry
+   * is not a silenced one, and reporting a clean `true` there would pass the assertion on a game
+   * whose mix was never built.
+   */
+  readonly silent: boolean;
+  /**
    * Cue-shaping options this runtime accepted and could not honour, sorted and de-duplicated.
    *
    * The native host binds a biquad filter and a compressor but no schedulable `detune`, so
@@ -854,7 +864,8 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let paused = 0;
   const unsupported = new Set<string>();
   const state = audioState();
-  for (const bus of state.buses) {
+  const buses = [...state.buses];
+  for (const bus of buses) {
     queued += bus.queued;
     voices += bus.voices;
     pooled += bus.pooled;
@@ -867,6 +878,7 @@ export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
     pooled,
     queued,
     recentCues: state.cueLog.map((entry) => ({ ...entry })),
+    silent: buses.length > 0 && buses.every((bus) => bus.paused),
     unsupported: [...unsupported].sort(),
     voices,
   };
