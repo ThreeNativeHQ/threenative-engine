@@ -36,7 +36,7 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 ## Acceptance Criteria
 
 - [x] AC-1: Each arm prints a finite `TN_CHARACTER_DYNAMICS` line for all eight phases on the owned engine, with no console error. proof: `node packages/playtest/dist/runner/cli.js examples/character-dynamics/playtests/baseline.playtest.json --url http://127.0.0.1:5291 --server-command "pnpm --filter character-dynamics dev --host 127.0.0.1 --port 5291 --strictPort" --browser-recipe webgpu --headed` — 2026-11-23: `?arm=softbody`, `?arm=cloth` and `?arm=hair` each exit 0 with `"finite":true` for all eight phases and 0 console errors, owned engine, adapter vendor nvidia.
-- [ ] AC-2: The Unreal reference record exists for the same eight phases, with its run spread over 3 runs. proof: `tools/unreal-reference/character-dynamics/reference.json`, read by `examples/character-dynamics/__tests__/reference.spec.ts`
+- [ ] AC-2: The Unreal reference record exists for the same eight phases, with its run spread over 3 runs. proof: `tools/unreal-reference/character-dynamics/reference.json`, read by `examples/character-dynamics/__tests__/reference.spec.ts` — 2026-11-23, cape half met: `tools/unreal-reference/character-dynamics/reference.json` holds the eight phases from 3 separate Chaos Cloth runs on Manny (fixed 1/60 s step, byte-identical, spread 0: stock Chaos is deterministic); `reference.spec.ts` 12/12. Settle stretch 11.7%, moving phases 57-326% (stock 1 iteration, 1 substep). Open: the ponytail half (no SpringBone/AnimDynamics chain in the Unreal scene yet).
 
 ## Execution Phases
 
