@@ -4,6 +4,32 @@ import { DoubleSide, Texture } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import { createHairCardMaterial } from "../templates/starter/src/render/hair.js";
 
+// The R coverage channel of the strand atlas examples/character-dynamics/src/hair-atlas.ts builds:
+// anti-aliased lines that taper and fade, packed so the roots cover the card.
+function strandAtlasCoverage(strands = 40, width = 128, height = 256): Uint8Array {
+  const data = new Uint8Array(width * height * 4);
+  const hash = (n: number): number => Math.abs((Math.sin(n * 12.9898) * 43758.5453) % 1);
+  for (let y = 0; y < height; y++) {
+    const along = y / (height - 1);
+    for (let x = 0; x < width; x++) {
+      let coverage = 0;
+      for (let lane = 0; lane < strands; lane++) {
+        const own = hash(lane + 1);
+        const tip = 0.7 + 0.3 * hash(lane + 101);
+        if (along > tip) continue;
+        const centre = ((lane + 0.5 + 0.6 * Math.sin(along * 4 + own * 6.28)) / strands) * width;
+        const half = 1.8 - 1.2 * (along / tip);
+        const edge = Math.min(1, Math.max(0, half + 0.5 - Math.abs(x + 0.5 - centre)));
+        const fade = Math.min(1, (tip - along) / 0.12);
+        const c = edge * fade;
+        if (c > coverage) coverage = c;
+      }
+      data[(y * width + x) * 4] = Math.round(coverage * 255);
+    }
+  }
+  return data;
+}
+
 // SHA-256 of threejs-hair-shader/src/hair-shader.js as vendored on 2026-11-23.
 const UPSTREAM_SHA256 = "947cff0ec4ccd55f5f812c1ff5223759d83119a0e9d8071c2f9e56b074819ed6";
 const UPSTREAM_START = Buffer.from("// Created by Sander Mørch-Jensen");
@@ -112,5 +138,34 @@ describe("authored hair-card material", () => {
     expect(a2c.outer.userData.hairPass).toBe("a2c");
     expect(a2c.outer.alphaToCoverage).toBe(true);
     expect(a2c.outer.alphaTest).toBe(0);
+  });
+
+  it("masks every shadow-casting pass to half coverage of the atlas", () => {
+    const atlas = new Texture();
+    const blend = createHairCardMaterial({ atlas });
+    expect(blend.outer.maskShadowNode?.isNode).toBe(true);
+    expect(blend.inner?.maskShadowNode?.isNode).toBe(true);
+
+    const a2c = createHairCardMaterial({ atlas, alphaToCoverage: true });
+    expect(a2c.outer.maskShadowNode?.isNode).toBe(true);
+    expect(a2c.blend?.maskShadowNode?.isNode).toBe(true);
+  });
+
+  it("matches the visible coverage within 5% under the 0.5 shadow rule", () => {
+    const data = strandAtlasCoverage();
+    const texels = data.length / 4;
+    let sum = 0;
+    let kept = 0;
+    for (let i = 0; i < data.length; i += 4) {
+      const coverage = (data[i] ?? 0) / 255;
+      sum += coverage;
+      if (coverage >= 0.5) kept++;
+    }
+    const visible = sum / texels;
+    const shadow = kept / texels;
+    expect(visible).toBeGreaterThan(0);
+    expect(Math.abs(shadow - visible)).toBeLessThanOrEqual(0.05 * visible);
+    // The old behaviour — no mask, alphaTest 0 — keeps every texel, so the shadow is the card.
+    expect(Math.abs(1 - visible)).toBeGreaterThan(0.05 * visible);
   });
 });

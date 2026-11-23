@@ -99,5 +99,17 @@ export function createHairCardMaterial(options: IHairCardMaterialOptions = {}): 
   // namespace, and the owned engine's `three/webgpu` also exports `WebGLRenderer`, so it would pick
   // GLSL patches that the node renderer never runs.
   opts.renderer ??= { isWebGPURenderer: true };
-  return createHairMaterials(THREE, undefined, opts) as IHairCardMaterials;
+  const materials = createHairMaterials(THREE, undefined, opts) as IHairCardMaterials;
+  // three r187 NodeMaterial.maskShadowNode: the shadow depth pass discards a texel where this node
+  // is false. Under alpha-to-coverage the visible pass clips nothing (`alphaTest` 0), so without it
+  // every card texel casts and the shadow is the card rectangle, not the strands. Keep a texel
+  // exactly when the visible pass shows it at half coverage or more, on the raw atlas channel.
+  if (options.atlas) {
+    const channel = options.alphaChannel ?? "r";
+    for (const pass of [materials.outer, materials.inner, materials.blend]) {
+      if (pass)
+        pass.maskShadowNode = THREE.TSL.texture(options.atlas)[channel].greaterThanEqual(0.5);
+    }
+  }
+  return materials;
 }
