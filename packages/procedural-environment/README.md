@@ -111,7 +111,7 @@ const town = createStylizedAsset("village-town", { variant: 2 }); // group, view
 
 The **Toybox** kit (collection Stylized realism) has toy-like shapes with realistic surfaces:
 clearcoat plastic, gold, riveted metal, layered rock, soil and planks (triplanar maps in `scans/toybox_*`),
-dense grass blades and swaying trees. It has 44 modules and three scenes, Sky garden, Obstacle
+dense grass blades and swaying trees. It has 56 modules and three scenes, Sky garden, Obstacle
 course and Island cove, in Sky Garden, Frost Peak and Sand Ruins (variants 0, 1, and 2). Each scene
 also returns a blurred sky panorama `backdrop` for that theme.
 
@@ -122,10 +122,14 @@ also returns a blurred sky panorama `backdrop` for that theme.
   panels forms one circuit. The scenes are assembled only from these modules.
 - Island cove stands its plateaus in an open sea that runs to the horizon. Shore foam edge and
   corner pieces follow a plateau's outline and lap at its walls. Vines hang over its straight edges.
-- Props and plants: crate, barrel, stone gateway, palm, spiky rosette, broadleaf plant, round tree
-  and bush, flowers, rocks, crystals.
+- Temple ruins: cut-stone platforms, stepping pillars, floating and sliding stone rafts, carved ruin
+  blocks with meander panels, and lattice glyph pillars, in sandstone and flagstone maps.
+- Obstacles: a spinner bar, a spike trap, the sliding raft, and a goal gate. Obstacle course runs a
+  full level through them, from a start garden to the gate.
+- Props and plants: crate, barrel, stone gateway, palm, canopy tree, spiky rosette, broadleaf plant,
+  tulips, fruit piles, round tree and bush, flowers, rocks, crystals.
 - Gameplay pieces animate: coins spin and bob, the bounce pad squashes and launches, the cannon
-  recoils, the hover platform bobs, glows pulse, the waterfall flows, the sea rolls and the
+  recoils, the spinner sweeps, the spikes shoot up, the stone rafts slide and bob, the hover platform bobs, glows pulse, the waterfall flows, the sea rolls and the
   shore foam laps.
 - Grass, flowers and trees sway, and bend away from up to four pushers that you set with `toyboxPush`.
 

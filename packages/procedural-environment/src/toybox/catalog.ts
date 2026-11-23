@@ -14,11 +14,16 @@ const sections: Record<string, Entry[]> = {
     ["grass-ramp", "Grass ramp", part.grassRamp],
     ["cliff-block", "Cliff block", part.cliffBlock],
     ["pond-block", "Pond block", part.pondBlock],
+    ["ruin-block", "Carved ruin block", part.ruinBlock],
     ["open-sea", "Open sea", part.openSea],
     ["shore-edge", "Shore foam, edge", part.shoreEdge],
     ["shore-corner", "Shore foam, corner", part.shoreCorner],
   ],
   Platforms: [
+    ["stone-platform", "Cut-stone platform", part.stonePlatform],
+    ["stone-pillar", "Stepping pillar", part.stonePillar],
+    ["stone-float", "Floating stone raft", part.stoneFloat],
+    ["slider-platform", "Sliding stone raft", part.sliderPlatform],
     ["plastic-slab", "Plastic slab", part.plasticSlab],
     ["tech-panel", "Circuit deck panel", part.techPanel],
     ["glass-panel", "Glass floor panel", part.glassPanel],
@@ -44,11 +49,18 @@ const sections: Record<string, Entry[]> = {
     ["button", "Floor button", part.button],
     ["checkpoint", "Checkpoint beacon", part.checkpoint],
     ["cannon", "Cannon", part.cannon],
+    ["spinner", "Spinner bar", part.spinner],
+    ["spike-trap", "Spike trap", part.spikeTrap],
+    ["goal-gate", "Goal gate", part.goalGate],
   ],
   Nature: [
     ["puff-tree", "Round tree", part.puffTree],
     ["puff-bush", "Round bush", part.puffBush],
     ["palm-tree", "Palm tree", part.palmTree],
+    ["tier-tree", "Canopy tree", part.tierTree],
+    ["glyph-pillar", "Glyph pillar", part.glyphPillar],
+    ["fruit-pile", "Fruit pile", part.fruitPile],
+    ["tulips", "Tulips", part.tulips],
     ["flowers", "Flower patch", part.flowers],
     ["spiky-plant", "Spiky rosette", part.spikyPlant],
     ["leafy-plant", "Broadleaf plant", part.leafyPlant],
@@ -209,47 +221,84 @@ function garden(): Place[] {
   ];
 }
 
+/**
+ * A full run along +X through temple ruins in the sky: a garden start, a cut-stone causeway,
+ * stepping pillars over a drop, a carved temple top with a spinner, a spike corridor, a sliding
+ * raft over a gap, a bounce up to floating rafts, a hover hop, and a goal plateau with the gate.
+ */
 function course(): Place[] {
-  const out: Place[] = [...plateau(-6, -1, -4, 1)];
-  for (let i = -3; i <= 4; i++) out.push(["tech-panel", i, 0, 1]);
-  for (let i = -3; i <= 4; i++) out.push(["cliff-block", i, 0, -1]);
-  out.push(
-    ["boost-pad", -2, 0, 1.5],
-    ["glass-panel", 5, 0, 1],
-    ["glass-panel", 6, 0, 1],
-    ["stairs", 7, 0, 1, 3],
-    ["plastic-slab", 8, 0, 1.5],
-    ["plastic-slab", 9, 0, 1.5],
-    ["plastic-slab", 9, -1, 1.5],
-    ["cliff-block", 8, 0, -0.5],
-    ["cliff-block", 9, 0, -0.5],
-    ["cliff-block", 9, -1, -0.5],
-    ["cannon", 9, 0, 2],
-    ["checkpoint", 8, 0, 2],
-    // a lower terrace at the foot of the wall carries the pipe run and the crystal
-    ...plateau(-1, 1, 3, 3, -1),
-    ["pipe", 0, 2, 0],
-    ["pipe", 1, 2, 0],
-    ["pipe-elbow", 2, 2, 0, 1],
-    ["pipe", 2, 3, 0, 1],
-    ["crystal", 0, 1, 0],
-    ["flowers", 1, 3, 0],
-    ["puff-bush", -1, 2, 0],
-    ["hover-platform", 2, -2, 1],
-    ["hover-platform", 4, -3, 2],
-    ["prize-box", 0, 0, 1.5],
-    ["button", 3, 0, 1.5],
-    ["bounce-pad", -5, 0, 1],
-    ["puff-tree", -6, -1, 1],
-    ["puff-bush", -6, 1, 1],
-    ["boulder", -4, 1, 1],
-    ["floating-island", 2, -9, 2],
-    ["puff-tree", 2, -9, 5.2],
-    ["cloud", -6, -8, 8],
-    ["cloud", 10, -6, 11],
-  );
-  for (let i = -2; i <= 3; i++) out.push(["coin", i + 0.5, 0, 1.6]);
-  return out;
+  const lane = (id: string, from: number, to: number, level = 0): Place[] =>
+    Array.from({ length: to - from + 1 }, (_, n): Place => [id, from + n, 0, level]);
+  const coins = (from: number, to: number, y: number): Place[] =>
+    Array.from({ length: (to - from) * 2 + 1 }, (_, n): Place => ["coin", from + n / 2, 0, y]);
+  return [
+    // start garden
+    ...plateau(-12, -1, -10, 1),
+    ["checkpoint", -11, 0, 1],
+    ["tier-tree", -12, -1, 1],
+    ["puff-bush", -12, 1, 1],
+    ["tulips", -11, 1, 1],
+    ["tulips", -10, -1, 1],
+    ["fruit-pile", -10, 1, 1],
+    // cut-stone causeway, then stepping pillars over the drop
+    ...lane("stone-platform", -9, -8),
+    ...coins(-9, -8, 1.6),
+    ["stone-pillar", -7, 0, -0.5],
+    ["stone-pillar", -6, 0, -0.2],
+    ["stone-pillar", -5, 0, 0],
+    ["coin", -7, 0, 2.1],
+    ["coin", -6, 0, 2.4],
+    ["coin", -5, 0, 2.6],
+    // the temple top: carved ruin blocks, glyph pillars, a spinner to jump
+    ...[-4, -3, -2].flatMap((i) => [-1, 0, 1].map((k): Place => ["ruin-block", i, k])),
+    ["spinner", -3, 0, 2],
+    ["glyph-pillar", -4, -1, 2],
+    ["glyph-pillar", -2, -1, 2],
+    ["tier-tree", -4, 1, 2],
+    ["fruit-pile", -2, 1, 2],
+    ["hanging-vines", -3, 1],
+    ["hanging-vines", -3, 1, 1],
+    // down the steps to the spike corridor
+    ["stone-platform", -1, 0],
+    ["stairs", -1, 0, 1, 1],
+    ...lane("stone-platform", 0, 3),
+    ["spike-trap", 1, 0, 1],
+    ["spike-trap", 3, 0, 1],
+    ["rail", 2, -0.47, 1],
+    ["rail", 2, 0.47, 1],
+    ...coins(0, 3, 1.7),
+    // the sliding raft over a two-cell gap
+    ["slider-platform", 5, 0],
+    ["stone-pillar", 4, -1, -0.8],
+    // landing garden, bounce up to the floating rafts
+    ...plateau(7, -1, 9, 1),
+    ["bounce-pad", 9, 0, 1],
+    ["tulips", 7, -1, 1],
+    ["tier-tree", 7, 1, 1],
+    ["prize-box", 8, -1, 1],
+    ["stone-float", 10, 0, 2],
+    ["stone-float", 11, -1, 2.6],
+    ["stone-float", 12, 0, 3.2],
+    ["coin", 10, 0, 3.8],
+    ["coin", 11, -1, 4.4],
+    ["coin", 12, 0, 5],
+    ["hover-platform", 13, 0, 3],
+    // goal: a temple plateau with the gate
+    ...[14, 15, 16].flatMap((i) => [-1, 0, 1].map((k): Place => ["ruin-block", i, k])),
+    ["goal-gate", 16, 0, 2, 1],
+    ["glyph-pillar", 14, -1, 2],
+    ["fruit-pile", 15, 1, 2],
+    ["tier-tree", 14, 1, 2],
+    ["crystal", 15, -1, 2],
+    // scenery
+    ["floating-island", -4, -10, 2],
+    ["tier-tree", -4, -10, 5.2],
+    ["floating-island", 9, -11, 4],
+    ["glyph-pillar", 9, -11, 7.2],
+    ["cloud", -10, -8, 8],
+    ["cloud", 6, -8, 11],
+    ["cloud", 18, -6, 9],
+  ];
 }
 
 /** Two islands in a sea, joined by a pier through a stone gateway. */
@@ -311,7 +360,7 @@ function cove(): Place[] {
 
 const VIEWS: Record<keyof typeof toyboxScenes, { pos: XYZ; target: XYZ }> = {
   garden: { pos: [11, 8.5, 15], target: [2, 1.5, -2] },
-  course: { pos: [10, 8, 14], target: [3, 1.5, -1] },
+  course: { pos: [6, 22, 44], target: [5, 1.5, -2] },
   cove: { pos: [9, 8, 15], target: [-1, 1, -1] },
 };
 const LAYOUTS = { garden, course, cove };

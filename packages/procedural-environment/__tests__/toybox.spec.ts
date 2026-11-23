@@ -2,7 +2,7 @@ import { Box3, Mesh, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { createStylizedAsset, stylizedAssets, toyboxPush } from "../src/stylized.js";
 import { toyboxPushers } from "../src/toybox/materials.js";
-import { springStretch } from "../src/toybox/parts.js";
+import { spikeRise, springStretch } from "../src/toybox/parts.js";
 
 const rows = stylizedAssets().filter((row) => row.kind === "toybox");
 const ids = new Set(rows.map((row) => row.id));
@@ -28,19 +28,22 @@ describe("toybox kit", () => {
       });
       return box;
     };
-    for (const [id, top] of [
+    // rock slabs bulge up to 7 cm mid-face, and the ruin block's carved panels stand 11 cm proud;
+    // both fade back to the grid plane at the block's edges, so neighbours still meet
+    for (const [id, top, wide = 2.16] of [
       ["toybox-grass-block", 1],
       ["toybox-grass-block-tall", 2],
       ["toybox-cliff-block", 2],
       ["toybox-tech-panel", 0.5],
       ["toybox-plastic-slab", 0.5],
       ["toybox-wood-deck", 1],
+      ["toybox-stone-platform", 1],
+      ["toybox-ruin-block", 2, 2.24],
     ] as const) {
-      // rock slabs bulge up to 7 cm mid-face; the relief fades to the grid plane at the edges
       const box = solid(id);
       expect(box.max.x - box.min.x, id).toBeGreaterThan(1.98);
-      expect(box.max.x - box.min.x, id).toBeLessThan(2.16);
-      expect(box.max.z - box.min.z, id).toBeLessThan(2.16);
+      expect(box.max.x - box.min.x, id).toBeLessThan(wide);
+      expect(box.max.z - box.min.z, id).toBeLessThan(wide);
       expect(Math.abs(box.max.y - top), id).toBeLessThan(0.1);
     }
   });
@@ -49,11 +52,17 @@ describe("toybox kit", () => {
     expect(springStretch(5)).toBeCloseTo(1, 1);
     expect(springStretch(0.3)).toBeLessThan(0.7);
     expect(springStretch(0.65)).toBeGreaterThan(1.2);
+    expect(spikeRise(0.5)).toBe(0);
+    expect(spikeRise(2)).toBe(1);
     for (const id of [
       "toybox-coin",
       "toybox-bounce-pad",
       "toybox-hover-platform",
       "toybox-cannon",
+      "toybox-spinner",
+      "toybox-spike-trap",
+      "toybox-slider-platform",
+      "toybox-stone-float",
     ]) {
       const asset = createStylizedAsset(id);
       expect(asset.update, id).toBeTypeOf("function");
@@ -72,10 +81,12 @@ describe("toybox kit", () => {
         });
         return out as number[];
       };
-      asset.update?.(0.1);
-      const a = pose();
-      asset.update?.(0.5);
-      expect(pose(), id).not.toEqual(a);
+      // sample across a 3 s cycle: the spike trap rests for half of it
+      const poses = [0.1, 0.5, 1.2, 1.9, 2.6].map((t) => {
+        asset.update?.(t);
+        return JSON.stringify(pose());
+      });
+      expect(new Set(poses).size, id).toBeGreaterThan(1);
     }
     for (const id of [
       "toybox-puff-tree",

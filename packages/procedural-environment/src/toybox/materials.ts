@@ -25,7 +25,7 @@ const neutral = (r: number, g: number, b: number) => {
   return t;
 };
 const scans: Record<string, { detail: { value: Texture }; normal: { value: Texture } }> = {};
-for (const id of ["rock", "soil", "planks", "metal"])
+for (const id of ["rock", "soil", "planks", "metal", "slab", "flagstone"])
   scans[id] = {
     detail: { value: neutral(128, 128, 128) },
     normal: { value: neutral(128, 128, 255) },
@@ -297,6 +297,21 @@ export const toyboxMaterials = {
     1.1,
     0.3,
     0.35,
+  ),
+  // temple masonry: big worn sandstone blocks, and the trodden flagstone on top of them
+  slab: triplanar(
+    new MeshStandardMaterial({ name: "Toybox slab", vertexColors: true, roughness: 0.82 }),
+    "slab",
+    0.55,
+    0.75,
+    0.9,
+  ),
+  flagstone: triplanar(
+    new MeshStandardMaterial({ name: "Toybox flagstone", vertexColors: true, roughness: 0.78 }),
+    "flagstone",
+    0.4,
+    0.7,
+    0.8,
   ),
   soil: triplanar(
     new MeshStandardMaterial({ name: "Toybox soil", vertexColors: true, roughness: 0.95 }),

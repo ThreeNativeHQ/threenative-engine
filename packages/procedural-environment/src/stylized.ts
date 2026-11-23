@@ -83,7 +83,7 @@ const biomeIds: Record<string, string[]> = {
  * @situation browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon
  * @situation browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes
  * @situation browse stylized village houses, timber walls, fences, paths, props, and the assembled village green
- * @situation browse toybox platformer modules: grass blocks, cliffs, ramps, deck panels, bounce pads, coins, cannons, floating islands, palms, crates, open sea with shore foam, and assembled garden, obstacle-course and island-cove scenes
+ * @situation browse toybox platformer modules: grass blocks, cliffs, ramps, deck panels, bounce pads, coins, cannons, floating islands, palms, crates, cut-stone ruins, spinners, spike traps, a goal gate, open sea with shore foam, and assembled garden, obstacle-course and island-cove scenes
  * @requires npm i @threenative/procedural-environment
  * @example const rows = stylizedAssets();
  */

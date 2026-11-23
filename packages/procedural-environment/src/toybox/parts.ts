@@ -806,6 +806,7 @@ function crown(
   count: number,
   squash = 0.84,
   leaf = m.palette.leaf,
+  cube = false,
 ) {
   const grit = m.rng.seed();
   const swell = (v: Vector3) =>
@@ -813,7 +814,10 @@ function crown(
     (1 +
       noise3(v.x * 1.9, v.y * 1.9, v.z * 1.9, grit) * 0.16 +
       noise3(v.x * 4.3, v.y * 4.3, v.z * 4.3, grit + 3) * 0.06);
-  const surface = (v: Vector3, lift = 1) =>
+  // a cube crown pushes the sphere out to a rounded box: flat top, square sides
+  const boxy = (v: Vector3) =>
+    cube ? v.clone().divideScalar((v.x ** 4 + v.y ** 4 + v.z ** 4) ** 0.25) : v;
+  const surface = (d: Vector3, lift = 1, v = boxy(d)) =>
     new Vector3(
       cx + v.x * swell(v) * lift,
       cy + v.y * swell(v) * squash * lift,
@@ -1461,4 +1465,423 @@ export const palmTree: ToyPart = (m) => {
       "wood",
     );
   }
+};
+
+/** Temple sandstone: the theme's rock warmed toward sand, so the blocks read as cut stone. */
+const sandstone = (m: ToyMesh) =>
+  new Color(m.palette.rock).lerp(new Color(0x9a8566), 0.55).multiplyScalar(0.88);
+
+/**
+ * Masonry walls of a block `w` by `d` from y = 0 to `top`: courses of big cut stones, each stone a
+ * rounded box a little proud of or sunk into the face, toned stone by stone.
+ */
+function masonry(m: ToyMesh, w: number, d: number, top: number, course = 0.5) {
+  const stone = sandstone(m);
+  const rows = Math.max(1, Math.round(top / course));
+  const h = top / rows;
+  m.box(
+    [0, top / 2, 0],
+    [w - 0.1, top - 0.02, d - 0.1],
+    stone.clone().multiplyScalar(0.5).getHex(),
+    "slab",
+    0.02,
+  );
+  for (const [len, depth, face] of [
+    [w, d, 0],
+    [d, w, 1],
+    [w, d, 2],
+    [d, w, 3],
+  ] as const) {
+    for (let r = 0; r < rows; r++) {
+      let at = -len / 2;
+      while (at < len / 2 - 0.05) {
+        const piece = Math.min(len / 2 - at, m.rng.range(0.45, 0.95));
+        const out = m.rng.range(-0.015, 0.03);
+        const g = new RoundedBoxGeometry(piece - 0.035, h - 0.035, 0.16, 2, 0.04).translate(
+          at + piece / 2,
+          r * h + h / 2,
+          depth / 2 - 0.08 + out,
+        );
+        g.rotateY((face * Math.PI) / 2);
+        m.add(g, stone.clone().multiplyScalar(m.rng.range(0.78, 1.08)).getHex(), "slab");
+        at += piece;
+      }
+    }
+  }
+}
+
+/** A top of `n` by `n` worn flagstones over a `size` square at height `top`, some mossy at the edges. */
+function flagstones(m: ToyMesh, size: number, n: number, top: number) {
+  const stone = sandstone(m).lerp(new Color(0xffffff), 0.08);
+  const cell = size / n;
+  for (let i = 0; i < n; i++)
+    for (let k = 0; k < n; k++) {
+      const lift = m.rng.range(-0.025, 0.02);
+      const g = new RoundedBoxGeometry(cell - 0.03, 0.16, cell - 0.03, 2, 0.035)
+        .rotateX(m.rng.range(-0.02, 0.02))
+        .rotateZ(m.rng.range(-0.02, 0.02))
+        .translate(-size / 2 + cell * (i + 0.5), top - 0.08 + lift, -size / 2 + cell * (k + 0.5));
+      m.add(g, stone.clone().multiplyScalar(m.rng.range(0.82, 1.06)).getHex(), "flagstone");
+    }
+  const grit = m.rng.seed();
+  m.grass(
+    size / 2,
+    top + 0.005,
+    (x, z) => {
+      const edge = Math.min(size / 2 - Math.abs(x), size / 2 - Math.abs(z));
+      return edge > 0.02 && noise3(x * 1.6, 0, z * 1.6, grit) - edge * 1.2 > 0.05;
+    },
+    260,
+    0.08,
+  );
+}
+
+/** The cut-stone platform: a 2 m block of big sandstone courses with a 3 x 3 flagstone top at 1 m. */
+export const stonePlatform: ToyPart = (m) => {
+  masonry(m, CELL, CELL, 0.86);
+  flagstones(m, CELL, 3, 1);
+};
+
+/** A stepping pillar: a 1 m square column of three stone courses, its flagstone top at 2 m. */
+export const stonePillar: ToyPart = (m) => {
+  masonry(m, 1, 1, 1.86, 0.62);
+  flagstones(m, 1, 2, 2);
+};
+
+/** A floating flagstone raft, 2 m square, hovering 1.2 m up and bobbing; a stepping stone over gaps. */
+export const stoneFloat: ToyPart = (m) => {
+  const phase = m.rng.range(0, Math.PI * 2);
+  const rest = 1.2;
+  m.pivot(
+    "raft",
+    [0, rest, 0],
+    () => {
+      const stone = sandstone(m).multiplyScalar(0.85).getHex();
+      m.box([0, rest - 0.25, 0], [CELL - 0.1, 0.36, CELL - 0.1], stone, "slab", 0.06);
+      m.lathe(
+        [
+          [0.85, 0],
+          [0.55, -0.35],
+          [0.2, -0.6],
+          [0, -0.65],
+        ],
+        [0, rest - 0.43, 0],
+        stone,
+        "slab",
+        8,
+      );
+      flagstones(m, CELL, 2, rest);
+    },
+    (node, t) => {
+      node.position.y = rest + Math.sin(t * 1.1 + phase) * 0.12;
+      node.rotation.z = Math.sin(t * 0.8 + phase) * 0.02;
+    },
+  );
+};
+
+/** A cut-stone raft that slides 2 m to either side and back: it carries the player over a gap. */
+export const sliderPlatform: ToyPart = (m) => {
+  const phase = m.rng.range(0, Math.PI * 2);
+  m.pivot(
+    "raft",
+    [0, 1, 0],
+    () => {
+      masonry(m, CELL, CELL, 0.86, 0.43);
+      flagstones(m, CELL, 2, 1);
+      for (const x of [-0.6, 0.6])
+        m.ring([x, 0.02, 0], 0.18, 0.03, m.palette.glow, "glow", Math.PI * 2, 0, [0.6, phase, 3]);
+    },
+    (node, t) => {
+      node.position.x = Math.sin(t * 0.9 + phase) * CELL;
+    },
+  );
+};
+
+/** The square-key meander carved into a ruin face: a stone ridge path inside a `size` square. */
+const KEY: [number, number][] = [
+  [0, 0],
+  [1, 0],
+  [1, 1],
+  [0.2, 1],
+  [0.2, 0.2],
+  [0.8, 0.2],
+  [0.8, 0.8],
+  [0.45, 0.8],
+  [0.45, 0.5],
+];
+
+/**
+ * A carved ruin block, 2 m square and 2 m tall: cut-stone courses with a red panel on each face
+ * carved with square-key meanders, and a mossy lawn on top.
+ */
+export const ruinBlock: ToyPart = (m) => {
+  masonry(m, CELL, CELL, 1.86);
+  const red = new Color(m.palette.accent).lerp(new Color(0x8a2a1e), 0.85).getHex();
+  const ridge = sandstone(m).multiplyScalar(0.8).getHex();
+  for (let face = 0; face < 4; face++) {
+    const yaw = (face * Math.PI) / 2;
+    const panel = new RoundedBoxGeometry(1.5, 1.2, 0.06, 2, 0.02)
+      .translate(0, 0.95, H + 0.02)
+      .rotateY(yaw);
+    m.add(panel, red, "slab");
+    // two keys side by side, the second mirrored
+    for (const [ox, flip] of [
+      [-0.37, 1],
+      [0.37, -1],
+    ] as const)
+      for (let j = 1; j < KEY.length; j++) {
+        const [ax, ay] = KEY[j - 1] as [number, number];
+        const [bx, by] = KEY[j] as [number, number];
+        const s = 0.5;
+        const x0 = ox + flip * (ax - 0.5) * s;
+        const x1 = ox + flip * (bx - 0.5) * s;
+        const y0 = 0.95 + (ay - 0.5) * s * 1.6;
+        const y1 = 0.95 + (by - 0.5) * s * 1.6;
+        const g = new RoundedBoxGeometry(
+          Math.abs(x1 - x0) + 0.08,
+          Math.abs(y1 - y0) + 0.08,
+          0.08,
+          1,
+          0.02,
+        )
+          .translate((x0 + x1) / 2, (y0 + y1) / 2, H + 0.07)
+          .rotateY(yaw);
+        m.add(g, ridge, "slab");
+      }
+  }
+  m.box([0, 1.93, 0], [CELL - 0.04, 0.14, CELL - 0.04], m.palette.soil, "soil", 0.04);
+  m.grass(H, 2, square(H - 0.02), 380, 0.16);
+};
+
+/**
+ * A lattice glyph pillar, 1 m square and 4.5 m tall: a thin core inside a stack of carved frames.
+ * Solid courses alternate with courses pierced by a window in each face, so the sky shows through.
+ */
+export const glyphPillar: ToyPart = (m) => {
+  const stone = sandstone(m).multiplyScalar(0.8);
+  m.box([0, 2.2, 0], [0.26, 4.4, 0.26], stone.clone().multiplyScalar(0.5).getHex(), "slab", 0.02);
+  for (let c = 0; c < 11; c++) {
+    const y = 0.2 + c * 0.4;
+    const tone = stone.clone().multiplyScalar(m.rng.range(0.82, 1.1)).getHex();
+    const pierced = c % 2 === 1;
+    for (let face = 0; face < 4; face++) {
+      // a solid course is one long stone; a pierced one is two posts either side of a window
+      const pieces: [number, number][] = pierced
+        ? [
+            [-0.36, 0.2],
+            [0.36, 0.2],
+          ]
+        : [[0, 0.94]];
+      for (const [x, w] of pieces) {
+        const g = new RoundedBoxGeometry(w, pierced ? 0.4 : 0.36, 0.18, 2, 0.03)
+          .translate(x, y, 0.38)
+          .rotateY((face * Math.PI) / 2);
+        m.add(g, tone, "slab");
+      }
+    }
+  }
+  m.box([0, 4.45, 0], [1.05, 0.12, 1.05], stone.getHex(), "slab", 0.03);
+  m.grass(0.5, 4.52, square(0.48), 300, 0.12);
+};
+
+/**
+ * A canopy tree, 4.5 m tall: a pale trunk that forks into crooked boughs, each ending in a flat
+ * square pad of leaves.
+ */
+export const tierTree: ToyPart = (m) => {
+  const sway: [number, number] = [0.5, 6];
+  const green = jungle(m).multiplyScalar(0.95).getHex();
+  const fork = new Vector3(m.rng.range(-0.15, 0.15), 2.2, 0);
+  limb(m, [new Vector3(0, 0, 0), new Vector3(0.05, 1.1, 0.04), fork], 0.16, 0.1, sway);
+  m.add(
+    new CylinderGeometry(0.18, 0.28, 0.16, 12).translate(0, 0.08, 0),
+    new Color(m.palette.trunk).multiplyScalar(0.8).getHex(),
+    "leaf",
+  );
+  const pads = 3 + Math.floor(m.rng.range(0, 2));
+  for (let i = 0; i < pads; i++) {
+    const a = (i / pads) * Math.PI * 2 + m.rng.range(-0.3, 0.3);
+    const reach = i === 0 ? 0.15 : m.rng.range(1.2, 1.7);
+    const tip = new Vector3(
+      fork.x + Math.cos(a) * reach,
+      i === 0 ? 4.1 : m.rng.range(2.8, 3.6),
+      Math.sin(a) * reach,
+    );
+    const elbow = fork
+      .clone()
+      .lerp(tip, 0.5)
+      .setY(fork.y + (tip.y - fork.y) * 0.35);
+    limb(m, [fork.clone().setY(2.1), elbow, tip], 0.08, 0.045, sway);
+    const r = m.rng.range(0.45, 0.6);
+    crown(m, [tip.x, tip.y + 0.1, tip.z], r, Math.round(r * r * 560), 0.34, green, true);
+  }
+};
+
+/** A pile of ripe fruit, 1.6 m across: mango-shaped, blushed red to yellow, each with a stalk. */
+export const fruitPile: ToyPart = (m) => {
+  const ripe = new Color(0xf2c23a);
+  const blush = new Color(0xd8402a);
+  for (let i = 0; i < 16; i++) {
+    const r = m.rng.range(0.07, 0.1);
+    const x = m.rng.range(-0.7, 0.7);
+    const z = m.rng.range(-0.7, 0.7);
+    const yaw = m.rng.range(0, Math.PI * 2);
+    const side = new Vector3(Math.cos(yaw), 0.4, Math.sin(yaw)).normalize();
+    const g = new SphereGeometry(1, 16, 12)
+      .scale(r * 1.25, r, r * 0.95)
+      .rotateY(yaw)
+      .translate(x, r * 0.95, z);
+    m.add(g, 0xffffff, "plastic", (px, py, pz, out) => {
+      const t = Math.max(
+        0,
+        Math.min(1, (((px - x) * side.x + (py - r) * side.y + (pz - z) * side.z) / r) * 0.6 + 0.5),
+      );
+      out.copy(ripe).lerp(blush, t);
+    });
+    m.rod([x, r * 1.9, z], [x, r * 2.15, z], 0.008, 0x5a3a1e, "wood", 5);
+  }
+};
+
+/** A patch of tulips: cupped heads in the theme's flower colours on stems among long blades. */
+export const tulips: ToyPart = (m) => {
+  const p = m.palette;
+  const sway: [number, number] = [0, 0.7];
+  const colors = [0xe8344a, 0xf6c53a, p.accent, 0xffffff];
+  for (let i = 0; i < 11; i++) {
+    const x = m.rng.range(-0.6, 0.6);
+    const z = m.rng.range(-0.6, 0.6);
+    const h = m.rng.range(0.32, 0.48);
+    m.add(
+      new CylinderGeometry(0.01, 0.013, h, 5).translate(x, h / 2, z),
+      jungle(m).getHex(),
+      "leaf",
+      { sway },
+    );
+    const cup = new LatheGeometry(
+      [
+        [0, 0],
+        [0.045, 0.015],
+        [0.06, 0.06],
+        [0.052, 0.11],
+        [0.03, 0.125],
+      ].map(([a, b]) => new Vector2(a, b)),
+      6,
+    ).translate(x, h - 0.02, z);
+    m.add(cup, colors[i % colors.length] as number, "leaf", { sway });
+    blade(
+      m,
+      new Vector3(x, 0.02, z),
+      m.rng.range(0, Math.PI * 2),
+      1.2,
+      1,
+      0.28,
+      (t) => 0.12 * (1 - t),
+      jungle(m),
+      sway,
+    );
+  }
+};
+
+/**
+ * A spinner: a striped bar 3.6 m long sweeping round a post at waist height. It sits on a 2 m
+ * platform and sweeps over its neighbours; jump it.
+ */
+export const spinner: ToyPart = (m) => {
+  const p = m.palette;
+  m.cylinder([0, 0.06, 0], 0.42, 0.5, 0.12, p.metal, "metal", 32);
+  m.cylinder([0, 0.4, 0], 0.11, 0.13, 0.7, p.plastic, "plastic", 24);
+  const speed = 1.4 * (m.rng.range(0, 1) < 0.5 ? 1 : -1);
+  m.pivot(
+    "bar",
+    [0, 0.6, 0],
+    () => {
+      m.cylinder([0, 0.6, 0], 0.22, 0.22, 0.24, p.accent, "plastic", 32);
+      for (let i = 0; i < 9; i++) {
+        const x = -1.7 + i * 0.425;
+        if (Math.abs(x) < 0.2) continue;
+        m.add(
+          new CylinderGeometry(0.09, 0.09, 0.42, 20).rotateZ(Math.PI / 2).translate(x, 0.6, 0),
+          i % 2 ? 0xf4f4f4 : p.accent,
+          "plastic",
+        );
+      }
+      for (const s of [-1, 1]) m.sphere([s * 1.82, 0.6, 0], [0.16, 0.16, 0.16], p.accent2);
+    },
+    (node, t) => {
+      node.rotation.y = t * speed;
+    },
+  );
+};
+
+/** Spike rise over a 3 s cycle: down, a quick rise, a hold, then they sink. 0 down, 1 up. */
+export function spikeRise(seconds: number, phase = 0): number {
+  const t = (((seconds + phase) % 3) + 3) % 3;
+  if (t < 1.4) return 0;
+  if (t < 1.55) return (t - 1.4) / 0.15;
+  if (t < 2.5) return 1;
+  return Math.max(0, 1 - (t - 2.5) / 0.4);
+}
+
+/** A spike trap: a 2 m metal floor plate with a 4 x 4 grid of spikes that shoot up and sink again. */
+export const spikeTrap: ToyPart = (m) => {
+  const p = m.palette;
+  m.box([0, 0.05, 0], [CELL, 0.1, CELL], p.metal, "metal", 0.03);
+  m.ring([0, 0.105, 0], 0.92, 0.025, p.glow, "glow", Math.PI * 2, 0, [0.9, 0, 4]);
+  const phase = m.rng.range(0, 3);
+  for (let i = 0; i < 4; i++)
+    for (let k = 0; k < 4; k++)
+      m.cylinder(
+        [-0.66 + i * 0.44, 0.1, -0.66 + k * 0.44],
+        0.13,
+        0.13,
+        0.02,
+        0x15171c,
+        "metal",
+        16,
+      );
+  m.pivot(
+    "spikes",
+    [0, 0, 0],
+    () => {
+      for (let i = 0; i < 4; i++)
+        for (let k = 0; k < 4; k++)
+          m.add(
+            new CylinderGeometry(0, 0.1, 0.5, 8).translate(
+              -0.66 + i * 0.44,
+              0.25,
+              -0.66 + k * 0.44,
+            ),
+            0xc8ccd4,
+            "metal",
+          );
+    },
+    (node, t) => {
+      node.position.y = -0.48 + spikeRise(t, phase) * 0.5;
+    },
+  );
+};
+
+/** The finish gate: two posts with checkered bands under a checkered banner, 3.2 m tall. */
+export const goalGate: ToyPart = (m) => {
+  const p = m.palette;
+  const checker = (w: number, h: number, at: XYZ, cols: number, rows: number) => {
+    for (let i = 0; i < cols; i++)
+      for (let j = 0; j < rows; j++)
+        m.box(
+          [at[0] - w / 2 + (w / cols) * (i + 0.5), at[1] - h / 2 + (h / rows) * (j + 0.5), at[2]],
+          [w / cols, h / rows, 0.12],
+          (i + j) % 2 ? 0x15171c : 0xf6f6f6,
+          "plastic",
+          0.01,
+        );
+  };
+  for (const x of [-1.05, 1.05]) {
+    m.cylinder([x, 0.08, 0], 0.26, 0.3, 0.16, p.metal, "metal", 24);
+    m.cylinder([x, 1.6, 0], 0.13, 0.13, 3.0, p.plastic, "plastic", 24);
+    m.ring([x, 2.1, 0], 0.15, 0.03, p.accent, "plastic");
+    m.sphere([x, 3.15, 0], [0.18, 0.18, 0.18], p.gold, "gold");
+  }
+  checker(2.0, 0.5, [0, 2.75, 0], 10, 2);
+  m.box([0, 2.45, 0], [2.1, 0.08, 0.16], p.accent, "plastic", 0.03);
+  m.ring([0, 0.03, 0], 0.85, 0.035, p.glow, "glow", Math.PI * 2, 0, [0.7, 0, 2.5]);
 };

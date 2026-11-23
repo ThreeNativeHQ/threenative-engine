@@ -97,7 +97,7 @@
     }
   },
   "toybox": {
-    "preprocessing": "scans/toybox.mjs <dir>: 512 px tileable detail (luminance scaled to a linear mean of 0.5) and a normal map derived from it, WebP q78/q80; backdrops: a 1024 px plate and its mirror, blurred into a 2048x1024 sky panorama, WebP q80",
+    "preprocessing": "scans/toybox.mjs <dir>: 512 px tileable detail (luminance scaled to a linear mean of 0.5) and a normal map derived from it, WebP q70/q72; backdrops: a 1024 px plate and its mirror, blurred into a 2048x1024 sky panorama, WebP q74",
     "generated": "2026-11-23",
     "textures": {
       "rock": {
@@ -122,6 +122,16 @@
         "url": "https://polyhaven.com/a/blue_metal_plate",
         "license": "CC0 1.0 Universal",
         "restyle": "meta/muse-image (OpenRouter), to clean riveted gunmetal"
+      },
+      "slab": {
+        "from": "generated",
+        "license": "Original (meta/muse-image, OpenRouter, text prompt with a gameplay-reference crop for look only)",
+        "note": "a weathered sandstone block face, softened (blur 1.6) for the kit's grain"
+      },
+      "flagstone": {
+        "from": "generated",
+        "license": "Original (meta/muse-image, OpenRouter, text prompt with a gameplay-reference crop for look only)",
+        "note": "a worn, cracked temple floor slab, softened (blur 1)"
       }
     },
     "backdrops": {

@@ -10,7 +10,7 @@ import sharp from "sharp";
 const src = process.argv[2];
 if (!src)
   throw new Error(
-    "usage: node scans/toybox.mjs <dir with rock.png soil.png planks.png metal.png garden.png frost.png sand.png>",
+    "usage: node scans/toybox.mjs <dir with rock.png soil.png planks.png metal.png slab.png flagstone.png garden.png frost.png sand.png>",
   );
 const here = new URL(".", import.meta.url).pathname;
 const N = 512;
@@ -29,9 +29,11 @@ function tileable(px) {
   return out;
 }
 
-for (const id of ["rock", "soil", "planks", "metal"]) {
-  const { data } = await sharp(path.join(src, `${id}.png`))
-    .resize(N, N)
+// The stone scans carry photo-fine pits: soften them to the kit's stylized grain (and smaller files).
+const soften = { slab: 1.6, flagstone: 1 };
+for (const id of ["rock", "soil", "planks", "metal", "slab", "flagstone"]) {
+  const image = sharp(path.join(src, `${id}.png`)).resize(N, N);
+  const { data } = await (soften[id] ? image.blur(soften[id]) : image)
     .greyscale()
     .raw()
     .toBuffer({ resolveWithObject: true });
@@ -43,7 +45,7 @@ for (const id of ["rock", "soil", "planks", "metal"]) {
   await writeFile(
     `${here}toybox_${id}-detail.webp`,
     await sharp(detail, { raw: { width: N, height: N, channels: 1 } })
-      .webp({ quality: 78, effort: 6 })
+      .webp({ quality: 70, effort: 6 })
       .toBuffer(),
   );
   // Height from luminance, central differences with wrap, OpenGL green-up normals.
@@ -63,7 +65,7 @@ for (const id of ["rock", "soil", "planks", "metal"]) {
   await writeFile(
     `${here}toybox_${id}-normal.webp`,
     await sharp(normal, { raw: { width: N, height: N, channels: 3 } })
-      .webp({ quality: 80, effort: 6 })
+      .webp({ quality: 72, effort: 6 })
       .toBuffer(),
   );
 }
@@ -97,7 +99,7 @@ for (const id of ["garden", "frost", "sand"]) {
   await writeFile(
     `${here}toybox_backdrop-${id}.webp`,
     await sharp(pano, { raw: { width: P * 2, height: P, channels: 3 } })
-      .webp({ quality: 80, effort: 6 })
+      .webp({ quality: 74, effort: 6 })
       .toBuffer(),
   );
 }
