@@ -2432,6 +2432,19 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "softbody-character",
+      "title": "softbody character: a computed cloth position buffer feeds a lit standard material every frame",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/softbody-character.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [

@@ -17,15 +17,18 @@ import {
   AmbientLight,
   type AnimationClip,
   type Bone,
+  BufferAttribute,
   Color,
   DirectionalLight,
   DoubleSide,
   Group,
+  Matrix4,
   Mesh,
   MeshStandardMaterial,
   type Object3D,
   PlaneGeometry,
   Quaternion,
+  SkinnedMesh,
   Vector3,
 } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
@@ -48,6 +51,8 @@ interface IPhase {
 }
 
 /** The fixed motion script. Speeds in m/s, yaw rate in rad/s. */
+const ACCELERATION = 8;
+const BRAKING = 12;
 const SCRIPT: readonly IPhase[] = [
   { name: "settle", ticks: 90, clip: "Idle_Loop", speed: 0 },
   { name: "jog", ticks: 90, clip: "Jog_Fwd_Loop", speed: 3.4 },
@@ -82,7 +87,8 @@ interface IState extends Record<string, unknown> {
 
 function arm(): string {
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("arm") ?? "softbody";
-  if (value !== "softbody") throw new Error(`CHARACTER_DYNAMICS_UNKNOWN_ARM arm=${value}`);
+  if (value !== "softbody" && value !== "cloth")
+    throw new Error(`CHARACTER_DYNAMICS_UNKNOWN_ARM arm=${value}`);
   return value;
 }
 
@@ -227,8 +233,82 @@ class CharacterDynamics extends Scene<IState> {
       springs: springPairs,
       restLengths,
     };
-    const cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
-    cloth.matrixAutoUpdate = false;
+    // `?arm=cloth`: the cape is a SkinnedMesh on the mannequin's skeleton, rigidly weighted to
+    // spine_03, with red vertex colour 1 on the top row (follows the skin) and 0 below (simulates).
+    // SoftBody3D measures body capsules from the mannequin's skin and simulates in world space.
+    const capeMatrix = new Matrix4();
+    const placeCape = (): void => {
+      spine.updateWorldMatrix(true, false);
+      spine.matrixWorld.decompose(boneP, boneQ, boneS);
+      capeMatrix.compose(
+        offsetP.clone().applyQuaternion(boneQ).add(boneP),
+        boneQ.clone().multiply(offsetQ),
+        new Vector3(1, 1, 1),
+      );
+    };
+    placeCape();
+    let cloth: SoftBody3D;
+    if (armName === "cloth") {
+      const body = player.root.getObjectByProperty("isSkinnedMesh", true) as
+        | SkinnedMesh
+        | undefined;
+      if (body === undefined) throw new Error("CHARACTER_DYNAMICS_NO_SKINNED_BODY");
+      const spineIndex = body.skeleton.bones.indexOf(spine);
+      // Skinning reads bind-pose positions: take the world cape back through spine_03's current
+      // skinning matrix (boneWorld · boneInverse), then into the cape mesh's own frame.
+      character.updateMatrixWorld(true);
+      body.skeleton.update();
+      const spineSkin = new Matrix4().fromArray(body.skeleton.boneMatrices ?? [], spineIndex * 16);
+      const capeGeometry = geometry
+        .clone()
+        .applyMatrix4(capeMatrix)
+        .applyMatrix4(spineSkin.invert())
+        .applyMatrix4(character.matrixWorld.clone().invert());
+      const count = capeGeometry.getAttribute("position").count;
+      const skinIndex = new Uint16Array(count * 4);
+      const skinWeight = new Float32Array(count * 4);
+      const colour = new Float32Array(count * 3);
+      const pinnedSet = new Set(pinned);
+      for (let v = 0; v < count; v++) {
+        skinIndex[v * 4] = spineIndex;
+        skinWeight[v * 4] = 1;
+        colour[v * 3] = pinnedSet.has(v) ? 1 : 0;
+      }
+      capeGeometry.setAttribute("skinIndex", new BufferAttribute(skinIndex, 4));
+      capeGeometry.setAttribute("skinWeight", new BufferAttribute(skinWeight, 4));
+      capeGeometry.setAttribute("color", new BufferAttribute(colour, 3));
+      const capeSkin = new SkinnedMesh(capeGeometry, material);
+      character.add(capeSkin);
+      capeSkin.updateMatrixWorld(true);
+      capeSkin.bind(body.skeleton, capeSkin.matrixWorld);
+      // Named overrides from the URL, for tuning runs: ?substeps=10&colliders=0
+      const query = new URLSearchParams(globalThis.location?.search ?? "");
+      const tuning: Record<string, number> = {};
+      for (const key of [
+        "substeps",
+        "airDrag",
+        "damping",
+        "velocityScale",
+        "angularVelocityScale",
+        "bendStiffness",
+        "friction",
+      ]) {
+        const value = query.get(key);
+        if (value !== null) tuning[key] = Number(value);
+      }
+      cloth = ctx.add(
+        new SoftBody3D(capeSkin, {
+          cloth: "color.r",
+          readbackEveryFrames: 2,
+          ...tuning,
+          ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),
+        }),
+      );
+      console.info(`TN_CHARACTER_DYNAMICS_CLOTH:${JSON.stringify(cloth.debug())}`);
+    } else {
+      cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
+      cloth.matrixAutoUpdate = false;
+    }
     const unique = topology.positions.length / 3;
     let minY = Number.POSITIVE_INFINITY;
     for (let v = 0; v < unique; v++) minY = Math.min(minY, topology.positions[v * 3 + 1] as number);
@@ -244,6 +324,7 @@ class CharacterDynamics extends Scene<IState> {
     const followP = new Vector3();
     const gravityLocal = new Vector3();
     const followBone = (): void => {
+      if (armName === "cloth") return;
       spine.updateWorldMatrix(true, false);
       spine.matrixWorld.decompose(boneP, boneQ, boneS);
       followQ.copy(boneQ).multiply(offsetQ);
@@ -280,6 +361,7 @@ class CharacterDynamics extends Scene<IState> {
     let complete = false;
     let tick = 0;
     const forward = new Vector3();
+    let speed = 0;
     const world = new Vector3();
     const a = new Vector3();
     const b = new Vector3();
@@ -302,30 +384,56 @@ class CharacterDynamics extends Scene<IState> {
     };
     enterPhase(SCRIPT[0] as IPhase);
 
+    // A readback sample is `staleFrames` steps old: measure it against the body pose of the step that
+    // produced it, or a running character reads as metres of hem offset that the cloth never had.
+    interface IPose {
+      readonly toBody: Matrix4;
+      readonly clothWorld: Matrix4;
+      readonly pelvis: Vector3;
+      readonly neck: Vector3;
+    }
+    const poses = new Map<number, IPose>();
+    let steps = 0;
+    const recordPose = (): void => {
+      steps++;
+      poses.set(steps, {
+        toBody: capeMatrix.clone().invert(),
+        clothWorld: cloth.matrixWorld.clone(),
+        pelvis: pelvis.getWorldPosition(new Vector3()),
+        neck: neck.getWorldPosition(new Vector3()),
+      });
+      poses.delete(steps - 120);
+    };
     const measure = (metrics: IPhaseMetrics, phaseName: string): void => {
       const sample = cloth.sample;
       if (sample === undefined) return;
+      // This step's process has not run yet: the newest sample is from step (steps - 1 - staleFrames).
+      const pose = poses.get(steps - 1 - sample.staleFrames);
+      if (pose === undefined) return;
       const data = sample.data;
       for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
+      // The cloth arm samples world positions; the probe measures the hem in the body frame.
+      const toBody = armName === "cloth" ? pose.toBody : undefined;
       const hemC = centroid(data, hem);
       const topC = centroid(data, top);
+      const hemWorld = hemC.clone().applyMatrix4(pose.clothWorld);
+      const topWorld = topC.clone().applyMatrix4(pose.clothWorld);
+      if (toBody !== undefined) hemC.applyMatrix4(toBody);
       if (phaseName === "settle") restHem = hemC.clone();
       if (restHem !== undefined)
         metrics.hemOffset = Math.max(metrics.hemOffset, hemC.distanceTo(restHem));
-      const hemW = hemC.clone().applyMatrix4(cloth.matrixWorld);
-      const topW = topC.clone().applyMatrix4(cloth.matrixWorld);
-      metrics.hemTrail = Math.max(metrics.hemTrail, trailAngleDegrees(topW, hemW));
+      metrics.hemTrail = Math.max(metrics.hemTrail, trailAngleDegrees(topWorld, hemWorld));
       metrics.maxStretch = Math.max(
         metrics.maxStretch,
         maxEdgeStretch(data, topology.springs, topology.restLengths),
       );
-      pelvis.getWorldPosition(a);
-      neck.getWorldPosition(b);
+      a.copy(pose.pelvis);
+      b.copy(pose.neck);
       const worldPositions = new Float32Array(unique * 3);
       for (let v = 0; v < unique; v++)
         world
           .fromArray(data, v * 3)
-          .applyMatrix4(cloth.matrixWorld)
+          .applyMatrix4(pose.clothWorld)
           .toArray(worldPositions, v * 3);
       metrics.bodyPenetration = Math.max(
         metrics.bodyPenetration,
@@ -340,7 +448,12 @@ class CharacterDynamics extends Scene<IState> {
       // Character root motion: the clips play in place, the script moves the body.
       character.rotation.y += (phase.yawRate ?? 0) * STEP;
       forward.copy(facing).applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y);
-      character.position.addScaledVector(forward, phase.speed * STEP);
+      // A runner reaches a new speed at about 8 m/s² and stops at about 12 m/s²; an instant velocity step
+      // is an impulse no body makes, and it swings any cape past horizontal.
+      const accel = phase.speed > speed ? ACCELERATION : BRAKING;
+      speed +=
+        Math.sign(phase.speed - speed) * Math.min(Math.abs(phase.speed - speed), accel * STEP);
+      character.position.addScaledVector(forward, speed * STEP);
       if (phase.jumpSpeed !== undefined) {
         if (phaseTick === 6) player.play("Jump_Loop", { fade: 0.1 });
         if (phaseTick >= 6 && (vy > 0 || character.position.y > 0)) {
@@ -355,7 +468,9 @@ class CharacterDynamics extends Scene<IState> {
       player.update(STEP);
       character.updateMatrixWorld(true);
       followBone();
+      placeCape();
       placeCamera();
+      recordPose();
       measure(phases[phase.name] as IPhaseMetrics, phase.name);
       phaseTick++;
       if (phaseTick >= phase.ticks) {

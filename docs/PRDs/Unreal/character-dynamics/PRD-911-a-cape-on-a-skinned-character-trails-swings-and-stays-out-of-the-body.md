@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-911 — A cape on a skinned character trails, swings and stays out of the body
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (2026-11-22) — `SoftBody3D(skinnedMesh)` runs the cape on the owned engine (`?arm=cloth`). Measured, owned engine, 6 substeps, ramped root motion: max edge stretch 2-23% per phase (incumbent 133-146%), teleport phase 5%. The jog and sprint hem trail peaks at 82° and 104°. A CPU mirror of the same step shows that peak is the acceleration swing of an undamped pendulum, not a solver fault: it settles at 29.5° (jog) and 62° (sprint) with the default quadratic drag. AC-3 sets the damping against the Unreal reference. Fixed on the way: pin bones read a stale `matrixWorld`; auto capsules overlapped the rest cape; the previous pin and capsule poses missed the frame carry.
 **Priority:** P1 — The incumbent `SoftBody3D` stretches a cape to 2.4× its length and passes it through the legs (PRD-910 baseline). Every "character with a cape" request ships that today.
 **Complexity:** 8 (HIGH) — vendored solver merge (+2), skinned pins on GPU (+2), inertia and teleport guards (+2), body capsules auto-measured (+1), native proof (+1)
 **Owner:** João

@@ -3760,14 +3760,20 @@
       "constraints": [
         "the mesh must use one Three.js node material and contain complete triangles",
         "pinned, stiffness, damping, gravity, and wind are required game-owned inputs",
-        "Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost"
+        "Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost",
+        "a skinned source simulates in world space: add the SoftBody3D to the scene root",
+        "a skinned source needs an indexed geometry, at least one vertex with mask 1, and pins weighted to at most 8 bones"
       ],
-      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });",
+      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });\nGiven a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)\npins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos\nCloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured\nfrom the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that\ncarries the cloth with no velocity (`TN_SOFTBODY_RESET`).\nconst cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: \"color.r\" }));",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
         "timeStep follows the engine 1/60-second convention unless the game overrides it",
-        "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it"
+        "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it",
+        "cloth picks the mask (a color channel or one number per vertex); default \"color.r\", else leaf-bone vertices simulate",
+        "bodyColliders \"auto\" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off",
+        "velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)",
+        "stretchStiffness (1), bendStiffness (0.25), damping (0.5 /s), airDrag (0.5 /m, quadratic), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)"
       ],
       "package": "@threenative/core",
       "signature": "export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven { … }",
@@ -3775,7 +3781,13 @@
         "make a flag, cape, or curtain move as cloth",
         "simulate a deforming surface while keeping one edge pinned",
         "simulate cloth sails blowing in the wind",
-        "make cloth sails billow in wind on a ship"
+        "make cloth sails billow in wind on a ship",
+        "put a cape on a character",
+        "cape on a character that trails when it runs",
+        "make a skirt, coat tails or a tabard move on an animated character",
+        "cloth on a skinned mesh",
+        "cloth sticks to the body or passes through the legs",
+        "cloth stretches too much on a running character"
       ],
       "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default.",
       "supersedes": [],
@@ -3979,6 +3991,27 @@
       "summary": "Simulate a spectral ocean — cascaded wave spectra inverse-transformed on the GPU each frame.",
       "supersedes": [],
       "symbol": "SpectralOcean"
+    },
+    {
+      "aliases": [],
+      "constraints": ["CPU, fixed step, at most 32 bones per chain"],
+      "example": "import { SpringBoneChain3D } from \"@threenative/core\";\nconst root = character.getObjectByName(\"ponytail_01\") as Bone;\nconst ponytail = new SpringBoneChain3D(root, { stiffness: 50, damping: 4 });\n// in the scene's fixed step:\nupdate(_ctx, dt) { ponytail.step(dt); }",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "stiffness, damping, gravityScale, colliders, teleportDistance, errorResetDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpringBoneChain3D { … }",
+      "situations": [
+        "make a ponytail or braid swing with the head",
+        "make a tail or ears swing as the character moves",
+        "jiggle bones on a character",
+        "hair that moves with the head"
+      ],
+      "summary": "Simulate a chain of bones for a ponytail, braid, tail, ears or a dangling prop. Unreal's `AnimNode_SpringBone` algorithm and defaults (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_SpringBone.cpp:16-20): stiffness 50, damping 4, a 1/120 s fixed step and an error-reset threshold. The root bone is the anchor and follows its animated parent; the first-child path below it is simulated. Call {@link step} once per fixed step, after the animation mixer poses the root's parent. The simulator owns every chain bone's rotation, the root's included (its position follows the parent); keep them out of animation clips.",
+      "supersedes": [],
+      "symbol": "SpringBoneChain3D"
     },
     {
       "aliases": [],
