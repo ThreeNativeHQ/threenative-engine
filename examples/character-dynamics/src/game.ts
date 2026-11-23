@@ -131,6 +131,9 @@ interface IPhaseMetrics {
   /** Largest number of simulated hair points inside the head, neck, back or shoulder capsules in one sample. */
   hairInsideHead: number;
   samples: number;
+  /** Hair samples measured in the phase: every tick on the CPU chain, every landed readback for strands. */
+  hairSamples: number;
+  hairSkipped: number;
 }
 
 interface IState extends Record<string, unknown> {
@@ -338,7 +341,7 @@ class CharacterDynamics extends Scene<IState> {
       gravity: [0, -GRAVITY, 0] as [number, number, number],
       wind: [0, 0, 0] as [number, number, number],
       readbackEveryFrames: 1,
-      readbackInFlight: 64,
+      readbackInFlight: 256,
     };
     // PlaneGeometry has no duplicate positions, so SoftBody3D's welded order is the vertex order.
     const restLengths: number[] = [];
@@ -532,7 +535,7 @@ class CharacterDynamics extends Scene<IState> {
           bone: head,
           colliders: hairCapsules,
           readbackEveryFrames: 1,
-          readbackInFlight: 64,
+          readbackInFlight: 256,
           // Named overrides from the URL, for tuning runs: ?airDrag=0&iterations=8
           ...strandTuning(),
         }),
@@ -677,7 +680,7 @@ class CharacterDynamics extends Scene<IState> {
         new SoftBody3D(capeSkin, {
           cloth: "color.r",
           readbackEveryFrames: 1,
-          readbackInFlight: 64,
+          readbackInFlight: 256,
           ...tuning,
           ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),
         }),
@@ -761,10 +764,12 @@ class CharacterDynamics extends Scene<IState> {
     let finite = true;
     let restHem: Vector3 | undefined;
     let restTop: Vector3 | undefined;
+    let hairRestRoot: Vector3 | undefined;
     let complete = false;
     let tick = 0;
     let scriptEndStep = Number.POSITIVE_INFINITY;
     let lastMeasuredStep = -1;
+    let lastMeasuredHairStep = -1;
     let drainTicks = 0;
     const forward = new Vector3();
     let speed = 0;
@@ -780,6 +785,8 @@ class CharacterDynamics extends Scene<IState> {
         hairStretch: 0,
         hairInsideHead: 0,
         samples: 0,
+        hairSamples: 0,
+        hairSkipped: 0,
       };
       if (phase.jumpSpeed !== undefined) {
         vy = phase.jumpSpeed;
@@ -900,6 +907,7 @@ class CharacterDynamics extends Scene<IState> {
       sample: { data: Float32Array; staleFrames: number },
     ): void => {
       const pose = poses.get(steps - 1 - sample.staleFrames);
+      lastMeasuredHairStep = Math.max(lastMeasuredHairStep, steps - 1 - sample.staleFrames);
       if (pose === undefined) return;
       const phaseName = pose.phase;
       const metrics = phases[phaseName];
@@ -907,6 +915,17 @@ class CharacterDynamics extends Scene<IState> {
       const data = sample.data;
       for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
       const n = hair.pointsPerStrand;
+      // A root rides the head, so in the head frame it sits still. A sample whose root is elsewhere
+      // is not from this pose (as for the cape's pinned row): skip it; coverage counts it.
+      const rootLocal = new Vector3()
+        .fromArray(data, (STRAND_COUNT / 2) * n * 3)
+        .applyMatrix4(pose.toHead);
+      if (phaseName === "settle" && hairRestRoot === undefined) hairRestRoot = rootLocal.clone();
+      if (hairRestRoot !== undefined && rootLocal.distanceTo(hairRestRoot) > POSE_MISMATCH) {
+        metrics.hairSkipped = Math.max(metrics.hairSkipped, rootLocal.distanceTo(hairRestRoot));
+        return;
+      }
+      metrics.hairSamples++;
       const tipLocal = new Vector3()
         .fromArray(data, ((STRAND_COUNT / 2) * n + n - 1) * 3)
         .applyMatrix4(pose.toHead);
@@ -952,6 +971,7 @@ class CharacterDynamics extends Scene<IState> {
         // The root bone rides the head and is not simulated: count only the chain below it.
         countInsideCapsules(hairPositions.subarray(3), hairColliders, 0.005),
       );
+      metrics.hairSamples++;
     };
 
     return (frameCtx: ICtx<IState>) => {
@@ -993,11 +1013,16 @@ class CharacterDynamics extends Scene<IState> {
       measure();
       const scriptMetrics = phases[phase.name];
       if (scriptMetrics !== undefined) measureHair(scriptMetrics, phase.name);
+      // The drain still takes the strands' in-flight samples; each counts toward its own phase.
+      else if (strands !== undefined) measureStrands(strands);
       if (phaseIndex >= SCRIPT.length) {
         // Drain: the script is over, but its last steps' readbacks are still in flight. Keep idling
         // until the last script step is measured, or fail closed past the cap with what landed.
         drainTicks++;
-        if (lastMeasuredStep >= scriptEndStep || drainTicks >= MAX_DRAIN_TICKS) complete = true;
+        const drained =
+          lastMeasuredStep >= scriptEndStep &&
+          (strands === undefined || lastMeasuredHairStep >= scriptEndStep);
+        if (drained || drainTicks >= MAX_DRAIN_TICKS) complete = true;
       } else {
         phaseTick++;
         if (phaseTick >= phase.ticks) {

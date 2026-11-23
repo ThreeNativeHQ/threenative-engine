@@ -109,6 +109,46 @@
       },
       {
         "id": "GameState",
+        "path": "phases.settle.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.hairSamples",
+        "gte": 90
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.hairSamples",
+        "gte": 45
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.hairSamples",
+        "gte": 56
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.hairSamples",
+        "gte": 33
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.hairSamples",
+        "gte": 33
+      },
+      {
+        "id": "GameState",
         "path": "phases.settle.hairInsideHead",
         "lte": 0,
         "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
