@@ -11610,6 +11610,29 @@
       "supersedes": []
     },
     {
+      "symbol": "ctx.sceneLoad.progress",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.sceneLoad.progress: number",
+      "summary": "How far the scene change in flight has loaded, 0 to 1, for a loading bar between levels: 0 when goto() starts, the share of the asset requests that load makes, and 1 once the new scene's enter() has run. During boot it equals ctx.startup.progress.",
+      "situations": [
+        "loading screen between levels",
+        "progress bar during a level change",
+        "show load progress on restart",
+        "loading bar after goto"
+      ],
+      "aliases": [],
+      "example": "const width = `${Math.round(ctx.sceneLoad.progress * 100)}%`; // the kits' render/loading.ts reads this",
+      "constraints": [
+        "Never decreases within one load; the next goto() resets it to 0.",
+        "Counts only the requests that load makes: a request already in flight when goto() started is not in it.",
+        "ctx.startup.progress stays at 1 after the first launch, so a bar between levels reads this instead."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
       "symbol": "ctx.startup.progress",
       "package": "@threenative/core",
       "importPath": "src/scene.ts",
@@ -11921,7 +11944,7 @@
   ],
   "notOwned": [
     {
-      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state), and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
+      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "save-load",
       "situations": [
         "persist a player's progress between sessions",

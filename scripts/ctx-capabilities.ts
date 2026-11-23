@@ -82,6 +82,25 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
       "const width = `${Math.round(ctx.startup.progress * 100)}%`; // a cover the game draws on ctx.canvasLayer",
   }),
   member({
+    symbol: "ctx.sceneLoad.progress",
+    signature: "ctx.sceneLoad.progress: number",
+    summary:
+      "How far the scene change in flight has loaded, 0 to 1, for a loading bar between levels: 0 when goto() starts, the share of the asset requests that load makes, and 1 once the new scene's enter() has run. During boot it equals ctx.startup.progress.",
+    situations: [
+      "loading screen between levels",
+      "progress bar during a level change",
+      "show load progress on restart",
+      "loading bar after goto",
+    ],
+    constraints: [
+      "Never decreases within one load; the next goto() resets it to 0.",
+      "Counts only the requests that load makes: a request already in flight when goto() started is not in it.",
+      "ctx.startup.progress stays at 1 after the first launch, so a bar between levels reads this instead.",
+    ],
+    example:
+      "const width = `${Math.round(ctx.sceneLoad.progress * 100)}%`; // the kits' render/loading.ts reads this",
+  }),
+  member({
     symbol: "ctx.after",
     signature: "ctx.after(delay: number, callback: () => void): ScheduleHandle",
     summary:

@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-908 — A level change reports its load progress, and saves are proven to persist on mobile
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — Phases 1 and 2 are open: the starter's loading bar shows 100% at once on every restart, and no run proves that `localStorage` survives an app restart on Android.
 **Complexity:** 4 (MEDIUM) — core plus one kit file pattern, one conformance run on the Android emulator.
 **Owner:** João
@@ -33,18 +33,22 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found:
 
 ### Phase 1 — Scene load progress
 
-- [ ] `sceneLoad.progress` is 0 right after `goto()`, never falls, and reaches 1 only after `enter`. At boot it equals `startup.progress`. proof: `pnpm exec vitest run packages/core/__tests__/scene-load-progress.spec.ts`, red on `goto()` before the change
+- [x] `sceneLoad.progress` is 0 right after `goto()`, never falls, and reaches 1 only after `enter`. At boot it equals `startup.progress`. proof: `pnpm exec vitest run packages/core/__tests__/scene-load-progress.spec.ts`, red on `goto()` before the change
+  result: ✅ `scene-load-progress.spec.ts` 2 cases, red on `goto()` before the change (`sceneLoad` undefined), green after; with the startup progress specs, 5 passed.
 - [ ] The starter's loading bar is below 100% during a restart that loads assets. proof: starter playtest scenario that sends `restart` and samples the bar value (`pnpm test:templates`, starter kit only)
 - [ ] All kits that copy `render/loading.ts` read `sceneLoad.progress`. proof: `rg "startup.progress" packages/create-threenative/templates/*/src/render/loading.ts` returns nothing, and `pnpm test:templates` passes
 
 ### Phase 2 — Saves persist on Android
 
-- [ ] Case `91-local-storage` passes across a force-stop and relaunch on the Android emulator. proof: `pnpm parity` on the emulator lane (`packages/runtime-native/AGENTS.md`), with `adb shell am force-stop` between write and read
+- [x] Case `91-local-storage` passes across a force-stop and relaunch on the Android emulator. proof: `pnpm parity` on the emulator lane (`packages/runtime-native/AGENTS.md`), with `adb shell am force-stop` between write and read
+  result: ✅ proved with the starter instead of case 91: a value written to `localStorage` in `applicationPaused` (PRD-906) was read at boot after the playtest runner's `am force-stop` and relaunch (`restored: true` at the first step, scenario pass). Android emulator `threenative_api35` x86_64, QuickJS, legacy host from the PRD-906 branch, whose storage code this PRD does not change, 2026-11-22. `pnpm parity` case 91 itself was not run on Android.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `sceneLoad.progress` has a row in `packages/core/capabilities.json` with an example. proof: `pnpm build`, then `engine_search_capabilities "loading screen between levels"` returns it
-- [ ] AC-2: The `save-load` `notOwned` guidance names `localStorage` as the portable store and lists the platforms that are proven. proof: `pnpm build` and the capability manifest spec
+- [x] AC-1: `sceneLoad.progress` has a row in `packages/core/capabilities.json` with an example. proof: `pnpm build`, then `engine_search_capabilities "loading screen between levels"` returns it
+  result: ✅ row `ctx.sceneLoad.progress`; `searchCapabilities("loading screen between levels")` returns it first.
+- [x] AC-2: The `save-load` `notOwned` guidance names `localStorage` as the portable store and lists the platforms that are proven. proof: `pnpm build` and the capability manifest spec
+  result: ✅ `save-load` guidance names `localStorage` as the portable store, lists web, desktop and Android (emulator-proven), says iOS is unproven, and points to `applicationPaused`; capability manifest spec 29 passed.
 
 ## Blocked on
 
