@@ -35,7 +35,8 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found:
 
 - [x] `sceneLoad.progress` is 0 right after `goto()`, never falls, and reaches 1 only after `enter`. At boot it equals `startup.progress`. proof: `pnpm exec vitest run packages/core/__tests__/scene-load-progress.spec.ts`, red on `goto()` before the change
   result: ✅ `scene-load-progress.spec.ts` 2 cases, red on `goto()` before the change (`sceneLoad` undefined), green after; with the startup progress specs, 5 passed.
-- [ ] The starter's loading bar is below 100% during a restart that loads assets. proof: starter playtest scenario that sends `restart` and samples the bar value (`pnpm test:templates`, starter kit only)
+- [x] The starter's loading bar is below 100% during a restart that loads assets. proof: starter playtest scenario that sends `restart` and samples the bar value (`pnpm test:templates`, starter kit only)
+  result: ✅ `starter/playtests/restart-loading.playtest.json` passes (webgpu, headed, sandbox scaffold from this branch): the lowest `sceneLoad.progress` the load-time repaint saw after `restart` is 0, then the run is back to `playing`. The starter's restart takes its assets from the cache, so the bar starts at 0 and the cover lifts on enter instead of staying at the launch's 100%. The first draft sampled the frame-written value, which is always 1 once a frame runs, and failed on that. `loading-screen.spec.ts` proves the bar paints `sceneLoad` (2 new cases) and holds the cover until the change entered; 24 passed.
 - [ ] All kits that copy `render/loading.ts` read `sceneLoad.progress`. proof: `rg "startup.progress" packages/create-threenative/templates/*/src/render/loading.ts` returns nothing, and `pnpm test:templates` passes
 
 ### Phase 2 — Saves persist on Android

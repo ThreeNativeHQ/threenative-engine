@@ -51,6 +51,8 @@ const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 export class Play extends Scene<GameState, IPhysicsContext> {
   #observeMotion: (() => void) | undefined;
   #assetProof: Mesh | undefined;
+  #loading: ReturnType<typeof createLoadingScreen> | undefined;
+  #loadingRepaint: (() => void) | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
   #environmentSample: IEnvironmentSample | undefined;
@@ -65,6 +67,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     jumps: 0,
     levelX: -99,
     lives: STARTING_LIVES,
+    loadLowest: 1,
     odometer: 0,
     pad: false,
     paused: false,
@@ -78,6 +81,17 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   override async load(ctx: GameCtx): Promise<void> {
+    // Built before the level's own assets are asked for, so a restart covers the load instead of
+    // showing the last level's frame. A scene change runs no scene frame, so the scheduler is what
+    // repaints the bar here; `enter()` takes it over from the first frame the level is up.
+    const loading = createLoadingScreen(ctx);
+    this.#loading = loading;
+    this.#loadingRepaint = ctx.every(() => {
+      loading.update();
+      const { loadLowest } = ctx.state.getState();
+      if (ctx.sceneLoad.progress < loadLowest)
+        ctx.state.set({ loadLowest: ctx.sceneLoad.progress });
+    });
     const [texture, model, playerModel, sky] = await Promise.all([
       ctx.assets.texture("native-proof.png"),
       ctx.assets.model<{ scene: Group }>("native-proof.glb"),
@@ -257,7 +271,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           }),
       }),
     );
-    const loading = createLoadingScreen(ctx);
+    const loading = this.#loading ?? createLoadingScreen(ctx);
+    // From here the scene frame is the one repainting the bar: one driver, not two.
+    this.#loadingRepaint?.();
+    this.#loadingRepaint = undefined;
     ctx.add(ctx.camera);
     const showTouchControls = isMobile() && isTouchscreenAvailable();
     const touchControls = showTouchControls

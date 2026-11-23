@@ -72,6 +72,7 @@ function host(
     scene,
     // Neither promise resolves: the screen must be correct while it is still up, which is the point.
     renderer: { compileAsync: () => new Promise<void>(() => undefined) },
+    sceneLoad: { progress: 0 },
     startup: {
       progress: 0,
       warmup: undefined as LoadingWarmup | undefined,
@@ -287,7 +288,7 @@ describe("template loading screen", () => {
     const { track, fill } = quads(source.canvasLayer.scene);
 
     for (const progress of [0, 0.25, 0.5, 1, 2, -1, Number.NaN, Number.POSITIVE_INFINITY]) {
-      source.startup.progress = progress;
+      source.sceneLoad.progress = progress;
       loading.update();
       expect(fill.scale.y).toBeCloseTo(track.scale.y, 6);
       expect(fill.scale.x).toBeLessThanOrEqual(track.scale.x + 1e-9);
@@ -302,7 +303,7 @@ describe("template loading screen", () => {
     const controller = createLoadingScreen(source);
     const { track, fill } = quads(source.canvasLayer.scene);
 
-    source.startup.progress = 1;
+    source.sceneLoad.progress = 1;
     controller.update();
 
     expect(fill.scale.x).toBeLessThan(track.scale.x);
@@ -323,7 +324,7 @@ describe("template loading screen", () => {
     expect(backdrop.scale.y).toBe(height);
 
     for (const progress of [0, 0.5, 1]) {
-      source.startup.progress = progress;
+      source.sceneLoad.progress = progress;
       loading.update();
       const left = fill.position.x - fill.scale.x / 2;
       const right = fill.position.x + fill.scale.x / 2;
@@ -339,7 +340,7 @@ describe("template loading screen", () => {
     const landscapeTrack = track.scale.x;
 
     resizeCanvas(source.canvasLayer.camera, 1080, 2400);
-    source.startup.progress = 0.5;
+    source.sceneLoad.progress = 0.5;
     loading.update();
 
     expect(track.scale.x).toBeLessThan(landscapeTrack);
@@ -381,7 +382,7 @@ describe("template loading screen", () => {
       const backdropUv = backdrop.geometry.getAttribute("uv");
       expect(backdropUv.getX(0)).toBeCloseTo(0.25, 6);
       expect(backdropUv.getX(1)).toBeCloseTo(0.75, 6);
-      source.startup.progress = 0.5;
+      source.sceneLoad.progress = 0.5;
       controller.update();
       const fillUv = fill.geometry.getAttribute("uv");
       expect(fillUv.getX(0)).toBeCloseTo(0, 6);
@@ -411,6 +412,39 @@ describe("template loading screen", () => {
     for (const dispose of disposals) expect(dispose).toHaveBeenCalledOnce();
   });
 
+  it("reads the level change's own load, not the launch progress it already spent", () => {
+    const source = host();
+    // The launch is over: its number is 1 for the whole of every restart.
+    source.startup.progress = 1;
+    source.sceneLoad.progress = 0.5;
+    const controller = createLoadingScreen(source);
+    const { track, fill } = quads(source.canvasLayer.scene);
+
+    controller.update();
+
+    expect(fill.scale.x).toBeCloseTo(track.scale.x * 0.5, 6);
+  });
+
+  it("holds the cover until the level change in flight has entered", async () => {
+    const source = host();
+    // A restart: `whenReady()` resolved at launch, so readiness alone can no longer lift the cover.
+    source.startup.whenReady = () => Promise.resolve();
+    source.startup.progress = 1;
+    source.renderer.compileAsync = vi.fn(() => Promise.resolve());
+    const controller = createLoadingScreen(source);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    source.sceneLoad.progress = 0.4;
+    controller.update();
+    expect(source.canvasLayer.opaque).toBe(true);
+
+    source.sceneLoad.progress = 1;
+    controller.update();
+    expect(source.canvasLayer.scene.children).toEqual([]);
+    expect(source.canvasLayer.opaque).toBe(false);
+  });
+
   it("waits for core readiness, then reveals without waiting on the unawaited prewarm", async () => {
     let ready: () => void = () => undefined;
     const readyPromise = new Promise<void>((resolve) => {
@@ -421,7 +455,7 @@ describe("template loading screen", () => {
     // The prewarm's promise never settles here, which is the point: the reveal must not wait on it.
     const compileAsync = vi.fn(() => new Promise<void>(() => undefined));
     source.renderer.compileAsync = compileAsync;
-    createLoadingScreen(source);
+    const controller = createLoadingScreen(source);
 
     expect(source.canvasLayer.opaque).toBe(true);
     expect(source.canvasLayer.scene.children).toHaveLength(3);
@@ -431,22 +465,25 @@ describe("template loading screen", () => {
     await Promise.resolve();
     expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
     expect(compileAsync.mock.calls[0]).toEqual([source.scene, source.camera]);
+    source.sceneLoad.progress = 1;
+    controller.update();
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
   });
 
-  it("does not leave a one-frame screen when startup and compilation are already settled", async () => {
+  it("reveals a launch whose own ladder is already complete on the next update", async () => {
     const source = host();
     source.startup.whenReady = () => Promise.resolve();
+    source.startup.progress = 1;
+    source.sceneLoad.progress = 1;
     source.renderer.compileAsync = vi.fn(() => Promise.resolve());
-
-    createLoadingScreen(source);
-    await Promise.resolve();
+    const controller = createLoadingScreen(source);
     await Promise.resolve();
     await Promise.resolve();
 
-    // Startup and compilation are both settled, and the screen still fires its one prewarm —
-    // now harmless, because the reveal never waits on it.
+    // At boot the scene change's own number is the launch's, so one update is enough.
+    controller.update();
+
     expect(source.renderer.compileAsync).toHaveBeenCalledOnce();
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);
@@ -477,12 +514,14 @@ describe("template loading screen", () => {
   it("reveals even when the renderer has no compileAsync to prewarm with", async () => {
     const source = host();
     source.startup.whenReady = () => Promise.resolve();
+    source.sceneLoad.progress = 1;
     (source.renderer as { compileAsync?: unknown }).compileAsync = undefined;
+    const controller = createLoadingScreen(source);
+    await Promise.resolve();
+    await Promise.resolve();
+    await Promise.resolve();
 
-    createLoadingScreen(source);
-    await Promise.resolve();
-    await Promise.resolve();
-    await Promise.resolve();
+    controller.update();
 
     expect(source.canvasLayer.scene.children).toEqual([]);
     expect(source.canvasLayer.opaque).toBe(false);

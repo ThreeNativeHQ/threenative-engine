@@ -117,19 +117,19 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
     shared: "338b7550c51646228d2402f8287702c30356b95b161db37126766af996142bed",
-    kit: "5563f59040a327f461fc256e3ffa78935c3868849d433e6ae285e40be950d502",
+    kit: "12b3aa8227bfc74a196fa3e77d7dcddcaad70e48179aff3a3f1c182fe68b6683",
   },
   adventure: {
     shared: "1debd4cba921bfa7983f7d691d97803f886e3b49e9668e95848252b30fbdab2e",
-    kit: "4e3526c3b9c41dd1910922862a33b709618ea6b8c0cf9a154c52937e38587c37",
+    kit: "ff6db4d8a856364d0d3241d9bdbfcf180fe2d0b9d230d3421078c15e1907dd3f",
   },
   collectathon: {
     shared: "93698a87a739d485965a0944f8f937eefcae12b160bbbd46e77b2cab2dfc3bd6",
-    kit: "894ff671395efd9269bc8372184ef21d480b3bf4483ffb67d7d7ddbcfd91e076",
+    kit: "ebad84786f37b8a3323b80e913544e5135977ae6a1afe4d180abef0994954c25",
   },
   kart: {
     shared: "90ba84dc1d69109d48329367fa964820399d3278690298b602fb27a3b3bf61a6",
-    kit: "c264950362bdc46f6537d2fe94ae92e349e020e4cbaa6d5c62735d85690e5a96",
+    kit: "a32ebf3e2b39589463616810b786f0dab486c5259fc27df7b97a39b1a06d6492",
   },
   minimal: {
     shared: "1679219fa9cc716c78a465538ecdbbf8f72042f8cee999a90d0de24117be2c65",
@@ -137,19 +137,19 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   platformer: {
     shared: "440f9209909baa20c18551e47376b0da07cb4ed04203107d77c7b32d3ab5ff48",
-    kit: "49a4a2d5913d057803fba6916291276b05ed906a5d2b66a46940b213a5980acb",
+    kit: "20d5c7b3743a3758ea223645cc8bd19faef46e710ece7ab271f9631fae03362e",
   },
   puzzle: {
     shared: "a2ab39eed4397e8a01ab34f5599dbbb06d6b1b5687caf947bdcb5488ea354081",
-    kit: "6725ac4fca5c39da1a723b9fe26989fd5c514169996514138c65b3a9b012dbd8",
+    kit: "92a3e0910b175829494bf91c921396c054a6af7d92121bee9c747ccbae864547",
   },
   racing: {
     shared: "c5d695ebd42cfa5e00d801c0e28593e48e103bc29df6bd4202be53dfd865e158",
-    kit: "da8a9cccd5cfea9544fd27989673439ddc35ce7d27da383357bfb738d1413543",
+    kit: "7b9753f54c21966ac1422690cb30c893663fbfe6134b891c0a6bbf96e393f907",
   },
   rain: {
     shared: "6cbc850151563faa6ce951ea8754e1dabfa181e3bf2bcf0d396ab83c9fe34bae",
-    kit: "e764c9fcf6c9b6d1a5d241437f7e798c81059518e28bf07fcaffbc6ac8731fdb",
+    kit: "acf020c9c3896d3ed893acade7f02d36dc9ee33e814e112e9fc93f924047d240",
   },
   rts: {
     shared: "3cfd956fc05a92d239796dd917a4d08bf83b4d930da38c273d8ea410e6e6eb63",
@@ -157,27 +157,27 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   runner: {
     shared: "2f873b69b143966ce8d26d9543332b12881449a57428dc49d39ddab6e7ba8b95",
-    kit: "c282fc83b85201411e38b8333d3c3a3a41e41e15bb6ee509125b11e1d906a2d6",
+    kit: "1d6dde77b1d52b433d919bda20c85e3d29c884cd284bec0c5ed084beaee847be",
   },
   sailing: {
     shared: "8e2f530efbcad088b9ad6f5a18e8171d5c3394b09bf9123910b6849197d06675",
-    kit: "abef357c07973d388f5e7ebcaefab8aa44e59a70280018b3c43537677e6b7525",
+    kit: "e01e471a03e2335e3cb78bf272ea9bd10f27237692a006708f606e3df54be055",
   },
   shooter: {
     shared: "86acdd592e8429e0bfa45ff6ee23ac762648c793681cecad78d964bfd7a376f2",
-    kit: "f79fdd4f1d15e9d40c16db8d2cdfbcf6f6a9e0ef1b7796e32f12e2f91491cb8f",
+    kit: "da484a38134c67e2993e152455bfa0bbcc4654a925da6ea7995d18f17c4747bc",
   },
   snow: {
     shared: "64fe50f677e02c8ef1be25bbf4d48fdd893ba3b4da63e7f75a73fabde3597c77",
-    kit: "9b95fab52c57d987866427d4d0369f5580e90e90c1c53b96c7fc9acc0c77b6a5",
+    kit: "e4b8b6a8a4fddb5e9d734c1563a208d60c24f0796da757028f1fc5b5c151c94b",
   },
   starter: {
-    shared: "c6b87e219d1f33f1879775663baf6cc1671fa3b31cc80108677e1786abb37610",
-    kit: "79d6f3b41d04cb8911585bb8be6e6829a2e3ad95f4158826e873ac49a2023050",
+    shared: "ae365edb8c346a22e6acf1db9a3a082f15b368bd9bed06f91f13bb1ac1a91f79",
+    kit: "ece85d7b034d1d4d4f74d410f04bbd765776afe503ba76167b6080768e597884",
   },
   "tower-defense": {
     shared: "abc227934b6dbeaf1cacc0406305406244b85dc13bea68e022f94d9e157efe90",
-    kit: "59e3acfa521d97759c89b74cc01d093bd036af97cc5f3ea67fbb4ecf09cdc486",
+    kit: "e394e746cd12cfcb35e778bcabf89e371ec1fa0a0eb44b1407f47187f55ec17e",
   },
   // scaffold-pin:end
 };
@@ -911,6 +911,7 @@ describe("create-threenative", () => {
         "movement.playtest.json",
         "play.playtest.json",
         "production-readiness.playtest.json",
+        "restart-loading.playtest.json",
         "survives.playtest.json",
       ]);
       // A scaffolded project must land with audio every target can decode, WAV included, or its

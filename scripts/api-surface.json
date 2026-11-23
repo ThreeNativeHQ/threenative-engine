@@ -326,6 +326,7 @@
         "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
         "src/scene.ts#ctx.after": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
         "src/scene.ts#ctx.beforeRender": "ctx.beforeRender(callback: () => void): () => void",
+        "src/scene.ts#ctx.sceneLoad.progress": "ctx.sceneLoad.progress: number",
         "src/scene.ts#ctx.startup.progress": "ctx.startup.progress: number"
       }
     },

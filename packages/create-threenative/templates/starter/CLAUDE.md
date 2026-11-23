@@ -40,7 +40,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `conventions.ts`, `entities/`, `game.ts`, `main.ts`, `render/`, `scenes/`, `state.ts`, `ui/`, `worker-page.ts`, `worker.ts`.
-4 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+5 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-starter.md`.
 <!-- /shared -->
