@@ -342,7 +342,15 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
    * reaches 92% and then stands still for the rest of the download.
    */
   const assetRatio = (
-    { requested, requestedBytes, settled, settledBytes } = assets.progress,
+    {
+      requested,
+      requestedBytes,
+      settled,
+      settledBytes,
+    }: Pick<
+      typeof assets.progress,
+      "requested" | "requestedBytes" | "settled" | "settledBytes"
+    > = assets.progress,
   ): number => {
     if (requestedBytes > 0) return Math.min(1, settledBytes / requestedBytes);
     return requested === 0 ? 0 : Math.min(1, settled / requested);

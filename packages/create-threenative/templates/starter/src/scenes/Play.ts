@@ -55,7 +55,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   #observeMotion: (() => void) | undefined;
   #assetProof: Mesh | undefined;
   #loading: ReturnType<typeof createLoadingScreen> | undefined;
-  #loadingRepaint: (() => void) | undefined;
+  #loadingRepaint: { cancel(): void } | undefined;
   #playerModel: IPlayerModel | undefined;
   #sky: Texture | undefined;
   #environmentSample: IEnvironmentSample | undefined;
@@ -278,7 +278,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     const loading = this.#loading ?? createLoadingScreen(ctx);
     // From here the scene frame is the one repainting the bar: one driver, not two.
-    this.#loadingRepaint?.();
+    this.#loadingRepaint?.cancel();
     this.#loadingRepaint = undefined;
     ctx.add(ctx.camera);
     const showTouchControls = isMobile() && isTouchscreenAvailable();
