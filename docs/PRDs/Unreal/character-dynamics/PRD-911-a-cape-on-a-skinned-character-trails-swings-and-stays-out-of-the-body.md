@@ -51,7 +51,7 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 
 #### Phase 3: Fast on every engine, findable by agents
 
-- [ ] The owned engine and the desktop host run the cape with conformance parity. proof: `pnpm parity --target desktop --only-tests softbody-character`
+- [x] The owned engine and the desktop host run the cape with conformance parity. proof: `pnpm parity --target desktop --only-tests softbody-character` — 2026-11-23: the row now runs the shipped skinned `SoftBody3D` (60 setup steps on a walking, turning three-bone character), so the capture no longer depends on which frame a host reads back; before, the row animated a hand-written sway per frame and desktop read a later frame (0.0128 mismatch). pixelMismatchRatio 0 and deltaE 0 on `--target web`, `--target desktop`, and both again with `--engine threenative` (owned Wasm in Chromium; owned V8 player built in this worktree).
 - [ ] The perf budget holds. proof: AC-5.
 - [x] A cold `engine_search_capabilities` for "character with a cape" and "skirt on a skinned mesh" returns `SoftBody3D` first, with a skinned example. proof: `pnpm build` then `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 2026-11-23: 118/118 pass with a clean `TMPDIR` (a stale `/tmp/node_modules/@threenative/core` fails 2 unrelated bare-project tests under the default `TMPDIR`).
 
