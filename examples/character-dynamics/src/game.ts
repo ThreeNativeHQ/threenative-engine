@@ -47,8 +47,10 @@ import {
   SkinnedMesh,
   Vector3,
 } from "three";
-import { attribute, length, normalize, uniform, vec4 } from "three/tsl";
+import { attribute, cameraViewMatrix, length, normalize, uniform, varying, vec4 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
+import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/hair.js";
+import { strandAtlas } from "./hair-atlas.js";
 import {
   type IProbeCapsule,
   centroid,
@@ -478,14 +480,16 @@ class CharacterDynamics extends Scene<IState> {
       // axis and tapering to the tip. The position node reads the solver's buffer, so nothing reads back.
       const cardPoint = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2);
       const cardAcross = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2 * 3);
+      const cardUv = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2 * 2);
       const acrossHead = across.clone().transformDirection(head.matrixWorld.clone().invert());
       const triangles: number[] = [];
       for (let g = 0; g < STRAND_COUNT; g++)
         for (let p = 0; p < STRAND_POINTS; p++) {
           const v = (g * STRAND_POINTS + p) * 2;
-          const half = 0.004 * (1 - (0.7 * p) / (STRAND_POINTS - 1));
+          const half = 0.012 * (1 - (0.5 * p) / (STRAND_POINTS - 1));
           for (const side of [0, 1]) {
             cardPoint[v + side] = g * STRAND_POINTS + p;
+            cardUv.set([side, p / (STRAND_POINTS - 1)], (v + side) * 2);
             acrossHead
               .clone()
               .multiplyScalar(side === 0 ? -half : half)
@@ -500,13 +504,11 @@ class CharacterDynamics extends Scene<IState> {
       );
       cardGeometry.setAttribute("guidePoint", new BufferAttribute(cardPoint, 1));
       cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
+      cardGeometry.setAttribute("uv", new BufferAttribute(cardUv, 2));
       cardGeometry.setIndex(triangles);
-      const cardMaterial = new MeshStandardNodeMaterial({
-        color: 0x3a2416,
-        roughness: 0.72,
-        side: DoubleSide,
-      });
-      cardMaterial.positionNode = strands.positions
+      // PRD-909's card material from the starter template's generated `src/render/hair.ts`, with a
+      // generated strand atlas; each pass reads the solver buffer in its position node.
+      const cardPosition = strands.positions
         .element(attribute("guidePoint", "float").toUint())
         // The head frame carries the rig's import scale: take its direction, keep the authored width.
         .add(
@@ -514,9 +516,23 @@ class CharacterDynamics extends Scene<IState> {
             length(attribute("across", "vec3")),
           ),
         );
-      const cards = new Mesh(cardGeometry, cardMaterial);
-      cards.frustumCulled = false;
-      ctx.add(cards);
+      // Hair-card normals point out from the head, the usual card trick: the cards carry no normal
+      // attribute, and three's (0, 1, 0) fallback faces down on the back faces the camera sees.
+      const cardNormal = normalize(
+        cameraViewMatrix.mul(
+          vec4(varying(normalize(cardPosition.sub(headFrame.mul(vec4(0, 0, 0, 1)).xyz))), 0),
+        ).xyz,
+      );
+      const passes = createHairCardMaterial({ atlas: strandAtlas() });
+      [passes.inner, passes.outer].forEach((material, order) => {
+        if (material === null) return;
+        material.positionNode = cardPosition;
+        material.normalNode = cardNormal;
+        const cards = new Mesh(cardGeometry, material);
+        cards.frustumCulled = false;
+        cards.renderOrder = order;
+        ctx.add(cards);
+      });
     }
     if (armName === "cloth") {
       const capeSkin = skinnedCape as SkinnedMesh;

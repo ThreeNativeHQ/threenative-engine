@@ -1344,7 +1344,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                                    }
                                },
                                v8::External::New(isolate_, data))
-                         : v8::Local<v8::FunctionTemplate>());
+                         : v8::Local<v8::FunctionTemplate>(),
+                // three hides `id` (`Object.defineProperty(this, "id", { value })`), so a copy loop
+                // never writes the getter-only field.
+                path == "id" ? v8::DontEnum : v8::None);
         }
         // Dotted fields without a member object use a holder, including read-only texture.image
         // extents. Each accessor forwards its full path and preserves the binding's read/write access.
@@ -1450,7 +1453,10 @@ void Adapter::install(v8::Local<v8::Context> context, v8::Local<v8::Object> targ
                     if (!toValues(*d->adapter, info, args, texts, arrays, values, -1, &stand) || args.size() != 1 ||
                         tn_set(h, d->name.c_str(), &args[0], &diagnostic) != TN_OK)
                         throwStatus(info.GetIsolate(), diagnostic);
-                }, v8::External::New(isolate_, keep(new MethodData{this, path, {}}))));
+                }, v8::External::New(isolate_, keep(new MethodData{this, path, {}}))),
+                // three's write-only fields are class accessors, which `for...in` skips: a copy loop
+                // would write `undefined` back through the setter.
+                v8::DontEnum);
         }
         for (const auto& [name, set] : binding.callbacks) {
             (void)set;

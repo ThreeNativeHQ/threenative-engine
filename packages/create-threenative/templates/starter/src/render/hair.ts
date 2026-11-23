@@ -95,5 +95,9 @@ export function createHairCardMaterial(options: IHairCardMaterialOptions = {}): 
   for (const [key, value] of Object.entries(options)) {
     if (value !== undefined) opts[key] = value;
   }
+  // A ThreeNative game always renders with WebGPU. Without a renderer, upstream guesses from the
+  // namespace, and the owned engine's `three/webgpu` also exports `WebGLRenderer`, so it would pick
+  // GLSL patches that the node renderer never runs.
+  opts.renderer ??= { isWebGPURenderer: true };
   return createHairMaterials(THREE, undefined, opts) as IHairCardMaterials;
 }

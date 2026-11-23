@@ -1,5 +1,5 @@
 import * as THREE from "three/webgpu";
-import { attribute, vec3 } from "three/tsl";
+import { attribute } from "three/tsl";
 import { HairStrands3D } from "@threenative/core";
 import { startVisualScene } from "./scene-support.js";
 
@@ -61,14 +61,27 @@ export async function startScene(canvas, dimensions) {
     geometry.setAttribute("guidePoint", new THREE.BufferAttribute(point, 1));
     geometry.setAttribute("side", new THREE.BufferAttribute(side, 1));
     geometry.setIndex(triangles);
-    const material = new THREE.MeshStandardNodeMaterial({
+    const source = new THREE.MeshStandardNodeMaterial({
       color: 0x3a2416,
+      opacity: 0.7,
       roughness: 0.6,
       side: THREE.DoubleSide,
     });
+    // A strict-mode, three-style copy loop, as threejs-hair-shader's `toNodeMaterial` runs: three
+    // hides the getter-only `id`, so the loop must not find it on either host.
+    const material = new THREE.MeshStandardNodeMaterial();
+    for (const key in source) {
+      if (key === "uuid" || key === "type" || key === "userData") continue;
+      const value = source[key];
+      material[key] = value?.isColor ? value.clone() : value;
+    }
     material.positionNode = hair.positions
       .element(attribute("guidePoint", "float").toUint())
-      .add(vec3(attribute("side", "float"), 0, 0));
+      // Through three/webgpu's `TSL` namespace, as a vendored node graph reads TSL.
+      .add(THREE.TSL.vec3(attribute("side", "float"), 0, 0));
+    // The material's own opacity read back by name, as threejs-hair-shader reads it; the cards stay
+    // opaque, so it scales the colour and the capture shows the read.
+    material.colorNode = THREE.TSL.materialColor.mul(THREE.TSL.materialReference("opacity", "float"));
     const cards = new THREE.Mesh(geometry, material);
     cards.frustumCulled = false;
     scene.add(cards);

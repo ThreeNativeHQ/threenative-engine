@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DoubleSide, Texture } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createHairCardMaterial } from "../templates/starter/src/render/hair.js";
 
 // SHA-256 of threejs-hair-shader/src/hair-shader.js as vendored on 2026-11-23.
@@ -10,6 +10,13 @@ const UPSTREAM_START = Buffer.from("// Created by Sander Mørch-Jensen");
 const COPYRIGHT = "Copyright (c) 2026 Sander Mørch-Jensen — creategamecharacters.com";
 const vendored = (): Buffer =>
   readFileSync(new URL("../templates/starter/src/render/vendor/hair-shader.js", import.meta.url));
+
+// The owned engine's `three/webgpu` also exports `WebGLRenderer`, which upstream's detector reads as
+// "GLSL patches". Every test here runs against that namespace: a ThreeNative game renders with WebGPU.
+vi.mock("three/webgpu", async (original) => ({
+  ...(await original<typeof import("three/webgpu")>()),
+  WebGLRenderer: class {},
+}));
 
 describe("authored hair-card material", () => {
   it("vendors the upstream node graph byte for byte below its MIT header", () => {

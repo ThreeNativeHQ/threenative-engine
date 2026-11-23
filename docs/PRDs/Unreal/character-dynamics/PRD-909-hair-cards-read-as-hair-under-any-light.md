@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-909 — Hair cards read as hair under any light
 
-**Status:** IN PROGRESS (2026-11-23) — the vendored card material ships in the starter template; the scene, shadows and owned-engine support are open.
+**Status:** IN PROGRESS (2026-11-23) — the vendored card material ships in the starter template and runs on the owned engine (blend pass set) on the PRD-910 strands arm. Alpha-to-coverage, the anisotropy map, shadow agreement, the `hair-cards` parity row and the judge are open.
 **Priority:** P2 — No hair material exists. A character with hair cards renders them as opaque or sorted-alpha planes with a plastic highlight.
 **Complexity:** 6 (MEDIUM) — vendored TSL card path (+1), alpha-to-coverage and core pass on the owned engine (+2), shadow alpha agreement (+1), visual judge (+1), native proof (+1)
 **Owner:** João
@@ -37,7 +37,7 @@ Unreal draws far and low-tier hair as cards and near hair as strands (PRD-671). 
 #### Phase 2: Shadows and every engine
 
 - [ ] Visible and shadow coverage agree. proof: AC-2.
-- [ ] The owned engine supports alpha-to-coverage and the anisotropy map; the desktop host matches. proof: AC-3.
+- [ ] The owned engine supports alpha-to-coverage and the anisotropy map; the desktop host matches. proof: AC-3. — 2026-11-23, open on alpha-to-coverage and the anisotropy map: the blend pass set (outer + opaque core) now runs on the owned engine. Four engine gaps blocked it, each fixed at its root with a red-green proof: (1) the owned `three/webgpu` also exports a refusing `WebGLRenderer`, so upstream's detector took the GLSL path; `hair.ts` now states the WebGPU renderer (`hair-card-material.spec.ts` runs against that namespace). (2) `Material.id` was an enumerable getter-only field, and upstream's `toNodeMaterial` copy loop threw on it; three hides it (`material-fields.spec.ts`, web and V8). (3) V8 enumerated write-only setters (`needsUpdate`), so the copy loop wrote `undefined` back. (4) `THREE.TSL` and `materialReference("opacity")` were missing on both hosts (`tsl-extras.spec.ts`). The `hair-guides` parity row runs the copy loop, `THREE.TSL` and `materialReference`: pixelMismatchRatio 0 on web and desktop and with `--engine threenative`. It was red on both owned lanes before the TSL fix and on owned web before the `id` fix. `?arm=strands&cape=0` passes `acceptance-hair` on both engines with the card material, and the two hard-stop frames match by eye (`/tmp` crops; no judge yet).
 
 ## Blocked on
 

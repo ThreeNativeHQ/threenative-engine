@@ -43,7 +43,7 @@ export const {
   distance, cross, mix, clamp, smoothstep, select, positionLocal, positionWorld, positionWorldDirection,
   normalViewGeometry, instanceIndex, cameraViewMatrix, modelWorldMatrix, ivec2, ivec3, ivec4, uvec2, uvec3, uvec4, nodeObject, reflect, textureLoad, textureSize,
   mx_noise_float, mx_worley_noise_float, mx_worley_noise_vec2, pmremTexture,
-  convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness,
+  convertToTexture, screenUV, materialColor, materialEmissive, materialMetalness, materialRoughness, materialReferenceOpacity,
   cameraPosition, cameraProjectionMatrix, cameraWorldMatrix, positionGeometry, normalWorld, varying,
   cameraNear, cameraFar, screenSize, depth, viewportSharedTexture, viewportDepthTexture, linearDepth, viewportLinearDepth,
 } = globalThis.tsl;
@@ -79,9 +79,10 @@ export const { pass, PassNode, updateSecondaryPasses, mrt, output, normalView, m
 
 export const reflector = defineReflector(globalThis.tsl.reflector, { Object3D, PerspectiveCamera });
 
-// saturate, densityFogFactor, fog, context and velocity: plain JS over the engine's TSL functions,
+// saturate, densityFogFactor, fog, context, velocity and materialReference: plain JS over the engine's TSL functions,
 // shared with the Wasm back end.
-export const { saturate, densityFogFactor, fog, context, velocity } = defineTslExtras({
+export const { saturate, densityFogFactor, fog, context, velocity, materialReference } = defineTslExtras({
+  materialReferenceOpacity,
   get cameraNear() { return globalThis.tsl.cameraNear; },
   get cameraFar() { return globalThis.tsl.cameraFar; },
   clamp: (...args) => globalThis.tsl.clamp(...args),

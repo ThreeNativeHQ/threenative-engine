@@ -7,6 +7,7 @@ interface IExtrasTsl {
   readonly clamp: (value: unknown, low: number, high: number) => unknown;
   readonly float: (value: number) => IFogNode;
   readonly linearDepth: () => IFogNode;
+  readonly materialReferenceOpacity: IFogNode;
   // quality-allow: three's TSL export name.
   // biome-ignore lint/style/useNamingConvention: three's TSL export name.
   readonly mx_noise_float: (position: unknown) => IFogNode;
@@ -36,6 +37,14 @@ interface IFogNode {
  */
 export function defineTslExtras(tsl: IExtrasTsl) {
   return {
+    // three's materialReference(name, type) reads the drawn material's own uniform by name. The engine
+    // answers `opacity`, the one a vendored node graph reads (threejs-hair-shader); any other refuses by name.
+    materialReference: (name: string, type = "float") => {
+      if (name === "opacity" && type === "float") return tsl.materialReferenceOpacity;
+      throw new Error(
+        `TN_NATIVE_MATERIAL_REFERENCE: materialReference("${name}", "${type}") is not on the native engine; it reads "opacity" as a float`,
+      );
+    },
     // r185's saturate(x) is clamp(x, 0, 1).
     saturate: (value: unknown) => tsl.clamp(value, 0, 1),
     // r185's densityFogFactor (nodes/fog/Fog.js): 1 - exp(-density^2 * viewZ^2). The fragment's view-space
