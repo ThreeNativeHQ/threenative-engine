@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-907 — Pause silences audio, games get a time scale, and players can rebind keys
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P2 — Phases 1 to 3 are open: the kart and racing kits keep playing sound while paused, slow motion has no supported path, and no options menu can remap a key.
 **Complexity:** 3 (LOW) — 3-4 files in `packages/core/src`, no new package, no platform seam.
 **Owner:** João
@@ -33,22 +33,27 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found three ga
 
 ### Phase 1 — Pause silences audio
 
-- [ ] `game.pause()` pauses the audio bus and `resume()` resumes it. `pause({ audio: false })` keeps it on and prints `TN_PAUSE_AUDIO_KEPT`. proof: `pnpm exec vitest run packages/core/__tests__/game-pause.spec.ts`, red before the change
+- [x] `game.pause()` pauses the audio bus and `resume()` resumes it. `pause({ audio: false })` keeps it on and prints `TN_PAUSE_AUDIO_KEPT`. proof: `pnpm exec vitest run packages/core/__tests__/game-pause.spec.ts`, red before the change
+  result: ✅ `game-pause.spec.ts` 4 cases (3 red before the change; the fourth, a bus the game paused itself stays paused across a double pause, red against the first draft). Neighbour audio and game specs 103 passed.
 - [ ] The racing kit is silent while paused. proof: racing playtest scenario that sends the `pause` intent and asserts `audio.paused === true` in the runtime snapshot (`pnpm test:templates`, racing kit only)
 
 ### Phase 2 — Time scale
 
-- [ ] `ctx.timeScale = 0.5` gives half the ticks per wall second with the same `step`. `0` freezes the simulation. A non-finite value throws `TN_TIME_SCALE_INVALID`. proof: `pnpm exec vitest run packages/core/__tests__/loop-time-scale.spec.ts`
+- [x] `ctx.timeScale = 0.5` gives half the ticks per wall second with the same `step`. `0` freezes the simulation. A non-finite value throws `TN_TIME_SCALE_INVALID`. proof: `pnpm exec vitest run packages/core/__tests__/loop-time-scale.spec.ts`
+  result: ✅ `loop-time-scale.spec.ts` 7 cases, red before: 230 vs 115 ticks over the same 3.84 s at step 1/60, 0 freezes with rendering running, NaN/Infinity/-1 throw. All 13 `FixedStepLoop` specs, 165 passed.
 - [ ] A playtest scenario with `timeScale = 0.5` advances a timer half as far in the same wall time. proof: scenario under `packages/playtest`, run with `--browser-recipe webgpu`
 
 ### Phase 3 — Key rebinding
 
-- [ ] `setBinding` changes what `pressed(action)` reads on the next tick, and rejects a malformed binding with the constructor's error. proof: `pnpm exec vitest run packages/core/__tests__/input-rebind.spec.ts`
-- [ ] `bindings()` round-trips through `JSON.stringify` and `setBinding`. proof: same spec
+- [x] `setBinding` changes what `pressed(action)` reads on the next tick, and rejects a malformed binding with the constructor's error. proof: `pnpm exec vitest run packages/core/__tests__/input-rebind.spec.ts`
+  result: ✅ `input-rebind.spec.ts` 7 cases, red before; `input.spec.ts` with it, 68 passed. One shared validator now runs in the constructor too, so a malformed constructor binding fails closed with `TN_BINDING_INVALID` instead of never firing.
+- [x] `bindings()` round-trips through `JSON.stringify` and `setBinding`. proof: same spec
+  result: ✅ same spec: JSON round trip through `setBinding` reproduces `bindings()`, and the returned copy is not live.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: `pause`, `timeScale` and `setBinding` each have a row in `packages/core/capabilities.json` with an example. proof: `pnpm build`, then `engine_search_capabilities "slow motion"` and `"rebind keys"` return the rows
+- [x] AC-1: `pause`, `timeScale` and `setBinding` each have a row in `packages/core/capabilities.json` with an example. proof: `pnpm build`, then `engine_search_capabilities "slow motion"` and `"rebind keys"` return the rows
+  result: ✅ rows `game.pause`, `ctx.timeScale`, `InputMap.setBinding`; `searchCapabilities` returns `ctx.timeScale` for "slow motion", `InputMap.setBinding` for "rebind keys", `game.pause` first for "pause the game and mute the sound".
 - [ ] AC-2: No kit regresses. proof: `pnpm test:templates` for kart, racing and puzzle
 
 ## Blocked on
