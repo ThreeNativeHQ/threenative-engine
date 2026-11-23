@@ -90,6 +90,34 @@ export const STARTUP_HANDOFF_FRAMES = 3;
 /** The GPU-selected main-pass count a streamed world publishes, read once per budget window. */
 type GpuTally = () => { readonly instances: number; readonly triangles: number } | undefined;
 
+/**
+ * The share of a progress bar the asset ratio owns; entering the world and first-use work take
+ * the rest. One number for both bars, so `sceneLoad.progress` during boot is `startup.progress`.
+ */
+const ASSET_PROGRESS_SHARE = 0.7;
+
+/**
+ * A high-water mark over a measured load state: reads may rise, never fall.
+ *
+ * The ratio's denominator grows: a request registered after an earlier one settled shrinks
+ * `settled / requested`, and the file-count and byte branches can disagree across the switch the
+ * first weighed manifest entry triggers. Both make a bar jump backwards, which a player reads as
+ * the load restarting. Measured: a second texture requested after the first settled took the
+ * reported value from 0.7 to 0.35.
+ */
+function highWater(measure: () => number): { readonly progress: number; reset(): void } {
+  let reported = 0;
+  return {
+    get progress() {
+      reported = Math.max(reported, measure());
+      return reported;
+    },
+    reset: () => {
+      reported = 0;
+    },
+  };
+}
+
 export type IGameStartup<TState extends Record<string, unknown>, TPhysics> = NonNullable<
   Awaited<ReturnType<typeof startGameWorld<TState, TPhysics>>>
 >;
@@ -307,15 +335,17 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     game.cameraCull = undefined;
   });
   /**
-   * Progress is a high-water mark over the measured load state, never a value that can fall.
+   * The asset loader's own ratio: bytes when the manifest knows them, files when it does not.
    *
-   * The ratio's denominator grows: a request registered after an earlier one settled shrinks
-   * `settled / requested`, and the file-count and byte branches can disagree across the switch
-   * the first weighed manifest entry triggers. Both make the bar jump backwards, which a player
-   * reads as the load restarting. Measured: a second texture requested after the first settled
-   * took the reported value from 0.7 to 0.35.
+   * A file count spends the same travel on a 4 KB icon as on a 710 MB model, which is how a bar
+   * reaches 92% and then stands still for the rest of the download.
    */
-  let reportedProgress = 0;
+  const assetRatio = (
+    { requested, requestedBytes, settled, settledBytes } = assets.progress,
+  ): number => {
+    if (requestedBytes > 0) return Math.min(1, settledBytes / requestedBytes);
+    return requested === 0 ? 0 : Math.min(1, settled / requested);
+  };
   /** What the load state says right now. This may fall; `startup.progress` is what never does. */
   const measuredProgress = (): number => {
     if (progress.projectionSettled) return 1;
@@ -329,12 +359,41 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     }
     if (startupReadiness.compileSettled) return 0.9;
     if (timeline.enteredMs !== undefined) return 0.8;
-    const { requested, requestedBytes, settled, settledBytes } = assets.progress;
-    // Bytes when the manifest knows them, files when it does not. A file count spends the
-    // same travel on a 4 KB icon as on a 710 MB model, which is how a bar reaches 92% and
-    // then stands still for the rest of the download.
-    if (requestedBytes > 0) return 0.7 * Math.min(1, settledBytes / requestedBytes);
-    return requested === 0 ? 0 : 0.7 * Math.min(1, settled / requested);
+    return ASSET_PROGRESS_SHARE * assetRatio();
+  };
+  const startupProgress = highWater(measuredProgress);
+  /**
+   * The scene change's own bar: 0 when `goto()` starts, the asset ratio of the requests that load
+   * makes, then 1 once the destination's `enter()` returned.
+   *
+   * The counters are the loader's whole session, so a load is measured from the counts `begin()`
+   * snapshotted when it started, and a request already in flight then contributes nothing to it.
+   */
+  let sceneLoadBase = { requested: 0, requestedBytes: 0, settled: 0, settledBytes: 0 };
+  const measuredSceneLoad = (): number => {
+    // No scene change has started yet, so the launch's own ladder is this value: a boot bar reads
+    // the same number from either surface.
+    if (game.sceneGeneration === 0) return startupProgress.progress;
+    if (game.sceneEntered) return 1;
+    const now = assets.progress;
+    const requested = now.requested - sceneLoadBase.requested;
+    const requestedBytes = now.requestedBytes - sceneLoadBase.requestedBytes;
+    const settled = Math.min(requested, now.settled - sceneLoadBase.settled);
+    const settledBytes = Math.min(requestedBytes, now.settledBytes - sceneLoadBase.settledBytes);
+    return requested <= 0
+      ? 0
+      : ASSET_PROGRESS_SHARE * assetRatio({ requested, requestedBytes, settled, settledBytes });
+  };
+  const sceneLoadProgress = highWater(measuredSceneLoad);
+  const sceneLoad = {
+    get progress() {
+      return sceneLoadProgress.progress;
+    },
+    begin: () => {
+      const { requested, requestedBytes, settled, settledBytes } = assets.progress;
+      sceneLoadBase = { requested, requestedBytes, settled, settledBytes };
+      sceneLoadProgress.reset();
+    },
   };
   let markProjectionSettled: () => void = () => undefined;
   let rejectProjection: (error: unknown) => void = () => undefined;
@@ -728,8 +787,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       // loads, entering the world is 80%, compile settling 90%, and only readiness is 1.
       // Monotonicity is enforced rather than assumed — see the high-water mark above.
       get progress() {
-        reportedProgress = Math.max(reportedProgress, measuredProgress());
-        return reportedProgress;
+        return startupProgress.progress;
       },
       hold: (label, work, budgetMs, progress) => {
         startupReadiness.hold(label, work, budgetMs, progress);
@@ -740,6 +798,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       whenReady: () => projectionReady,
       whenFrameworkReady: () => startupReadiness.whenFrameworkReady(),
     },
+    sceneLoad,
     renderer: game.renderer,
     viewport,
     scene: threeScene,
@@ -748,6 +807,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       scheduler.tween(target, properties, duration, options),
   };
   game.ctx = ctx;
+  game.sceneLoad = sceneLoad;
   game.entities = entities;
   game.scheduler = scheduler;
   game.afterPhysicsPhase = afterPhysicsPhase;

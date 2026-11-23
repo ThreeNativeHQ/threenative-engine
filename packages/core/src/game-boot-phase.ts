@@ -14,7 +14,7 @@ import type { PointerEvents3D } from "./pointer-events.js";
 import type { RenderCameraCull } from "./render-camera-cull.js";
 import type { SceneRenderProjection } from "./renderProjection.js";
 import type { IRendererLike } from "./renderer.js";
-import type { ICtx, Scene, SceneFrame } from "./scene.js";
+import type { ICtx, ISceneLoadStatus, Scene, SceneFrame } from "./scene.js";
 import type { Scheduler } from "./schedule.js";
 import type { GameStore } from "./state.js";
 import type { IUiBridge } from "./ui-bridge.js";
@@ -73,6 +73,11 @@ export interface IBootState<TState extends Record<string, unknown>, TPhysics> {
   sceneFrame: SceneFrame<TState, TPhysics> | undefined;
   /** Bumped on every scene change, so a row id is stable exactly as long as the scene is. */
   sceneGeneration: number;
+  /**
+   * The current scene change's progress, built by the startup phase. `#goto` calls `begin()` on it,
+   * which is where each load's bar starts again at 0.
+   */
+  sceneLoad: (ISceneLoadStatus & { begin(): void }) | undefined;
   /**
    * The name of the scene currently entered. Carried across a hot update so a reload resumes
    * where the session was, instead of restoring the game's state into its start scene.
@@ -145,6 +150,7 @@ export type ILoopPhase<TState extends Record<string, unknown>, TPhysics> = Pick<
   | "sceneEntered"
   | "sceneFrame"
   | "sceneGeneration"
+  | "sceneLoad"
   | "started"
   | "startupGateStarted"
   | "state"
@@ -222,6 +228,7 @@ export function createBootGame<TState extends Record<string, unknown>, TPhysics>
     sceneEntered: false,
     sceneFrame: undefined,
     sceneGeneration: 0,
+    sceneLoad: undefined,
     sceneName: undefined,
     scheduler: undefined,
     started: false,
