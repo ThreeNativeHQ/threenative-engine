@@ -12,7 +12,7 @@ import {
   Vector3,
 } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
 import {
   buildClothAdjacency,
@@ -22,7 +22,7 @@ import {
   readClothMask,
   skinnedWorldPosition,
 } from "../src/softbody-skinned.js";
-import { SoftBody3D } from "../src/softbody.js";
+import { SoftBody3D, buildClothTopology } from "../src/softbody.js";
 import { WindField3D } from "../src/wind-field.js";
 
 function renderer(dispatched: unknown[]): IRendererLike {
@@ -35,6 +35,25 @@ function renderer(dispatched: unknown[]): IRendererLike {
     info: {},
     kind: "webgpu",
   } as unknown as IRendererLike;
+}
+
+/** A renderer whose first readback lands `sample`, then never lands another copy. */
+function samplingRenderer(sample: () => ArrayBuffer): IRendererLike {
+  let calls = 0;
+  return {
+    ...(renderer([]) as unknown as Record<string, unknown>),
+    readback: () => {
+      const bytes = calls++ === 0 ? sample() : undefined;
+      return bytes === undefined ? new Promise<ArrayBuffer>(() => {}) : Promise.resolve(bytes);
+    },
+  } as unknown as IRendererLike;
+}
+
+/** The cloth's rest sample in unique-vertex order, with vertex 0 pushed up by `stretch` metres. */
+function stretchedCape(cape: SkinnedMesh, stretch: number): Float32Array {
+  const sample = new Float32Array(buildClothTopology(cape.geometry, { pinned: [0] }).positions);
+  sample[1] = (sample[1] as number) + stretch;
+  return sample;
 }
 
 function skin(geometry: BufferGeometry, boneIndex: number): BufferGeometry {
@@ -284,5 +303,84 @@ describe("SoftBody3D on a SkinnedMesh", () => {
     root.add(cloth);
     expect(() => cloth.process(renderer([]))).toThrow(/scene root/);
     void scene;
+  });
+
+  it("ignores a stretched readback sample when extremeDeformationEdgeRatio is off", async () => {
+    const { scene, cape } = character();
+    const cloth = new SoftBody3D(cape, { bodyColliders: false, readbackEveryFrames: 1 });
+    scene.add(cloth);
+    const r = samplingRenderer(() => stretchedCape(cape, 100).buffer);
+    cloth.process(r);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    cloth.process(r);
+    expect(cloth.lastReset).toBeUndefined();
+    expect(cloth.debug().resets).toBe(0);
+  });
+
+  it("resets to the rest pose when an edge stretches past the ratio, once per landed sample", async () => {
+    const { scene, cape } = character();
+    const cloth = new SoftBody3D(cape, {
+      bodyColliders: false,
+      extremeDeformationEdgeRatio: 2,
+      readbackEveryFrames: 1,
+    });
+    scene.add(cloth);
+    const r = samplingRenderer(() => stretchedCape(cape, 100).buffer);
+    const logs: string[] = [];
+    const info = vi.spyOn(console, "info").mockImplementation((line: unknown) => {
+      logs.push(String(line));
+    });
+    try {
+      cloth.process(r);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      cloth.process(r);
+    } finally {
+      info.mockRestore();
+    }
+    expect(cloth.lastReset).toBe("extremeDeformation");
+    expect(cloth.debug().resets).toBe(1);
+    expect(
+      logs.some((line) =>
+        /^TN_SOFTBODY_RESET cause=extremeDeformation ratio=\d+\.\d{3} threshold=2$/.test(line),
+      ),
+    ).toBe(true);
+    cloth.process(r);
+    expect(cloth.debug().resets).toBe(1);
+  });
+
+  it("keeps a rest-pose sample: every edge reads its rest length in the readback's vertex order", async () => {
+    const { scene, cape } = character();
+    const cloth = new SoftBody3D(cape, {
+      bodyColliders: false,
+      extremeDeformationEdgeRatio: 1.01,
+      readbackEveryFrames: 1,
+    });
+    scene.add(cloth);
+    const r = samplingRenderer(() => stretchedCape(cape, 0).buffer);
+    cloth.process(r);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    cloth.process(r);
+    expect(cloth.lastReset).toBeUndefined();
+    expect(cloth.debug().resets).toBe(0);
+  });
+
+  it("fails closed on a ratio at or below 1, a non-finite ratio, or no readback", () => {
+    expect(
+      () =>
+        new SoftBody3D(character().cape, {
+          extremeDeformationEdgeRatio: 1,
+          readbackEveryFrames: 1,
+        }),
+    ).toThrow(/greater than 1/);
+    expect(
+      () =>
+        new SoftBody3D(character().cape, {
+          extremeDeformationEdgeRatio: Number.NaN,
+          readbackEveryFrames: 1,
+        }),
+    ).toThrow(/finite number/);
+    expect(() => new SoftBody3D(character().cape, { extremeDeformationEdgeRatio: 2 })).toThrow(
+      /readbackEveryFrames/,
+    );
   });
 });

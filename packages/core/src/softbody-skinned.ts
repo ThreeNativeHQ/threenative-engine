@@ -48,6 +48,7 @@ import {
 } from "three/tsl";
 import type { ComputeNode, Node, StorageBufferNode, UniformArrayNode } from "three/webgpu";
 import { buildClothTopology } from "./softbody-topology.js";
+import { compactClothVec3Readback } from "./softbody.js";
 
 /** A capsule that follows a bone: from `start` to `end`, both in the bone's local space. */
 export interface ISoftBodyCapsule {
@@ -129,6 +130,14 @@ export interface ISkinnedSoftBody3DOptions {
   readonly hideSource?: boolean;
   /** Fixed step in seconds. Default 1/60. */
   readonly timeStep?: number;
+  /**
+   * Reset the cloth to its rest pose when any stretch edge exceeds this multiple of its rest
+   * length. Off by default, as in Chaos Cloth (UE 5.8.3:
+   * Engine/Source/Runtime/Experimental/Chaos/Public/Chaos/PBDExtremeDeformationConstraints.h:20,40,
+   * Engine/Plugins/ChaosCloth/Source/ChaosCloth/Private/ChaosCloth/ChaosClothingSimulationSolver.cpp:2278,2293-2330).
+   * Needs `readbackEveryFrames`: without a CPU sample there is nothing to measure, so it throws.
+   */
+  readonly extremeDeformationEdgeRatio?: number;
   /** Copy positions to the CPU every N steps; 0 (default) never reads back. */
   readonly readbackEveryFrames?: number;
 }
@@ -180,7 +189,7 @@ export const MAX_BODY_CAPSULES = 16;
 /** @internal Jacobi over-relaxation over the stretch constraints. */
 const RELAXATION = 1.8;
 
-export type SoftBodyResetCause = "teleport" | "manual";
+export type SoftBodyResetCause = "teleport" | "manual" | "extremeDeformation";
 
 function check(name: string, value: number, min = 0, maxValue = Number.POSITIVE_INFINITY): number {
   if (!Number.isFinite(value) || value < min || value > maxValue)
@@ -504,7 +513,7 @@ export interface ISkinnedClothState {
   /** True when no `wind` option was given: the cloth reads the scene's `WindField3D`s each step. */
   readonly windFromScene: boolean;
   /** Uploads this step's bone, capsule and carry uniforms, then dispatches the carry and every substep. */
-  step(dispatch: (node: ComputeNode) => void): void;
+  step(dispatch: (node: ComputeNode) => void, sample?: Float32Array): void;
   requestReset(): void;
   readonly lastReset: SoftBodyResetCause | undefined;
   readonly resets: number;
@@ -548,6 +557,16 @@ export function createSkinnedCloth(
   const frictionValue = check("friction", options.friction ?? 0.8);
   const tetherSlack = check("tetherSlack", options.tetherSlack ?? 0);
   const timeStep = check("timeStep", options.timeStep ?? 1 / 60, 1e-4, 1);
+  const extremeDeformationEdgeRatio =
+    options.extremeDeformationEdgeRatio === undefined
+      ? undefined
+      : check("extremeDeformationEdgeRatio", options.extremeDeformationEdgeRatio, 1);
+  if (extremeDeformationEdgeRatio === 1)
+    throw new Error("SoftBody3D.extremeDeformationEdgeRatio must be greater than 1.");
+  if (extremeDeformationEdgeRatio !== undefined && (options.readbackEveryFrames ?? 0) === 0)
+    throw new Error(
+      "SoftBody3D.extremeDeformationEdgeRatio needs readbackEveryFrames above zero: the check reads CPU positions, and 0 never reads them back.",
+    );
   const gravity = vec("gravity", options.gravity, new Vector3(0, -9.81, 0));
   const wind = vec("wind", options.wind, new Vector3());
   const bones = source.skeleton.bones;
@@ -953,7 +972,9 @@ export function createSkinnedCloth(
   const a = new Vector3();
   const b = new Vector3();
   let first = true;
-  let resetPending = false;
+  let pendingReset: SoftBodyResetCause | undefined;
+  let pendingRatio = 0;
+  let lastSample: Float32Array | undefined;
   let lastReset: SoftBodyResetCause | undefined;
   let resets = 0;
   const writeBones = (frame: 0 | 1) => {
@@ -1010,9 +1031,38 @@ export function createSkinnedCloth(
       return resets;
     },
     requestReset() {
-      resetPending = true;
+      pendingReset = "manual";
     },
-    step(dispatch) {
+    step(dispatch, sample) {
+      if (
+        extremeDeformationEdgeRatio !== undefined &&
+        sample !== undefined &&
+        sample !== lastSample
+      ) {
+        lastSample = sample;
+        const positions = compactClothVec3Readback(sample, vertexCount);
+        let maxRatio = 0;
+        for (let v = 0; v < vertexCount; v++) {
+          const count = adjacency.counts[v] as number;
+          for (let s = 0; s < count; s++) {
+            const entry = (v * adjacency.maxNeighbors + s) * 2;
+            const rest = adjacency.neighbors[entry + 1] as number;
+            if (rest <= 0) continue;
+            const n = adjacency.neighbors[entry] as number;
+            const ratio =
+              Math.hypot(
+                (positions[v * 3] as number) - (positions[n * 3] as number),
+                (positions[v * 3 + 1] as number) - (positions[n * 3 + 1] as number),
+                (positions[v * 3 + 2] as number) - (positions[n * 3 + 2] as number),
+              ) / rest;
+            if (ratio > maxRatio) maxRatio = ratio;
+          }
+        }
+        if (maxRatio > extremeDeformationEdgeRatio && pendingReset === undefined) {
+          pendingReset = "extremeDeformation";
+          pendingRatio = maxRatio;
+        }
+      }
       // The previous frame's rows become this frame's start; the new pose is the end.
       for (let i = 0; i < pinBoneIndices.length; i++)
         for (let r = 0; r < 3; r++)
@@ -1043,6 +1093,7 @@ export function createSkinnedCloth(
       if (teleport) {
         lastReset = "teleport";
         resets++;
+        pendingReset = undefined;
         console.info(
           `TN_SOFTBODY_RESET cause=teleport distance=${jump.toFixed(3)} turn=${turn.toFixed(3)} thresholds=${teleportDistance.toFixed(3)},${teleportRotation.toFixed(3)}`,
         );
@@ -1104,7 +1155,7 @@ export function createSkinnedCloth(
         carryOut.translation.z,
         0,
       );
-      (carry.array[3] as Vector4).set(teleport ? 1 : 0, resetPending ? 1 : 0, 0, 0);
+      (carry.array[3] as Vector4).set(teleport ? 1 : 0, pendingReset !== undefined ? 1 : 0, 0, 0);
       (carry.array[4] as Vector4).set(
         nowQuaternion.x,
         nowQuaternion.y,
@@ -1112,11 +1163,15 @@ export function createSkinnedCloth(
         nowQuaternion.w,
       );
       (carry.array[5] as Vector4).set(nowPosition.x, nowPosition.y, nowPosition.z, 0);
-      if (resetPending) {
-        lastReset = "manual";
+      if (pendingReset !== undefined) {
+        lastReset = pendingReset;
         resets++;
-        console.info("TN_SOFTBODY_RESET cause=manual");
-        resetPending = false;
+        console.info(
+          pendingReset === "extremeDeformation"
+            ? `TN_SOFTBODY_RESET cause=extremeDeformation ratio=${pendingRatio.toFixed(3)} threshold=${extremeDeformationEdgeRatio}`
+            : "TN_SOFTBODY_RESET cause=manual",
+        );
+        pendingReset = undefined;
       }
       (forces.array[0] as Vector4).set(gravity.x, gravity.y, gravity.z, 0);
       (forces.array[1] as Vector4).set(wind.x, wind.y, wind.z, 0);

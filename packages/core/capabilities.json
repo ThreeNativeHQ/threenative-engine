@@ -3813,6 +3813,7 @@
         "cloth picks the mask (a color channel or one number per vertex); default \"color.r\", else leaf-bone vertices simulate",
         "bodyColliders \"auto\" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off",
         "velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)",
+        "extremeDeformationEdgeRatio resets the cloth when an edge stretches past this ratio (off, as in Unreal); needs readbackEveryFrames",
         "stretchStiffness (1), bendStiffness (0.25), damping (≈0.603 /s, Chaos 0.01 per 60 Hz step), drag and lift (0.035, Chaos per-triangle), fluidDensity (1.225), density (0.35 kg/m²), tetherSlack (0), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)"
       ],
       "package": "@threenative/core",

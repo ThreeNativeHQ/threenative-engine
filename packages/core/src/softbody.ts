@@ -345,6 +345,7 @@ function clothPass(options: {
  * @override cloth picks the mask (a color channel or one number per vertex); default "color.r", else leaf-bone vertices simulate
  * @override bodyColliders "auto" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off
  * @override velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)
+ * @override extremeDeformationEdgeRatio resets the cloth when an edge stretches past this ratio (off, as in Unreal); needs readbackEveryFrames
  * @override stretchStiffness (1), bendStiffness (0.25), damping (≈0.603 /s, Chaos 0.01 per 60 Hz step), drag and lift (0.035, Chaos per-triangle), fluidDensity (1.225), density (0.35 kg/m²), tetherSlack (0), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)
  * @example const cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: "color.r" }));
  */
@@ -510,7 +511,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
     return this.#steps;
   }
 
-  /** Why a skinned cloth last reset ("teleport" or "manual"), if it has. */
+  /** Why a skinned cloth last reset ("teleport", "manual" or "extremeDeformation"), if it has. */
   get lastReset(): SoftBodyResetCause | undefined {
     return this.#skinned?.lastReset;
   }
@@ -571,7 +572,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
           "SoftBody3D on a skinned mesh simulates in world space; add it to the scene root.",
         );
       if (skinned.windFromScene) windAt(this.parent, skinned.wind);
-      skinned.step((node) => renderer.compute(node));
+      skinned.step((node) => renderer.compute(node), this.#readback?.data);
       this.#steps += 1;
       this.#readback?.request(renderer);
       return;
