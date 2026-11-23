@@ -373,7 +373,7 @@
 <rect x="918.5305021380178" y="85" width="131.26689286498333" height="194.00996789592028" rx="4" fill="#232826"/>
 <text x="922.5305021380178" y="96" class="s">Chaos Cloth + groom …</text>
 <rect x="919.5305021380178" y="98" width="128.26689286498333" height="179.00996789592028" rx="2" fill="#d9961f"><title>Chaos Cloth + groom physics · Whole system (not split) · In progress</title></rect>
-<rect x="919.5305021380178" y="274.0099678959203" width="27.48576275678214" height="3" fill="#fff" opacity=".85"/>
+<rect x="919.5305021380178" y="274.0099678959203" width="30.5397363964246" height="3" fill="#fff" opacity=".85"/>
 <text x="922.5305021380178" y="109" class="l">Whole system (not spl…</text>
 <rect x="1051.7973950030012" y="85" width="134.20260499699884" height="138.6789324724191" rx="4" fill="#232826"/>
 <text x="1055.7973950030012" y="96" class="s">Texture + mesh strea…</text>

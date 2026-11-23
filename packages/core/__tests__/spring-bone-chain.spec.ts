@@ -113,6 +113,16 @@ describe("SpringBoneChain3D", () => {
     expect(tipOf(chain).distanceTo(new Vector3(3, 1 + 3 * SEGMENT, 0))).toBeLessThan(1e-6);
   });
 
+  it("resets to the pose when a particle strays past the error distance", () => {
+    const { root } = chainRig(4);
+    const chain = new SpringBoneChain3D(root, { errorResetDistance: 0.5 });
+    chain.step(STEP);
+    tipOf(chain).set(5, 1, 0); // a solver blow-up, far from where the pose puts it
+    chain.step(STEP);
+    expect(chain.lastReset).toBe("error");
+    expect(tipOf(chain).distanceTo(new Vector3(0, 1 + 3 * SEGMENT, 0))).toBeLessThan(1e-6);
+  });
+
   it("rejects a negative stiffness", () => {
     const { root } = chainRig(4);
     expect(() => new SpringBoneChain3D(root, { stiffness: -1 })).toThrow(/SpringBoneChain3D/);

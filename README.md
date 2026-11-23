@@ -199,9 +199,9 @@ measured in lines of the Unreal source. Each one maps to the ThreeNative PRD tha
 
 [![Unreal port progress map](docs/PRDs/Unreal/research/unreal-port-status.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 
-**Pace:** 17 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
-so at that pace the default look is done about **Apr 10, 2027**, and everything filed today about
-**Sep 28, 2027**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
+**Pace:** 18 PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
+so at that pace the default look is done about **Apr 7, 2027**, and everything filed today about
+**Sep 19, 2027**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
 [![Unreal port burn-up](docs/PRDs/Unreal/research/unreal-port-progress.svg)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
 

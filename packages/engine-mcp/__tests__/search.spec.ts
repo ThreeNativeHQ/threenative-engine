@@ -703,6 +703,14 @@ describe("threenative-engine-mcp", () => {
     },
   );
 
+  // PRD-912: a ponytail is the chain case; the row must come first for the words a brief uses.
+  it.each(["ponytail", "hair that moves"])(
+    "leads '%s' with SpringBoneChain3D (PRD-912)",
+    (query) => {
+      expect(searchResults(query, workspaceManifest)[0]?.symbol, query).toBe("SpringBoneChain3D");
+    },
+  );
+
   it("ranks fluid simulation for ocean currents affecting a ship", () => {
     const results = searchResults(
       "ocean fluid dynamics and currents affect the ship",

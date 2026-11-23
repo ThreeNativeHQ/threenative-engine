@@ -34,7 +34,7 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 
 #### Phase 1: Bone chains
 
-- [ ] `SpringBoneChain3D` swings the mannequin's ponytail chain with Unreal's defaults and resets past the error threshold. proof: `pnpm exec vitest run packages/core/__tests__/spring-bone-chain.spec.ts` plus AC-3.
+- [ ] `SpringBoneChain3D` swings the mannequin's ponytail chain with Unreal's defaults and resets past the error threshold. proof: `pnpm exec vitest run packages/core/__tests__/spring-bone-chain.spec.ts` plus AC-3. — 2026-11-23, open on AC-3 only: the unit half passes (9/9, including "resets to the pose when a particle strays past the error distance").
 - [ ] The chain collides with the auto-measured head and neck capsules. proof: AC-1 on the chain arm.
 
 #### Phase 2: Guide strands on the GPU
@@ -45,7 +45,7 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 #### Phase 3: Every engine, every agent
 
 - [ ] The desktop host runs the hair arm with conformance parity. proof: `pnpm parity --target desktop --only-tests hair-guides`
-- [ ] A cold `engine_search_capabilities` for "ponytail" and "hair that moves" returns these rows first. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`
+- [x] A cold `engine_search_capabilities` for "ponytail" and "hair that moves" returns these rows first. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 2026-11-23: `search.spec.ts` "leads 'ponytail' / 'hair that moves' with SpringBoneChain3D", 2/2 pass with a clean `TMPDIR`. `HairStrands3D` does not exist yet; its rows join this test when it lands.
 
 ## Blocked on
 
