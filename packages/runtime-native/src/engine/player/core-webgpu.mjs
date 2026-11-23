@@ -1,5 +1,6 @@
 export * from "./core-three.mjs";
 // three/webgpu's `TSL` is the three/tsl namespace, as upstream exports it.
+// biome-ignore lint/style/useNamingConvention: three's export name.
 export * as TSL from "./core-tsl.mjs";
 export { ShadowBaseNode } from "../../../../three-native/src/shadow-node.ts";
 import { detachVirtualShadow, shadowFilterOptions, virtualShadowOptions, syncVirtualShadowLods } from "../../../../three-native/src/shadow-node.ts";
