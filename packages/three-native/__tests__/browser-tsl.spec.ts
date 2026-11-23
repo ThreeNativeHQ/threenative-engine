@@ -187,6 +187,19 @@ describe("Wasm TSL workgroup memory (PRD-913)", () => {
     expect(() => exports.workgroupBarrier()).toThrow("statement outside Fn");
   });
 
+  it("takes three's one-element array as the workgroup size of a compute node", () => {
+    const { tsl, runtime } = setup();
+    const exports = tsl as unknown as IWorkgroupExports & {
+      float(value: number): INode & { compute(count: number, size?: unknown): INode };
+    };
+    const body = exports.float(1);
+    body.compute(256, [256]);
+    expect(runtime.call).toHaveBeenLastCalledWith("compute", body[TSL_NODE], [
+      { kind: "number", number: 256 },
+      { kind: "number", number: 256 },
+    ]);
+  });
+
   it("refuses textureBarrier by name, before any engine call", () => {
     const { tsl, runtime } = setup();
     const exports = tsl as unknown as IWorkgroupExports;

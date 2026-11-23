@@ -159,6 +159,13 @@ abi::TslArg Tsl::argument(const std::string& name, int index, int count, v8::Loc
     if (value->IsString()) return abi::TslArg::of(text(isolate_, value));
     if (!value->IsObject()) return abi::TslArg::other();
     const auto object = value.As<v8::Object>();
+    // three's `.compute(count, [size])`: a one-element array is the 1D workgroup size, the number the ABI takes.
+    if (name == "compute" && index == 1 && value->IsArray()) {
+        const auto list = value.As<v8::Array>();
+        v8::Local<v8::Value> only;
+        if (list->Length() == 1 && list->Get(ctx, 0).ToLocal(&only) && only->IsNumber())
+            return abi::TslArg::of(only.As<v8::Number>()->Value());
+    }
     // texture(engineTexture, uv) samples that texture itself (textureLoad loads from it); a plain object names a material map.
     if (texture || textureLoad) {
         tn_handle_t handle{};

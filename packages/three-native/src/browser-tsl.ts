@@ -479,6 +479,15 @@ export function defineTsl(
     )
       return { kind: "other" };
     if (typeof value === "number") return { kind: "number", number: value };
+    // three's `.compute(count, [size])`: a one-element array is the 1D workgroup size, the number the engine takes.
+    if (
+      name === "compute" &&
+      index === 1 &&
+      Array.isArray(value) &&
+      value.length === 1 &&
+      typeof value[0] === "number"
+    )
+      return { kind: "number", number: value[0] };
     if (typeof value === "string") return { kind: "string", text: value };
     // setSampler(false) on a storage texture: its flag crosses as 0 or 1.
     if (name === "setSampler" && typeof value === "boolean")

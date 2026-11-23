@@ -230,6 +230,21 @@ async function run() {
   })().compute(256));
   same("workgroup sums", new Float32Array(await renderer.getArrayBufferAsync(groupSums.value)), [2080, 6176, 10272, 14368]);
 
+  // three's compute(count, [size]): the one-element array is the workgroup size, here 128, so two groups sum 1..128 and 129..256.
+  const wideSums = instancedArray(2, "float");
+  renderer.compute(Fn(() => {
+    const local = int(float(instanceIndex).mod(128));
+    const partial = workgroupArray("float", 128);
+    partial.element(local).assign(float(instanceIndex).add(1));
+    workgroupBarrier();
+    for (let stride = 64; stride >= 1; stride /= 2) {
+      If(local.lessThan(stride), () => { partial.element(local).addAssign(partial.element(local.add(stride))); });
+      workgroupBarrier();
+    }
+    If(local.equal(0), () => { wideSums.element(int(float(instanceIndex).div(128).floor())).assign(partial.element(int(0))); });
+  })().compute(256, [128]));
+  same("workgroup size by array", new Float32Array(await renderer.getArrayBufferAsync(wideSums.value)), [8256, 24640]);
+
   // What the engine cannot run refuses at the call, by name, and leaves the renderer running.
   const refused = (work) => { try { work(); return "ran"; } catch (error) { return String(error.message).split(":")[0]; } };
   same("refusals", [

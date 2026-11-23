@@ -18,6 +18,7 @@ import {
   MAX_BODY_CAPSULES,
   buildClothAdjacency,
   buildTethers,
+  colourClothConstraints,
   createSkinnedCloth,
   fitCapsule,
   frameCarry,
@@ -74,7 +75,7 @@ function skin(geometry: BufferGeometry, boneIndex: number): BufferGeometry {
 }
 
 /** A 1.8 m character: hips -> chest -> head, a cylinder body on the chest bone, and a cape. */
-function character() {
+function character(capeSegments: readonly [number, number] = [4, 6]) {
   const hips = new Bone();
   hips.position.set(0, 1, 0);
   const chest = new Bone();
@@ -93,7 +94,10 @@ function character() {
   const body = new SkinnedMesh(bodyGeometry, new MeshStandardNodeMaterial());
   root.add(body);
   body.bind(skeleton);
-  const capeGeometry = skin(new PlaneGeometry(0.5, 0.8, 4, 6).translate(0, 1.4, -0.25), 1);
+  const capeGeometry = skin(
+    new PlaneGeometry(0.5, 0.8, capeSegments[0], capeSegments[1]).translate(0, 1.4, -0.25),
+    1,
+  );
   const colour = new Float32Array(capeGeometry.getAttribute("position").count * 3);
   const position = capeGeometry.getAttribute("position");
   for (let v = 0; v < position.count; v++) colour[v * 3] = position.getY(v) > 1.79 ? 1 : 0;
@@ -122,6 +126,49 @@ describe("skinned SoftBody3D helpers", () => {
     expect(rest(1).filter((r) => r < 0)).toHaveLength(1);
     expect(rest(1).find((r) => r < 0)).toBeCloseTo(-Math.SQRT2, 6);
     expect(rest(0).every((r) => r > 0)).toBe(true);
+  });
+
+  it("colours the springs so no two in a batch share a particle, bend batches before stretch batches (PRD-913)", () => {
+    const plane = new PlaneGeometry(1, 1, 5, 5);
+    const topology = buildClothTopology(plane, { pinned: [0] });
+    const adjacency = buildClothAdjacency(
+      topology.positions,
+      new Uint32Array(plane.getIndex()?.array ?? []),
+    );
+    const pinned = (v: number) => v < 6; // the top row
+    const coloured = colourClothConstraints(adjacency, pinned);
+    let stretch = 0;
+    let bend = 0;
+    for (const batch of coloured.batches) {
+      const seen = new Set<number>();
+      for (let k = batch.start; k < batch.start + batch.count; k++) {
+        const i = coloured.data[k * 4] as number;
+        const j = coloured.data[k * 4 + 1] as number;
+        expect(seen.has(i) || seen.has(j)).toBe(false);
+        seen.add(i);
+        seen.add(j);
+        // The weight is the share of the correction the first particle takes: 0 when it is pinned.
+        expect(coloured.data[k * 4 + 3]).toBe(pinned(i) ? 0 : pinned(j) ? 1 : 0.5);
+        expect(pinned(i) && pinned(j)).toBe(false);
+        if ((coloured.data[k * 4 + 2] as number) < 0) bend++;
+        else stretch++;
+      }
+    }
+    // Every spring between particles that are not both pinned appears once.
+    let expected = 0;
+    adjacency.counts.forEach((count, v) => {
+      for (let slot = 0; slot < count; slot++) {
+        const n = adjacency.neighbors[(v * adjacency.maxNeighbors + slot) * 2] as number;
+        if (v < n && !(pinned(v) && pinned(n))) expected++;
+      }
+    });
+    expect(stretch + bend).toBe(expected);
+    expect(bend).toBeGreaterThan(0);
+    const firstBend = coloured.batches.findIndex((batch) => batch.bend);
+    const firstStretch = coloured.batches.findIndex((batch) => !batch.bend);
+    expect(firstBend).toBe(0);
+    expect(coloured.batches.slice(0, firstStretch).every((batch) => batch.bend)).toBe(true);
+    expect(coloured.batches.slice(firstStretch).every((batch) => !batch.bend)).toBe(true);
   });
 
   it("tethers each vertex to its nearest pin by geodesic distance", () => {
@@ -285,7 +332,7 @@ describe("skinnedWorldPosition", () => {
 });
 
 describe("SoftBody3D on a SkinnedMesh", () => {
-  it("simulates in world space with auto capsules, hides the source and dispatches carry plus three passes per substep", () => {
+  it("simulates in world space with auto capsules, hides the source and dispatches the whole frame as one kernel", () => {
     const { scene, cape } = character();
     const cloth = new SoftBody3D(cape, { substeps: 4 });
     scene.add(cloth);
@@ -295,24 +342,54 @@ describe("SoftBody3D on a SkinnedMesh", () => {
       maskSource: "color.r",
       bodyCapsules: 1,
       substeps: 4,
+      singleDispatch: true,
     });
-    expect(cloth.warmupNodes).toHaveLength(5);
+    // PRD-913: carry, every substep, every colour sweep and the finalize are one kernel in one compute call.
+    expect(cloth.warmupNodes).toHaveLength(1);
     const dispatched: unknown[] = [];
     cloth.process(renderer(dispatched));
+    expect(dispatched).toHaveLength(1);
+    expect(dispatched.flat()).toHaveLength(1);
+    cloth.process(renderer(dispatched));
+    expect(dispatched).toHaveLength(2);
+  });
+
+  it("keeps one compute call per substep above 256 particles, and when singleDispatch is false", () => {
+    const { scene, cape } = character([4, 6]);
+    const forced = new SoftBody3D(cape, { substeps: 4, singleDispatch: false });
+    scene.add(forced);
+    expect(forced.debug()).toMatchObject({ singleDispatch: false });
+    expect(forced.warmupNodes).toHaveLength(5);
+    const dispatched: unknown[] = [];
+    forced.process(renderer(dispatched));
     // One compute call per substep, so the renderer uploads uniforms 4 times, not 13.
     expect(dispatched).toHaveLength(4);
     expect(dispatched.flat()).toHaveLength(1 + 3 * 4);
+
+    const big = character([20, 15]);
+    expect(big.cape.geometry.getAttribute("position").count).toBeGreaterThan(256);
+    const cloth = new SoftBody3D(big.cape, { substeps: 4 });
+    big.scene.add(cloth);
+    expect(cloth.debug()).toMatchObject({ singleDispatch: false });
+    const bigDispatched: unknown[] = [];
+    cloth.process(renderer(bigDispatched));
+    expect(bigDispatched).toHaveLength(4);
+    expect(() => new SoftBody3D(character([20, 15]).cape, { singleDispatch: true })).toThrow(/256/);
   });
 
   it("adds two ping-pong passes per substep for each extra pair of iterations, and rejects an odd count", () => {
     const { scene, cape } = character();
-    const cloth = new SoftBody3D(cape, { substeps: 4, iterations: 4 });
+    const cloth = new SoftBody3D(cape, { substeps: 4, iterations: 4, singleDispatch: false });
     scene.add(cloth);
     const dispatched: unknown[] = [];
     cloth.process(renderer(dispatched));
     expect(dispatched).toHaveLength(4);
     expect(dispatched.flat()).toHaveLength(1 + 5 * 4);
-    expect(() => new SoftBody3D(character().cape, { iterations: 3 })).toThrow(/even/);
+    expect(
+      () => new SoftBody3D(character().cape, { iterations: 3, singleDispatch: false }),
+    ).toThrow(/even/);
+    // Gauss-Seidel sweeps do not ping-pong, so the one-dispatch path takes any count.
+    expect(() => new SoftBody3D(character().cape, { iterations: 3 })).not.toThrow();
   });
 
   it("reports a teleport when the reference bone jumps past the auto distance, and a manual reset", () => {

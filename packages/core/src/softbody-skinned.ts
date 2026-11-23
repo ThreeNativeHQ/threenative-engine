@@ -45,6 +45,9 @@ import {
   uniform,
   uniformArray,
   vec3,
+  vec4,
+  workgroupArray,
+  workgroupBarrier,
 } from "three/tsl";
 import type { ComputeNode, Node, StorageBufferNode, UniformArrayNode } from "three/webgpu";
 import { buildClothTopology } from "./softbody-topology.js";
@@ -73,8 +76,19 @@ export interface ISkinnedSoftBody3DOptions {
   readonly cloth?: SoftBodyMaskSource;
   /** Substeps per fixed step. Default 6. */
   readonly substeps?: number;
-  /** Jacobi constraint iterations per substep, an even number from 2. Default 2. */
+  /**
+   * Constraint iterations per substep. On the one-dispatch path (see `singleDispatch`) each is a sweep
+   * of per-constraint coloured Gauss-Seidel, any number from 2. On the multi-dispatch path each is a
+   * Jacobi pass, and the count must be even. Default 2.
+   */
   readonly iterations?: number;
+  /**
+   * Solve a whole frame (carry, every substep, every constraint sweep and the collision pass) in one
+   * compute dispatch with one workgroup of 256 threads, one per particle, and workgroup barriers
+   * between the steps (PRD-913). Default: true when the cloth has at most 256 particles. `false` keeps
+   * one compute call per substep with Jacobi passes. `true` with more than 256 particles throws.
+   */
+  readonly singleDispatch?: boolean;
   /** Stretch constraint stiffness, 0..1. Default 1. */
   readonly stretchStiffness?: number;
   /** Bend constraint stiffness, 0..1. Default 0.25. */
@@ -188,6 +202,19 @@ export const MAX_PIN_BONES = 8;
 const MIN_BONE_SIZE = 0.2;
 /** @internal Up to this many body capsules (unrolled at constant indices). */
 export const MAX_BODY_CAPSULES = 16;
+/** A counted loop whose index has its own name, so nested loops keep every index in reach; three's types fix it to `i`. */
+const countLoop = (name: string, end: number, body: (index: Node<"uint">) => void): void =>
+  (Loop as unknown as (p: object, f: (inputs: Record<string, Node<"uint">>) => void) => void)(
+    { type: "uint", start: 0, end, name },
+    (inputs) => body(inputs[name] as Node<"uint">),
+  );
+
+/** A workgroup-shared vec3 array of one thread's slot per particle; three's types omit its `element`. */
+const workgroupVec3 = (): StorageBufferNode<"vec3"> =>
+  workgroupArray("vec3", SINGLE_DISPATCH_MAX) as unknown as StorageBufferNode<"vec3">;
+
+/** One workgroup of this many threads solves the whole cloth in one dispatch; WebGPU's default invocation limit. */
+export const SINGLE_DISPATCH_MAX = 256;
 /** @internal Jacobi over-relaxation over the stretch constraints. */
 const RELAXATION = 1.8;
 
@@ -305,6 +332,68 @@ export function buildClothAdjacency(
     });
   });
   return { neighbors, counts, maxNeighbors, edges };
+}
+
+/** One colour of the cloth's constraints: rows `start..start+count` of the packed table share no particle. */
+export interface IClothConstraintBatch {
+  readonly start: number;
+  readonly count: number;
+  /** True for bend pairs; bend batches come first, so each sweep ends on the stretch constraints. */
+  readonly bend: boolean;
+}
+
+/**
+ * @internal Chaos Cloth's constraint colouring (UE 5.8.3: PBDSpringConstraints.cpp:37-71): the spring
+ * constraints are coloured apart so each colour's constraints touch distinct particles and apply their
+ * whole correction in place at once. Bend pairs and stretch edges are coloured apart, bend first so a sweep ends on stretch. A
+ * constraint between two pinned particles moves neither and is dropped. Rows are `(i, j, rest, share)`
+ * with `rest < 0` for a bend pair and `share` the part of the correction particle `i` takes: 0 when it
+ * is pinned, 1 when only `j` is, else one half.
+ */
+export function colourClothConstraints(
+  adjacency: Pick<ReturnType<typeof buildClothAdjacency>, "neighbors" | "counts" | "maxNeighbors">,
+  pinned: (vertex: number) => boolean,
+): { readonly data: Float32Array; readonly batches: readonly IClothConstraintBatch[] } {
+  const springs: Array<{ i: number; j: number; rest: number }> = [];
+  adjacency.counts.forEach((count, i) => {
+    for (let slot = 0; slot < count; slot++) {
+      const entry = (i * adjacency.maxNeighbors + slot) * 2;
+      const j = adjacency.neighbors[entry] as number;
+      if (i < j && !(pinned(i) && pinned(j)))
+        springs.push({ i, j, rest: adjacency.neighbors[entry + 1] as number });
+    }
+  });
+  const rows: typeof springs = [];
+  const batches: IClothConstraintBatch[] = [];
+  for (const bend of [true, false]) {
+    const used: Array<Set<number>> = Array.from(
+      { length: adjacency.counts.length },
+      () => new Set(),
+    );
+    const colours: Array<typeof springs> = [];
+    for (const spring of springs) {
+      if (spring.rest < 0 !== bend) continue;
+      let colour = 0;
+      while (
+        (used[spring.i] as Set<number>).has(colour) ||
+        (used[spring.j] as Set<number>).has(colour)
+      )
+        colour++;
+      (used[spring.i] as Set<number>).add(colour);
+      (used[spring.j] as Set<number>).add(colour);
+      if (colours[colour] === undefined) colours[colour] = [];
+      colours[colour]?.push(spring);
+    }
+    for (const colour of colours) {
+      batches.push({ start: rows.length, count: colour.length, bend });
+      rows.push(...colour);
+    }
+  }
+  const data = new Float32Array(rows.length * 4);
+  rows.forEach(({ i, j, rest }, row) =>
+    data.set([i, j, rest, pinned(i) ? 0 : pinned(j) ? 1 : 0.5], row * 4),
+  );
+  return { data, batches };
 }
 
 /** @internal Nearest pin and geodesic distance per vertex (multi-source Dijkstra over edges). */
@@ -549,6 +638,8 @@ export interface ISkinnedClothState {
   readonly nodes: readonly ComputeNode[];
   readonly uniqueVertexCount: number;
   readonly springCount: number;
+  /** True when the whole frame is one dispatch (PRD-913). */
+  readonly singleDispatch: boolean;
   readonly capsules: readonly ISoftBodyCapsule[];
   readonly maskSource: string;
   readonly teleportDistance: number;
@@ -580,8 +671,6 @@ export function createSkinnedCloth(
     throw new Error("SoftBody3D skinned cloth needs skinIndex and skinWeight attributes.");
   const substeps = check("substeps", options.substeps ?? 6, 1, 32);
   const iterations = check("iterations", options.iterations ?? 2, 2, 16);
-  if (iterations % 2 !== 0)
-    throw new Error("SoftBody3D.iterations must be even: the passes ping-pong two buffers.");
   if (!Number.isInteger(substeps)) throw new Error("SoftBody3D.substeps must be an integer.");
   const stretchK = check("stretchStiffness", options.stretchStiffness ?? 1, 0, 1);
   const bendK = check("bendStiffness", options.bendStiffness ?? 0.25, 0, 1);
@@ -658,6 +747,13 @@ export function createSkinnedCloth(
     triangles[i] = topology.originalToUnique[index.getX(i)] as number;
   const adjacency = buildClothAdjacency(world, triangles);
   const pinned = (v: number) => (mask[v] as number) >= 1;
+  const single = options.singleDispatch ?? vertexCount <= SINGLE_DISPATCH_MAX;
+  if (single && vertexCount > SINGLE_DISPATCH_MAX)
+    throw new Error(
+      `SoftBody3D.singleDispatch solves in one workgroup of at most ${SINGLE_DISPATCH_MAX} particles; this cloth has ${vertexCount}.`,
+    );
+  if (!single && iterations % 2 !== 0)
+    throw new Error("SoftBody3D.iterations must be even: the passes ping-pong two buffers.");
   if (!mask.some((m) => m >= 1))
     throw new Error(
       "SoftBody3D skinned cloth has no vertex with mask 1; nothing holds it on the body.",
@@ -842,7 +938,8 @@ export function createSkinnedCloth(
     return sum;
   };
 
-  const carryPass = Fn(() => {
+  // The carry: each particle moves rigidly with the reference bone's share of the frame motion.
+  const carried = () => {
     const flags = carry.element(3);
     const position = x.element(instanceIndex).toVar();
     const v = velocity.element(instanceIndex).toVar();
@@ -858,15 +955,21 @@ export function createSkinnedCloth(
       );
       v.assign(rotate(carry.element(0), v).mul(float(1).sub(flags.x)));
     });
+    return { position, v };
+  };
+
+  const carryPass = Fn(() => {
+    const { position, v } = carried();
     x.element(instanceIndex).assign(position);
     velocity.element(instanceIndex).assign(v);
   })().compute(vertexCount);
   carryPass.setName("softbody.skinned.carry");
 
-  const predictPass = Fn(() => {
-    const m = infoBuffer.element(instanceIndex).x;
-    const v = velocity.element(instanceIndex).toVar();
-    // Chaos Cloth aerodynamics: every adjacent triangle pushes this particle with its whole force.
+  // Chaos Cloth aerodynamics: every adjacent triangle pushes this particle with its whole force.
+  const aeroAt = (
+    readX: (index: Node<"uint">) => Node<"vec3">,
+    readV: (index: Node<"uint">) => Node<"vec3">,
+  ): Node<"vec3"> => {
     const wind = forces.element(1).xyz;
     const aero = vec3(0).toVar();
     const triangleCount = infoBuffer.element(instanceIndex).w;
@@ -876,16 +979,12 @@ export function createSkinnedCloth(
         const a0 = t.x.toUint();
         const a1 = t.y.toUint();
         const a2 = t.z.toUint();
-        const x0 = x.element(a0);
-        const normal = cross(x.element(a2).sub(x0), x.element(a1).sub(x0)).toVar();
+        const x0 = readX(a0);
+        const normal = cross(readX(a2).sub(x0), readX(a1).sub(x0)).toVar();
         const doubleArea = length(normal);
         If(doubleArea.greaterThan(1e-12), () => {
           const n = normal.div(doubleArea);
-          const surface = velocity
-            .element(a0)
-            .add(velocity.element(a1))
-            .add(velocity.element(a2))
-            .div(3);
+          const surface = readV(a0).add(readV(a1)).add(readV(a2)).div(3);
           const flow = wind.sub(surface);
           const vn = flow.dot(n);
           const v2 = flow.dot(flow);
@@ -900,6 +999,17 @@ export function createSkinnedCloth(
         });
       });
     });
+    return aero;
+  };
+
+  // Semi-implicit step of one particle: gravity and aerodynamics, damping, then the kinematic blend.
+  const predict = (
+    v: ReturnType<Node<"vec3">["toVar"]>,
+    from: Node<"vec3">,
+    aero: Node<"vec3">,
+    at: Node<"float">,
+  ): Node<"vec3"> => {
+    const m = infoBuffer.element(instanceIndex).x;
     v.addAssign(
       forces
         .element(0)
@@ -907,11 +1017,161 @@ export function createSkinnedCloth(
         .mul(h),
     );
     v.mulAssign(exp(damping.mul(h).negate()));
-    const p = x.element(instanceIndex).add(v.mul(h)).toVar();
+    const p = from.add(v.mul(h)).toVar();
     If(m.greaterThan(0), () => {
-      p.assign(mix(p, skin(instanceIndex, alpha), min(m, 1)));
+      p.assign(mix(p, skin(instanceIndex, at), min(m, 1)));
     });
-    pA.element(instanceIndex).assign(p);
+    return p;
+  };
+
+  // After the constraints: long-range tether, body capsules with friction, and the kinematic pins.
+  const collide = (
+    p: ReturnType<Node<"vec3">["toVar"]>,
+    previous: Node<"vec3">,
+    at: Node<"float">,
+    atBefore: Node<"float">,
+  ) => {
+    const data = infoBuffer.element(instanceIndex);
+    If(data.y.greaterThanEqual(0).and(data.z.greaterThan(0)).and(data.x.lessThan(1)), () => {
+      const anchor = skin(data.y.toUint(), at);
+      const d = p.sub(anchor);
+      const distance = length(d);
+      If(distance.greaterThan(data.z), () => {
+        p.assign(anchor.add(d.mul(data.z.div(distance))));
+      });
+    });
+    for (let c = 0; c < capsules.length; c++) {
+      const a = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), at);
+      const b = mix(capsuleRows.element(c * 4 + 1), capsuleRows.element(c * 4 + 3), at);
+      const aBefore = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), atBefore);
+      const bBefore = mix(capsuleRows.element(c * 4 + 1), capsuleRows.element(c * 4 + 3), atBefore);
+      const ab = b.xyz.sub(a.xyz);
+      const t = p
+        .sub(a.xyz)
+        .dot(ab)
+        .div(max(ab.dot(ab), 1e-10))
+        .clamp(0, 1);
+      const closest = a.xyz.add(ab.mul(t));
+      const normal = p.sub(closest);
+      const distance = length(normal);
+      const reach = a.w.add(thickness);
+      If(distance.lessThan(reach).and(data.x.lessThan(1)), () => {
+        const n = distance.greaterThan(1e-7).select(normal.div(distance), vec3(0, 1, 0));
+        p.assign(closest.add(n.mul(reach)));
+        // Friction against the surface's own motion this substep (PBD Coulomb).
+        const surfaceMotion = closest.sub(aBefore.xyz.add(bBefore.xyz.sub(aBefore.xyz).mul(t)));
+        const slide = p.sub(previous).sub(surfaceMotion);
+        const tangent = slide.sub(n.mul(slide.dot(n)));
+        const tangentLength = length(tangent);
+        If(tangentLength.greaterThan(1e-7), () => {
+          p.subAssign(tangent.mul(min(friction.mul(reach.sub(distance)).div(tangentLength), 1)));
+        });
+      });
+    }
+    If(data.x.greaterThanEqual(1), () => {
+      p.assign(skin(instanceIndex, at));
+    });
+  };
+
+  let singleKernel: ComputeNode | undefined;
+  const substepPasses: ComputeNode[] = [];
+  if (single) {
+    // PRD-913: the whole frame is one dispatch of one 256-thread workgroup, one thread per particle (the
+    // threads past the last particle idle but reach every barrier). x, v and the solve's positions live in
+    // workgroup memory; a barrier separates each colour of constraints, which touch distinct particles and
+    // so apply their whole correction in place (Chaos's Gauss-Seidel), and each phase that reads neighbours.
+    const { data: constraintData, batches } = colourClothConstraints(adjacency, pinned);
+    const constraintBuffer = instancedArray(constraintData, "vec4");
+    // A colour wider than the workgroup splits into chunks of at most one row per thread.
+    const chunks = batches.flatMap((batch, colour) =>
+      Array.from({ length: Math.ceil(batch.count / SINGLE_DISPATCH_MAX) }, (_, c) => ({
+        colour,
+        bend: batch.bend,
+        start: batch.start + c * SINGLE_DISPATCH_MAX,
+        count: Math.min(SINGLE_DISPATCH_MAX, batch.count - c * SINGLE_DISPATCH_MAX),
+        last: (c + 1) * SINGLE_DISPATCH_MAX >= batch.count,
+      })),
+    );
+    const kernel = Fn(() => {
+      const live = instanceIndex.lessThan(vertexCount);
+      const wx = workgroupVec3();
+      const wv = workgroupVec3();
+      const wp = workgroupVec3();
+      // Each thread's constraint of every chunk, read once: the loops below touch only workgroup memory.
+      const springs = chunks.map((chunk) => {
+        const spring = vec4(0).toVar();
+        If(instanceIndex.lessThan(chunk.count), () => {
+          spring.assign(constraintBuffer.element(instanceIndex.add(chunk.start)));
+        });
+        return spring;
+      });
+      If(live, () => {
+        const { position, v } = carried();
+        wx.element(instanceIndex).assign(position);
+        wv.element(instanceIndex).assign(v);
+      });
+      workgroupBarrier();
+      countLoop("s", substeps, (s) => {
+        const at = float(s).add(1).div(substeps);
+        const atBefore = float(s).div(substeps);
+        const aero = vec3(0).toVar();
+        If(live, () => {
+          aero.assign(
+            aeroAt(
+              (index) => wx.element(index),
+              (index) => wv.element(index),
+            ),
+          );
+        });
+        workgroupBarrier();
+        If(live, () => {
+          const v = wv.element(instanceIndex).toVar();
+          wp.element(instanceIndex).assign(predict(v, wx.element(instanceIndex), aero, at));
+          wv.element(instanceIndex).assign(v);
+        });
+        workgroupBarrier();
+        const sweep = () =>
+          chunks.forEach((chunk, c) => {
+            const spring = springs[c];
+            if (spring === undefined) return;
+            const i = spring.x.toUint();
+            const j = spring.y.toUint();
+            const d = wp.element(i).sub(wp.element(j)).toVar();
+            const distance = length(d);
+            If(distance.greaterThan(1e-7), () => {
+              const k = spring.z.lessThan(0).select(bend, stretch);
+              const correction = d.mul(distance.sub(spring.z.abs()).div(distance)).mul(k).toVar();
+              wp.element(i).subAssign(correction.mul(spring.w));
+              wp.element(j).addAssign(correction.mul(float(1).sub(spring.w)));
+            });
+            if (chunk.last) workgroupBarrier();
+          });
+        countLoop("k", iterations, () => sweep());
+        If(live, () => {
+          const previous = wx.element(instanceIndex).toVar();
+          const p = wp.element(instanceIndex).toVar();
+          collide(p, previous, at, atBefore);
+          wv.element(instanceIndex).assign(p.sub(previous).div(h));
+          wx.element(instanceIndex).assign(p);
+        });
+        workgroupBarrier();
+      });
+      If(live, () => {
+        x.element(instanceIndex).assign(wx.element(instanceIndex));
+        velocity.element(instanceIndex).assign(wv.element(instanceIndex));
+      });
+    })().compute(SINGLE_DISPATCH_MAX, [SINGLE_DISPATCH_MAX]);
+    kernel.setName("softbody.skinned.frame");
+    singleKernel = kernel;
+  }
+
+  const predictPass = Fn(() => {
+    const aero = aeroAt(
+      (index) => x.element(index),
+      (index) => velocity.element(index),
+    );
+    const v = velocity.element(instanceIndex).toVar();
+    pA.element(instanceIndex).assign(predict(v, x.element(instanceIndex), aero, alpha));
   })().compute(vertexCount);
   predictPass.setName("softbody.skinned.predict");
 
@@ -953,57 +1213,14 @@ export function createSkinnedCloth(
   iterateBackPass.setName("softbody.skinned.iterateBack");
 
   const finalizePass = Fn(() => {
-    const data = infoBuffer.element(instanceIndex);
     const p = solve(pB).toVar();
     const previous = x.element(instanceIndex);
-    If(data.y.greaterThanEqual(0).and(data.z.greaterThan(0)).and(data.x.lessThan(1)), () => {
-      const anchor = skin(data.y.toUint(), alpha);
-      const d = p.sub(anchor);
-      const distance = length(d);
-      If(distance.greaterThan(data.z), () => {
-        p.assign(anchor.add(d.mul(data.z.div(distance))));
-      });
-    });
-    for (let c = 0; c < capsules.length; c++) {
-      const a = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), alpha);
-      const b = mix(capsuleRows.element(c * 4 + 1), capsuleRows.element(c * 4 + 3), alpha);
-      const aBefore = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), alphaPrev);
-      const bBefore = mix(
-        capsuleRows.element(c * 4 + 1),
-        capsuleRows.element(c * 4 + 3),
-        alphaPrev,
-      );
-      const ab = b.xyz.sub(a.xyz);
-      const t = p
-        .sub(a.xyz)
-        .dot(ab)
-        .div(max(ab.dot(ab), 1e-10))
-        .clamp(0, 1);
-      const closest = a.xyz.add(ab.mul(t));
-      const normal = p.sub(closest);
-      const distance = length(normal);
-      const reach = a.w.add(thickness);
-      If(distance.lessThan(reach).and(data.x.lessThan(1)), () => {
-        const n = distance.greaterThan(1e-7).select(normal.div(distance), vec3(0, 1, 0));
-        p.assign(closest.add(n.mul(reach)));
-        // Friction against the surface's own motion this substep (PBD Coulomb).
-        const surfaceMotion = closest.sub(aBefore.xyz.add(bBefore.xyz.sub(aBefore.xyz).mul(t)));
-        const slide = p.sub(previous).sub(surfaceMotion);
-        const tangent = slide.sub(n.mul(slide.dot(n)));
-        const tangentLength = length(tangent);
-        If(tangentLength.greaterThan(1e-7), () => {
-          p.subAssign(tangent.mul(min(friction.mul(reach.sub(distance)).div(tangentLength), 1)));
-        });
-      });
-    }
-    If(data.x.greaterThanEqual(1), () => {
-      p.assign(skin(instanceIndex, alpha));
-    });
+    collide(p, previous, alpha, alphaPrev);
     velocity.element(instanceIndex).assign(p.sub(previous).div(h));
     x.element(instanceIndex).assign(p);
   })().compute(vertexCount);
   finalizePass.setName("softbody.skinned.finalize");
-  const substepPasses: ComputeNode[] = [predictPass, iteratePass];
+  substepPasses.push(predictPass, iteratePass);
   for (let k = 2; k < iterations; k += 2) substepPasses.push(iterateBackPass, iteratePass);
   substepPasses.push(finalizePass);
   const firstSubstepPasses = [carryPass, ...substepPasses];
@@ -1063,7 +1280,11 @@ export function createSkinnedCloth(
   const state: ISkinnedClothState = {
     positions: x,
     originalToUnique,
-    nodes: [carryPass, predictPass, iteratePass, iterateBackPass, finalizePass],
+    nodes:
+      singleKernel === undefined
+        ? [carryPass, predictPass, iteratePass, iterateBackPass, finalizePass]
+        : [singleKernel],
+    singleDispatch: single,
     uniqueVertexCount: vertexCount,
     springCount: adjacency.counts.reduce((sum, n) => sum + n, 0) / 2,
     capsules,
@@ -1229,6 +1450,10 @@ export function createSkinnedCloth(
       // One compute call per substep: a call uploads the uniforms once and then encodes its passes
       // in order, so each substep still interpolates its own pose. A call per pass paid that upload
       // 25 times a frame (0.7-1.5 ms of CPU submission on the owned engine).
+      if (singleKernel !== undefined) {
+        dispatch([singleKernel]);
+        return;
+      }
       for (let s = 0; s < substeps; s++) {
         alphaPrev.value = s / substeps;
         alpha.value = (s + 1) / substeps;
