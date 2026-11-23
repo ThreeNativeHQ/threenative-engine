@@ -479,7 +479,13 @@ class CharacterDynamics extends Scene<IState> {
     );
     const ponytail =
       armName === "hair"
-        ? new SpringBoneChain3D(hairBones[0] as Bone, { colliders: hairColliders })
+        ? new SpringBoneChain3D(hairBones[0] as Bone, {
+            // `?hairColliders=0` matches the Unreal chain arms, which have no body collider.
+            colliders:
+              new URLSearchParams(globalThis.location?.search ?? "").get("hairColliders") === "0"
+                ? []
+                : hairColliders,
+          })
         : undefined;
     // `?arm=strands`: 64 guides of 16 points on the GPU, each the ponytail curve resampled and spread
     // across the back of the head; the rigid ponytail hides. Lines read the solver's buffer directly.
