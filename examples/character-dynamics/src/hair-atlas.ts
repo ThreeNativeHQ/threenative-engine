@@ -2,25 +2,33 @@ import { DataTexture, LinearFilter, NoColorSpace, RGBAFormat, UnsignedByteType }
 
 /**
  * A strand data atlas in the layout `createHairCardMaterial` reads: R coverage, G root (0) to tip
- * (1), B a per-strand seed. `strands` hair strands run root to tip along the card's V, each a soft
- * line that thins and fades toward the tip. The atlas is data, so it carries no colour space.
+ * (1), B a per-strand seed. `strands` hair strands run root to tip along the card's V, each an
+ * anti-aliased line that tapers and fades at its own length, packed so the roots cover the card. The atlas is data, so it carries no colour space.
  */
-export function strandAtlas(strands = 7, width = 64, height = 128): DataTexture {
+export function strandAtlas(strands = 40, width = 128, height = 256): DataTexture {
   const data = new Uint8Array(width * height * 4);
+  // A fixed hash per strand: its seed, its length and its sideways wander.
+  const hash = (n: number): number => Math.abs((Math.sin(n * 12.9898) * 43758.5453) % 1);
   for (let y = 0; y < height; y++) {
     const along = y / (height - 1);
     for (let x = 0; x < width; x++) {
-      const u = (x + 0.5) / width;
-      const lane = Math.min(strands - 1, Math.floor(u * strands));
-      // A fixed hash per strand: its seed, a sideways wander and a length.
-      const hash = (Math.sin((lane + 1) * 12.9898) * 43758.5453) % 1;
-      const seed = Math.abs(hash);
-      const centre = (lane + 0.5 + 0.25 * Math.sin(along * 5 + seed * 6.28)) / strands;
-      const halfWidth = (0.42 / strands) * (1 - 0.6 * along);
-      const distance = Math.abs(u - centre) / halfWidth;
-      const tip = 0.75 + 0.2 * seed;
-      const tipFade = Math.min(1, Math.max(0, (tip - along) / 0.15));
-      const coverage = Math.max(0, 1 - distance * distance) * tipFade;
+      let coverage = 0;
+      let seed = 0;
+      for (let lane = 0; lane < strands; lane++) {
+        const own = hash(lane + 1);
+        const tip = 0.7 + 0.3 * hash(lane + 101);
+        if (along > tip) continue;
+        const centre = ((lane + 0.5 + 0.6 * Math.sin(along * 4 + own * 6.28)) / strands) * width;
+        // Half a texel of anti-aliased edge on a strand that tapers from 1.8 px to 0.6 px.
+        const half = 1.8 - 1.2 * (along / tip);
+        const edge = Math.min(1, Math.max(0, half + 0.5 - Math.abs(x + 0.5 - centre)));
+        const fade = Math.min(1, (tip - along) / 0.12);
+        const c = edge * fade;
+        if (c > coverage) {
+          coverage = c;
+          seed = own;
+        }
+      }
       const i = (y * width + x) * 4;
       data[i] = Math.round(coverage * 255);
       data[i + 1] = Math.round(along * 255);
