@@ -581,6 +581,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const scene = new SceneType();
     this.#boot.scene = scene;
     this.#boot.sceneName = name;
+    // This scene change's bar starts at 0 here, and the asset requests the load makes are what
+    // move it: `ctx.sceneLoad.progress`.
+    this.#boot.sceneLoad?.begin();
     let loaded: ReturnType<Scene<TState, TPhysics>["load"]>;
     try {
       loaded = scene.load(ctx);
@@ -790,6 +793,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     const failures = drainCleanup(boot.cleanup);
     boot.scene = undefined;
     boot.ctx = undefined;
+    boot.sceneLoad = undefined;
     boot.hasDepthCoupledOutput = false;
     boot.paused = false;
     // Clearing the pause without the audio would leave a stopped game's mix paused for the next

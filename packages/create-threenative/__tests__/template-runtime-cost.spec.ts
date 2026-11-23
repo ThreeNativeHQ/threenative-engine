@@ -359,6 +359,7 @@ function sceneContext(
     },
     scene,
     startup: { progress: 1, whenReady: async () => undefined },
+    sceneLoad: { progress: 1 },
     state: {
       flush: () => undefined,
       getState: () => state,

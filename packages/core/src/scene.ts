@@ -187,6 +187,27 @@ export interface IStartupStatus {
   ): void;
 }
 
+/**
+ * How far the scene change in flight has got.
+ *
+ * A level change is a second load, and `startup.progress` is already spent by then: it reaches 1
+ * once the launch's first projection settled and stays there, so a bar fed from it shows 100% for
+ * the whole of every restart.
+ */
+export interface ISceneLoadStatus {
+  /**
+   * 0 to 1 for the scene change in flight: 0 the moment `goto()` starts, the share of the asset
+   * requests that load makes, and 1 once the destination's `enter()` has run. During boot there is
+   * no scene change yet, so it is exactly `startup.progress`.
+   *
+   * Monotonic within one load, enforced rather than assumed, and reset only by the next `goto()`:
+   * a bar that jumps backwards reads to a player as the load restarting.
+   *
+   * @example const width = `${Math.round(host.sceneLoad.progress * 100)}%`; // a bar during a level change
+   */
+  readonly progress: number;
+}
+
 export interface ICtx<
   TState extends Record<string, unknown> = Record<string, unknown>,
   TPhysics = undefined,
@@ -252,6 +273,8 @@ export interface ICtx<
    * compiled at all, so waiting is *faster* than not waiting.
    */
   readonly startup: IStartupStatus;
+  /** The scene change in flight: what a loading bar reads during `goto()`, see {@link ISceneLoadStatus}. */
+  readonly sceneLoad: ISceneLoadStatus;
   readonly goto: (name: string) => Promise<void>;
   /** Simulation speed multiplier, after Godot's `Engine.time_scale`. Default 1. */
   timeScale: number;

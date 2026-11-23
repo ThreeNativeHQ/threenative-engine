@@ -8,6 +8,8 @@ export type GameState = {
   jumps: number;
   levelX: number;
   lives: number;
+  /** The lowest value the loading bar painted during the latest load; a restart resets it to 1. */
+  loadLowest: number;
   odometer: number;
   /** True on a console (`isConsole()`): the menu shows pad prompts instead of keyboard ones. */
   pad: boolean;

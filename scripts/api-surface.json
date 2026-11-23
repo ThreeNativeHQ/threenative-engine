@@ -331,6 +331,7 @@
         "src/scene.ts#ctx.after": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
         "src/scene.ts#ctx.beforeRender": "ctx.beforeRender(callback: () => void): () => void",
         "src/scene.ts#ctx.quit": "ctx.quit(): void",
+        "src/scene.ts#ctx.sceneLoad.progress": "ctx.sceneLoad.progress: number",
         "src/scene.ts#ctx.startup.progress": "ctx.startup.progress: number",
         "src/scene.ts#ctx.timeScale": "ctx.timeScale: number",
         "src/scene.ts#Scene.applicationPaused": "applicationPaused(ctx): void; applicationResumed(ctx): void // optional Scene methods"

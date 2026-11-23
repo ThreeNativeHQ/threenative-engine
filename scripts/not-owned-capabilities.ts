@@ -12,7 +12,7 @@ export interface INotOwnedCapability {
 export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   {
     guidance:
-      "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state), and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
+      "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
     id: "save-load",
     situations: [
       "persist a player's progress between sessions",
