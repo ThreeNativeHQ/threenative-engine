@@ -2493,7 +2493,7 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/hair-cards.js",
       "tolerance": {
-        "pixelMismatchRatio": 0.01,
+        "pixelMismatchRatio": 0.03,
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,

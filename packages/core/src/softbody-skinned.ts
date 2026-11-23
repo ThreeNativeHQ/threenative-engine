@@ -873,14 +873,16 @@ export function createSkinnedCloth(
   const refQuaternion = new Quaternion();
   const refScale = new Vector3();
   reference.matrixWorld.decompose(refPosition, refQuaternion, refScale);
-  const restRef = new Float32Array(vertexCount * 3);
+  // Rest pose in the reference frame (xyz) and inverse mass (w): one buffer, so the one-dispatch kernel
+  // stays inside WebGPU's baseline of 8 storage buffers per stage.
+  const restRefMass = new Float32Array(vertexCount * 4);
   const inverseRef = refQuaternion.clone().invert();
   for (let v = 0; v < vertexCount; v++) {
     point
       .fromArray(world, v * 3)
       .sub(refPosition)
       .applyQuaternion(inverseRef);
-    restRef.set([point.x, point.y, point.z], v * 3);
+    restRefMass.set([point.x, point.y, point.z], v * 4);
   }
   const info = new Float32Array(vertexCount * 4);
   for (let v = 0; v < vertexCount; v++) {
@@ -912,10 +914,10 @@ export function createSkinnedCloth(
   }
   const maxTriangles = Math.max(1, ...around.map((list) => list.length));
   const triangleData = new Float32Array(vertexCount * maxTriangles * 4);
-  const inverseMass = new Float32Array(vertexCount);
   around.forEach((list, v) => {
     info[v * 4 + 3] = list.length;
-    inverseMass[v] = (restArea[v] as number) > 0 ? 1 / (density * (restArea[v] as number)) : 0;
+    restRefMass[v * 4 + 3] =
+      (restArea[v] as number) > 0 ? 1 / (density * (restArea[v] as number)) : 0;
     list.forEach((t, k) =>
       triangleData.set(
         [triangles[t] as number, triangles[t + 1] as number, triangles[t + 2] as number, 0],
@@ -924,24 +926,16 @@ export function createSkinnedCloth(
     );
   });
   const triangleBuffer = instancedArray(triangleData, "vec4");
-  const inverseMassBuffer = instancedArray(inverseMass, "float");
 
   const x = instancedArray(new Float32Array(world), "vec3");
   const velocity = instancedArray(new Float32Array(vertexCount * 3), "vec3");
   const pA = instancedArray(new Float32Array(world), "vec3");
   const pB = instancedArray(new Float32Array(world), "vec3");
   const rawBuffer = instancedArray(raw, "vec4");
-  const lowWeights = new Float32Array(vertexCount * 4);
-  const highWeights = new Float32Array(vertexCount * 4);
-  for (let v = 0; v < vertexCount; v++)
-    for (let s = 0; s < 4; s++) {
-      lowWeights[v * 4 + s] = weights[v * MAX_PIN_BONES + s] as number;
-      highWeights[v * 4 + s] = weights[v * MAX_PIN_BONES + 4 + s] as number;
-    }
-  const weightsA = instancedArray(lowWeights, "vec4");
-  const weightsB = instancedArray(highWeights, "vec4");
+  // Pin weights: two vec4 rows per particle (slots 0-3, 4-7), one buffer for the same storage limit.
+  const weightRows = instancedArray(weights, "vec4");
   const infoBuffer = instancedArray(info, "vec4");
-  const restRefBuffer = instancedArray(restRef, "vec3");
+  const restRefMassBuffer = instancedArray(restRefMass, "vec4");
   const neighborBuffer = instancedArray(adjacency.neighbors, "vec2");
   const countBuffer = instancedArray(meta, "uint");
   const originalToUnique = instancedArray(topology.originalToUnique, "uint");
@@ -981,8 +975,8 @@ export function createSkinnedCloth(
   const pinCount = pinBones.length;
   const skin = (vertex: Node<"uint">, at: Node<"float">): Node<"vec3"> => {
     const p = rawBuffer.element(vertex);
-    const wa = weightsA.element(vertex);
-    const wb = weightsB.element(vertex);
+    const wa = weightRows.element(vertex.mul(2));
+    const wb = weightRows.element(vertex.mul(2).add(1));
     const sum = vec3(0).toVar();
     for (let s = 0; s < pinCount; s++) {
       const lane = (["x", "y", "z", "w"] as const)[s % 4] as "x" | "y" | "z" | "w";
@@ -1001,7 +995,9 @@ export function createSkinnedCloth(
     const v = velocity.element(instanceIndex).toVar();
     If(flags.y.greaterThan(0.5), () => {
       position.assign(
-        rotate(carry.element(4), restRefBuffer.element(instanceIndex)).add(carry.element(5).xyz),
+        rotate(carry.element(4), restRefMassBuffer.element(instanceIndex).xyz).add(
+          carry.element(5).xyz,
+        ),
       );
       v.assign(vec3(0));
     }).Else(() => {
@@ -1072,7 +1068,7 @@ export function createSkinnedCloth(
     v.addAssign(
       forces
         .element(0)
-        .xyz.add(aero.mul(inverseMassBuffer.element(instanceIndex)))
+        .xyz.add(aero.mul(restRefMassBuffer.element(instanceIndex).w))
         .add(centrifugal)
         .mul(h),
     );
