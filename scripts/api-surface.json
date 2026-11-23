@@ -231,6 +231,7 @@
         "@threenative/core#lodPixelScale": "export function lodPixelScale(camera: Camera, viewportHeight: number, depth: number): number { … }",
         "@threenative/core#markStatic": "export function markStatic(root: Object3D): number { … }",
         "@threenative/core#MatrixWorldPass": "export class MatrixWorldPass { … }",
+        "@threenative/core#measureBodyCapsules": "export function measureBodyCapsules( source: SkinnedMesh, maxCapsules = MAX_BODY_CAPSULES, clearOf: ArrayLike<number> = [], clearance = 0, ): ISoftBodyCapsule[] { … }",
         "@threenative/core#measureThreePose": "export function measureThreePose( object: Object3D, options: IMeasureThreePoseOptions = { … }",
         "@threenative/core#mergeByMaterial": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
         "@threenative/core#mergeParts": "export function mergeParts( parts: Iterable<IMergePart>, options: IMergePartsOptions, ): BufferGeometry { … }",
