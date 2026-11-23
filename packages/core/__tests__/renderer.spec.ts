@@ -1300,6 +1300,64 @@ describe("createRenderer", () => {
     }
   });
 
+  it("retries a start that ran out of GPU memory once, then falls back to WebGL2 and says so", async () => {
+    // A dev server's reload storm left the closed pages' devices on an 8 GB GPU; the next start read
+    // TN_WASM_DEVICE_ERROR as a content fault and failed with TN_START_FAILED instead of waiting.
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const oom = "TN_WASM_DEVICE_ERROR: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY";
+    const disposed = vi.fn();
+    const webgpu = vi.fn(() => ({ dispose: disposed, init: () => Promise.reject(new Error(oom)) }));
+    const canvas = testCanvas();
+    const lines: string[] = [];
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: true,
+        report: (line) => lines.push(line),
+        webgl2Factory: () => ({ domElement: canvas, render: () => undefined, setSize: () => {} }),
+        webgpuFactory: webgpu,
+      });
+      expect(renderer.kind).toBe("webgl2");
+      expect(webgpu).toHaveBeenCalledTimes(2);
+      expect(disposed).toHaveBeenCalledTimes(2);
+      expect(lines.filter((line) => line.startsWith("TN_RENDERER_RETRY:"))).toHaveLength(1);
+      expect(lines).toContain(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${oom}`);
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("does not retry a start that failed for any reason but GPU memory", async () => {
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const webgpu = vi.fn(() => ({
+      init: () => Promise.reject(new Error("TN_WASM_ADAPTER: the GPU is blocklisted")),
+    }));
+    const canvas = testCanvas();
+    const lines: string[] = [];
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        preferWebGPU: true,
+        report: (line) => lines.push(line),
+        webgl2Factory: () => ({ domElement: canvas, render: () => undefined, setSize: () => {} }),
+        webgpuFactory: webgpu,
+      });
+      expect(webgpu).toHaveBeenCalledTimes(1);
+      expect(lines.some((line) => line.startsWith("TN_RENDERER_RETRY:"))).toBe(false);
+      expect(lines).toContain(
+        "TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: TN_WASM_ADAPTER: the GPU is blocklisted",
+      );
+      renderer.dispose();
+    } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
   it("should use an explicit resolution scale while keeping CSS size unchanged", async () => {
     const canvas = testCanvas();
     const sizes: Array<[number, number]> = [];

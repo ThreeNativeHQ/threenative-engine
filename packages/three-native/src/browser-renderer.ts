@@ -153,6 +153,40 @@ function markBaked(environment: IBakedEnvironment): void {
   bakedEnvironments.set(environment, environment.version);
 }
 
+/** A host message that names GPU memory running out (core's launch-diagnostics holds the same test). */
+const GPU_MEMORY_EXHAUSTED = /vkAllocateMemory|OUT_OF_DEVICE_MEMORY|out of (?:device )?memory/iu;
+
+type GpuRequest = (...args: unknown[]) => Promise<unknown>;
+
+/**
+ * Hands `onDevice` the GPUDevice the next `navigator.gpu.requestAdapter` leads to, then returns the
+ * restore. Dawn's bindings create the device in JS, and its handle is the only way JS can free it.
+ */
+function captureDevice(onDevice: (device: { destroy(): void }) => void): () => void {
+  const gpu = (globalThis.navigator as { gpu?: { requestAdapter?: GpuRequest } } | undefined)?.gpu;
+  const requestAdapter = gpu?.requestAdapter;
+  if (gpu === undefined || typeof requestAdapter !== "function") return () => undefined;
+  const own = Object.hasOwn(gpu, "requestAdapter");
+  gpu.requestAdapter = async (...args) => {
+    const adapter = (await requestAdapter.apply(gpu, args)) as {
+      requestDevice?: GpuRequest;
+    } | null;
+    const requestDevice = adapter?.requestDevice;
+    if (adapter !== null && typeof requestDevice === "function") {
+      adapter.requestDevice = async (...options) => {
+        const device = (await requestDevice.apply(adapter, options)) as { destroy(): void };
+        onDevice(device);
+        return device;
+      };
+    }
+    return adapter;
+  };
+  return () => {
+    if (own) gpu.requestAdapter = requestAdapter;
+    else Reflect.deleteProperty(gpu, "requestAdapter");
+  };
+}
+
 export function defineWebRenderer(
   module: WebEngineModule,
   Color: new (...args: unknown[]) => IColorLike,
@@ -173,6 +207,10 @@ export function defineWebRenderer(
   // The engine starts once per page: one device, and one surface bound to the first renderer's canvas.
   // A renderer built after that one was disposed (a hot update re-runs the game) adopts both.
   let started: HTMLCanvasElement | undefined;
+  // The engine's device, as Dawn's bindings received it. A reload left it to the browser to free once
+  // it got to the old document; a reload storm stacked them until the GPU ran out of memory. `pagehide`
+  // destroys it at once. A page kept in the back-forward cache (`persisted`) keeps it.
+  let gpuDevice: { destroy(): void } | undefined;
   const string = (text: string): number => {
     const bytes = module.lengthBytesUTF8(text) + 1;
     const pointer = module._malloc(bytes) >>> 0;
@@ -464,13 +502,21 @@ export function defineWebRenderer(
             );
           module.specialHTMLTargets[CANVAS_TARGET] = this.domElement;
           const selector = string(CANVAS_TARGET);
+          // tnw_web_init asks navigator.gpu for the adapter before it returns, so the hook lasts one call.
+          const release = captureDevice((device) => {
+            gpuDevice = device;
+          });
           try {
             check(
               module._tnw_web_init(selector, this.#drawWidth(), this.#drawHeight(), WEB_HOST_ABI),
             );
           } finally {
+            release();
             module._free(selector);
           }
+          globalThis.addEventListener?.("pagehide", (event) => {
+            if (!(event as PageTransitionEvent).persisted) gpuDevice?.destroy();
+          });
           // Only a host that started owns this canvas. Marked before the init, a start that threw left the
           // next renderer polling a host nobody started, Pending for ever (PRD-895).
           started = this.domElement;
@@ -943,7 +989,8 @@ export function defineWebRenderer(
       console.error(
         `TN_WASM_RENDERER_LOST: this renderer draws nothing after this call. ${message}`,
       );
-      if (message.startsWith("TN_WASM_DEVICE_LOST"))
+      // A device out of memory draws nothing either, and core recovers it by a reload (TN_GPU_MEMORY_RELOAD).
+      if (message.startsWith("TN_WASM_DEVICE_LOST") || GPU_MEMORY_EXHAUSTED.test(message))
         this.#deviceLost({ reason: "unknown", message });
       return true;
     }

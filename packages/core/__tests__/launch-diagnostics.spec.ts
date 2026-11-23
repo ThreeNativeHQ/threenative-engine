@@ -2,8 +2,10 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   type ILaunchFailure,
   onLaunchFailure,
+  reloadAfterGpuMemoryLoss,
   reportLaunchFailure,
   resetLaunchFailures,
+  routeGpuMemoryReload,
   watchDeviceLoss,
   watchStartupStall,
 } from "../src/launch-diagnostics.js";
@@ -179,5 +181,68 @@ describe("launch diagnostics", () => {
     await Promise.resolve();
     expect(failures).toEqual([]);
     off();
+  });
+});
+
+describe("the reload after the GPU ran out of memory", () => {
+  const oom = "TN_WASM_DEVICE_ERROR: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY";
+
+  /** A page: `location.reload` and a tab's `sessionStorage`, both stubbed on globalThis. */
+  function page() {
+    const stored = new Map<string, string>();
+    const reload = vi.fn();
+    vi.stubGlobal("location", { reload });
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+    return { reload, stored };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+    resetLaunchFailures();
+    routeGpuMemoryReload(undefined);
+    return () => {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.restoreAllMocks();
+    };
+  });
+
+  it("reloads a page once per tab after a lost device names GPU memory, never in a loop", async () => {
+    const { reload } = page();
+    watchDeviceLoss({ lost: Promise.resolve({ message: oom, reason: "unknown" }) });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reload).toHaveBeenCalledTimes(1);
+    // The reloaded page ran out again: the tab remembers, and the page stays to show the failure.
+    expect(reloadAfterGpuMemoryLoss(oom)).toBe(false);
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reload).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not reload for any other loss, with the override, or where there is no page", async () => {
+    const { reload } = page();
+    watchDeviceLoss({
+      lost: Promise.resolve({ message: "vkQueueSubmit failed", reason: "unknown" }),
+    });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reloadAfterGpuMemoryLoss(oom, false)).toBe(false);
+    expect(String(vi.mocked(console.warn).mock.calls.at(-1)?.[0])).toContain(
+      "reloadOnGpuMemoryLoss: false",
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(reload).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
+    expect(reloadAfterGpuMemoryLoss(oom)).toBe(false);
+  });
+
+  it("sends a worker's reload to its page, which owns the guard", () => {
+    const route = vi.fn();
+    routeGpuMemoryReload(route);
+    expect(reloadAfterGpuMemoryLoss(oom)).toBe(true);
+    expect(route).toHaveBeenCalledWith(oom);
   });
 });

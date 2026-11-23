@@ -26,6 +26,11 @@ import {
   type IGpuFrameObservation,
   type IGpuFrameObservationOptions,
 } from "./gpu-frame-observation.js";
+import {
+  GPU_MEMORY_EXHAUSTED,
+  GPU_MEMORY_SETTLE_MS,
+  reloadAfterGpuMemoryLoss,
+} from "./launch-diagnostics.js";
 import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
 import { qualityTiers } from "./look/quality.js";
 import {
@@ -501,6 +506,11 @@ export interface IRendererOptions {
   pixelRatio?: number;
   /** Where convention markers go. Defaults to the console, exactly as the render chain reports. */
   report?: (line: string) => void;
+  /**
+   * A GPU that runs out of memory mid-run, or at a start that no fallback rescues, reloads the page
+   * once per tab (`TN_GPU_MEMORY_RELOAD`). Defaults to true; `false` is the named override, reported.
+   */
+  reloadOnGpuMemoryLoss?: boolean;
   /**
    * Bounded pipeline detail for a real launch capture. It is on by default so a town does not
    * need an instrumented build; pass `false` for an identical-build overhead control.
@@ -2117,7 +2127,17 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   // keeps it, and a facade that failed still holds the page's one renderer slot until it is released.
   let opening: RendererInstance | undefined;
 
-  if (preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}))) {
+  // A start that ran out of GPU memory is retried once after a settle: a page that just closed (a
+  // dev server's reload) still holds its memory for a moment. Any other failure is not retried.
+  const webgpu = preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}));
+  for (let attempt = 0; webgpu && renderer === undefined && attempt < 2; attempt += 1) {
+    if (attempt === 1) {
+      report(
+        `TN_RENDERER_RETRY: WebGPU ran out of GPU memory at start; retrying once in ${GPU_MEMORY_SETTLE_MS} ms. ${webgpuFailure}`,
+      );
+      await new Promise((resolve) => setTimeout(resolve, GPU_MEMORY_SETTLE_MS));
+    }
+    opening = undefined;
     try {
       const raw = options.webgpuFactory
         ? await options.webgpuFactory(canvas, rendererParameters)
@@ -2171,15 +2191,22 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // message, so the adapter, device, lost device, surface and init codes keep the fallback. The
       // code ends where its message does, so TN_WASM_INIT_TEXTURE and TN_WASM_DEVICE_ERROR stay the
       // content faults they are.
+      // TN_WASM_DEVICE_ERROR is a validation fault, except when it names GPU memory running out:
+      // that is the device's state, not the game's code, and the fallback (or a retry) is for it.
       const message = error instanceof Error ? error.message : String(error);
       const deviceFault = /^TN_WASM_(?:DEVICE_LOST|DEVICE|ADAPTER|SURFACE|INIT):/u;
-      if (/^TN_(?:WASM|NATIVE|ABI)_/u.test(message) && !deviceFault.test(message)) throw error;
+      const outOfMemory = GPU_MEMORY_EXHAUSTED.test(message);
+      if (/^TN_(?:WASM|NATIVE|ABI)_/u.test(message) && !deviceFault.test(message) && !outOfMemory)
+        throw error;
       webgpuFailure = message;
       renderer = undefined;
+      if (!outOfMemory) break;
     }
   }
 
   if (renderer === undefined) {
+    if (webgpuFailure !== undefined)
+      report(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${webgpuFailure}`);
     let raw: RendererInstance;
     try {
       raw = (
@@ -2188,6 +2215,9 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
           : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
       ) as RendererInstance;
     } catch (error) {
+      // The Wasm engine has no WebGL fallback, so a GPU still full after the retry has one cure left.
+      if (webgpuFailure !== undefined)
+        reloadAfterGpuMemoryLoss(webgpuFailure, options.reloadOnGpuMemoryLoss ?? true);
       // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
       // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
       // verbatim would show an internal "uncatalogued" code; a browser with no context throws

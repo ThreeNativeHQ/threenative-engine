@@ -9,6 +9,7 @@
 
 import { readLaunchValue } from "./debug.js";
 import type { IGamePlatformSource } from "./game.js";
+import { reloadPageOnce, routeGpuMemoryReload } from "./launch-diagnostics.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
 import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
 import { markerLogRequested } from "./quiet-markers.js";
@@ -76,6 +77,7 @@ type WorkerOutbound =
   | { type: "tn-worker-mirror"; name: string; epoch?: number }
   | { type: "tn-worker-started" }
   | { type: "tn-worker-failed"; message: string }
+  | { type: "tn-worker-gpu-memory-reload"; reason: string }
   | { type: "tn-worker-pointer-lock"; lock: boolean }
   | { type: "tn-worker-attribute"; name: string; value: string }
   | {
@@ -288,6 +290,8 @@ export function serveWorkerGame(
   const visibility = Object.assign(new EventTarget(), { visibilityState: "visible" as string });
   scope.__tnAppVisibility = visibility;
   const ui = holdUiBridge(scope);
+  // The page owns the reload and its once-per-tab guard; the worker only names why.
+  routeGpuMemoryReload((reason) => post({ reason, type: "tn-worker-gpu-memory-reload" }));
 
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
     try {
@@ -827,6 +831,9 @@ export function startWorkerGame(
       case "tn-worker-failed":
         stop(new Error(message.message));
         break;
+      case "tn-worker-gpu-memory-reload":
+        reloadPageOnce(message.reason);
+        break;
       case "tn-worker-rpc-result": {
         const call = pending.get(message.id);
         if (call === undefined) break;
@@ -879,5 +886,11 @@ export function startWorkerGame(
   };
   listen(worker, "error", onWorkerError);
   listen(worker, "messageerror", onWorkerError);
+  // A reload or a navigation ends the worker now, and its GPU device with it, rather than when the
+  // browser gets to the old document: a reload storm stacked one device per reload until the GPU ran
+  // out of memory. A page kept in the back-forward cache (`persisted`) keeps its game.
+  listen(windowHost, "pagehide", (event) => {
+    if (!(event as PageTransitionEvent).persisted) stop();
+  });
   return { ready, stop };
 }

@@ -503,6 +503,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
       }
     ).backend?.device,
     () => game.aborted || game.renderer !== renderer,
+    game.config.renderer?.reloadOnGpuMemoryLoss ?? true,
   );
   // Stamped when the FRAMEWORK is done, which is before `whenReady()` whenever the game has
   // registered a `startup.hold()`. Two stamps, because one number cannot be both "what the

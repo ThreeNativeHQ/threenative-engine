@@ -17,11 +17,20 @@ function assetsWatchPlugin(): Plugin {
   return {
     name: "threenative-assets-watch",
     apply: "serve",
+    // A cook writes many files into `public/`, and Vite reloaded the page for each of them: 45 reloads
+    // in a second left the GPU holding one device per reload until it ran out of memory. A `public/` file
+    // is no module, so no reload belongs to it; the settled cook reloads the page once instead.
+    hotUpdate({ file, server }) {
+      return file.startsWith(`${server.config.publicDir}/`) ? [] : undefined;
+    },
     async configureServer(server) {
       const handle = watchAssets({
         config: config.assets,
         cwd: server.config.root,
         runtimeDecoders: webRuntimeDecoders(config),
+        onChange: ({ compiled }) => {
+          if (compiled.length > 0) server.ws.send({ type: "full-reload" });
+        },
       });
       server.httpServer?.once("close", () => handle.close());
       // Nothing is served before the first cook settles: until it does, `public/` has no
