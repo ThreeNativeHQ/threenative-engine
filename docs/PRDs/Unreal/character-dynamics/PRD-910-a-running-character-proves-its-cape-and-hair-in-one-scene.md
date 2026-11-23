@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-910 — A running character proves its cape and hair in one scene
 
-**Status:** PARTIAL — the scene and its cape probe run (2026-11-22); hair probe, Unreal reference and owned-engine bind-group fix are open.
+**Status:** PARTIAL — the scene measures the cape (2026-11-22) and a ponytail (2026-11-23): `?arm=hair` prints tip offset, segment stretch and head penetration per phase. Open: the fringe of hair cards, the acceptance scenario, the Unreal reference (in progress) and the bind-group conformance case.
 **Priority:** P1 — PRD-911, PRD-912 and PRD-909 cannot claim a result until this scene measures hair and holds an Unreal reference.
 **Complexity:** 6 (HIGH) — new example and probe (+2), Unreal reference scene with Chaos Cloth and a groom (+2), owned-engine bind-group bug (+2)
 **Owner:** João

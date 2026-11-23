@@ -344,7 +344,7 @@ function clothPass(options: {
  * @override cloth picks the mask (a color channel or one number per vertex); default "color.r", else leaf-bone vertices simulate
  * @override bodyColliders "auto" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off
  * @override velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)
- * @override stretchStiffness (1), bendStiffness (0.25), damping (0.5 /s), airDrag (0.5 /m, quadratic), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)
+ * @override stretchStiffness (1), bendStiffness (0.25), damping (≈0.603 /s, Chaos 0.01 per 60 Hz step), drag and lift (0.035, Chaos per-triangle), fluidDensity (1.225), density (0.35 kg/m²), tetherSlack (0), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)
  * @example const cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: "color.r" }));
  */
 export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven {

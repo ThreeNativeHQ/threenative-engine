@@ -11,14 +11,23 @@
  * be parented under a bone (reparenting fires `removed`, which detaches it), so its frame follows
  * `spine_03` by hand every tick and its gravity is rotated into that frame.
  */
-import { type ICtx, Scene, SkeletalMesh3D, SoftBody3D, defineGame } from "@threenative/core";
+import {
+  type ICtx,
+  type ISpringBoneCapsule,
+  Scene,
+  SkeletalMesh3D,
+  SoftBody3D,
+  SpringBoneChain3D,
+  defineGame,
+} from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
   AmbientLight,
   type AnimationClip,
-  type Bone,
+  Bone,
   BufferAttribute,
   Color,
+  CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   Group,
@@ -32,7 +41,15 @@ import {
   Vector3,
 } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { centroid, countInsideCapsule, maxEdgeStretch, trailAngleDegrees } from "./probe.js";
+import {
+  centroid,
+  countInsideCapsule,
+  countInsideCapsules,
+  maxEdgeStretch,
+  maxSegmentStretch,
+  toFrame,
+  trailAngleDegrees,
+} from "./probe.js";
 
 type Glb = { animations: AnimationClip[]; scene: Object3D };
 
@@ -73,6 +90,12 @@ interface IPhaseMetrics {
   maxStretch: number;
   /** Largest number of cloth vertices inside the torso capsule in one sample. */
   bodyPenetration: number;
+  /** Largest tip-bone move away from its end-of-settle spot, in the Head bone frame, metres. */
+  hairTipOffset: number;
+  /** Largest |segment length / rest length - 1| over the chain. */
+  hairStretch: number;
+  /** Largest number of ponytail bones inside the head sphere or neck capsule in one tick. */
+  hairInsideHead: number;
   samples: number;
 }
 
@@ -87,7 +110,7 @@ interface IState extends Record<string, unknown> {
 
 function arm(): string {
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("arm") ?? "softbody";
-  if (value !== "softbody" && value !== "cloth")
+  if (value !== "softbody" && value !== "cloth" && value !== "hair")
     throw new Error(`CHARACTER_DYNAMICS_UNKNOWN_ARM arm=${value}`);
   return value;
 }
@@ -165,6 +188,78 @@ class CharacterDynamics extends Scene<IState> {
       .normalize();
     const bindYaw = Math.atan2(facing.x, facing.z);
     const height = head.getWorldPosition(new Vector3()).y;
+
+    // The ponytail is the same rig in every arm: a 6-bone chain hanging off Head, one tapered
+    // shaft per bone. Only `?arm=hair` simulates it; every other arm is the rigid control.
+    const back = facing.clone().negate();
+    const hairBones: Bone[] = [];
+    const hairLocalPoints: Vector3[] = [];
+    const hairAnchor = head.getWorldPosition(new Vector3());
+    let hairParent: Bone = head;
+    for (let index = 0; index < 6; index++) {
+      const offset =
+        index === 0
+          ? back.clone().multiplyScalar(0.1).setY(0.05)
+          : back.clone().multiplyScalar(0.015).setY(-0.06);
+      hairAnchor.add(offset);
+      const bone = new Bone();
+      bone.name = `ponytail_${index + 1}`;
+      bone.position.copy(hairParent.worldToLocal(hairAnchor.clone()));
+      hairParent.add(bone);
+      bone.updateWorldMatrix(true, false);
+      hairBones.push(bone);
+      hairLocalPoints.push(bone.position.clone());
+      hairParent = bone;
+    }
+    const hairMaterial = new MeshStandardNodeMaterial({ color: 0x3a2416, roughness: 0.72 });
+    const up = new Vector3(0, 1, 0);
+    for (let index = 0; index < hairBones.length; index++) {
+      const segment =
+        index + 1 < hairLocalPoints.length
+          ? (hairLocalPoints[index + 1] as Vector3).clone().sub(hairLocalPoints[index] as Vector3)
+          : (hairLocalPoints[index] as Vector3).clone().sub(hairLocalPoints[index - 1] as Vector3);
+      const length = segment.length();
+      const radius = (step: number): number => 0.022 - 0.014 * (step / hairBones.length);
+      const mesh = new Mesh(
+        new CylinderGeometry(radius(index + 1), radius(index), length, 6),
+        hairMaterial,
+      );
+      mesh.quaternion.setFromUnitVectors(up, segment.normalize());
+      mesh.position.copy(segment).multiplyScalar(length / 2);
+      (hairBones[index] as Bone).add(mesh);
+    }
+
+    // The head sphere and neck capsule the ponytail collides with, in world space. The probe reads
+    // the same shapes with its own clearance, so a simulated chain reads zero penetrations.
+    const headCentre = new Vector3();
+    const neckCentre = new Vector3();
+    const headSphere: ISpringBoneCapsule = { a: new Vector3(), b: new Vector3(), radius: 0.11 };
+    const neckCapsule: ISpringBoneCapsule = { a: new Vector3(), b: new Vector3(), radius: 0.06 };
+    const hairColliders = [headSphere, neckCapsule];
+    const updateHairColliders = (): void => {
+      head.getWorldPosition(headCentre);
+      neck.getWorldPosition(neckCentre);
+      headSphere.a.copy(headCentre).setY(headCentre.y + 0.09);
+      headSphere.b.copy(headSphere.a);
+      neckCapsule.a.copy(neckCentre);
+      neckCapsule.b.copy(headCentre);
+    };
+    updateHairColliders();
+    const ponytail =
+      armName === "hair"
+        ? new SpringBoneChain3D(hairBones[0] as Bone, { colliders: hairColliders })
+        : undefined;
+
+    const hairWorld: Vector3[] = hairBones.map(() => new Vector3());
+    const readHairWorld = (): void => {
+      for (let index = 0; index < hairBones.length; index++)
+        (hairWorld[index] as Vector3).setFromMatrixPosition((hairBones[index] as Bone).matrixWorld);
+    };
+    readHairWorld();
+    const hairRestLengths = hairWorld
+      .slice(1)
+      .map((point, index) => point.distanceTo(hairWorld[index] as Vector3));
+
     const spineWorld = spine.getWorldPosition(new Vector3());
     const capeWidth = 0.5;
     const capeLength = 0.62 * height;
@@ -286,7 +381,10 @@ class CharacterDynamics extends Scene<IState> {
       const tuning: Record<string, number> = {};
       for (const key of [
         "substeps",
-        "airDrag",
+        "drag",
+        "iterations",
+        "lift",
+        "tetherSlack",
         "damping",
         "velocityScale",
         "angularVelocityScale",
@@ -373,6 +471,9 @@ class CharacterDynamics extends Scene<IState> {
         hemTrail: 0,
         maxStretch: 0,
         bodyPenetration: 0,
+        hairTipOffset: 0,
+        hairStretch: 0,
+        hairInsideHead: 0,
         samples: 0,
       };
       if (phase.jumpSpeed !== undefined) {
@@ -442,6 +543,36 @@ class CharacterDynamics extends Scene<IState> {
       metrics.samples++;
     };
 
+    // Hair is measured every tick, unlike the readback cloth: the tip offset uses the Head bone
+    // frame, so the head's own motion cancels and only the chain's lag shows.
+    const hairPositions = new Float32Array(hairBones.length * 3);
+    const headPosition = new Vector3();
+    const headOrientation = new Quaternion();
+    let hairRestTip: Vector3 | undefined;
+    const measureHair = (metrics: IPhaseMetrics, phaseName: string): void => {
+      readHairWorld();
+      head.getWorldPosition(headPosition);
+      head.getWorldQuaternion(headOrientation);
+      for (let index = 0; index < hairWorld.length; index++)
+        (hairWorld[index] as Vector3).toArray(hairPositions, index * 3);
+      const tipLocal = toFrame(
+        hairWorld[hairWorld.length - 1] as Vector3,
+        headPosition,
+        headOrientation,
+      );
+      if (phaseName === "settle") hairRestTip = tipLocal.clone();
+      if (hairRestTip !== undefined)
+        metrics.hairTipOffset = Math.max(metrics.hairTipOffset, tipLocal.distanceTo(hairRestTip));
+      metrics.hairStretch = Math.max(
+        metrics.hairStretch,
+        maxSegmentStretch(hairPositions, hairRestLengths),
+      );
+      metrics.hairInsideHead = Math.max(
+        metrics.hairInsideHead,
+        countInsideCapsules(hairPositions, hairColliders, 0.005),
+      );
+    };
+
     return (frameCtx: ICtx<IState>) => {
       if (complete) return;
       const phase = SCRIPT[phaseIndex] as IPhase;
@@ -467,11 +598,14 @@ class CharacterDynamics extends Scene<IState> {
       }
       player.update(STEP);
       character.updateMatrixWorld(true);
+      updateHairColliders();
+      ponytail?.step(STEP);
       followBone();
       placeCape();
       placeCamera();
       recordPose();
       measure(phases[phase.name] as IPhaseMetrics, phase.name);
+      measureHair(phases[phase.name] as IPhaseMetrics, phase.name);
       phaseTick++;
       if (phaseTick >= phase.ticks) {
         phaseIndex++;

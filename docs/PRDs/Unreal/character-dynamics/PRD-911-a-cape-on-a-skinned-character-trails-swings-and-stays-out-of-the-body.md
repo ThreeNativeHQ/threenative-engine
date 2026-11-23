@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-911 — A cape on a skinned character trails, swings and stays out of the body
 
-**Status:** IN PROGRESS (2026-11-22) — `SoftBody3D(skinnedMesh)` runs the cape on the owned engine (`?arm=cloth`). Measured, owned engine, 6 substeps, ramped root motion: max edge stretch 2-23% per phase (incumbent 133-146%), teleport phase 5%. The jog and sprint hem trail peaks at 82° and 104°. A CPU mirror of the same step shows that peak is the acceleration swing of an undamped pendulum, not a solver fault: it settles at 29.5° (jog) and 62° (sprint) with the default quadratic drag. AC-3 sets the damping against the Unreal reference. Fixed on the way: pin bones read a stale `matrixWorld`; auto capsules overlapped the rest cape; the previous pin and capsule poses missed the frame carry.
+**Status:** IN PROGRESS (2026-11-23) — `SoftBody3D(skinnedMesh)` runs the cape on the owned engine (`?arm=cloth`) with Unreal Chaos Cloth's stock damping, tethers and per-triangle aerodynamics. Measured, owned engine, 6 substeps, 2 runs: max edge stretch 0–19% per phase (incumbent 110–146%), teleport phase 4%. ❌ AC-1: jogTurn, sprint and hard stop reach 13–19%. The peaks are single edges hit by the arm and hand capsules; with `bodyColliders: false` the same phases stay at or below 9%. Twice the Jacobi iterations (14–15%) and collision inside the iteration loop (no gain, worse trail) did not fix it. The Unreal reference will show what stock Chaos does under the same contacts. The hem trail peak is the acceleration swing of a weakly damped cape: a CPU mirror of the step gives the same peak.
 **Priority:** P1 — The incumbent `SoftBody3D` stretches a cape to 2.4× its length and passes it through the legs (PRD-910 baseline). Every "character with a cape" request ships that today.
 **Complexity:** 8 (HIGH) — vendored solver merge (+2), skinned pins on GPU (+2), inertia and teleport guards (+2), body capsules auto-measured (+1), native proof (+1)
 **Owner:** João
@@ -53,13 +53,16 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 
 - [ ] The owned engine and the desktop host run the cape with conformance parity. proof: `pnpm parity --target desktop --only-tests softbody-character`
 - [ ] The perf budget holds. proof: AC-5.
-- [ ] A cold `engine_search_capabilities` for "character with a cape" and "skirt on a skinned mesh" returns `SoftBody3D` first, with a skinned example. proof: `pnpm build` then `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts`
+- [x] A cold `engine_search_capabilities` for "character with a cape" and "skirt on a skinned mesh" returns `SoftBody3D` first, with a skinned example. proof: `pnpm build` then `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 2026-11-23: 118/118 pass with a clean `TMPDIR` (a stale `/tmp/node_modules/@threenative/core` fails 2 unrelated bare-project tests under the default `TMPDIR`).
 
 ## Blocked on
 
 - none.
 
 ## Decisions
+
+- 2026-11-23 (agent): the solver is ported, not vendored. The upstream SimpleCloth and particle-fluids kernels assume a CPU-side skeleton and local-space pins; the port keeps their PBD structure (Jacobi stretch and bend, geodesic tethers, capsule push-out with Coulomb friction) and runs in world space with skinned pins on the GPU. No upstream file ships, so no notice line is needed.
+- 2026-11-23 (agent): the defaults are Unreal Chaos Cloth's stock values, cited at their source line: damping 0.01 per 60 Hz step, TetherScale 1, drag and lift 0.035 per triangle, air density 1.225, cloth density 0.35 kg/m², velocity scales 0.75. The fixed step has no dt guard because the engine's fixed step never varies; no fictitious centrifugal or Coriolis force yet (`FictitiousAngularScale`). The mask uses SimpleCloth's semantics: 1 follows the skin.
 
 - 2026-11-22 (agent): extend `SoftBody3D` instead of adding a node. Rule 4 makes Godot the only node vocabulary, and Godot's `SoftBody3D` already covers pinned cloth. A second cloth node would split the capability search.
 - 2026-11-22 (agent): vendor three-simplecloth and the particle-fluids cloth files instead of writing a solver. Both are MIT and TSL, they cover skinned pins and XPBD, and the owner rule of 2026-11-03 says to copy MIT upstream verbatim.

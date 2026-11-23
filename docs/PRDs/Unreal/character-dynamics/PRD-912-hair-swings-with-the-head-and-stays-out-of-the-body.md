@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-912 — Hair swings with the head and stays out of the body
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (2026-11-23) — `SpringBoneChain3D` ships with Unreal SpringBone defaults (stiffness 50, damping 4, 1/120 s step) and 7 unit tests. The scene has a 6-bone ponytail in every arm; `?arm=hair` simulates it against a head sphere and a neck capsule. Measured, owned engine, 1 run: tip offset 0.05–0.57 m (rigid control ≈ 1e-7 m), segment stretch ≤ 7e-6, 0–2 bones inside the probe shapes (the nape root bone, not a simulated segment). The colliders are placed by hand, not auto-measured, so the Phase 1 collider box stays open.
 **Priority:** P2 — No hair moves today. A character request with a ponytail or long hair gets a rigid mesh.
 **Complexity:** 7 (HIGH) — spring bone chain (+1), GPU guide strands transliterated from WGSL (+2), card skinning to guides (+2), shared colliders and wind (+1), native proof (+1)
 **Owner:** João

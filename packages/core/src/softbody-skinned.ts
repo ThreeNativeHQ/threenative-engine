@@ -32,6 +32,7 @@ import {
   Fn,
   If,
   Loop,
+  cross,
   exp,
   float,
   instanceIndex,
@@ -70,21 +71,36 @@ export interface ISkinnedSoftBody3DOptions {
   readonly cloth?: SoftBodyMaskSource;
   /** Substeps per fixed step. Default 6. */
   readonly substeps?: number;
+  /** Jacobi constraint iterations per substep, an even number from 2. Default 2. */
+  readonly iterations?: number;
   /** Stretch constraint stiffness, 0..1. Default 1. */
   readonly stretchStiffness?: number;
   /** Bend constraint stiffness, 0..1. Default 0.25. */
   readonly bendStiffness?: number;
-  /** Velocity damping per second. Default 0.5. */
+  /**
+   * Global velocity damping per second. Default -ln(1 - 0.01) × 60 ≈ 0.603: Chaos Cloth's stock
+   * DampingCoefficient 0.01 per step at its 60 Hz solver frequency
+   * (UE 5.8.3: Engine/Plugins/ChaosCloth/Source/ChaosCloth/Public/ChaosCloth/ChaosClothConfig.h:289,
+   * Engine/Source/Runtime/Experimental/Chaos/Private/Chaos/SoftsEvolution.cpp:60).
+   */
   readonly damping?: number;
   /** World gravity, m/s². Default (0, -9.81, 0). */
   readonly gravity?: readonly [number, number, number];
   /** World wind velocity, m/s. Default (0, 0, 0). */
   readonly wind?: readonly [number, number, number];
   /**
-   * Quadratic air drag per metre: a = -airDrag · |v - wind| · (v - wind). Default 0.5, which trails a
-   * cape about 30° at a steady 3.4 m/s jog and 62° at a steady 5.6 m/s sprint.
+   * Per-triangle aerodynamic drag coefficient, Chaos Cloth's model: each triangle feels
+   * ¼ρ·2A·((Cd − Cl)(V·N)V + Cl|V|²N) with V the wind relative to the triangle. Default 0.035
+   * (UE 5.8.3: Engine/Plugins/ChaosCloth/Source/ChaosCloth/Public/ChaosCloth/ChaosClothConfig.h:318,
+   * Engine/Source/Runtime/Experimental/Chaos/Public/Chaos/VelocityField.h:228).
    */
-  readonly airDrag?: number;
+  readonly drag?: number;
+  /** Per-triangle aerodynamic lift coefficient. Default 0.035 (ChaosClothConfig.h:344). */
+  readonly lift?: number;
+  /** Air density, kg/m³. Default 1.225 (VelocityField.h:21). */
+  readonly fluidDensity?: number;
+  /** Cloth areal density, kg/m², which sets each particle's mass. Default 0.35 (ChaosClothConfig.h:120). */
+  readonly density?: number;
   /** Share of the reference bone's linear motion the cloth feels as inertia. Unreal default 0.75. */
   readonly velocityScale?: number;
   /** Share of the reference bone's rotation the cloth feels as inertia. Unreal default 0.75. */
@@ -103,7 +119,10 @@ export interface ISkinnedSoftBody3DOptions {
   readonly friction?: number;
   /** Long-range tethers from each free particle to its nearest pin. Default true. */
   readonly tethers?: boolean;
-  /** Tether slack as a fraction of the geodesic rest distance. Default 0.02. */
+  /**
+   * Tether slack as a fraction of the geodesic rest distance. Default 0: Chaos Cloth's stock
+   * TetherScale 1 (UE 5.8.3: Engine/Plugins/ChaosCloth/Source/ChaosCloth/Public/ChaosCloth/ChaosClothConfig.h:211).
+   */
   readonly tetherSlack?: number;
   /** Hide the source SkinnedMesh, which this node draws in its place. Default true. */
   readonly hideSource?: boolean;
@@ -476,11 +495,17 @@ export function createSkinnedCloth(
   if (skinIndex === undefined || skinWeight === undefined)
     throw new Error("SoftBody3D skinned cloth needs skinIndex and skinWeight attributes.");
   const substeps = check("substeps", options.substeps ?? 6, 1, 32);
+  const iterations = check("iterations", options.iterations ?? 2, 2, 16);
+  if (iterations % 2 !== 0)
+    throw new Error("SoftBody3D.iterations must be even: the passes ping-pong two buffers.");
   if (!Number.isInteger(substeps)) throw new Error("SoftBody3D.substeps must be an integer.");
   const stretchK = check("stretchStiffness", options.stretchStiffness ?? 1, 0, 1);
   const bendK = check("bendStiffness", options.bendStiffness ?? 0.25, 0, 1);
-  const dampingValue = check("damping", options.damping ?? 0.5);
-  const airDragValue = check("airDrag", options.airDrag ?? 0.5);
+  const dampingValue = check("damping", options.damping ?? -Math.log(1 - 0.01) * 60);
+  const dragValue = check("drag", options.drag ?? 0.035);
+  const liftValue = check("lift", options.lift ?? 0.035);
+  const fluidDensity = check("fluidDensity", options.fluidDensity ?? 1.225);
+  const density = check("density", options.density ?? 0.35, 1e-6);
   const teleportRotation = check(
     "teleportRotation",
     options.teleportRotation ?? Math.PI / 2,
@@ -491,7 +516,7 @@ export function createSkinnedCloth(
   const angularShare = check("angularVelocityScale", options.angularVelocityScale ?? 0.75, 0, 1);
   const thicknessValue = check("colliderThickness", options.colliderThickness ?? 0.01);
   const frictionValue = check("friction", options.friction ?? 0.8);
-  const tetherSlack = check("tetherSlack", options.tetherSlack ?? 0.02);
+  const tetherSlack = check("tetherSlack", options.tetherSlack ?? 0);
   const timeStep = check("timeStep", options.timeStep ?? 1 / 60, 1e-4, 1);
   const gravity = vec("gravity", options.gravity, new Vector3(0, -9.81, 0));
   const wind = vec("wind", options.wind, new Vector3());
@@ -626,6 +651,38 @@ export function createSkinnedCloth(
   }
   const meta = new Uint32Array(vertexCount);
   meta.set(adjacency.counts);
+  // Triangles around each vertex, and its mass from the cloth density over a third of their rest area.
+  const around: number[][] = Array.from({ length: vertexCount }, () => []);
+  const restArea = new Float32Array(vertexCount);
+  for (let t = 0; t + 2 < triangles.length; t += 3) {
+    const [i0, i1, i2] = [triangles[t], triangles[t + 1], triangles[t + 2]] as [
+      number,
+      number,
+      number,
+    ];
+    const origin = new Vector3().fromArray(world, i0 * 3);
+    const e1 = new Vector3().fromArray(world, i1 * 3).sub(origin);
+    const area = e1.cross(new Vector3().fromArray(world, i2 * 3).sub(origin)).length() / 2;
+    for (const v of [i0, i1, i2]) {
+      (around[v] as number[]).push(t);
+      restArea[v] = (restArea[v] as number) + area / 3;
+    }
+  }
+  const maxTriangles = Math.max(1, ...around.map((list) => list.length));
+  const triangleData = new Float32Array(vertexCount * maxTriangles * 4);
+  const inverseMass = new Float32Array(vertexCount);
+  around.forEach((list, v) => {
+    info[v * 4 + 3] = list.length;
+    inverseMass[v] = (restArea[v] as number) > 0 ? 1 / (density * (restArea[v] as number)) : 0;
+    list.forEach((t, k) =>
+      triangleData.set(
+        [triangles[t] as number, triangles[t + 1] as number, triangles[t + 2] as number, 0],
+        (v * maxTriangles + k) * 4,
+      ),
+    );
+  });
+  const triangleBuffer = instancedArray(triangleData, "vec4");
+  const inverseMassBuffer = instancedArray(inverseMass, "float");
 
   const x = instancedArray(new Float32Array(world), "vec3");
   const velocity = instancedArray(new Float32Array(vertexCount * 3), "vec3");
@@ -667,7 +724,9 @@ export function createSkinnedCloth(
   const h = uniform(timeStep / substeps);
   const forces: UniformArrayNode<"vec4"> = uniformArray([new Vector4(), new Vector4()], "vec4");
   const damping = uniform(dampingValue);
-  const airDrag = uniform(airDragValue);
+  const drag = uniform(dragValue);
+  const lift = uniform(liftValue);
+  const quarterRho = uniform(fluidDensity / 4);
   const stretch = uniform(stretchK);
   const bend = uniform(bendK);
   const thickness = uniform(thicknessValue);
@@ -713,11 +772,44 @@ export function createSkinnedCloth(
   const predictPass = Fn(() => {
     const m = infoBuffer.element(instanceIndex).x;
     const v = velocity.element(instanceIndex).toVar();
-    const relative = v.sub(forces.element(1).xyz);
+    // Chaos Cloth aerodynamics: every adjacent triangle pushes this particle with its whole force.
+    const wind = forces.element(1).xyz;
+    const aero = vec3(0).toVar();
+    const triangleCount = infoBuffer.element(instanceIndex).w;
+    Loop({ type: "uint", start: 0, end: maxTriangles }, ({ i }) => {
+      If(float(i).lessThan(triangleCount), () => {
+        const t = triangleBuffer.element(instanceIndex.mul(maxTriangles).add(i));
+        const a0 = t.x.toUint();
+        const a1 = t.y.toUint();
+        const a2 = t.z.toUint();
+        const x0 = x.element(a0);
+        const normal = cross(x.element(a2).sub(x0), x.element(a1).sub(x0)).toVar();
+        const doubleArea = length(normal);
+        If(doubleArea.greaterThan(1e-12), () => {
+          const n = normal.div(doubleArea);
+          const surface = velocity
+            .element(a0)
+            .add(velocity.element(a1))
+            .add(velocity.element(a2))
+            .div(3);
+          const flow = wind.sub(surface);
+          const vn = flow.dot(n);
+          const v2 = flow.dot(flow);
+          // The flow can hit either side of the triangle, so the normal flips with it.
+          const force = vn
+            .greaterThanEqual(0)
+            .select(
+              flow.mul(drag.sub(lift).mul(vn)).add(n.mul(lift.mul(v2))),
+              flow.mul(lift.sub(drag).mul(vn)).sub(n.mul(lift.mul(v2))),
+            );
+          aero.addAssign(force.mul(quarterRho.mul(doubleArea)));
+        });
+      });
+    });
     v.addAssign(
       forces
         .element(0)
-        .xyz.sub(relative.mul(length(relative)).mul(airDrag))
+        .xyz.add(aero.mul(inverseMassBuffer.element(instanceIndex)))
         .mul(h),
     );
     v.mulAssign(exp(damping.mul(h).negate()));
@@ -752,7 +844,7 @@ export function createSkinnedCloth(
         });
       });
     });
-    // Jacobi averaging over the stretch constraints with over-relaxation 1.5: stable at any valence,
+    // Jacobi averaging over the stretch constraints with over-relaxation: stable at any valence,
     // and bend pairs (weighted by their own stiffness) do not dilute the stretch solve.
     return p.add(delta.mul(float(RELAXATION).div(max(stretchCount, 1))));
   };
@@ -761,6 +853,10 @@ export function createSkinnedCloth(
     pB.element(instanceIndex).assign(solve(pA));
   })().compute(vertexCount);
   iteratePass.setName("softbody.skinned.iterate");
+  const iterateBackPass = Fn(() => {
+    pA.element(instanceIndex).assign(solve(pB));
+  })().compute(vertexCount);
+  iterateBackPass.setName("softbody.skinned.iterateBack");
 
   const finalizePass = Fn(() => {
     const data = infoBuffer.element(instanceIndex);
@@ -867,7 +963,7 @@ export function createSkinnedCloth(
   const state: ISkinnedClothState = {
     positions: x,
     originalToUnique,
-    nodes: [carryPass, predictPass, iteratePass, finalizePass],
+    nodes: [carryPass, predictPass, iteratePass, iterateBackPass, finalizePass],
     uniqueVertexCount: vertexCount,
     springCount: adjacency.counts.reduce((sum, n) => sum + n, 0) / 2,
     capsules,
@@ -1002,6 +1098,10 @@ export function createSkinnedCloth(
         alpha.value = (s + 1) / substeps;
         dispatch(predictPass);
         dispatch(iteratePass);
+        for (let k = 2; k < iterations; k += 2) {
+          dispatch(iterateBackPass);
+          dispatch(iteratePass);
+        }
         dispatch(finalizePass);
       }
     },

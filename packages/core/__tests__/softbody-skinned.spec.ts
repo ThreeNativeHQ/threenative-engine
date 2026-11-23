@@ -183,10 +183,20 @@ describe("SoftBody3D on a SkinnedMesh", () => {
       bodyCapsules: 1,
       substeps: 4,
     });
-    expect(cloth.warmupNodes).toHaveLength(4);
+    expect(cloth.warmupNodes).toHaveLength(5);
     const dispatched: unknown[] = [];
     cloth.process(renderer(dispatched));
     expect(dispatched).toHaveLength(1 + 3 * 4);
+  });
+
+  it("adds two ping-pong passes per substep for each extra pair of iterations, and rejects an odd count", () => {
+    const { scene, cape } = character();
+    const cloth = new SoftBody3D(cape, { substeps: 4, iterations: 4 });
+    scene.add(cloth);
+    const dispatched: unknown[] = [];
+    cloth.process(renderer(dispatched));
+    expect(dispatched).toHaveLength(1 + 5 * 4);
+    expect(() => new SoftBody3D(character().cape, { iterations: 3 })).toThrow(/even/);
   });
 
   it("reports a teleport when the reference bone jumps past the auto distance, and a manual reset", () => {
