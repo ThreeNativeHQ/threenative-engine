@@ -61,7 +61,7 @@ import {
   vec4,
 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
-import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/hair.js";
+import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/effects/hair.js";
 import { strandAtlas, strandTangents } from "./hair-atlas.js";
 import {
   type IProbeCapsule,
@@ -525,7 +525,7 @@ class CharacterDynamics extends Scene<IState> {
     // The head's world frame for the cards' across vectors, refreshed every step.
     const headFrame = uniform(head.matrixWorld.clone());
     if (armName === "strands") {
-      ponytailTube.visible = false;
+      ponytailTube.visible = false; // engine-override: the strands arm draws GPU hair cards in place of the tube
       const curve = hairWorld.map((point) => point.clone());
       const total = curve
         .slice(1)
@@ -605,7 +605,7 @@ class CharacterDynamics extends Scene<IState> {
       cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
       cardGeometry.setAttribute("uv", new BufferAttribute(cardUv, 2));
       cardGeometry.setIndex(triangles);
-      // PRD-909's card material from the starter template's generated `src/render/hair.ts`, with a
+      // PRD-909's card material from the starter template's generated `src/render/effects/hair.ts`, with a
       // generated strand atlas; each pass reads the solver buffer in its position node.
       const headCentre = headFrame.mul(vec4(0, 0, 0, 1)).xyz;
       // Catmull-Rom through the four solver points around the row, clamped to the strand's ends.
@@ -710,13 +710,13 @@ class CharacterDynamics extends Scene<IState> {
       );
       console.info(`TN_CHARACTER_DYNAMICS_CLOTH:${JSON.stringify(cloth.debug())}`);
     } else {
-      (skinnedCape as SkinnedMesh).visible = false;
+      (skinnedCape as SkinnedMesh).visible = false; // engine-override: the softbody arm draws its own unskinned cape instead
       cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
       cloth.matrixAutoUpdate = false;
     }
     // `?cape=0` hides the cape in any arm, so the hair arms and their rigid control read the same back.
     if (new URLSearchParams(globalThis.location?.search ?? "").get("cape") === "0")
-      cloth.visible = false;
+      cloth.visible = false; // engine-override: `?cape=0` removes the cape from the frame, it is not a warm-up
     const unique = topology.positions.length / 3;
     let minY = Number.POSITIVE_INFINITY;
     for (let v = 0; v < unique; v++) minY = Math.min(minY, topology.positions[v * 3 + 1] as number);

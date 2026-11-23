@@ -48,7 +48,7 @@
       "packages/procedural-environment/vendor/forest-kit/**",
       "packages/procedural-environment/vendor/outcrop.js",
       "packages/procedural-environment/vendor/stylized-biome-kit/*.js",
-      "packages/create-threenative/templates/starter/src/render/vendor/**",
+      "packages/create-threenative/templates/starter/src/render/effects/vendor/**",
       "packages/runtime-native/**/*.json",
       "packages/terrain/starter/*/recipe.json",
       "test-results/**",

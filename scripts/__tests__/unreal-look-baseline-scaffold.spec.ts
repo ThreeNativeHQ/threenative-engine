@@ -82,7 +82,9 @@ function unresolved(target: string): string[] {
               !exportsName(
                 path.resolve(path.dirname(at), (from as string).replace(/\.js$/, ".tsx")),
                 name,
-              ),
+              ) &&
+              // A vendored module ships as plain JavaScript (the starter's effects/vendor/hair-shader.js).
+              !exportsName(path.resolve(path.dirname(at), from as string), name),
           )
           .map((name) => `${file}: ${name} from ${from}`),
       );

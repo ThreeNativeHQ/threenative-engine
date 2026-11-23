@@ -73,7 +73,7 @@ SOFTWARE.
 - Upstream: <https://github.com/creategamecharacters/threejs-hair-shader>
 - Pinned commit: `f0d6cf0d4d309c55b9c5d11370e0a04d04ad05d3` (2026-10-01)
 - Licence: MIT, Copyright (c) 2026 Sander Mørch-Jensen
-- Used by: the starter template's generated `src/render/hair.ts` (PRD-909)
+- Used by: the starter template's generated `src/render/effects/hair.ts` (PRD-909)
 - What was taken: `src/hair-shader.js`, vendored byte for byte as
-  `packages/create-threenative/templates/starter/src/render/vendor/hair-shader.js` below its full
+  `packages/create-threenative/templates/starter/src/render/effects/vendor/hair-shader.js` below its full
   licence header. It is generated user source, so every generated project carries the notice too.

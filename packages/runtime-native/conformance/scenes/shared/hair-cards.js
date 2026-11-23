@@ -1,7 +1,7 @@
 import * as THREE from "three/webgpu";
 import { attribute, cameraViewMatrix, length, normalize, uniform, varying, vec4 } from "three/tsl";
 import { HairStrands3D } from "@threenative/core";
-import { createHairCardMaterial } from "../../../../create-threenative/templates/starter/src/render/hair.ts";
+import { createHairCardMaterial } from "../../../../create-threenative/templates/starter/src/render/effects/hair.ts";
 import { startVisualScene } from "./scene-support.js";
 
 // 24 guide strands on a moving head bone, simulated by the shipped `HairStrands3D` solver on both
@@ -137,7 +137,7 @@ export async function startScene(canvas, dimensions) {
       cardGeometry.setAttribute("across", new THREE.BufferAttribute(cardAcross, 3));
       cardGeometry.setAttribute("uv", new THREE.BufferAttribute(cardUv, 2));
       cardGeometry.setIndex(triangles);
-      // PRD-909's card material from the starter template's generated `src/render/hair.ts`, with a
+      // PRD-909's card material from the starter template's generated `src/render/effects/hair.ts`, with a
       // generated strand atlas; each pass reads the solver buffer in its position node.
       const cardPosition = hair.positions
         .element(attribute("guidePoint", "float").toUint())

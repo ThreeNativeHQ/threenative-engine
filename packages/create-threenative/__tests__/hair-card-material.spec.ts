@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DoubleSide, Texture } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
-import { createHairCardMaterial } from "../templates/starter/src/render/hair.js";
+import { createHairCardMaterial } from "../templates/starter/src/render/effects/hair.js";
 
 // The R coverage channel of the strand atlas examples/character-dynamics/src/hair-atlas.ts builds:
 // anti-aliased lines that taper and fade, packed so the roots cover the card.
@@ -35,7 +35,9 @@ const UPSTREAM_SHA256 = "947cff0ec4ccd55f5f812c1ff5223759d83119a0e9d8071c2f9e56b
 const UPSTREAM_START = Buffer.from("// Created by Sander Mørch-Jensen");
 const COPYRIGHT = "Copyright (c) 2026 Sander Mørch-Jensen — creategamecharacters.com";
 const vendored = (): Buffer =>
-  readFileSync(new URL("../templates/starter/src/render/vendor/hair-shader.js", import.meta.url));
+  readFileSync(
+    new URL("../templates/starter/src/render/effects/vendor/hair-shader.js", import.meta.url),
+  );
 
 // The owned engine's `three/webgpu` also exports `WebGLRenderer`, which upstream's detector reads as
 // "GLSL patches". Every test here runs against that namespace: a ThreeNative game renders with WebGPU.
