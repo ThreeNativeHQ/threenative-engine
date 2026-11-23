@@ -90,6 +90,20 @@ describe("starter post import bindings", () => {
     expect(await readFile(outfile, "utf8")).not.toContain("TN_NATIVE_ENGINE_UNBOUND:");
   });
 
+  it("lays the game name and engine ahead of the game, as index.html does on web (PRD-905)", async () => {
+    const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));
+    directories.push(directory);
+    const entry = path.join(directory, "entry.ts");
+    const outfile = path.join(directory, "game.js");
+    const gameName = 'Midway — Pilot\'s "Open" Pacific';
+    await writeFile(entry, "export default { start: async () => {} };");
+    await bundleNativeEngine({ entry, engine: "threenative", gameName, host: false, outfile });
+    const bundle = await readFile(outfile, "utf8");
+    // Both are the bundle's first statements, and a quoted name cannot break the script.
+    expect(bundle.startsWith(`globalThis.__TN_GAME__ = ${JSON.stringify(gameName)};\n`)).toBe(true);
+    expect(bundle).toContain('globalThis.__TN_ENGINE__ = "threenative";');
+  });
+
   it("bundles defineGame without a web-only renderer import", async () => {
     // Every game reaches game.ts and renderer.ts; neither may drag an unbound import onto native.
     const directory = await mkdtemp(path.resolve("packages/runtime-native/.starter-post-"));

@@ -150,7 +150,7 @@ function unboundDiagnostic(specifier, name) {
 }
 
 /** Bundle the portable entry against native imports; publish nothing when a binding is absent. */
-export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot }) {
+export async function bundleNativeEngine({ entry, outfile, boot = true, define = {}, host = boot, gameName, engine }) {
   // React and its reconciler branch on `process.env.NODE_ENV`; the player has no `process` (Vite defines it
   // on the desktop path, bundle.mjs). A caller's own define wins.
   define = { "process.env.NODE_ENV": JSON.stringify(process.env.NODE_ENV ?? "production"), ...define };
@@ -244,6 +244,14 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     return [facade, Object.values(result.metafile.outputs)[0].exports];
   })));
   const unresolved = new Map();
+  // PRD-905: the game's name and the engine drawing it, ahead of every module in the file, so a
+  // `TN_*` event reported from this bundle names the game instead of "unknown". Omitted when the
+  // caller has neither (the conformance and load-test bundles), and JSON.stringify escapes a name
+  // that carries a quote.
+  const brand = [
+    gameName === undefined ? undefined : `globalThis.__TN_GAME__ = ${JSON.stringify(gameName)};`,
+    engine === undefined ? undefined : `globalThis.__TN_ENGINE__ = ${JSON.stringify(engine)};`,
+  ].filter((line) => line !== undefined);
   const bundled = await build({
     stdin: { contents: boot
       ? `import ${JSON.stringify(resolve(player, "core-host.mjs"))}; import game from "tn:game"; globalThis.tn.__booting = true; void game.start().then(() => { globalThis.tn.__booting = false; game.ctx.renderer.render(game.ctx.scene, game.ctx.camera); }).catch(error => { globalThis.tn.__startupError = String(error.stack ?? error); });`
@@ -251,6 +259,7 @@ export async function bundleNativeEngine({ entry, outfile, boot = true, define =
     bundle: true, write: false, format: "iife", platform: "neutral", target: "es2022",
     conditions: ["threenative-native"], define: { "import.meta.env": "{}", ...define }, metafile: true,
     logLevel: "silent", outfile, sourcemap: "external", sourcesContent: true,
+    ...(brand.length > 0 && { banner: { js: brand.join("\n") } }),
     loader: { ".css": "empty" },
     plugins: [packageImports, { name: "native-engine", setup(builder) {
       builder.onResolve({ filter: /(?:^|\/)assets\.js$/ }, (args) => {
@@ -354,14 +363,15 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--entry", "--out", "--engine", "--game-runtime", "--assets", "--asset-source"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--entry", "--out", "--engine", "--engine-name", "--game-name", "--game-runtime", "--assets", "--asset-source"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_NATIVE_ENGINE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
   if (flags.get("--engine") !== "native" || flags.get("--game-runtime") !== "v8" || !flags.get("--entry") || !flags.get("--out"))
-    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js> [--assets <project dir> [--asset-source <dir>]]");
+    throw new Error("Usage: bundle-native-engine.mjs --engine native --game-runtime v8 --entry <src/game.ts> --out <game.js> [--assets <project dir> [--asset-source <dir>]] [--game-name <name> --engine-name <name>]");
   try {
-    console.log(JSON.stringify(await bundleNativeEngine({ entry: flags.get("--entry"), outfile: flags.get("--out") })));
+    console.log(JSON.stringify(await bundleNativeEngine({ entry: flags.get("--entry"), outfile: flags.get("--out"),
+      gameName: flags.get("--game-name"), engine: flags.get("--engine-name") })));
     if (flags.has("--assets"))
       console.log(JSON.stringify({ assets: await cookNativeEngineAssets({ project: flags.get("--assets"), outfile: flags.get("--out"),
         source: flags.get("--asset-source") }) }));

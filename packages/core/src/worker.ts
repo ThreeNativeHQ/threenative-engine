@@ -7,6 +7,7 @@
  * their own ports: the game's start is slow, and a HUD that mounts first must not wait for it.
  */
 
+import { readLaunchValue } from "./debug.js";
 import type { IGamePlatformSource } from "./game.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
 import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
@@ -694,6 +695,13 @@ export function startWorkerGame(
     // The worker's own URL carries no `?tnLog`, so the page's answer travels as the global.
     if (markerLogRequested()) globals.__THREENATIVE_LOG__ = true;
     if (debugRequested()) globals.__THREENATIVE_DEBUG__ = true;
+    // Telemetry (PRD-905): the page's `?tnTelemetry` answer, and the build's name, engine and id
+    // that `web-brand.ts` writes onto the page, so a worker game reports as the page would.
+    const telemetry = readLaunchValue({ environment: "", query: "tnTelemetry" });
+    if (telemetry !== undefined) globals.__THREENATIVE_TELEMETRY__ = telemetry;
+    for (const key of ["__TN_GAME__", "__TN_ENGINE__", "__TN_BUILD_ID__"]) {
+      if (typeof page[key] === "string") globals[key] = page[key];
+    }
     return globals;
   };
 

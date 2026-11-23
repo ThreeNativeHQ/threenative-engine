@@ -463,6 +463,14 @@
       "override": "`createEngineCatalogPlugin({ mode: \"warn\" })`",
       "marker": "TN_ENGINE_CATALOG",
       "kits": "all"
+    },
+    {
+      "id": "telemetry",
+      "name": "Telemetry",
+      "default": "`TN_*` faults are reported",
+      "override": "`defineGame({ telemetry: false })`",
+      "marker": "TN_TELEMETRY",
+      "kits": "all"
     }
   ]
 }

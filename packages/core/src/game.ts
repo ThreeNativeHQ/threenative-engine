@@ -31,6 +31,7 @@ import type { ICtx, IStartupTimeline, Scene, SceneConstructor } from "./scene.js
 import type { IStartupOffscreenBytes } from "./startup-offscreen-bytes.js";
 import { STARTUP_COMPILE_BUDGET_MS } from "./startup-readiness.js";
 import { type GameStore, createGameStore } from "./state.js";
+import { installTelemetry, uninstallTelemetry } from "./telemetry.js";
 import type { IViewportOptions } from "./viewport.js";
 import { type IWarmUpOptions, prepareSceneEnvironment, warmUpComputeNodes } from "./warmup.js";
 
@@ -223,6 +224,13 @@ export interface IGameConfig<
    * assertion, because turning a convention off must not turn its measurement off.
    */
   readonly frameBudget?: IFrameBudgetOptions | false;
+  /**
+   * Error telemetry, on by default (PRD-905): a `TN_*` code in a warning, an error, or an uncaught
+   * exception reports itself to ThreeNative, scrubbed of URLs, paths and user data. `false` is this
+   * game's opt-out, reported as `TN_TELEMETRY off (config)`; `TN_TELEMETRY=0` and `DO_NOT_TRACK=1`
+   * are the launch-level ones.
+   */
+  readonly telemetry?: false;
   /**
    * Static meshes that share a material merge into one draw once the scene has settled, on by
    * default and reported as `TN_AUTO_BATCH`. A mesh the game later moves, hides or re-materials
@@ -679,6 +687,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     if (this.#pendingStart !== undefined) return this.#pendingStart;
     this.#boot.aborted = false;
     installQuietMarkers();
+    installTelemetry({ enabled: this.#boot.config.telemetry });
     const pendingStart = this.#launch().catch((error: unknown) => {
       this.#ui.disconnect();
       throw error;
@@ -723,6 +732,7 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     );
     this.#teardown();
     uninstallQuietMarkers();
+    uninstallTelemetry();
   }
 
   /**

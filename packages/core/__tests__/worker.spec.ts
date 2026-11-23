@@ -874,6 +874,37 @@ describe("worker game host (PRD-752)", () => {
     handle.stop();
   });
 
+  it("carries the page's telemetry answer, game name, engine and build id into the worker (PRD-905)", async () => {
+    const { scope, worker } = link();
+    const { container, view } = page();
+    view.__TN_GAME__ = "branded-quest";
+    view.__TN_ENGINE__ = "threenative";
+    view.__TN_BUILD_ID__ = "build-1";
+    vi.stubGlobal("location", { search: "?tnTelemetry=0" });
+    let seen: unknown[] = [];
+    serveWorkerGame(
+      {
+        start: async () => {
+          seen = [
+            scope.__TN_GAME__,
+            scope.__TN_ENGINE__,
+            scope.__TN_BUILD_ID__,
+            scope.__THREENATIVE_TELEMETRY__,
+          ];
+        },
+      },
+      scope,
+    );
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    expect(seen).toEqual(["branded-quest", "threenative", "build-1", "0"]);
+    handle.stop();
+    vi.unstubAllGlobals();
+  });
+
   it("copies the page's navigator facts into the worker before start", async () => {
     const { scope, worker } = link();
     const { container, view } = page();

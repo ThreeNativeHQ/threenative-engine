@@ -235,7 +235,7 @@ function mobileDecoderStub(id, admitted) {
 /**
  * Main
  */
-async function bundleProject(project, entryPoint, outputPath, target, nativeBackend, decoders = []) {
+async function bundleProject(project, entryPoint, outputPath, target, nativeBackend, decoders = [], brand = {}) {
   const absoluteProject = resolve(project);
   const absoluteEntry = resolve(absoluteProject, entryPoint);
   const absoluteOutput = resolve(outputPath);
@@ -252,6 +252,21 @@ async function bundleProject(project, entryPoint, outputPath, target, nativeBack
     throw new Error(`Cannot bundle '${absoluteProject}': its pinned Vite dependency is missing.`);
   }
   const { build } = await import(pathToFileURL(viteEntry).href);
+  // PRD-905: the game's name and the engine drawing it, as the web build's `withBootGlobals` writes
+  // them, so a `TN_*` event reported from this bundle names the game instead of "unknown". Written
+  // as the IIFE's first statements, ahead of every game module. `JSON.stringify` escapes whatever
+  // a name holds, and a native bundle is not HTML, so there is no tag for `<` to close.
+  const brandGlobals = [
+    brand.gameName === undefined
+      ? undefined
+      : `globalThis.__TN_GAME__ = ${JSON.stringify(brand.gameName)};`,
+    brand.engine === undefined
+      ? undefined
+      : `globalThis.__TN_ENGINE__ = ${JSON.stringify(brand.engine)};`,
+  ]
+    .filter((line) => line !== undefined)
+    .map((line) => `${line}\n`)
+    .join('');
   const nativePrelude = `
 const nativeElements = new Map();
 const nativeGetElementById = document.getElementById.bind(document);
@@ -375,7 +390,7 @@ void game.start().catch((error) => console.error(
         input: virtualEntry,
         output: {
           // `/*!` makes the scope marker a legal comment, the one class the minifier keeps.
-          banner: `/*! TN_NATIVE_BUNDLE_SCOPE */\n(() => {\n${nativePrelude}`,
+          banner: `/*! TN_NATIVE_BUNDLE_SCOPE */\n(() => {\n${brandGlobals}${nativePrelude}`,
           codeSplitting: false,
           footer: '})();',
           // Vite's lib path defaults the minifier to `{ codegen: false }` for an ES lib, which
@@ -406,6 +421,8 @@ async function main() {
   let target = null;
   let nativeBackend = false;
   let decoders = [];
+  let gameName;
+  let engineName;
 
   for (let i = 0; i < args.length; i++) {
     if (args[i] === '--entry' && args[i + 1]) {
@@ -420,6 +437,10 @@ async function main() {
       target = args[++i];
     } else if (args[i] === '--native-backend') {
       nativeBackend = true;
+    } else if (args[i] === '--game-name' && args[i + 1]) {
+      gameName = args[++i];
+    } else if (args[i] === '--engine-name' && args[i + 1]) {
+      engineName = args[++i];
     } else if (args[i] === '--decoders' && args[i + 1] !== undefined) {
       decoders = args[++i].split(',').filter((codec) => codec.length > 0);
       const unknown = decoders.filter((codec) => !MOBILE_DECODER_STUBS.some((stub) => stub.codec === codec));
@@ -432,7 +453,10 @@ async function main() {
     if (!['android', 'desktop', 'ios'].includes(target)) {
       throw new Error('--project requires --target android|desktop|ios.');
     }
-    await bundleProject(project, entryPoint, outputDir, target, nativeBackend, decoders);
+    await bundleProject(project, entryPoint, outputDir, target, nativeBackend, decoders, {
+      gameName,
+      engine: engineName,
+    });
     return;
   }
 
