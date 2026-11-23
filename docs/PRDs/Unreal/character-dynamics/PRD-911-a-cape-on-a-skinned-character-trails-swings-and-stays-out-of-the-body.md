@@ -30,7 +30,7 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 ## Acceptance Criteria
 
 - [ ] AC-1: On the PRD-910 scene (`?arm=cloth`, owned engine), max edge stretch stays ≤ 10% in every phase (the incumbent reaches 141%). proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
-- [ ] AC-2: No cape vertex sits deeper than the collision thickness inside the measured body capsules in any phase (the incumbent puts up to 29 vertices inside). proof: same scenario.
+- [x] AC-2: No cape vertex sits deeper than the collision thickness inside the measured body capsules in any phase (the incumbent puts up to 29 vertices inside). proof: same scenario. — 2026-11-23: `acceptance-cloth.playtest.json` on `?arm=cloth`: `bodyPenetration` 0 in all eight phases (owned engine, nvidia adapter); the incumbent `?arm=softbody` reads 13–24 in six phases and fails. The probe counts free vertices closer than radius − 1 cm to the capsules `measureBodyCapsules` returns for the same rest pose, so it reads the solver's own capsules.
 - [ ] AC-3: The hem trail angle in jog and sprint, and the swing after the hard stop, fall within the Unreal reference ± its 3-run spread. proof: same scenario against `tools/unreal-reference/character-dynamics/reference.json`.
 - [ ] AC-4: After the 8 m teleport, the first post-teleport sample shows stretch ≤ 10% and no velocity carried over. proof: same scenario.
 - [ ] AC-5: Cape simulation costs ≤ 0.35 ms GPU at 1080p on the RTX 2080 owned-engine lane, with CPU submission ≤ 0.1 ms per frame and zero readback when the probe is off. proof: `node packages/playtest/dist/runner/cli.js perf` on the scene with `?probe=0`.

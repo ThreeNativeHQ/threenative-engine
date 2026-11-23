@@ -89,6 +89,19 @@ describe("SpringBoneChain3D", () => {
     }
   });
 
+  it("keeps a particle out of a sphere that its length constraint would pull it back into", () => {
+    const { root } = chainRig(4);
+    root.position.set(0, 0, 0);
+    root.updateMatrixWorld(true);
+    // Pushed out of the sphere, the second particle lands off its segment length; projecting it back
+    // onto that length re-enters the sphere unless collision and length are solved together.
+    const center = new Vector3(-0.08, 0.3, 0);
+    const chain = new SpringBoneChain3D(root, { colliders: [{ a: center, b: center, radius: 0.14 }] });
+    chain.step(STEP);
+    for (const particle of chain.particles)
+      expect(particle.distanceTo(center)).toBeGreaterThanOrEqual(0.14 - 1e-4);
+  });
+
   it("snaps with zero lag when the root teleports", () => {
     const { root } = chainRig(4);
     const chain = new SpringBoneChain3D(root);

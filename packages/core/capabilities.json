@@ -2691,6 +2691,23 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function measureBodyCapsules( source: SkinnedMesh, maxCapsules = MAX_BODY_CAPSULES, clearOf: ArrayLike<number> = [], clearance = 0, ): ISoftBodyCapsule[] { … }",
+      "situations": [
+        "measure the body capsules a cape or skirt collides with",
+        "check whether cloth is inside a skinned character's body"
+      ],
+      "summary": "Measure body capsules from every other SkinnedMesh on the same skeleton: one per bone that carries at least 24 skin vertices, longest-weighted first. Each radius stops `clearance` short of every point in `clearOf` (the cloth's rest world positions). The skinned `SoftBody3D` calls it with its own rest pose and collision thickness, so a probe that calls it the same way reads the solver's capsules.",
+      "supersedes": [],
+      "symbol": "measureBodyCapsules"
+    },
+    {
+      "aliases": [],
       "constraints": ["precise per-vertex measurement is opt-in and not for frame loops"],
       "example": "const measurement = measureThreePose(model);",
       "importPath": "@threenative/core",

@@ -320,6 +320,7 @@ export type { ISkyCaptureOptions } from "./render/sky-capture.js";
 export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
 export { SoftBody3D } from "./softbody.js";
+export { measureBodyCapsules } from "./softbody-skinned.js";
 export type { ISoftBody3DOptions, ISoftBodyCollision } from "./softbody.js";
 export type { ISkinnedSoftBody3DOptions, ISoftBodyCapsule } from "./softbody-skinned.js";
 /**

@@ -337,8 +337,12 @@ export function buildTethers(
 }
 
 /**
- * @internal Measure body capsules from every other SkinnedMesh on the same skeleton. Each radius
- * stops `clearance` short of every point in `clearOf` (the cloth's rest world positions).
+ * Measure body capsules from every other SkinnedMesh on the same skeleton: one per bone that carries
+ * at least 24 skin vertices, longest-weighted first. Each radius stops `clearance` short of every point
+ * in `clearOf` (the cloth's rest world positions). The skinned `SoftBody3D` calls it with its own rest
+ * pose and collision thickness, so a probe that calls it the same way reads the solver's capsules.
+ * @situation measure the body capsules a cape or skirt collides with
+ * @situation check whether cloth is inside a skinned character's body
  */
 export function measureBodyCapsules(
   source: SkinnedMesh,

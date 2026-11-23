@@ -24,8 +24,8 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 
 ## Acceptance Criteria
 
-- [ ] AC-1: On the PRD-910 scene (`?arm=hair`), no hair vertex enters the head or neck capsule beyond its thickness in any phase. proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
-- [ ] AC-2: The max hair segment stretch stays ≤ 5% in every phase. proof: same scenario.
+- [x] AC-1: On the PRD-910 scene (`?arm=hair`), no hair vertex enters the head or neck capsule beyond its thickness in any phase. proof: `examples/character-dynamics/playtests/acceptance.playtest.json` — 2026-11-23: `acceptance-hair.playtest.json` on `?arm=hair` exits 0; `hairInsideHead` 0 in all eight phases, 2 runs. The first run read 1 in snapTurn: the segment-length projection pulled a pushed-out particle back into the head sphere. `SpringBoneChain3D` now alternates push-out and length up to 4 rounds (red-green: `spring-bone-chain.spec.ts` "keeps a particle out of a sphere that its length constraint would pull it back into").
+- [x] AC-2: The max hair segment stretch stays ≤ 5% in every phase. proof: same scenario. — 2026-11-23: `acceptance-hair.playtest.json` on `?arm=hair` exits 0; `hairStretch` ≤ 7e-6 in every phase, 3 runs.
 - [ ] AC-3: The ponytail tip swing after the hard stop and the snap turn is within the Unreal reference ± its 3-run spread. proof: same scenario against `tools/unreal-reference/character-dynamics/reference.json`.
 - [ ] AC-4: Hair simulation costs ≤ 0.15 ms GPU at 1080p on the RTX 2080 owned-engine lane for 2,000 guides of 16 points, with no steady-state readback. proof: `node packages/playtest/dist/runner/cli.js perf` with `?probe=0`.
 - [ ] AC-5: A fresh visual judge returns IMPROVEMENT over the rigid-hair arm on the hard-stop, jump and snap-turn frames. proof: headed `--browser-recipe webgpu` captures, 2 runs per arm, judge subagent.

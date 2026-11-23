@@ -13,12 +13,14 @@
  */
 import {
   type ICtx,
+  type ISoftBodyCapsule,
   type ISpringBoneCapsule,
   Scene,
   SkeletalMesh3D,
   SoftBody3D,
   SpringBoneChain3D,
   defineGame,
+  measureBodyCapsules,
 } from "@threenative/core";
 import { playtest } from "@threenative/core/playtest";
 import {
@@ -42,8 +44,8 @@ import {
 } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import {
+  type IProbeCapsule,
   centroid,
-  countInsideCapsule,
   countInsideCapsules,
   maxEdgeStretch,
   maxSegmentStretch,
@@ -55,6 +57,8 @@ type Glb = { animations: AnimationClip[]; scene: Object3D };
 
 const STEP = 1 / 60;
 const GRAVITY = 9.81;
+/** SoftBody3D's default `colliderThickness` (Chaos CollisionThickness, 1 cm). */
+const COLLIDER_THICKNESS = 0.01;
 
 interface IPhase {
   readonly name: string;
@@ -343,7 +347,11 @@ class CharacterDynamics extends Scene<IState> {
     };
     placeCape();
     let cloth: SoftBody3D;
-    if (armName === "cloth") {
+    let probeCapsules: ISoftBodyCapsule[] = [];
+    let skinnedCape: SkinnedMesh | undefined;
+    // The skinned cape exists in every arm: the cloth arm simulates it, and every arm's probe measures
+    // penetration against the body capsules the solver would measure from it.
+    {
       const body = player.root.getObjectByProperty("isSkinnedMesh", true) as
         | SkinnedMesh
         | undefined;
@@ -376,6 +384,13 @@ class CharacterDynamics extends Scene<IState> {
       character.add(capeSkin);
       capeSkin.updateMatrixWorld(true);
       capeSkin.bind(body.skeleton, capeSkin.matrixWorld);
+      const restWorld = geometry.clone().applyMatrix4(capeMatrix).getAttribute("position")
+        .array as Float32Array;
+      probeCapsules = measureBodyCapsules(capeSkin, 16, restWorld, COLLIDER_THICKNESS);
+      skinnedCape = capeSkin;
+    }
+    if (armName === "cloth") {
+      const capeSkin = skinnedCape as SkinnedMesh;
       // Named overrides from the URL, for tuning runs: ?substeps=10&colliders=0
       const query = new URLSearchParams(globalThis.location?.search ?? "");
       const tuning: Record<string, number> = {};
@@ -404,6 +419,7 @@ class CharacterDynamics extends Scene<IState> {
       );
       console.info(`TN_CHARACTER_DYNAMICS_CLOTH:${JSON.stringify(cloth.debug())}`);
     } else {
+      (skinnedCape as SkinnedMesh).visible = false;
       cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
       cloth.matrixAutoUpdate = false;
     }
@@ -417,6 +433,7 @@ class CharacterDynamics extends Scene<IState> {
       if (Math.abs(y - minY) < 1e-5) hem.push(v);
       if (Math.abs(y) < 1e-5) top.push(v);
     }
+    const free = Array.from({ length: unique }, (_, v) => v).filter((v) => !top.includes(v));
 
     const followQ = new Quaternion();
     const followP = new Vector3();
@@ -461,9 +478,6 @@ class CharacterDynamics extends Scene<IState> {
     const forward = new Vector3();
     let speed = 0;
     const world = new Vector3();
-    const a = new Vector3();
-    const b = new Vector3();
-    const torsoRadius = 0.075 * height;
 
     const enterPhase = (phase: IPhase): void => {
       phases[phase.name] = {
@@ -490,8 +504,7 @@ class CharacterDynamics extends Scene<IState> {
     interface IPose {
       readonly toBody: Matrix4;
       readonly clothWorld: Matrix4;
-      readonly pelvis: Vector3;
-      readonly neck: Vector3;
+      readonly capsules: IProbeCapsule[];
     }
     const poses = new Map<number, IPose>();
     let steps = 0;
@@ -500,8 +513,14 @@ class CharacterDynamics extends Scene<IState> {
       poses.set(steps, {
         toBody: capeMatrix.clone().invert(),
         clothWorld: cloth.matrixWorld.clone(),
-        pelvis: pelvis.getWorldPosition(new Vector3()),
-        neck: neck.getWorldPosition(new Vector3()),
+        capsules: probeCapsules.map((capsule) => {
+          capsule.bone.updateWorldMatrix(true, false);
+          return {
+            a: (capsule.start ?? new Vector3()).clone().applyMatrix4(capsule.bone.matrixWorld),
+            b: capsule.end.clone().applyMatrix4(capsule.bone.matrixWorld),
+            radius: capsule.radius,
+          };
+        }),
       });
       poses.delete(steps - 120);
     };
@@ -528,17 +547,18 @@ class CharacterDynamics extends Scene<IState> {
         metrics.maxStretch,
         maxEdgeStretch(data, topology.springs, topology.restLengths),
       );
-      a.copy(pose.pelvis);
-      b.copy(pose.neck);
-      const worldPositions = new Float32Array(unique * 3);
-      for (let v = 0; v < unique; v++)
+      // AC-2: free vertices (the pinned top row follows the skin) deeper than the collider thickness
+      // inside the body capsules the solver measures, at the pose that produced this sample.
+      const worldPositions = new Float32Array(free.length * 3);
+      free.forEach((v, k) =>
         world
           .fromArray(data, v * 3)
           .applyMatrix4(pose.clothWorld)
-          .toArray(worldPositions, v * 3);
+          .toArray(worldPositions, k * 3),
+      );
       metrics.bodyPenetration = Math.max(
         metrics.bodyPenetration,
-        countInsideCapsule(worldPositions, a, b, torsoRadius),
+        countInsideCapsules(worldPositions, pose.capsules, COLLIDER_THICKNESS),
       );
       metrics.samples++;
     };
@@ -569,7 +589,8 @@ class CharacterDynamics extends Scene<IState> {
       );
       metrics.hairInsideHead = Math.max(
         metrics.hairInsideHead,
-        countInsideCapsules(hairPositions, hairColliders, 0.005),
+        // The root bone rides the head and is not simulated: count only the chain below it.
+        countInsideCapsules(hairPositions.subarray(3), hairColliders, 0.005),
       );
     };
 

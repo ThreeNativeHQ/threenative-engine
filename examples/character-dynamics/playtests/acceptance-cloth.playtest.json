@@ -1,0 +1,182 @@
+{
+  "name": "character-dynamics-acceptance-cloth",
+  "schemaVersion": 1,
+  "subject": "the cape bounds of PRD-911: edge stretch at most 10% and no vertex inside the body capsules in every phase; red on ?arm=softbody, green on ?arm=cloth",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 85,
+      "release": true,
+      "screenshot": "settled"
+    },
+    {
+      "kind": "wait",
+      "label": "jog",
+      "waitTicks": 75,
+      "release": true,
+      "screenshot": "jog"
+    },
+    {
+      "kind": "wait",
+      "label": "jog-turn",
+      "waitTicks": 100,
+      "release": true,
+      "screenshot": "jog-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "sprint",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "sprint"
+    },
+    {
+      "kind": "wait",
+      "label": "hard-stop",
+      "waitTicks": 20,
+      "release": true,
+      "screenshot": "hard-stop"
+    },
+    {
+      "kind": "wait",
+      "label": "jump-apex",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "jump-apex"
+    },
+    {
+      "kind": "wait",
+      "label": "snap-turn",
+      "waitTicks": 40,
+      "release": true,
+      "screenshot": "snap-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "teleport",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "teleport"
+    },
+    {
+      "kind": "wait",
+      "label": "done",
+      "waitTicks": 65,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "complete",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "finite",
+        "equals": true,
+        "allowTrivial": "finite starts true and must stay true through all eight phases"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.maxStretch",
+        "lte": 0.1,
+        "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.bodyPenetration",
+        "lte": 0,
+        "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.bodyPenetration",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.maxStretch",
+        "lte": 0.1
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.bodyPenetration",
+        "lte": 0
+      }
+    ]
+  }
+}

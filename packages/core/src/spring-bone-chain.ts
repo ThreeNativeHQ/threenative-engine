@@ -1,6 +1,8 @@
 import { type Bone, Matrix4, Quaternion, Vector3 } from "three";
 
 const FIXED_STEP = 1 / 120;
+/** Collision and segment-length rounds per particle per substep. */
+const COLLISION_ROUNDS = 4;
 const MAX_SUBSTEPS = 8;
 const MAX_BONES = 32;
 const DIRECTION_EPSILON = 1e-12;
@@ -309,7 +311,15 @@ export class SpringBoneChain3D {
   }
 
   #collide(index: number): void {
+    // Push-out and the segment length fight: the length projection can carry a pushed-out particle back
+    // inside. Alternate them until no collider is hit (a few rounds settle it on the capsule's surface).
+    for (let round = 0; round < COLLISION_ROUNDS; round++) if (!this.#pushOut(index)) return;
+  }
+
+  /** Push particle `index` out of every collider, then restore its segment length. True on a hit. */
+  #pushOut(index: number): boolean {
     const particle = at(this.particles, index);
+    let hit = false;
     for (let colliderIndex = 0; colliderIndex < this.colliders.length; colliderIndex++) {
       const capsule = at(this.colliders, colliderIndex);
       this.#capsuleAxis.copy(capsule.b).sub(capsule.a);
@@ -324,11 +334,13 @@ export class SpringBoneChain3D {
       const distance = this.#delta.length();
       const minimum = capsule.radius + this.thickness;
       if (distance >= minimum) continue;
+      hit = true;
       if (distance > 1e-9)
         particle.copy(this.#capsuleClosest).addScaledVector(this.#delta, minimum / distance);
       else particle.copy(this.#capsuleClosest).addScaledVector(this.#axis.set(1, 0, 0), minimum);
     }
     this.#constrain(index);
+    return hit;
   }
 
   /** Rotate bone i (the root first) so its child lands on particle i. Positions never stretch. */
