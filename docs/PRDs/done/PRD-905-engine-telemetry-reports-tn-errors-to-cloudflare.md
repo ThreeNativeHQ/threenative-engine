@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-905 — Engine telemetry: each TN_* error and warning reaches a Cloudflare dashboard, on by default, with an opt-out
 
-**Status:** PARTIAL
+**Status:** DONE
 **Priority:** P1 — AC-1 to AC-7 are open: when a game hits an engine error like `TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED`, nobody sees it unless an agent or a player reports it by hand.
 **Complexity:** 7 (HIGH) — 6-10 files (+2), new module (+2), crosses the engine/site release boundary (+2), external API: the threenative.com Worker (+1); risk override: privacy. The engine sends data from players' machines by default.
 **Owner:** João
@@ -86,11 +86,11 @@ sequenceDiagram
 - [x] AC-4 [local]: Each opt-out (config, env, query, global, `DO_NOT_TRACK`) sends nothing and prints `TN_TELEMETRY off (<override>)`. — proof: same spec — Evidence: same spec, the five opt-out cases plus the playtest default, 2026-11-22.
 - [x] AC-5 [local]: A starter-kit game in a real browser that triggers a `TN_*` warning sends one beacon to `/api/telemetry` carrying the project name. The same run with `?tnTelemetry=0` sends none. — proof: a Playwright probe against the starter dev server with the WebGPU recipe that watches requests (see Decisions) — Evidence: Phase 2 box 2, 2026-11-22: one event with the project name, none with `?tnTelemetry=0`.
 - [x] AC-6 [local]: A desktop native run sends the same event through the host's `fetch` shim. — proof: the packaged desktop game on the legacy host behind a local capture proxy (see Decisions) — Evidence: Phase 3 box 1, 2026-11-22.
-- [ ] AC-7 [shared]: The deployed Worker accepts a live event, and an Analytics Engine SQL query returns it. — proof: `curl -X POST https://threenative.com/api/telemetry` followed by the SQL API query — Evidence: pending, after the owner deploy below.
+- [x] AC-7 [shared]: The deployed Worker accepts a live event, and an Analytics Engine SQL query returns it. — proof: `curl -X POST https://threenative.com/api/telemetry` followed by the SQL API query — Evidence: Result 2026-11-23: owner asked for the PRD at 100%; threenative-site#92 squash-merged (e2ce467) and deployed (Worker version 7a2f5c7b, `env.TELEMETRY` -> `tn_engine_events`, deploy guard green). A live POST of `TN_PRD905_LIVE` answered 204 and a malformed body 400; the Analytics Engine SQL API (`SELECT ... FROM tn_engine_events WHERE blob1 = 'TN_PRD905_LIVE'`) returned 1 row: index1 `TN_PRD905_LIVE`, level `warn`, mode `dev`, session `ac71795408754`.
 
 ## Blocked on
 
-- Deploying the site Worker (the new route and the `tn_engine_events` dataset): this is outward-facing production. Unblocked by João's explicit "deploy the site". Note that wrangler needs Node 22 here, and the shell runs Node 20.19.6.
+- Resolved 2026-11-23: the site Worker is deployed (owner: "100% prd done"); wrangler ran on Node 24.22.1 from nvm.
 - Publishing the engine with telemetry on: it rides the next normal release. Unblocked by the usual `develop -> main` release.
 
 ## Integration Ledger
@@ -122,7 +122,7 @@ sequenceDiagram
 ## Execution Phases
 
 #### Phase 1: The site accepts and discloses events
-**Status:** DONE on branch, ThreeNativeHQ/threenative-site#92 (not merged, not deployed)
+**Status:** DONE, ThreeNativeHQ/threenative-site#92 merged (e2ce467) and deployed 2026-11-23
 **Files:** `threenative-site/worker/telemetry.ts` (new), `worker/index.ts` (route), `worker/env.ts` (binding type), `wrangler.jsonc` (dataset), `src/content/legal.ts` and `worker/terms.ts` (text and version), `__tests__/telemetry.spec.ts`, `__tests__/legal.spec.ts`
 **Implementation:** Validate first and write second. Cap each field: code 64, message 200, game 64, the others 32. Answer `OPTIONS` for CORS. Commit on the site's own flow.
 - [x] Ingest route validates and writes. proof: site `worker/__tests__/telemetry.spec.ts` (the Worker harness lives under `worker/__tests__/`) — covers AC-1. Result 2026-11-22: 14 passed; site pre-push gate on `00eee04`: 259 worker and 91 unit tests passed, `wrangler deploy --dry-run` lists `env.TELEMETRY (tn_engine_events)`.
@@ -137,8 +137,8 @@ sequenceDiagram
 - [x] Convention listed and rendered into kit AGENTS.md. proof: `pnpm sync:agents --check` and the conventions spec — covers the convention rule. Result 2026-11-22: 31 mirrors in sync; `scripts/__tests__/kit-conventions.spec.ts` 36 passed; `web-brand.spec.ts` 9 passed.
 
 #### Phase 3: Native parity and live proof
-**Status:** PARTIAL — the live proof waits for the owner deploy
+**Status:** DONE
 **Files:** the native bundle step that writes `__TN_GAME__` (located in phase 2); no new module
 **Implementation:** Confirm that the desktop host's `fetch` shim carries `keepalive` or a plain POST. If uncaught errors do not reach `globalThis` listeners on native, the `console.error` path still captures them. Record which path fired.
 - [x] Desktop native run sends the event. proof: packaged desktop game on the legacy host behind a local TLS-terminating capture proxy (see Decisions) — covers AC-6. Result 2026-11-22: `threenative build --target desktop` with `engine: "threejs"`; the bundle starts with `__TN_GAME__="telemetry-probe-game"`; the host printed `TN_TELEMETRY on` and the proxy received one `POST threenative.com/api/telemetry`, `text/plain`, `platform: "linux"`, `backend: "threejs"`, scrubbed message. Bundler specs: 4 files, 39 passed.
-- [ ] Live event visible in Analytics Engine after the owner deploy. proof: curl and the SQL API — covers AC-7.
+- [x] Live event visible in Analytics Engine after the owner deploy. proof: curl and the SQL API — covers AC-7. Result 2026-11-23: owner asked for the PRD at 100%; threenative-site#92 squash-merged (e2ce467) and deployed (Worker version 7a2f5c7b, `env.TELEMETRY` -> `tn_engine_events`, deploy guard green). A live POST of `TN_PRD905_LIVE` answered 204 and a malformed body 400; the Analytics Engine SQL API (`SELECT ... FROM tn_engine_events WHERE blob1 = 'TN_PRD905_LIVE'`) returned 1 row: index1 `TN_PRD905_LIVE`, level `warn`, mode `dev`, session `ac71795408754`.
