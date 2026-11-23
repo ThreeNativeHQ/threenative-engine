@@ -65,6 +65,9 @@ export interface IInputAction {
   readonly up?: readonly string[];
 }
 
+/** The same binding with writable fields, for the engine's own copies. */
+type WritableInputAction = { -readonly [K in keyof IInputAction]: IInputAction[K] };
+
 export type InputBindings = Record<string, IInputAction>;
 
 /**
@@ -180,6 +183,80 @@ const DEFAULT_BINDINGS: InputBindings = {
     up: ["KeyW", "ArrowUp"],
   },
 };
+
+const BINDING_KEY_FIELDS = ["down", "keys", "left", "right", "up"] as const;
+const BINDING_INDEX_FIELDS = ["buttons", "gamepadAxes", "mouseButtons"] as const;
+const BINDING_FLAG_FIELDS = [
+  "captureOnClick",
+  "pinch",
+  "pointer",
+  "pointerRelative",
+  "scroll",
+] as const;
+
+function describeValue(value: unknown): string {
+  return JSON.stringify(value) ?? String(value);
+}
+
+/** A JSON-safe copy: the arrays are copied, so neither the caller nor the map aliases the other. */
+function copyBinding(binding: IInputAction): IInputAction {
+  const copy: WritableInputAction = { ...binding };
+  if (binding.buttons !== undefined) copy.buttons = [...binding.buttons];
+  if (binding.down !== undefined) copy.down = [...binding.down];
+  if (binding.gamepadAxes !== undefined) copy.gamepadAxes = [...binding.gamepadAxes];
+  if (binding.keys !== undefined) copy.keys = [...binding.keys];
+  if (binding.left !== undefined) copy.left = [...binding.left];
+  if (binding.mouseButtons !== undefined) copy.mouseButtons = [...binding.mouseButtons];
+  if (binding.right !== undefined) copy.right = [...binding.right];
+  if (binding.up !== undefined) copy.up = [...binding.up];
+  return copy;
+}
+
+function isKeyCodes(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((code) => typeof code === "string");
+}
+
+function isDeviceIndices(value: unknown): value is readonly number[] {
+  return Array.isArray(value) && value.every((index) => Number.isInteger(index) && index >= 0);
+}
+
+/**
+ * The one check both the constructor and `setBinding` run: a field of the wrong shape silently
+ * never fires, so it throws `TN_BINDING_INVALID` instead. Returns the map's own copy.
+ */
+function validateBinding(action: string, binding: IInputAction): IInputAction {
+  const candidate: unknown = binding;
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new TypeError(
+      `TN_BINDING_INVALID: input action "${action}" binding must be an object, received ${describeValue(candidate)}.`,
+    );
+  }
+  for (const field of BINDING_KEY_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && !isKeyCodes(value)) {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be an array of keyboard codes, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  for (const field of BINDING_INDEX_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && !isDeviceIndices(value)) {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be an array of non-negative integer device indices, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  for (const field of BINDING_FLAG_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && typeof value !== "boolean") {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be a boolean, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  return copyBinding(binding);
+}
 
 const WHEEL_LINE_PIXELS = 16;
 const WHEEL_PAGE_PIXELS = 800;
@@ -340,14 +417,17 @@ export class InputMap {
       );
     }
     this.gamepadDeadZone = deadZone;
-    this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
-    // Bindings are fixed at construction; freezing the key list keeps tick() from calling
-    // Object.keys every step.
+    this.#bindings = { ...DEFAULT_BINDINGS };
+    for (const [action, binding] of Object.entries(bindings)) {
+      this.#bindings[action] = validateBinding(action, binding);
+    }
+    // The action names never change: `setBinding` only replaces a declared one. Freezing the key
+    // list keeps tick() from calling Object.keys every step.
     this.#bindingNames = Object.keys(this.#bindings);
     this.#target = target;
     this.#pointerTarget = pointerTarget;
     this.#source = source;
-    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
+    this.#refreshDerivedBindings();
     this.raw = {
       gamepad: { axes: this.#gamepadAxes, buttons: this.#gamepadButtons },
       keys: this.#heldKeys,
@@ -373,23 +453,17 @@ export class InputMap {
       if (code !== undefined) this.#heldKeys.delete(code);
     });
     this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
-    if (
-      this.#bindingNames.some(
-        (name) =>
-          this.#bindings[name]?.pointerRelative === true &&
-          this.#bindings[name]?.captureOnClick !== false,
-      )
-    ) {
-      this.#listen(this.#pointerTarget, "click", (event) => {
-        // Touch and pen gestures must not enter desktop relative-mouse mode.
-        const pointerType = (event as PointerEvent).pointerType;
-        if (pointerType && pointerType !== "mouse") return;
-        this.#captureFromClick();
-      });
-    }
+    this.#listen(this.#pointerTarget, "click", (event) => {
+      // Read per click, not at construction: `setBinding` can add a relative binding later.
+      if (!this.#wantsCaptureOnClick()) return;
+      // Touch and pen gestures must not enter desktop relative-mouse mode.
+      const pointerType = (event as PointerEvent).pointerType;
+      if (pointerType && pointerType !== "mouse") return;
+      this.#captureFromClick();
+    });
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, "down"));
-    if (this.#bindingNames.some((name) => this.#bindings[name]?.scroll === true))
-      this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
+    // Always attached for the same reason: the wheel delta is only read by a scroll binding.
+    this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
     this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, "up"));
     this.#listen(this.#pointerTarget, "pointercancel", (event) =>
@@ -412,6 +486,43 @@ export class InputMap {
         this.#syncCaptured((event as Event & { captured?: boolean }).captured),
       );
     }
+  }
+
+  /**
+   * Replaces one declared action's binding — the Godot `InputMap.action_erase_events` +
+   * `action_add_event` pair. `pressed`, `axis` and `vector` read the new binding on the next
+   * `tick`. An action the game never declared in `defineGame({ input })` throws
+   * `TN_BINDING_UNKNOWN`: there is nothing to replace.
+   *
+   * ```ts
+   * onRebind: (action, binding) => map.setBinding(action, binding) // an options menu's key picker
+   * ```
+   */
+  setBinding(action: string, binding: IInputAction): void {
+    if (!Object.hasOwn(this.#bindings, action)) {
+      throw new RangeError(
+        `TN_BINDING_UNKNOWN: input action "${action}" is not declared in this game's bindings; declare it in defineGame({ input: { ... } }) before rebinding it.`,
+      );
+    }
+    this.#bindings[action] = validateBinding(action, binding);
+    this.#refreshDerivedBindings();
+  }
+
+  /**
+   * A JSON-safe copy of every binding, so a game can save it and later feed each entry back to
+   * `setBinding`. Mutating the copy changes nothing; the returned arrays are copies too.
+   *
+   * ```ts
+   * localStorage.setItem("keys", JSON.stringify(map.bindings())) // an options menu saves here
+   * ```
+   */
+  bindings(): InputBindings {
+    const copy: InputBindings = {};
+    for (const name of this.#bindingNames) {
+      const binding = this.#bindings[name];
+      if (binding !== undefined) copy[name] = copyBinding(binding);
+    }
+    return copy;
   }
 
   /**
@@ -835,6 +946,20 @@ export class InputMap {
         if ((this.#latchedPointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
           return true;
       }
+    }
+    return false;
+  }
+
+  /** Recomputes what the constructor cached from the bindings, after `setBinding` replaced one. */
+  #refreshDerivedBindings(): void {
+    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
+  }
+
+  /** Whether any binding asks for automatic click capture, read per click so a rebind takes hold. */
+  #wantsCaptureOnClick(): boolean {
+    for (const name of this.#bindingNames) {
+      const binding = this.#bindings[name];
+      if (binding?.pointerRelative === true && binding.captureOnClick !== false) return true;
     }
     return false;
   }

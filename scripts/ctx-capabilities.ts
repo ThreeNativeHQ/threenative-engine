@@ -82,6 +82,66 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
       "const width = `${Math.round(ctx.startup.progress * 100)}%`; // a cover the game draws on ctx.canvasLayer",
   }),
   member({
+    symbol: "game.pause",
+    importPath: "src/game.ts",
+    signature: "game.pause(options?: { readonly audio?: boolean }): void; game.resume(): void",
+    summary:
+      "Pauses the game loop and every playing audio bus with it; resume() lifts exactly that pause. pause({ audio: false }) keeps the sound playing and reports TN_PAUSE_AUDIO_KEPT once.",
+    situations: [
+      "pause menu",
+      "pause the game and mute the sound",
+      "stop the music when the game is paused",
+      "keep menu music playing while paused",
+    ],
+    constraints: [
+      "A bus the game had already paused itself stays paused after resume().",
+      "A bus built after pause() is not paused by it.",
+    ],
+    example: 'onIntent: (intent) => (intent === "pause" ? game.pause() : game.resume())',
+    overrides: ["pause({ audio: false }) keeps audio; TN_PAUSE_AUDIO_KEPT reports it once"],
+  }),
+  member({
+    symbol: "ctx.timeScale",
+    signature: "ctx.timeScale: number",
+    summary:
+      "Simulation speed, after Godot's Engine.time_scale: 0.5 runs half the fixed ticks per wall second with the same step, 0 freezes the simulation while rendering continues. Default 1.",
+    situations: [
+      "slow motion",
+      "bullet time",
+      "freeze frame on impact",
+      "hitstop",
+      "speed up or slow down the game",
+      "fast forward the simulation",
+    ],
+    constraints: [
+      "The fixed step and every dt a game receives stay the same; only the tick count changes, so determinism holds.",
+      "UI, audio and other wall-clock work keep their own speed.",
+      "A value that is not a finite number of at least 0 throws TN_TIME_SCALE_INVALID.",
+    ],
+    example: "ctx.timeScale = 0.2; // slow motion\nctx.after(0.1, () => (ctx.timeScale = 1));",
+  }),
+  member({
+    symbol: "InputMap.setBinding",
+    importPath: "src/input.ts",
+    signature:
+      "ctx.input.setBinding(action: string, binding: IInputAction): void; ctx.input.bindings(): InputBindings",
+    summary:
+      "Replaces one declared action's binding at runtime, after Godot's InputMap action_erase_events + action_add_event; bindings() returns a JSON-safe copy a game can save and feed back.",
+    situations: [
+      "rebind keys",
+      "remap controls in an options menu",
+      "let the player change key bindings",
+      "save and restore custom controls",
+    ],
+    constraints: [
+      "A malformed binding throws TN_BINDING_INVALID, the same check the constructor runs.",
+      "An action not declared in defineGame({ input }) throws TN_BINDING_UNKNOWN.",
+      "The game owns where bindings are saved, for example localStorage.",
+    ],
+    example:
+      'ctx.input.setBinding("jump", { keys: ["KeyK"] });\nlocalStorage.setItem("keys", JSON.stringify(ctx.input.bindings()));',
+  }),
+  member({
     symbol: "Scene.applicationPaused",
     signature:
       "applicationPaused(ctx): void; applicationResumed(ctx): void // optional Scene methods",

@@ -253,6 +253,8 @@ export interface ICtx<
    */
   readonly startup: IStartupStatus;
   readonly goto: (name: string) => Promise<void>;
+  /** Simulation speed multiplier, after Godot's `Engine.time_scale`. Default 1. */
+  timeScale: number;
   /**
    * Quit the app, as Godot's `get_tree().quit()` does: the native host exits with status 0.
    *

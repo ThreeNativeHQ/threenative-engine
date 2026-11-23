@@ -1,4 +1,5 @@
 import type { IAssetLoaderOptions } from "./assets.js";
+import { type AudioBus, pauseAudioBuses } from "./audio.js";
 import type { IAutoBatchConfig } from "./auto-batch.js";
 import type { IThreeNativeConfig } from "./config.js";
 import type { IFrameBudgetOptions, IFrameBudgetWindow } from "./frame-budget.js";
@@ -381,7 +382,16 @@ export interface IGame<
    */
   resumeScene(name: string, options?: { readonly revealed?: boolean }): void;
   start(): Promise<void>;
-  pause(): void;
+  /**
+   * Freezes the game, and silences the audio with it.
+   *
+   * Every live audio bus is paused, so a paused game does not keep playing music under its own
+   * pause menu. `pause({ audio: false })` is the override: the mix keeps playing — a menu voice
+   * line, a bed the game ducks itself — and `TN_PAUSE_AUDIO_KEPT` is reported once per game so a
+   * log says why a paused game still has sound.
+   */
+  pause(options?: { readonly audio?: boolean }): void;
+  /** Lifts the pause, and resumes the audio only if this game's `pause()` paused it. */
   resume(): void;
   stop(): void;
 }
@@ -431,6 +441,13 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
 
   /** The scene-entry audits this game runs, in order. The engine's are the default. */
   #sceneEntryInspectors: readonly SceneEntryInspector[] = SCENE_ENTRY_INSPECTORS;
+  /**
+   * The buses this game's `pause()` paused, so `resume()` lifts that pause and no other: a bus
+   * the game already held paused is not the game's to resume.
+   */
+  #pausedAudio: readonly AudioBus[] | undefined;
+  /** Whether `TN_PAUSE_AUDIO_KEPT` has printed, so the marker is one per game. */
+  #pauseAudioKeptReported = false;
   readonly #ui: IGameUiSeam;
 
   constructor(config: IGameConfig<TState, TPhysics>) {
@@ -717,12 +734,31 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     await startScenes(startup, frameLoop);
   }
 
-  pause(): void {
+  pause(options?: { readonly audio?: boolean }): void {
     this.#boot.paused = true;
+    if (options?.audio === false) {
+      if (this.#pauseAudioKeptReported) return;
+      this.#pauseAudioKeptReported = true;
+      console.warn(
+        "TN_PAUSE_AUDIO_KEPT: the game is paused and its audio keeps playing, because pause({ audio: false }) asked it to.",
+      );
+      return;
+    }
+    // A second pause() keeps the first list: every bus is paused by then, so a new list would be empty.
+    this.#pausedAudio ??= pauseAudioBuses();
   }
 
   resume(): void {
     this.#boot.paused = false;
+    this.#resumePausedAudio();
+  }
+
+  /** Lifts the audio pause `pause()` applied, and only that one. */
+  #resumePausedAudio(): void {
+    const buses = this.#pausedAudio;
+    this.#pausedAudio = undefined;
+    if (buses === undefined) return;
+    for (const bus of buses) bus.resume();
   }
 
   stop(): void {
@@ -756,6 +792,9 @@ class GameImpl<TState extends Record<string, unknown>, TPhysics>
     boot.ctx = undefined;
     boot.hasDepthCoupledOutput = false;
     boot.paused = false;
+    // Clearing the pause without the audio would leave a stopped game's mix paused for the next
+    // one to start into.
+    this.#resumePausedAudio();
     boot.started = false;
     // Runs even when releases above failed; its verdict loses to a real cleanup error, which is
     // the more actionable diagnosis of what went wrong while stopping.
