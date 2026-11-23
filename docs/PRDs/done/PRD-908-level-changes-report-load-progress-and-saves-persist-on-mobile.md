@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-908 — A level change reports its load progress, and saves are proven to persist on mobile
 
-**Status:** IN PROGRESS
+**Status:** DONE (2026-11-23)
 **Priority:** P2 — Phases 1 and 2 are open: the starter's loading bar shows 100% at once on every restart, and no run proves that `localStorage` survives an app restart on Android.
 **Complexity:** 4 (MEDIUM) — core plus one kit file pattern, one conformance run on the Android emulator.
 **Owner:** João
@@ -37,7 +37,8 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found:
   result: ✅ `scene-load-progress.spec.ts` 2 cases, red on `goto()` before the change (`sceneLoad` undefined), green after; with the startup progress specs, 5 passed.
 - [x] The starter's loading bar is below 100% during a restart that loads assets. proof: starter playtest scenario that sends `restart` and samples the bar value (`pnpm test:templates`, starter kit only)
   result: ✅ `starter/playtests/restart-loading.playtest.json` passes (webgpu, headed, sandbox scaffold from this branch): the lowest `sceneLoad.progress` the load-time repaint saw after `restart` is 0, then the run is back to `playing`. The starter's restart takes its assets from the cache, so the bar starts at 0 and the cover lifts on enter instead of staying at the launch's 100%. The first draft sampled the frame-written value, which is always 1 once a frame runs, and failed on that. `loading-screen.spec.ts` proves the bar paints `sceneLoad` (2 new cases) and holds the cover until the change entered; 24 passed.
-- [ ] All kits that copy `render/loading.ts` read `sceneLoad.progress`. proof: `rg "startup.progress" packages/create-threenative/templates/*/src/render/loading.ts` returns nothing, and `pnpm test:templates` passes
+- [x] All kits that copy `render/loading.ts` read `sceneLoad.progress`. proof: `rg "startup.progress" packages/create-threenative/templates/*/src/render/loading.ts` returns nothing, and `pnpm test:templates` passes
+  result: ✅ `rg "startup.progress" packages/create-threenative/templates/*/src/render/loading.ts` returns nothing (14 kits plus `template-assets/loading.ts`; `minimal` and `rts` ship a bar-less loader). `TN_KIT_CONTRACT=0 pnpm test:templates` on all kits first found a regression in this change: the cover lifted only on a scene tick, so a paused or stepped clock's hand-off frames kept it (`startup.steadyCover` red in 4 kits, and rain's controls were hidden under it). Fixed: a finished launch lifts at readiness (red-green case in `loading-screen.spec.ts`, 25 passed). Rerun of the 5 failed kits: 81 passed, 2 failed, and both also fail with the same numbers on a tree without this PRD (develop + PRD-907): adventure `production-performance` 840 875 triangles over 480 000, and rain `production-performance` GPU p95 24.7 ms over 16.7 ms on this RTX 2080 shared with other agents' browsers. Those two are not caused by this PRD and stay open outside it.
 
 ### Phase 2 — Saves persist on Android
 
