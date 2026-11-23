@@ -37,7 +37,7 @@ Use the web API as the contract, and shim it on the host. This is the pattern th
 ### Phase 1 — Lifecycle and quit
 
 - [x] Host dispatches `visibilitychange` with the correct `document.visibilityState` on pause and resume. proof: `pnpm parity` case added to `packages/runtime-native/conformance/registry.json`, run with `pnpm native:verify:desktop`
-  result: ✅ `tests/host-window.test.mjs` "hiding the window dispatches visibilitychange…" passes under Xvfb on the legacy `mystral` host (xdotool unmap/map → listener sees `hidden:true` then `visible:false`). Proof is a host test in the desktop verify lane, not a parity row.
+  result: ✅ `tests/host-window.test.mjs` "hiding the window dispatches visibilitychange…" passes under Xvfb on the legacy `mystral` host (xdotool unmap/map → listener sees `hidden:true` then `visible:false`). Proof is a host test in the desktop verify lane, not a parity row. The owned V8 engine player (desktop default) does the same: `tests/player-visibility.test.mjs` passes (red before: `document.addEventListener is not a function`), and its `process.exit(code)` ends the player with that code.
 - [x] Core calls `applicationPaused`/`applicationResumed` on web and native, and forwards them into a worker game. proof: `pnpm exec vitest run packages/core/__tests__/app-lifecycle.spec.ts`
   result: ✅ `app-lifecycle.spec.ts` + `worker.spec.ts` forwarding case, 51 passed with `input-haptics.spec.ts`; red before the change.
 - [x] `ctx.quit()` exits the native host with status 0, and on web prints `TN_QUIT_UNSUPPORTED` once. proof: same spec plus a `--target desktop` playtest scenario

@@ -97,7 +97,7 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     constraints: [
       "Fires once per real transition, for the scene active at that moment.",
       "The paused hook gets one JavaScript turn before the host parks the loop; a localStorage write there is flushed to disk before the app is backgrounded.",
-      'The owned desktop engine player does not dispatch it yet; the legacy host (Android, desktop `engine: "threejs"`) and the web do.',
+      "The web, the legacy host (Android, desktop) and the owned desktop engine player all dispatch it; iOS is not proven yet.",
     ],
     example:
       'override applicationPaused(ctx) { localStorage.setItem("save", JSON.stringify(ctx.state.getState())); }',
