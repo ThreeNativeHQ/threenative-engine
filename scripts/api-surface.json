@@ -210,6 +210,7 @@
         "@threenative/core#GPUSceneBVH": "export class GPUSceneBVH extends Group implements IComputeDriven { … }",
         "@threenative/core#GrassField3D": "export class GrassField3D extends Group { … }",
         "@threenative/core#GroundSnap": "export class GroundSnap { … }",
+        "@threenative/core#HairStrands3D": "export class HairStrands3D extends Object3D implements IComputeDriven { … }",
         "@threenative/core#InputMap": "export class InputMap { … }",
         "@threenative/core#installFilmicToneMapping": "export function installFilmicToneMapping( raw: unknown, c: IFilmicCurve = FILMIC_CURVE, grade: IColorGrade = COLOR_GRADE, ): number | undefined { … }",
         "@threenative/core#installSpanProbes": "export function installSpanProbes(target: ISpanProbeTarget, root: Object3D): () => void { … }",
