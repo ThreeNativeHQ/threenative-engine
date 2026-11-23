@@ -36,7 +36,8 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 From the repository root, `pnpm asset-library` builds this package and opens a Storybook-style
 viewer. Search the sidebar by name or filter by biome and style tags. Selecting several tags
 shows assets with any of those tags. Nature and city modules are tagged Realistic, the Biome
-Kit, the Dungeon kit, and the Village kit, one collection, are tagged Stylized. Open a story to orbit the asset.
+Kit, the Dungeon kit, and the Village kit, one collection, are tagged Stylized. The Toybox kit is
+tagged Stylized realism. Open a story to orbit the asset.
 GLB stories run the package's bake with the selected controls. The Docs tab shows the exact
 bake call and mesh attributes, and the Stats tab shows dimensions and triangle counts.
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
@@ -104,6 +105,38 @@ import { createStylizedAsset } from "@threenative/procedural-environment/stylize
 
 const inn = createStylizedAsset("village-inn", { seed: 4, variant: 1 });
 const town = createStylizedAsset("village-town", { variant: 2 }); // group, view, env
+```
+
+### Toybox kit
+
+The **Toybox** kit (collection Stylized realism) has toy-like shapes with realistic surfaces:
+clearcoat plastic, gold, riveted metal, layered rock, soil and planks (triplanar maps in `scans/toybox_*`),
+dense grass blades and swaying trees. It has 44 modules and three scenes, Sky garden, Obstacle
+course and Island cove, in Sky Garden, Frost Peak and Sand Ruins (variants 0, 1, and 2). Each scene
+also returns a blurred sky panorama `backdrop` for that theme.
+
+- Modules snap to a 2 m grid and stand on y = 0. Terrain blocks rise in whole metres (1 m and 2 m
+  blocks, a collar edge, a rounded corner, a ramp, a cliff, a pond). Platforms are 0.5 m thick (slab,
+  circuit deck panel, glass panel, launch pad, stairs, hover platform, 4 m bridge, rail, pipes). The
+  pier deck is 1 m, level with a grass block. The deck panel traces meet at each edge, so a row of
+  panels forms one circuit. The scenes are assembled only from these modules.
+- Island cove stands its plateaus in an open sea that runs to the horizon. Shore foam edge and
+  corner pieces follow a plateau's outline and lap at its walls. Vines hang over its straight edges.
+- Props and plants: crate, barrel, stone gateway, palm, spiky rosette, broadleaf plant, round tree
+  and bush, flowers, rocks, crystals.
+- Gameplay pieces animate: coins spin and bob, the bounce pad squashes and launches, the cannon
+  recoils, the hover platform bobs, glows pulse, the waterfall flows, the sea rolls and the
+  shore foam laps.
+- Grass, flowers and trees sway, and bend away from up to four pushers that you set with `toyboxPush`.
+
+```ts
+import { createStylizedAsset, stylizedUniforms, toyboxPush } from "@threenative/procedural-environment/stylized";
+
+const { group, update, backdrop } = createStylizedAsset("toybox-garden", { variant: 0 });
+// each frame:
+stylizedUniforms.uTime.value = seconds;
+update?.(seconds);
+toyboxPush(0, player.x, player.y, player.z, 0.7);
 ```
 
 ## Trees, cover and the forest floor

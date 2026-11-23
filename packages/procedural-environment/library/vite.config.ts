@@ -340,12 +340,12 @@ async function route(url: URL, res: ServerResponse): Promise<boolean> {
     const biomes = pkg.environmentBiomes();
     send(res, 200, {
       biomes,
-      styles: { realistic: "Realistic", stylized: "Stylized" },
+      styles: { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" },
       elements: [
         ...pkg.environmentElements().map((entry) => ({ ...entry, styleTags: ["realistic"] })),
         ...stylizedAssets().map((entry) => ({
           ...entry,
-          styleTags: ["stylized"],
+          styleTags: [entry.kind === "toybox" ? "hybrid" : "stylized"],
         })),
       ],
       controls: controls(biomes.map((biome) => biome.id)),
