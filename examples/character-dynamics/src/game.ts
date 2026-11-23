@@ -33,8 +33,8 @@ import {
   Bone,
   BufferAttribute,
   BufferGeometry,
+  CatmullRomCurve3,
   Color,
-  CylinderGeometry,
   DirectionalLight,
   DoubleSide,
   Group,
@@ -44,7 +44,9 @@ import {
   type Object3D,
   PlaneGeometry,
   Quaternion,
+  Skeleton,
   SkinnedMesh,
+  TubeGeometry,
   Vector3,
 } from "three";
 import {
@@ -219,11 +221,12 @@ class CharacterDynamics extends Scene<IState> {
     let hairParent: Bone = head;
     for (let index = 0; index < 6; index++) {
       // The root sits on the back of the skull (the Head bone is at the top of the neck); the chain
-      // falls back and down, clear of the neck and the upper back.
+      // falls back and down. Each bone steps 5 cm back: at the bind pose the tip hangs 20 cm clear of
+      // the upper back, so the run cycle does not push the 22 mm shafts through the skin.
       const offset =
         index === 0
           ? back.clone().multiplyScalar(0.12).setY(0.15)
-          : back.clone().multiplyScalar(0.03).setY(-0.06);
+          : back.clone().multiplyScalar(0.05).setY(-0.06);
       hairAnchor.add(offset);
       const bone = new Bone();
       bone.name = `ponytail_${index + 1}`;
@@ -234,23 +237,52 @@ class CharacterDynamics extends Scene<IState> {
       hairLocalPoints.push(bone.position.clone());
       hairParent = bone;
     }
-    const hairMaterial = new MeshStandardNodeMaterial({ color: 0x3a2416, roughness: 0.72 });
+    // One tapered tube through the chain, skinned to its bones with weights blended across each
+    // joint, as a ponytail mesh is weighted: it bends smoothly instead of breaking at the joints.
     const up = new Vector3(0, 1, 0);
-    for (let index = 0; index < hairBones.length; index++) {
-      const segment =
-        index + 1 < hairLocalPoints.length
-          ? (hairLocalPoints[index + 1] as Vector3).clone().sub(hairLocalPoints[index] as Vector3)
-          : (hairLocalPoints[index] as Vector3).clone().sub(hairLocalPoints[index - 1] as Vector3);
-      const length = segment.length();
-      const radius = (step: number): number => 0.022 - 0.014 * (step / hairBones.length);
-      const mesh = new Mesh(
-        new CylinderGeometry(radius(index + 1), radius(index), length, 6),
-        hairMaterial,
-      );
-      mesh.quaternion.setFromUnitVectors(up, segment.normalize());
-      mesh.position.copy(segment).multiplyScalar(length / 2);
-      (hairBones[index] as Bone).add(mesh);
+    const chain = hairBones.map((bone) => bone.getWorldPosition(new Vector3()));
+    const last = chain[chain.length - 1] as Vector3;
+    chain.push(
+      last
+        .clone()
+        .multiplyScalar(2)
+        .sub(chain[chain.length - 2] as Vector3),
+    );
+    const TUBE_SEGMENTS = 48;
+    const TUBE_SIDES = 8;
+    const hairCurve = new CatmullRomCurve3(chain);
+    const tube = new TubeGeometry(hairCurve, TUBE_SEGMENTS, 1, TUBE_SIDES, false);
+    const tubePosition = tube.getAttribute("position");
+    const skinIndex = new Uint16Array(tubePosition.count * 4);
+    const skinWeight = new Float32Array(tubePosition.count * 4);
+    const centre = new Vector3();
+    const vertex = new Vector3();
+    for (let v = 0; v < tubePosition.count; v++) {
+      const along = Math.floor(v / (TUBE_SIDES + 1)) / TUBE_SEGMENTS;
+      hairCurve.getPointAt(along, centre);
+      vertex.fromBufferAttribute(tubePosition, v).sub(centre);
+      vertex.multiplyScalar(0.022 - 0.014 * along).add(centre);
+      tubePosition.setXYZ(v, vertex.x, vertex.y, vertex.z);
+      // Bone k owns the span from its joint to the next; blend linearly between span centres.
+      const span = Math.max(0, along * hairBones.length - 0.5);
+      const first = Math.min(Math.floor(span), hairBones.length - 1);
+      const blend = first + 1 < hairBones.length ? span - first : 0;
+      skinIndex[v * 4] = first;
+      skinIndex[v * 4 + 1] = Math.min(first + 1, hairBones.length - 1);
+      skinWeight[v * 4] = 1 - blend;
+      skinWeight[v * 4 + 1] = blend;
     }
+    tube.computeVertexNormals();
+    tube.setAttribute("skinIndex", new BufferAttribute(skinIndex, 4));
+    tube.setAttribute("skinWeight", new BufferAttribute(skinWeight, 4));
+    const ponytailTube = new SkinnedMesh(
+      tube,
+      new MeshStandardNodeMaterial({ color: 0x3a2416, roughness: 0.72 }),
+    );
+    ponytailTube.frustumCulled = false;
+    character.add(ponytailTube);
+    character.updateMatrixWorld(true);
+    ponytailTube.bind(new Skeleton(hairBones), new Matrix4());
 
     const hairWorld: Vector3[] = hairBones.map(() => new Vector3());
     const readHairWorld = (): void => {
@@ -398,13 +430,20 @@ class CharacterDynamics extends Scene<IState> {
       skinnedCape = capeSkin;
     }
     // The hair collides with capsules measured from the skin, by the same physics-asset rule as the
-    // cape's body capsules (the head merges into `neck_01`). The probe reads the same shapes.
+    // cape's body capsules. The probe reads the same shapes.
     const allCapsules = measureBodyCapsules(skinnedCape as SkinnedMesh);
     console.info(
       `TN_CHARACTER_DYNAMICS_BODY_CAPSULES:${JSON.stringify(allCapsules.map((c) => `${c.bone.name}:${c.radius.toFixed(3)}`))}`,
     );
     // The hair falls onto the head, neck, upper back and shoulders.
-    const hairBoneNames = new Set(["neck_01", "spine_03", "spine_02", "upperarm_l", "upperarm_r"]);
+    const hairBoneNames = new Set([
+      "Head",
+      "neck_01",
+      "spine_03",
+      "spine_02",
+      "upperarm_l",
+      "upperarm_r",
+    ]);
     const hairCapsules = allCapsules.filter((capsule) => hairBoneNames.has(capsule.bone.name));
     if (hairCapsules.length === 0) throw new Error("CHARACTER_DYNAMICS_NO_HEAD_CAPSULE");
     const hairColliders: ISpringBoneCapsule[] = hairCapsules.map((capsule) => ({
@@ -451,7 +490,7 @@ class CharacterDynamics extends Scene<IState> {
     // The head's world frame for the cards' across vectors, refreshed every step.
     const headFrame = uniform(head.matrixWorld.clone());
     if (armName === "strands") {
-      (hairBones[0] as Bone).visible = false;
+      ponytailTube.visible = false;
       const curve = hairWorld.map((point) => point.clone());
       const total = curve
         .slice(1)
@@ -669,12 +708,23 @@ class CharacterDynamics extends Scene<IState> {
 
     // Follow camera: rear three-quarter view so a trailing cape reads against the body. `?view=close`
     // frames the back of the head for the hair-card judge (PRD-909 AC-1).
-    const close = new URLSearchParams(globalThis.location?.search ?? "").get("view") === "close";
+    const view = new URLSearchParams(globalThis.location?.search ?? "").get("view");
+    const close = view === "close";
+    // `?view=ponytail` frames the head from behind, to the side and above, so the ponytail reads in
+    // profile against the floor
+    // (PRD-912 AC-5).
+    const ponytailView = view === "ponytail";
     // The close view lights the hair as a look-dev rig does: the key comes from behind the character
     // and to the camera's side, so the strands the camera sees are lit (the default key is in front).
     if (close)
       key.position.copy(new Vector3(2, 6, -4).applyAxisAngle(new Vector3(0, 1, 0), bindYaw));
-    const cameraOffset = (close ? new Vector3(0.45, 1.75, -0.75) : new Vector3(2.4, 1.5, -3.4))
+    const cameraOffset = (
+      close
+        ? new Vector3(0.45, 1.75, -0.75)
+        : ponytailView
+          ? new Vector3(1.1, 1.85, -0.8)
+          : new Vector3(2.4, 1.5, -3.4)
+    )
       .multiplyScalar(height / 1.8)
       .applyAxisAngle(new Vector3(0, 1, 0), bindYaw);
     const look = new Vector3();
@@ -684,7 +734,9 @@ class CharacterDynamics extends Scene<IState> {
         .applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y)
         .add(character.position);
       ctx.camera.position.copy(eye);
-      look.copy(character.position).setY(character.position.y + (close ? 0.88 : 0.55) * height);
+      look
+        .copy(character.position)
+        .setY(character.position.y + (close ? 0.88 : ponytailView ? 0.93 : 0.55) * height);
       ctx.camera.lookAt(look);
     };
     placeCamera();

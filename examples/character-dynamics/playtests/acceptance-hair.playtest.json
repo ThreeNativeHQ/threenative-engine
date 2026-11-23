@@ -58,9 +58,15 @@
     {
       "kind": "wait",
       "label": "snap-turn",
-      "waitTicks": 40,
+      "waitTicks": 12,
       "release": true,
       "screenshot": "snap-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "snap-turn-settle",
+      "waitTicks": 28,
+      "release": true
     },
     {
       "kind": "wait",
