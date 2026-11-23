@@ -36,7 +36,7 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 ## Acceptance Criteria
 
 - [x] AC-1: Each arm prints a finite `TN_CHARACTER_DYNAMICS` line for all eight phases on the owned engine, with no console error. proof: `node packages/playtest/dist/runner/cli.js examples/character-dynamics/playtests/baseline.playtest.json --url http://127.0.0.1:5291 --server-command "pnpm --filter character-dynamics dev --host 127.0.0.1 --port 5291 --strictPort" --browser-recipe webgpu --headed` — 2026-11-23: `?arm=softbody`, `?arm=cloth` and `?arm=hair` each exit 0 with `"finite":true` for all eight phases and 0 console errors, owned engine, adapter vendor nvidia.
-- [ ] AC-2: The Unreal reference record exists for the same eight phases, with its run spread over 3 runs. proof: `tools/unreal-reference/character-dynamics/reference.json`, read by `examples/character-dynamics/__tests__/reference.spec.ts` — 2026-11-23, cape half met: `tools/unreal-reference/character-dynamics/reference.json` holds the eight phases from 3 separate Chaos Cloth runs on Manny (fixed 1/60 s step, byte-identical, spread 0: stock Chaos is deterministic); `reference.spec.ts` 12/12. Settle stretch 11.7%, moving phases 57-326% (stock 1 iteration, 1 substep). Open: the ponytail half (no SpringBone/AnimDynamics chain in the Unreal scene yet).
+- [x] AC-2: The Unreal reference record exists for the same eight phases, with its run spread over 3 runs. proof: `tools/unreal-reference/character-dynamics/reference.json`, read by `examples/character-dynamics/__tests__/reference.spec.ts` — 2026-11-23, cape half met: `tools/unreal-reference/character-dynamics/reference.json` holds the eight phases from 3 separate Chaos Cloth runs on Manny (fixed 1/60 s step, byte-identical, spread 0: stock Chaos is deterministic); `reference.spec.ts` 12/12. Settle stretch 11.7%, moving phases 57-326% (stock 1 iteration, 1 substep). Hair half met the same day: `hair` (stock `FAnimNode_SpringBone`, tip 1.9-3.7 m, no length limit) and `hairAnimDynamics` (stock `FAnimNode_AnimDynamics` chain, plus the named `swing` and `swingWorld` override arms; tip 0.45-0.87 m at hard stop and snap turn), 3 runs each, byte-identical; `reference.spec.ts` 16/16 (red first on the old record). Every stage is deterministic, so every spread is 0.
 
 ## Execution Phases
 
@@ -54,8 +54,8 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 
 #### Phase 3: The Unreal reference
 
-- [ ] The UE 5.8.3 scene is built with stock defaults: Manny, a Chaos Cloth cape with the same grid and pin row, physics-asset capsules, a groom or a SpringBone ponytail, and the same script. proof: `tools/unreal-reference/character-dynamics/build_scene.py` runs in the 5.8.3 editor and writes `scene.json`.
-- [ ] The editor export writes the same per-phase metrics over 3 runs. proof: AC-2.
+- [x] The UE 5.8.3 scene is built with stock defaults: Manny, a Chaos Cloth cape with the same grid and pin row, physics-asset capsules, a groom or a SpringBone ponytail, and the same script. proof: `tools/unreal-reference/character-dynamics/build_scene.py` runs in the 5.8.3 editor and writes `scene.json`. — 2026-11-23: `build_scene.py` (TN_UE_MODE=build) imports the game's `mannequin.glb` (UE mannequin skeleton) with stock Interchange, adds the 10x18 cape section with the top-row pin mask and the six ponytail bones, generates the physics asset, and writes `scene.json`; the cape capsules take the game's rest-clearance rule (`README.md`, named override).
+- [x] The editor export writes the same per-phase metrics over 3 runs. proof: AC-2. — 2026-11-23: `reference.ts run` plays the script 3 times in fresh worlds and `metrics` writes the cape, SpringBone and AnimDynamics blocks; see AC-2.
 
 ## Blocked on
 
