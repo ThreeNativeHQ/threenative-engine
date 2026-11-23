@@ -995,7 +995,7 @@ export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentB
  * @constraint roadWidth and markings apply to straight and curve; roadLength applies to straight; bendAngle, bendRadius and bendSide apply to curve; roadSurface applies to socketed road modules
  * @constraint bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export
  * @constraint only bake road tiles (`straight`, `curve`, `cross`, `tee`, `alley`, `grid`, `pit`, `cul-de-sac`) when assembling the drivable carriageway from kit tiles; when a level builds its own spline or terrain road, bake scenery modules instead (`detail: 1, dressing: false` keeps draw counts low)
- * @constraint `emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; `opaqueGlass: true` converts transmissive architectural glass to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass
+ * @constraint `emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; glass ships opaque reflective PBR by default (`opaqueGlass: true`), because the default native engine refuses a transmissive mesh by name (`TN_MATERIAL_UNSUPPORTED transmission`) and three pays a full-scene transmission pass; `opaqueGlass: false` keeps the kit's transmissive glass under its own file name
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeCity({ module: "office", detail: 1, dressing: false, out: "assets/city" });
  * @example await bakeCity({ module: "civic-ad", detail: 1, text: "GRAND PRIX", emissiveSigns: true, out: "assets/city" });
