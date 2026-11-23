@@ -48,6 +48,9 @@ const FLOOR_SURFACE_Y = 0;
 /** The near platform's own footprint. */
 const FLOOR_SIZE = { depth: 4.2, width: 10 } as const;
 
+/** Where `applicationPaused` keeps the run; `localStorage` persists on web and both native hosts. */
+const SAVE_KEY = "starter.run";
+
 export class Play extends Scene<GameState, IPhysicsContext> {
   #observeMotion: (() => void) | undefined;
   #assetProof: Mesh | undefined;
@@ -72,6 +75,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     playerX: -2,
     progress: 0,
     respawns: 0,
+    restored: false,
+    saves: 0,
     score: 0,
     status: "playing",
     uiReady: false,
@@ -462,6 +467,18 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
   override render(): void {
     this.#observeMotion?.();
+  }
+
+  /** The app left the screen. A phone may end a backgrounded game, so the run is kept now. */
+  override applicationPaused(ctx: GameCtx): void {
+    const { playerX, saves, score } = ctx.state.getState();
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ playerX, score }));
+    ctx.state.set({ saves: saves + 1 });
+  }
+
+  /** The app came back: the run saved on the way out is what a cold relaunch would read. */
+  override applicationResumed(ctx: GameCtx): void {
+    ctx.state.set({ restored: localStorage.getItem(SAVE_KEY) !== null });
   }
 
   override exit(ctx: GameCtx): void {

@@ -19,6 +19,10 @@ export type GameState = {
   playerX: number;
   progress: number;
   respawns: number;
+  /** Set on resume when the run saved on the last background is in `localStorage`. */
+  restored: boolean;
+  /** Runs saved by `applicationPaused`: a phone may reclaim a game while it is away. */
+  saves: number;
   score: number;
   /** The run: "playing" until the flag is reached ("won") or the last life is gone ("lost"). */
   status: "lost" | "playing" | "won";
