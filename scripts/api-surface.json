@@ -319,6 +319,8 @@
         "@threenative/core#warmUpScene": "export async function warmUpScene( renderer: IWarmUpRenderer, scene: Object3D, camera: Camera, options: IWarmUpOptions = { … }",
         "@threenative/core#WaterSurface3D": "export class WaterSurface3D { … }",
         "@threenative/core#WaveField": "export class WaveField { … }",
+        "@threenative/core#windAt": "export function windAt(root: Object3D | null, out: Vector3): Vector3 { … }",
+        "@threenative/core#WindField3D": "export class WindField3D extends Object3D { … }",
         "@threenative/core#withVelocityContext": "export function withVelocityContext<T>(node: T, source: Node): T { … }",
         "@threenative/core#WorldEnvironment": "export class WorldEnvironment { … }",
         "@threenative/core#zenithTransmittance": "export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }",
