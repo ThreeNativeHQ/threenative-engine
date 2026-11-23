@@ -303,7 +303,10 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
 
       const globalStep = globalK / iterations;
       const localStep = localK / iterations;
-      const collisionStep = collisionK / iterations;
+      // Collision is a projection, as Unreal's groom static collision (UE 5.8.3: Engine/Plugins/Runtime/
+      // HairStrands/Shaders/Private/NiagaraStaticCollisionConstraint.ush:16-20 takes the full penetration
+      // when IsProjection): split over the iterations, a deep contact kept a third of its depth.
+      const collisionStep = collisionK;
       Loop({ start: 0, end: iterations, type: "int" }, () => {
         // Stretch/length constraint ([Bender15] 5.1).
         Loop({ start: 0, end: n - 1, type: "int" }, ({ i }) => {
