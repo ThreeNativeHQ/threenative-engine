@@ -691,6 +691,34 @@ void processGamepadConnected(SDL_JoystickID id) {
     std::cout << "[Input] Gamepad connected: " << SDL_GetGamepadName(gamepad) << std::endl;
 }
 
+bool rumbleGamepad(int index, float weak, float strong, uint32_t durationMs) {
+    if (index < 0 || index >= (int)g_gamepadOrder.size()) return false;
+    auto it = g_gamepads.find(g_gamepadOrder[index]);
+    if (it == g_gamepads.end()) return false;
+    const auto level = [](float v) { return static_cast<Uint16>(std::clamp(v, 0.0f, 1.0f) * 0xFFFF); };
+    return SDL_RumbleGamepad(it->second, level(weak), level(strong), durationMs);
+}
+
+bool vibrateDevice(uint32_t durationMs) {
+    // Opened once and kept: SDL lists the Android system vibrator as a haptic device; a desktop
+    // with no motor has none, and the caller reports TN_HAPTICS_UNSUPPORTED.
+    static SDL_Haptic* haptic = [] () -> SDL_Haptic* {
+        if (!SDL_WasInit(SDL_INIT_HAPTIC) && !SDL_InitSubSystem(SDL_INIT_HAPTIC)) return nullptr;
+        int count = 0;
+        SDL_HapticID* ids = SDL_GetHaptics(&count);
+        SDL_Haptic* opened = (ids != nullptr && count > 0) ? SDL_OpenHaptic(ids[0]) : nullptr;
+        SDL_free(ids);
+        if (opened != nullptr && !SDL_InitHapticRumble(opened)) {
+            SDL_CloseHaptic(opened);
+            opened = nullptr;
+        }
+        return opened;
+    }();
+    if (haptic == nullptr) return false;
+    if (durationMs == 0) return SDL_StopHapticRumble(haptic);
+    return SDL_PlayHapticRumble(haptic, 1.0f, durationMs);
+}
+
 /**
  * Process gamepad disconnected
  */
