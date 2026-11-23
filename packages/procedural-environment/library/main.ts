@@ -868,39 +868,38 @@ const here = (kind: string, id?: string, category?: string) =>
 /** A category node: its docs, its overview and one story per element. */
 function categoryNode(kind: string, category: string, members: IElement[], open: boolean) {
   const docs = tab === "docs";
-  const group = node(`${kind}/${category}`, category, open, "pl-1");
+  const group = node(`${kind}/${category}`, category, open, "pl-5");
   const at = hashOf(kind, undefined, category);
   const current = here(kind, undefined, category);
   group.append(
-    leaf(at, "Docs", "doc", current && docs, "pl-10", "docs"),
-    leaf(at, "Overview", "story", current && !docs, "pl-10", "controls"),
+    leaf(at, "Docs", "doc", current && docs, "pl-14", "docs"),
+    leaf(at, "Overview", "story", current && !docs, "pl-14", "controls"),
     ...members.map((e) =>
-      leaf(hashOf(kind, e.id), e.name, "story", here(kind, e.id) && !docs, "pl-10", "controls"),
+      leaf(hashOf(kind, e.id), e.name, "story", here(kind, e.id) && !docs, "pl-14", "controls"),
     ),
   );
   return group;
 }
 
-/** An element node: its docs and its default story. */
 /** An element node: its docs, its default story, a story per biome option and a tiled story. */
 function elementNode(e: IElement) {
   const docs = tab === "docs";
   const current = here(e.kind, e.id);
   const story = current && !docs && !route.tiled;
-  const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-1");
+  const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-5");
   const at = hashOf(e.kind, e.id);
   const biome = controlsFor(e.kind, e.id).find((c) => c.key === "biome" && c.type === "select");
   const tile = tileControl(e.kind, e.id);
   group.append(
-    leaf(at, "Docs", "doc", current && docs, "pl-10", "docs"),
-    leaf(at, "Default", "story", story && !touched.has("biome"), "pl-10", "controls"),
+    leaf(at, "Docs", "doc", current && docs, "pl-14", "docs"),
+    leaf(at, "Default", "story", story && !touched.has("biome"), "pl-14", "controls"),
     ...(biome?.options ?? []).map((o) =>
       leaf(
         hashOf(e.kind, e.id, undefined, [["biome", o]]),
         optionName(o),
         "story",
         story && touched.get("biome") === o,
-        "pl-10",
+        "pl-14",
         "controls",
       ),
     ),
@@ -912,16 +911,19 @@ function elementNode(e: IElement) {
         `Tiled ×3 (${tile.label})`,
         "story",
         current && !docs && route.tiled === tile.key,
-        "pl-10",
+        "pl-14",
         "controls",
       ),
     );
   return group;
 }
 
-/** One kind: an uppercase section with its overview, then a node per category or per element. */
+/** One kind: a pack inside its collection, with its overview, then a node per category or per element. */
 const isBackdrop = (row: IElement) => row.category === "Scenes" || row.id === "sky-dome";
 const kindName = (kind: string) => (kind === "stylized" ? "Stylized Biome Kit" : title(kind));
+/** The pack name under its collection heading: the Stylized collection holds Biome, Dungeon and Village kits. */
+const packName = (kind: string) =>
+  kind === "stylized" ? "Biome Kit" : isRuntimeKind(kind) ? `${title(kind)} Kit` : title(kind);
 const isRuntimeKind = (kind: string) =>
   kind === "stylized" || kind === "dungeon" || kind === "village";
 const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
@@ -929,16 +931,17 @@ const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
 function kindSection(kind: string, rows: IElement[], searching: boolean) {
   const summary = el(
     "summary",
-    "mt-3 flex items-center gap-1.5 py-1 pl-1 text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted hover:text-ink",
+    "flex items-center gap-1.5 rounded py-1 pr-2 pl-1 font-bold text-ink hover:bg-hover",
   );
   summary.append(
-    iconEl("chevron", "chev transition-transform", 12),
-    el("span", "flex-1", kindName(kind)),
-    el("span", "font-normal tracking-normal", String(rows.length)),
+    iconEl("chevron", "chev text-muted transition-transform", 12),
+    iconEl("group", "text-group"),
+    el("span", "flex-1 truncate", packName(kind)),
+    el("span", "font-normal text-muted", String(rows.length)),
   );
-  const section = folder(kind, true, summary);
+  const section = folder(kind, searching || route.kind === kind, summary);
   section.append(
-    leaf(hashOf(kind), "Overview", "story", here(kind) && tab !== "docs", "pl-5", "controls"),
+    leaf(hashOf(kind), "Overview", "story", here(kind) && tab !== "docs", "pl-10", "controls"),
   );
   for (const category of [...new Set(rows.map((e) => e.category ?? ""))]) {
     const members = rows.filter((e) => (e.category ?? "") === category);
@@ -959,9 +962,30 @@ function renderTree(): void {
   const searching = $<HTMLInputElement>("search").value.trim() !== "";
   const nav = $("tree");
   nav.replaceChildren();
-  for (const kind of kinds()) {
-    const rows = catalog.elements.filter((e) => e.kind === kind && visible(e));
-    if (rows.length) nav.append(kindSection(kind, rows, searching));
+  // collections first (Realistic, Stylized), then one pack per kind inside each
+  for (const [style, label] of Object.entries(catalog.styles)) {
+    const packs = kinds()
+      .map((kind) =>
+        catalog.elements.filter((e) => e.kind === kind && e.styleTags[0] === style && visible(e)),
+      )
+      .filter((rows) => rows.length);
+    if (!packs.length) continue;
+    const summary = el(
+      "summary",
+      "mt-3 flex items-center gap-1.5 py-1 pl-1 text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted hover:text-ink",
+    );
+    summary.append(
+      iconEl("chevron", "chev transition-transform", 12),
+      el("span", "flex-1", label),
+      el(
+        "span",
+        "font-normal tracking-normal",
+        String(packs.reduce((n, rows) => n + rows.length, 0)),
+      ),
+    );
+    const collection = folder(`style/${style}`, true, summary);
+    for (const rows of packs) collection.append(kindSection(rows[0]?.kind ?? "", rows, searching));
+    nav.append(collection);
   }
   if (!nav.childElementCount) nav.append(el("p", "px-1 py-3 text-muted", "No matching assets"));
   nav.querySelector("[aria-current=page]")?.scrollIntoView({ block: "center" });
