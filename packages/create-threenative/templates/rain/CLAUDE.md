@@ -98,6 +98,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Randomness** `#seed`: unseeded. Override: `defineGame({ seed })`.
 - **Engine** `#engine`: owned C++ engine. Override: `engine: "threejs"` only when the user asks. Marker: `TN_NATIVE_ENGINE_UNBOUND`.
 - **Refused imports** `#engine-catalog`: refused `three` imports fail at their line. Override: `createEngineCatalogPlugin({ mode: "warn" })`. Marker: `TN_ENGINE_CATALOG`.
+- **Error telemetry** `#telemetry`: a `TN_*` warning, error or uncaught exception reports itself. Override: `defineGame({ telemetry: false })`; `TN_TELEMETRY=0`, `DO_NOT_TRACK=1`. Marker: `TN_TELEMETRY`.
 <!-- /shared -->
 
 <!-- shared: kit-stuck -->

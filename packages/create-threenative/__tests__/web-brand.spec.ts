@@ -274,6 +274,28 @@ describe("web branding adapter", () => {
     expect(withBuildId(dev)).toBe(dev);
   });
 
+  it("writes the game's name and engine before the game module, escaped (PRD-905)", async () => {
+    const root = await makeTempDir("threenative-web-brand-telemetry-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "telemetry-game", type: "module" }),
+    );
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      'export default { app: { name: "Branded <Quest>" } };\n',
+    );
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root });
+    const html = plugin.transformIndexHtml(
+      '<head>\n    <script type="module" src="/src/main.ts"></script>\n</head>',
+    );
+    expect(html).toContain(
+      '<script>globalThis.__TN_GAME__ = "Branded \\u003cQuest>"; globalThis.__TN_ENGINE__ = "threenative"; </script>',
+    );
+    expect(html.indexOf("__TN_GAME__")).toBeLessThan(html.indexOf('type="module"'));
+  });
+
   it("starts the engine's Wasm with the page, then Rapier, instead of after the entry script ran (PRD-860)", () => {
     const html =
       '<head>\n    <script type="module" crossorigin src="/game/assets/index-A1.js"></script>\n</head>';

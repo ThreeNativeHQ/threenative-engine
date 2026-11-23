@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-905 — Engine telemetry: each TN_* error and warning reaches a Cloudflare dashboard, on by default, with an opt-out
 
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Priority:** P1 — AC-1 to AC-7 are open: when a game hits an engine error like `TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED`, nobody sees it unless an agent or a player reports it by hand.
 **Complexity:** 7 (HIGH) — 6-10 files (+2), new module (+2), crosses the engine/site release boundary (+2), external API: the threenative.com Worker (+1); risk override: privacy. The engine sends data from players' machines by default.
 **Owner:** João
@@ -80,11 +80,11 @@ sequenceDiagram
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: A valid event posted to `/api/telemetry` returns 204 and calls `writeDataPoint` once. An oversized or malformed event returns 400 and does not write. — proof: site `pnpm vitest run __tests__/telemetry.spec.ts` (workers pool) — Evidence: pending.
-- [ ] AC-2 [local]: The privacy and terms pages render the telemetry paragraph and the opt-outs, and the two version constants match. — proof: site `pnpm vitest run __tests__/legal.spec.ts` — Evidence: pending.
-- [ ] AC-3 [local]: A thrown or warned `TN_*` code produces one scrubbed event with `game`, `engine`, `platform` and `mode`. A repeat is deduped, the 51st event is dropped, and a `TN_FRAME_BUDGET` info line sends nothing. — proof: `pnpm exec vitest run packages/core/__tests__/telemetry.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: Each opt-out (config, env, query, global, `DO_NOT_TRACK`) sends nothing and prints `TN_TELEMETRY off (<override>)`. — proof: same spec — Evidence: pending.
-- [ ] AC-5 [local]: A starter-kit game in a real browser that triggers a `TN_*` warning sends one beacon to `/api/telemetry` carrying the project name. The same run with `?tnTelemetry=0` sends none. — proof: playtest scenario `telemetry.playtest.json` with `--browser-recipe webgpu` and a network assertion — Evidence: pending.
+- [x] AC-1 [local]: A valid event posted to `/api/telemetry` returns 204 and calls `writeDataPoint` once. An oversized or malformed event returns 400 and does not write. — proof: site `pnpm vitest run __tests__/telemetry.spec.ts` (workers pool) — Evidence: site `worker/__tests__/telemetry.spec.ts` 14 passed on `00eee04` (ThreeNativeHQ/threenative-site#92).
+- [x] AC-2 [local]: The privacy and terms pages render the telemetry paragraph and the opt-outs, and the two version constants match. — proof: site `pnpm vitest run __tests__/legal.spec.ts` — Evidence: site `__tests__/legal.spec.ts` 5 passed on `00eee04`.
+- [x] AC-3 [local]: A thrown or warned `TN_*` code produces one scrubbed event with `game`, `engine`, `platform` and `mode`. A repeat is deduped, the 51st event is dropped, and a `TN_FRAME_BUDGET` info line sends nothing. — proof: `pnpm exec vitest run packages/core/__tests__/telemetry.spec.ts` — Evidence: `packages/core/__tests__/telemetry.spec.ts` 16 passed, 2026-11-22.
+- [x] AC-4 [local]: Each opt-out (config, env, query, global, `DO_NOT_TRACK`) sends nothing and prints `TN_TELEMETRY off (<override>)`. — proof: same spec — Evidence: same spec, the five opt-out cases plus the playtest default, 2026-11-22.
+- [ ] AC-5 [local]: A starter-kit game in a real browser that triggers a `TN_*` warning sends one beacon to `/api/telemetry` carrying the project name. The same run with `?tnTelemetry=0` sends none. — proof: a Playwright probe against the starter dev server with the WebGPU recipe that watches requests (see Decisions) — Evidence: pending.
 - [ ] AC-6 [local]: A desktop native run sends the same event through the host's `fetch` shim. — proof: `pnpm native:verify:desktop` plus the scenario with `--target desktop`, against a local stub endpoint — Evidence: pending.
 - [ ] AC-7 [shared]: The deployed Worker accepts a live event, and an Analytics Engine SQL query returns it. — proof: `curl -X POST https://threenative.com/api/telemetry` followed by the SQL API query — Evidence: pending, after the owner deploy below.
 
@@ -109,24 +109,27 @@ sequenceDiagram
 - 2026-11-22 (João): Storage is Workers Analytics Engine, through a new route on the existing threenative-site Worker. There is no new Worker or domain.
 - 2026-11-22 (João): The opt-outs are the `defineGame` config, the `TN_TELEMETRY` env/query/global, and `DO_NOT_TRACK`.
 - 2026-11-22 (João): The site terms and privacy policy are updated in the same PRD.
+- 2026-11-22 (agent): A playtest runner's launch is off by default (`TN_TELEMETRY off (playtest)`), and `tnTelemetry=1` turns it back on. Why: on the native host a refused POST lands in `fetch.network()` and fails each kit contract's `noNetworkErrors`, and CI is not a player. The check reads the two globals that `runnerAnnounced` reads, inlined, because `playtest.ts` pulls the playtest bridge into every game.
+- 2026-11-22 (agent): `session` is a UUID without dashes (32 characters), because the site caps each short field at 32. `platform` on native is the host's OS name from `getPlatform()` (`packages/core/src/platform.ts:203`). `backend` comes from a second page global, `__TN_ENGINE__`, that the web brand plugin writes beside `__TN_GAME__`, because core cannot read the engine alias at run time.
+- 2026-11-22 (agent): The AC-5 proof is a Playwright probe against a real starter-kit dev server with `?tnTelemetry=1`, not a playtest scenario. Why: playtest has no request assertion and no script step, so a scenario cannot trigger a `TN_*` warning or see a beacon. Adding both is a separate playtest change.
 - 2026-11-22 (agent): Add an entry to the convention index (`packages/create-threenative/conventions.json`), because a default with an override that is not in the index "does not exist" (root AGENTS.md).
 
 ## Execution Phases
 
 #### Phase 1: The site accepts and discloses events
-**Status:** NOT STARTED
+**Status:** DONE on branch, ThreeNativeHQ/threenative-site#92 (not merged, not deployed)
 **Files:** `threenative-site/worker/telemetry.ts` (new), `worker/index.ts` (route), `worker/env.ts` (binding type), `wrangler.jsonc` (dataset), `src/content/legal.ts` and `worker/terms.ts` (text and version), `__tests__/telemetry.spec.ts`, `__tests__/legal.spec.ts`
 **Implementation:** Validate first and write second. Cap each field: code 64, message 200, game 64, the others 32. Answer `OPTIONS` for CORS. Commit on the site's own flow.
-- [ ] Ingest route validates and writes. proof: site `__tests__/telemetry.spec.ts` — covers AC-1.
-- [ ] Terms and privacy text updated, versions bumped together. proof: site `__tests__/legal.spec.ts` — covers AC-2.
+- [x] Ingest route validates and writes. proof: site `worker/__tests__/telemetry.spec.ts` (the Worker harness lives under `worker/__tests__/`) — covers AC-1. Result 2026-11-22: 14 passed; site pre-push gate on `00eee04`: 259 worker and 91 unit tests passed, `wrangler deploy --dry-run` lists `env.TELEMETRY (tn_engine_events)`.
+- [x] Terms and privacy text updated, versions bumped together. proof: site `__tests__/legal.spec.ts` — covers AC-2. Result 2026-11-22: 5 passed; both versions are `2026-11-22`.
 
 #### Phase 2: The engine reports TN codes from a web game
-**Status:** NOT STARTED
+**Status:** PARTIAL
 **Files:** `packages/core/src/telemetry.ts` (new), `packages/core/src/game.ts` (install/uninstall), `packages/core/src/config.ts` (`telemetry?: false`), `packages/create-threenative/src/web-brand.ts` (`__TN_GAME__`), `packages/create-threenative/conventions.json`, `packages/core/__tests__/telemetry.spec.ts`, one playtest scenario under the starter template
 **Implementation:** Follow `quiet-markers.ts`: a single install, an exact restore of the wrapped console methods, and listener removal in `stop()`. Swallow every transport error.
-- [ ] Capture, scrub, dedupe, cap and opt-outs. proof: `packages/core/__tests__/telemetry.spec.ts` — covers AC-3, AC-4.
-- [ ] A browser game sends one beacon with the game name, and none when opted out. proof: `telemetry.playtest.json --browser-recipe webgpu` — covers AC-5.
-- [ ] Convention listed and rendered into kit AGENTS.md. proof: `pnpm sync:agents --check` and the conventions spec — covers the convention rule.
+- [x] Capture, scrub, dedupe, cap and opt-outs. proof: `packages/core/__tests__/telemetry.spec.ts` — covers AC-3, AC-4. Result 2026-11-22: 16 passed (the session-id and playtest cases failed first, 3 red); `game*.spec.ts` 134 passed; core typecheck exit 0.
+- [ ] A browser game sends one beacon with the game name, and none when opted out. proof: Playwright probe against the starter dev server (see Decisions) — covers AC-5.
+- [x] Convention listed and rendered into kit AGENTS.md. proof: `pnpm sync:agents --check` and the conventions spec — covers the convention rule. Result 2026-11-22: 31 mirrors in sync; `scripts/__tests__/kit-conventions.spec.ts` 36 passed; `web-brand.spec.ts` 9 passed.
 
 #### Phase 3: Native parity and live proof
 **Status:** NOT STARTED
