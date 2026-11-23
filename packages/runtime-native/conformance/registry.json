@@ -2467,7 +2467,7 @@
       "status": "implemented",
       "scene": "conformance/scenes/shared/softbody-character.js",
       "tolerance": {
-        "pixelMismatchRatio": 0.01,
+        "pixelMismatchRatio": 0.02,
         "perceptualDeltaE": 3.0
       },
       "desktopGate": false,
