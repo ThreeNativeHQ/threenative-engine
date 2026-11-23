@@ -92,6 +92,12 @@ describe("app lifecycle", () => {
     expect(paused).not.toHaveBeenCalled();
   });
 
+  it("does nothing where the host document shim has no events", () => {
+    vi.stubGlobal("document", { visibilityState: "visible" });
+    const dispose = installApplicationLifecycle({ paused: vi.fn(), resumed: vi.fn() });
+    expect(() => dispose()).not.toThrow();
+  });
+
   it("reads a worker host's forwarded copy of the document", () => {
     const visibility = Object.assign(new EventTarget(), { visibilityState: "visible" });
     vi.stubGlobal("__tnAppVisibility", visibility);

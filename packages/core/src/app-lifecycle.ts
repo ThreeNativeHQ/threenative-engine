@@ -26,9 +26,10 @@ export interface IApplicationLifecycleHooks {
 
 /** `document` on a page, or the worker host's forwarded copy of it. */
 function visibilitySource(): IVisibilitySource | undefined {
+  // A host document shim without events (an older host, a test stub) has no visibility to report.
   const page = hostDocument();
-  if (page !== undefined) return page;
-  return (globalThis as { __tnAppVisibility?: IVisibilitySource }).__tnAppVisibility;
+  const source = page ?? (globalThis as { __tnAppVisibility?: IVisibilitySource }).__tnAppVisibility;
+  return typeof source?.addEventListener === "function" ? source : undefined;
 }
 
 /**
