@@ -727,6 +727,11 @@ export function defineTsl(
       statement(name);
       return wrap(call(name, null, args));
     };
+  // three's node.discard() (addMethodChaining): Discard(node), the node as the condition.
+  prototype.discard = function (this: ITslNode) {
+    statement("Discard");
+    return wrap(call("Discard", null, [this]));
+  };
   exports.If = (condition: unknown, callback: unknown) => {
     statement("If");
     const test = argument("If", 0, condition);

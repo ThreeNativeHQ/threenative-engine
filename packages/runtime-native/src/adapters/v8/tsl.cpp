@@ -346,6 +346,10 @@ void Tsl::call(const Call& call, const v8::FunctionCallbackInfo<v8::Value>& info
         statement();
         return result(scoped("Discard", nullptr, info.Length() ? std::vector<abi::TslArg>{abi::TslArg::of(arg(0))} : std::vector<abi::TslArg>{}));
     }
+    if (name == "discard" && call.method) {  // three's node.discard(): Discard(node), the node as the condition
+        arity(0); statement();
+        return result(scoped("Discard", nullptr, {receiver}));
+    }
     if (name == "increment" || name == "decrement" || name == "incrementBefore" || name == "decrementBefore") {
         arity(call.method ? 0 : 1); statement();
         return result(scoped(name.c_str(), call.method ? &receiver : nullptr,
@@ -635,6 +639,7 @@ void Tsl::install(v8::Local<v8::Context> context, v8::Local<v8::Object> target) 
                              "ElseIf",
                              "setName",
                              "toVar",
+                             "discard",
                              "assign",
                              "element",
                              "toAtomic",

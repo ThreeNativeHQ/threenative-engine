@@ -523,8 +523,8 @@ class CharacterDynamics extends Scene<IState> {
           vec4(varying(normalize(cardPosition.sub(headFrame.mul(vec4(0, 0, 0, 1)).xyz))), 0),
         ).xyz,
       );
-      const passes = createHairCardMaterial({ atlas: strandAtlas() });
-      [passes.inner, passes.outer].forEach((material, order) => {
+      const passes = createHairCardMaterial({ atlas: strandAtlas(), alphaToCoverage: true });
+      [passes.inner, passes.outer, passes.blend].forEach((material, order) => {
         if (material === null) return;
         material.positionNode = cardPosition;
         material.normalNode = cardNormal;

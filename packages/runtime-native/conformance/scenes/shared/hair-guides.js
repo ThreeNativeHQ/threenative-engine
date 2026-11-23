@@ -81,7 +81,12 @@ export async function startScene(canvas, dimensions) {
       .add(THREE.TSL.vec3(attribute("side", "float"), 0, 0));
     // The material's own opacity read back by name, as threejs-hair-shader reads it; the cards stay
     // opaque, so it scales the colour and the capture shows the read.
-    material.colorNode = THREE.TSL.materialColor.mul(THREE.TSL.materialReference("opacity", "float"));
+    // `.discard()` as a node method, as threejs-hair-shader's alpha-to-coverage pass calls it; its
+    // condition is never true here, so the frame proves the call and not a cut.
+    material.colorNode = THREE.TSL.Fn(() => {
+      attribute("side", "float").greaterThan(1).discard();
+      return THREE.TSL.materialColor.mul(THREE.TSL.materialReference("opacity", "float"));
+    })();
     const cards = new THREE.Mesh(geometry, material);
     cards.frustumCulled = false;
     scene.add(cards);
