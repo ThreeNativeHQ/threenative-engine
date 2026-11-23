@@ -252,7 +252,10 @@ describe("starter visual floor", () => {
         // The atmosphere sky is Unreal's sky model in three files: the scattering integrals
         // (`atmosphere.ts`), the default cloud material (`clouds.ts`) and their LUT and cloud passes
         // (`gpuSky.ts`), each one whole model the game can rewrite.
+        // `vendor/` holds an upstream MIT file verbatim (the hair-card node graph, PRD-909): its length is
+        // upstream's, and editing it to fit would break the byte-for-byte vendoring its own spec checks.
         if (
+          !name.includes("/vendor/") &&
           !name.endsWith("atmosphere.ts") &&
           !name.endsWith("clouds.ts") &&
           !name.endsWith("gpuSky.ts") &&

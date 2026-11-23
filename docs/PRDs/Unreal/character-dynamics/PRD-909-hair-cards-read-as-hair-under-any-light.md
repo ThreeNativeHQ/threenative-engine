@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-909 — Hair cards read as hair under any light
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (2026-11-23) — the vendored card material ships in the starter template; the scene, shadows and owned-engine support are open.
 **Priority:** P2 — No hair material exists. A character with hair cards renders them as opaque or sorted-alpha planes with a plastic highlight.
 **Complexity:** 6 (MEDIUM) — vendored TSL card path (+1), alpha-to-coverage and core pass on the owned engine (+2), shadow alpha agreement (+1), visual judge (+1), native proof (+1)
 **Owner:** João
@@ -31,7 +31,7 @@ Unreal draws far and low-tier hair as cards and near hair as strands (PRD-671). 
 
 #### Phase 1: The material in a template
 
-- [ ] The vendored `hairNodes` land with their MIT header, behind `createHairCardMaterial` in the starter template's `src/render/`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/hair-card-material.spec.ts`
+- [x] The vendored `hairNodes` land with their MIT header, behind `createHairCardMaterial` in the starter template's `src/render/`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/hair-card-material.spec.ts` — 2026-11-23: `templates/starter/src/render/vendor/hair-shader.js` is upstream byte for byte below its MIT header (SHA-256 checked by the spec); `hair.ts` exports `createHairCardMaterial` with every colour, gradient, anisotropy and density as a named option. `hair-card-material.spec.ts` 4/4, `looks.spec.ts` 22/22 (vendored files exempt from the 200-line cap), starter kit hash repinned. Upstream sets no separate shadow threshold: the visible outer pass is the casting material, so shadow and visible coverage share one `alphaTest`; AC-2 still needs the pixel measurement.
 - [ ] The PRD-910 hair arm wears cards with the material. proof: AC-1.
 
 #### Phase 2: Shadows and every engine
