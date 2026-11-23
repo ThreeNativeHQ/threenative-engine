@@ -296,6 +296,7 @@
         "@threenative/core#SpanRecorder": "export class SpanRecorder { … }",
         "@threenative/core#spansRequested": "export function spansRequested(): boolean { … }",
         "@threenative/core#SpectralOcean": "export class SpectralOcean extends Object3D implements IComputeDriven { … }",
+        "@threenative/core#SpringBoneChain3D": "export class SpringBoneChain3D { … }",
         "@threenative/core#SpriteAnimator3D": "export class SpriteAnimator3D { … }",
         "@threenative/core#stageGpuReading": "export function stageGpuReading(renderer: unknown): IStageGpuReading | undefined { … }",
         "@threenative/core#staticTransformCensus": "export function staticTransformCensus(): IStaticTransformCensus { … }",
