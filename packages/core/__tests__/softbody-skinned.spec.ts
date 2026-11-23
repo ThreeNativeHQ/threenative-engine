@@ -159,8 +159,14 @@ describe("skinned SoftBody3D helpers", () => {
     const skeleton = new Skeleton([...cape.skeleton.bones, hand, finger]);
     const parts = [
       skin(new CylinderGeometry(0.15, 0.15, 0.4, 24, 6).translate(0, 1.6, 0), 1),
-      skin(new CylinderGeometry(0.05, 0.05, 0.3, 12, 4).rotateZ(Math.PI / 2).translate(0.55, 1.4, 0), 3),
-      skin(new CylinderGeometry(0.01, 0.01, 0.06, 8, 2).rotateZ(Math.PI / 2).translate(0.75, 1.4, 0), 4),
+      skin(
+        new CylinderGeometry(0.05, 0.05, 0.3, 12, 4).rotateZ(Math.PI / 2).translate(0.55, 1.4, 0),
+        3,
+      ),
+      skin(
+        new CylinderGeometry(0.01, 0.01, 0.06, 8, 2).rotateZ(Math.PI / 2).translate(0.75, 1.4, 0),
+        4,
+      ),
     ];
     for (const geometry of parts) {
       const mesh = new SkinnedMesh(geometry, new MeshStandardNodeMaterial());

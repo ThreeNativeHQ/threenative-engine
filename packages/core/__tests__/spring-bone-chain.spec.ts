@@ -96,7 +96,9 @@ describe("SpringBoneChain3D", () => {
     // Pushed out of the sphere, the second particle lands off its segment length; projecting it back
     // onto that length re-enters the sphere unless collision and length are solved together.
     const center = new Vector3(-0.08, 0.3, 0);
-    const chain = new SpringBoneChain3D(root, { colliders: [{ a: center, b: center, radius: 0.14 }] });
+    const chain = new SpringBoneChain3D(root, {
+      colliders: [{ a: center, b: center, radius: 0.14 }],
+    });
     chain.step(STEP);
     for (const particle of chain.particles)
       expect(particle.distanceTo(center)).toBeGreaterThanOrEqual(0.14 - 1e-4);
