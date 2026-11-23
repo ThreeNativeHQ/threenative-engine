@@ -17,6 +17,10 @@ const METRICS = [
   "hairInsideHead",
 ];
 
+// PRD-912 AC-3: the ponytail on stock FAnimNode_AnimDynamics in chain mode, and two named-override arms.
+const DYNAMICS_ARMS = ["stock", "swing", "swingWorld"];
+const HAIR_METRICS = ["hairTipOffset", "hairStretch", "hairInsideHead"];
+
 interface ISpread {
   mean: number;
   min: number;
@@ -29,7 +33,23 @@ const record = JSON.parse(
     new URL("../../../tools/unreal-reference/character-dynamics/reference.json", import.meta.url),
     "utf8",
   ),
-) as { unreal: string; runs: number; phases: Record<string, Record<string, ISpread>> };
+) as {
+  unreal: string;
+  runs: number;
+  phases: Record<string, Record<string, ISpread>>;
+  hairAnimDynamics?: { arm?: Record<string, Record<string, Record<string, ISpread>>> };
+};
+
+function expectSpread(spread: ISpread | undefined, label: string) {
+  expect(spread, `${label} missing`).toBeDefined();
+  const { mean, min, max, runs } = spread as ISpread;
+  for (const value of [mean, min, max, ...runs])
+    expect(Number.isFinite(value), `${label} non-finite`).toBe(true);
+  expect(runs).toHaveLength(3);
+  expect(min).toBe(Math.min(...runs));
+  expect(max).toBe(Math.max(...runs));
+  expect(mean).toBeCloseTo(runs.reduce((a, b) => a + b, 0) / 3, 12);
+}
 
 describe("Unreal character-dynamics reference", () => {
   it("names the Unreal version and holds three runs", () => {
@@ -40,18 +60,24 @@ describe("Unreal character-dynamics reference", () => {
   it.each(PHASES)("%s has every metric as a finite spread over 3 runs", (phase) => {
     const metrics = record.phases[phase];
     expect(metrics, `phase ${phase} missing`).toBeDefined();
-    for (const metric of METRICS) {
-      const spread = metrics?.[metric];
-      expect(spread, `${phase}.${metric} missing`).toBeDefined();
-      const { mean, min, max, runs } = spread as ISpread;
-      for (const value of [mean, min, max, ...runs])
-        expect(Number.isFinite(value), `${phase}.${metric} non-finite`).toBe(true);
-      expect(runs).toHaveLength(3);
-      expect(min).toBe(Math.min(...runs));
-      expect(max).toBe(Math.max(...runs));
-      expect(mean).toBeCloseTo(runs.reduce((a, b) => a + b, 0) / 3, 12);
-    }
+    for (const metric of METRICS) expectSpread(metrics?.[metric], `${phase}.${metric}`);
   });
+
+  it.each(DYNAMICS_ARMS)(
+    "the AnimDynamics %s arm has every hair metric for every phase as a spread over 3 runs",
+    (arm) => {
+      const phases = record.hairAnimDynamics?.arm?.[arm];
+      expect(phases, `hairAnimDynamics.arm.${arm} missing`).toBeDefined();
+      expect(Object.keys(phases ?? {}).sort()).toEqual([...PHASES].sort());
+      for (const phase of PHASES)
+        for (const metric of HAIR_METRICS)
+          expectSpread(phases?.[phase]?.[metric], `${arm}.${phase}.${metric}`);
+      // Measured from the tip's spot at the end of settle, as the SpringBone block.
+      expect(phases?.settle?.hairTipOffset?.max).toBe(0);
+      for (const phase of ["jog", "sprint", "hardStop", "snapTurn"])
+        expect(phases?.[phase]?.hairTipOffset?.min, `${arm}.${phase}`).toBeGreaterThan(0.005);
+    },
+  );
 
   // A cape at rest that stretches is fighting a collider that overlaps its rest pose (the stock
   // spine_03 capsule held 34 rest vertices and stretched the settled cape 253%).

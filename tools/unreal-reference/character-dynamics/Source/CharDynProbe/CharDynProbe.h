@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "BoneControllers/AnimNode_AnimDynamics.h"
 #include "BoneControllers/AnimNode_SpringBone.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "CharDynProbe.generated.h"
@@ -23,6 +24,24 @@ struct FCharDynLayer
 	float FadeFrom = 1.f; // weight an outgoing layer fades from
 };
 
+/** Stock FAnimNode_AnimDynamics, with the validity check an AnimGraph makes opened up. */
+struct FCharDynAnimDynamics : public FAnimNode_AnimDynamics
+{
+	using FAnimNode_AnimDynamics::IsValidToEvaluate;
+};
+
+/**
+ * One AnimDynamics chain over ponytail_1..6, evaluated beside the SpringBone chain on the same
+ * animated pose. Its output is recorded, not applied, so the cape and the springs do not change.
+ */
+struct FCharDynDynamicsArm
+{
+	FString Name;
+	FCharDynAnimDynamics Node;
+	/** ponytail_1..6 as the node wrote them on the last evaluation (component space, cm). */
+	TArray<FVector> Bones;
+};
+
 /**
  * Plays clips the way the game's AnimationPlayer does (packages/core/src/animation.ts play/update):
  * a play fades every contributing clip out and the new one in over `fade` seconds with a
@@ -38,8 +57,13 @@ class UCharDynAnimInstance : public UAnimInstance
 public:
 	void Play(UAnimSequence* Clip, float Fade, bool bOnce);
 	void Advance(float DeltaSeconds);
-	/** Puts the ponytail springs back in their just-initialized state (no time pending). */
+	/** Puts the ponytail springs and AnimDynamics arms back in their just-initialized state (no time pending). */
 	void ResetSprings();
+	/** What a teleporting SetActorLocation (ETeleportType::TeleportPhysics) does to an AnimGraph's
+	 * AnimDynamics nodes (SkeletalMeshComponent.cpp:5350-5354, AnimInstanceProxy.cpp:3280-3289). */
+	void TeleportDynamics();
+	const TArray<FCharDynDynamicsArm>& DynamicsArms();
+	FIntPoint UpdatesAndEvaluations();
 
 	TArray<FCharDynLayer> Outgoing;
 	FCharDynLayer Current;
@@ -68,6 +92,13 @@ struct FCharDynAnimProxy : public FAnimInstanceProxy
 	 * AnimGraph. ponytail_1 rides Head, as the root of the game's SpringBoneChain3D does.
 	 */
 	TArray<FAnimNode_SpringBone> Springs;
+	/** PRD-912 AC-3: FAnimNode_AnimDynamics in chain mode, stock and with named overrides. */
+	TArray<FCharDynDynamicsArm> Dynamics;
+	/** Initialize_AnyThread the arms on the next evaluation (graph init, or ResetSprings). */
+	bool bInitDynamics = true;
+	/** Harness check: updates and evaluations so far (each tick must add one of each). */
+	int32 Updates = 0;
+	int32 Evaluations = 0;
 };
 
 UCLASS()

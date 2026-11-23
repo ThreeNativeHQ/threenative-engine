@@ -86,6 +86,9 @@ const METRICS = [
 ] as const;
 /** game.ts: ponytail_1 .. ponytail_6 under Head. */
 const HAIR_BONES = 6;
+const HAIR_METRICS = ["hairTipOffset", "hairStretch", "hairInsideHead"] as const;
+/** CharDynProbe FCharDynAnimProxy::Dynamics: the FAnimNode_AnimDynamics arms of one run. */
+const DYNAMICS_ARMS = ["stock", "swing", "swingWorld"] as const;
 /** game.ts measureHair: the clearance countInsideCapsules adds to each hair collider. */
 const HAIR_THICKNESS = 0.005;
 /** game.ts COLLIDER_THICKNESS, metres: the probe's shrink and the rest clearance of every capsule. */
@@ -529,8 +532,13 @@ interface ISample {
   capsules: number[];
   /** The Head bone frame: origin, axis x, axis y, axis z (Unreal world, cm). */
   headFrame: number[];
-  /** ponytail_1 .. ponytail_6 (world cm). */
+  /** ponytail_1 .. ponytail_6 (world cm), the SpringBone chain. */
   hair: number[];
+  /** ponytail_1 .. ponytail_6 (world cm) per AnimDynamics arm, evaluated beside the springs. */
+  hairDynamics?: Record<string, number[]>;
+  /** Proxy updates and evaluations so far: each tick must add one of each (AnimDynamics steps per evaluation). */
+  updates?: number;
+  evaluations?: number;
   /** Stock capsules of the bones the ponytail falls onto: a xyz, b xyz, radius (world cm). */
   hairCapsules: number[];
 }
@@ -579,22 +587,30 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
       });
     return out;
   };
-  const hairOf = (sample: ISample) => {
-    if (sample.hair?.length !== HAIR_BONES * 3) fail("a sample has no hair; rebuild and rerun");
+  const hairOf = (flat: number[] | undefined, what: string) => {
+    if (flat?.length !== HAIR_BONES * 3) fail(`a sample has no ${what} hair; rebuild and rerun`);
     const out = new Float32Array(HAIR_BONES * 3);
-    for (let b = 0; b < HAIR_BONES; b++) toThree(sample.hair, b * 3).toArray(out, b * 3);
+    for (let b = 0; b < HAIR_BONES; b++) toThree(flat, b * 3).toArray(out, b * 3);
+    for (const value of out) if (!Number.isFinite(value)) fail(`non-finite ${what} hair`);
     return out;
   };
   // game.ts hairRestLengths: the segment lengths on the Idle_Loop t = 0 pose.
-  const restHair = hairOf(run.initial);
+  const restHair = hairOf(run.initial.hair, "SpringBone");
   const hairRestLengths = Array.from({ length: HAIR_BONES - 1 }, (_, k) =>
     new Vector3()
       .fromArray(restHair, k * 3)
       .distanceTo(new Vector3().fromArray(restHair, k * 3 + 3)),
   );
   const phases: Record<string, Record<(typeof METRICS)[number] | "samples", number>> = {};
+  // game.ts measureHair, per chain: the tip in the Head frame, the segment stretch, and the
+  // simulated points (all but the root) inside the head, back and shoulder capsules.
+  type HairMetrics = Record<(typeof HAIR_METRICS)[number], number>;
+  const sources = ["springBone", ...DYNAMICS_ARMS] as const;
+  const hairPhases = Object.fromEntries(
+    sources.map((s) => [s, {} as Record<string, HairMetrics>]),
+  ) as Record<(typeof sources)[number], Record<string, HairMetrics>>;
+  const hairRestTip: Partial<Record<(typeof sources)[number], Vector3>> = {};
   let restHem: Vector3 | undefined;
-  let hairRestTip: Vector3 | undefined;
   let tick = 0;
   for (const phase of SCRIPT) {
     const m = {
@@ -607,8 +623,16 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
       hairInsideHead: 0,
       samples: 0,
     };
+    for (const source of sources)
+      hairPhases[source][phase.name] = { hairTipOffset: 0, hairStretch: 0, hairInsideHead: 0 };
     for (let k = 0; k < phase.ticks; k++) {
+      const prev = tick === 0 ? run.initial : (run.ticks[tick - 1] as ISample);
       const sample = run.ticks[tick++] ?? fail(`run has only ${tick - 1} ticks`);
+      if (
+        sample.updates !== (prev.updates ?? Number.NaN) + 1 ||
+        sample.evaluations !== (prev.evaluations ?? Number.NaN) + 1
+      )
+        fail(`tick ${tick} is not one anim update and one evaluation; rebuild and rerun`);
       const world = new Float32Array(COLS * ROWS * 3);
       for (let v = 0; v < COLS * ROWS; v++) toThree(sample.cloth, v * 3).toArray(world, v * 3);
       for (const value of world)
@@ -632,29 +656,51 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
         m.bodyPenetration,
         probe.countInsideCapsules(freeWorld, capsules, COLLIDER_THICKNESS),
       );
-      // game.ts measureHair: the tip in the Head frame, the segment stretch, and the simulated
-      // points (all but the root) inside the head, back and shoulder capsules.
-      const hair = hairOf(sample);
-      for (const value of hair)
-        if (!Number.isFinite(value)) fail(`non-finite hair at tick ${tick}`);
-      const tipLocal = new Vector3()
-        .fromArray(hair, (HAIR_BONES - 1) * 3)
-        .applyMatrix4(frame(sample.headFrame).invert());
-      if (phase.name === "settle") hairRestTip = tipLocal.clone();
-      if (hairRestTip !== undefined)
-        m.hairTipOffset = Math.max(m.hairTipOffset, tipLocal.distanceTo(hairRestTip));
-      m.hairStretch = Math.max(m.hairStretch, probe.maxSegmentStretch(hair, hairRestLengths));
+      const toHead = frame(sample.headFrame).invert();
       const hairCapsules = capsulesOf(sample.hairCapsules);
       if (hairCapsules.length === 0) fail(`no hair capsules at tick ${tick}`);
-      m.hairInsideHead = Math.max(
-        m.hairInsideHead,
-        probe.countInsideCapsules(hair.subarray(3), hairCapsules, HAIR_THICKNESS),
-      );
+      for (const source of sources) {
+        const hair =
+          source === "springBone"
+            ? hairOf(sample.hair, `tick ${tick} SpringBone`)
+            : hairOf(sample.hairDynamics?.[source], `tick ${tick} AnimDynamics ${source}`);
+        const h = hairPhases[source][phase.name] as HairMetrics;
+        const tipLocal = new Vector3().fromArray(hair, (HAIR_BONES - 1) * 3).applyMatrix4(toHead);
+        if (phase.name === "settle") hairRestTip[source] = tipLocal.clone();
+        const restTip = hairRestTip[source];
+        if (restTip !== undefined)
+          h.hairTipOffset = Math.max(h.hairTipOffset, tipLocal.distanceTo(restTip));
+        h.hairStretch = Math.max(h.hairStretch, probe.maxSegmentStretch(hair, hairRestLengths));
+        h.hairInsideHead = Math.max(
+          h.hairInsideHead,
+          probe.countInsideCapsules(hair.subarray(3), hairCapsules, HAIR_THICKNESS),
+        );
+      }
+      Object.assign(m, hairPhases.springBone[phase.name]);
       m.samples++;
     }
     phases[phase.name] = m;
   }
   if (tick !== run.ticks.length) fail(`run has ${run.ticks.length} ticks, script has ${tick}`);
+  return { phases, hairPhases };
+}
+
+/** Per phase and metric: mean, min, max and the value of each run. */
+function spreads(perRun: Record<string, Record<string, number>>[], metrics: readonly string[]) {
+  const phases: Record<string, Record<string, unknown>> = {};
+  for (const phase of SCRIPT) {
+    const entry: Record<string, unknown> = { ticks: phase.ticks };
+    for (const metric of metrics) {
+      const values = perRun.map((p) => (p[phase.name] as Record<string, number>)[metric] as number);
+      entry[metric] = {
+        mean: values.reduce((a, b) => a + b, 0) / values.length,
+        min: Math.min(...values),
+        max: Math.max(...values),
+        runs: values,
+      };
+    }
+    phases[phase.name] = entry;
+  }
   return phases;
 }
 
@@ -666,20 +712,19 @@ function metrics(): void {
     readJson<IRun>(path.join(RUNS, `run-${r + 1}.json`)),
   );
   const perRun = runs.map((run) => metricsOfRun(run, cape, map));
-  const phases: Record<string, Record<string, unknown>> = {};
-  for (const phase of SCRIPT) {
-    const entry: Record<string, unknown> = { ticks: phase.ticks };
-    for (const metric of METRICS) {
-      const values = perRun.map((p) => (p[phase.name] as Record<string, number>)[metric] as number);
-      entry[metric] = {
-        mean: values.reduce((a, b) => a + b, 0) / values.length,
-        min: Math.min(...values),
-        max: Math.max(...values),
-        runs: values,
-      };
-    }
-    phases[phase.name] = entry;
-  }
+  const phases = spreads(
+    perRun.map((r) => r.phases),
+    METRICS,
+  );
+  const dynamicsArms = Object.fromEntries(
+    DYNAMICS_ARMS.map((arm) => [
+      arm,
+      spreads(
+        perRun.map((r) => r.hairPhases[arm]),
+        HAIR_METRICS,
+      ),
+    ]),
+  );
   const record = {
     prd: "PRD-910",
     scene: "examples/character-dynamics (?arm=cloth probe definitions)",
@@ -729,6 +774,25 @@ function metrics(): void {
       start:
         "the springs are placed on the Idle_Loop t = 0 pose by a zero-length evaluation before tick 1 (InitAnim's zero tick, SkeletalMeshComponent.cpp:1213-1216; the game builds SpringBoneChain3D on that pose)",
     },
+    hairAnimDynamics: {
+      prd: "PRD-912 AC-3",
+      node: "FAnimNode_AnimDynamics, bChain true, BoundBone ponytail_1, ChainEnd ponytail_6: one rigid body per bone, each joined to its parent at the segment midpoint (InitPhysics, AnimNode_AnimDynamics.cpp:1110-1121); ponytail_1's body is nailed to its animated position (bLinearFullyLocked, :1272-1277), so it rides Head and ponytail_2..6 hang from it. Evaluated in UCharDynAnimInstance's proxy on the animated pose, beside the SpringBone chain; the output is recorded, not applied",
+      defaults:
+        "stock (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_AnimDynamics.cpp:190-246 and Public/BoneControllers/AnimNode_AnimDynamics.h:91-110, 241-248): one body definition copied to every chain bone (UpdateChainPhysicsBodyDefinitions, :831-866), BoxExtents 10 x 10 x 10 cm, LocalJointOffset 0, CollisionType CoM, linear X/Y/Z Limited 0..0 (locked), angular type Angular with limits 0..0 on X/Y/Z and twist axis X; GravityScale 1 (:195) with the project gravity -980 cm/s2 (PhysicsSettingsCore.cpp:29, AnimPhysicsSolver.cpp:875); linear and angular damping 0.7 (AnimPhysicsSolver.h:56-59), JointBiasFactor 0.3 (:53), mass 1 (AnimPhysicsSolver.cpp:159); NumSolverIterationsPreUpdate 4, PostUpdate 1 (:202-203); SimulationSpace Component (:205); ComponentLinearAccScale and ComponentLinearVelScale 0 (:238-239), SimSpaceAngularAlpha 0 (:183); no linear or angular spring (:219-220), no wind (:215), no planar or spherical limits (none listed; :208-209), so no collision; adaptive substepping off (p.AnimDynamicsAdaptiveSubstep 0, :26), so one step of the tick delta per tick, capped at MaxPhysicsDeltaTime 1/30 s (:691-701, PhysicsSettings.cpp:22)",
+      arms: {
+        stock: "every value stock",
+        swing:
+          "named override: AngularLimitsMin/Max -180/+180 on X/Y/Z, the editor's range end (AnimNode_AnimDynamics.h:170-174). ConstrainAngularRange adds no swing limit for a range of 360 degrees (AnimPhysicsSolver.cpp:733-757); twist stays locked (:759-760). The stock 0..0 range locks each body to its parent (:733-736), a rigid chain",
+        swingWorld:
+          "swing plus the named override SimulationSpace World. Stock Component space passes no component motion to the bodies (ComponentLinearAccScale/VelScale 0, SimSpaceAngularAlpha 0, :600-646), so locomotion and turns do not reach the chain; World space keeps the bodies in the world, as SpringBoneChain3D does. On the first teleport tick the arms get ResetDynamics(TeleportPhysics), what a SetActorLocation with ETeleportType::TeleportPhysics does to an AnimGraph (SkeletalMeshComponent.cpp:5350-5354, AnimInstance.cpp:696-700); the cloth keeps its own teleport guard",
+      },
+      boxExtents:
+        "stock 10 cm cube kept: with mass 1 per body it sets only the inertia, and it is the same order as the 7.8 cm segment; collision is off, so it touches nothing",
+      start:
+        "Initialize_AnyThread on the Idle_Loop t = 0 pose before tick 1 (ResetSprings), so InitPhysics places every body on its bone with no time debt (AnimNode_AnimDynamics.cpp:248-268, 1002-1196)",
+      restLengths: "the SpringBone block's: segment lengths on the Idle_Loop t = 0 pose",
+      arm: dynamicsArms,
+    },
     phases,
   };
   writeFileSync(path.join(HERE, "reference.json"), `${JSON.stringify(record, null, 2)}\n`);
@@ -738,6 +802,19 @@ function metrics(): void {
       `TN_UE_CHARDYN ${phase.name.padEnd(9)} ${METRICS.map((m) => `${m}=${p[m]?.mean.toFixed(3)} [${p[m]?.min.toFixed(3)}, ${p[m]?.max.toFixed(3)}]`).join(" ")}`,
     );
   }
+  for (const arm of DYNAMICS_ARMS)
+    for (const phase of SCRIPT) {
+      const p =
+        (
+          dynamicsArms[arm] as Record<
+            string,
+            Record<string, { mean: number; min: number; max: number }>
+          >
+        )[phase.name] ?? {};
+      console.log(
+        `TN_UE_CHARDYN animDynamics.${arm.padEnd(10)} ${phase.name.padEnd(9)} ${HAIR_METRICS.map((m) => `${m}=${p[m]?.mean.toFixed(3)} [${p[m]?.min.toFixed(3)}, ${p[m]?.max.toFixed(3)}]`).join(" ")}`,
+      );
+    }
 }
 
 // --- the editor ---------------------------------------------------------------------------

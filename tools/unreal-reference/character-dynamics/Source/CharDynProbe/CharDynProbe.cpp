@@ -101,7 +101,28 @@ void UCharDynAnimInstance::ResetSprings()
 {
 	// Initialize_AnyThread's reset (AnimNode_SpringBone.cpp:46): the next evaluation with no time
 	// pending places each spring on its bone (:117-122).
-	for (FAnimNode_SpringBone& Spring : GetProxyOnGameThread<FCharDynAnimProxy>().Springs) Spring.RemainingTime = 0.f;
+	FCharDynAnimProxy& Proxy = GetProxyOnGameThread<FCharDynAnimProxy>();
+	for (FAnimNode_SpringBone& Spring : Proxy.Springs) Spring.RemainingTime = 0.f;
+	// The AnimDynamics arms: Initialize_AnyThread on the next evaluation zeroes the time debt and
+	// requests ResetPhysics (AnimNode_AnimDynamics.cpp:248-268), so InitPhysics places every body on
+	// its bone of that pose (:1002-1196).
+	Proxy.bInitDynamics = true;
+}
+
+void UCharDynAnimInstance::TeleportDynamics()
+{
+	for (FCharDynDynamicsArm& Arm : GetProxyOnGameThread<FCharDynAnimProxy>().Dynamics) Arm.Node.ResetDynamics(ETeleportType::TeleportPhysics);
+}
+
+FIntPoint UCharDynAnimInstance::UpdatesAndEvaluations()
+{
+	const FCharDynAnimProxy& Proxy = GetProxyOnGameThread<FCharDynAnimProxy>();
+	return FIntPoint(Proxy.Updates, Proxy.Evaluations);
+}
+
+const TArray<FCharDynDynamicsArm>& UCharDynAnimInstance::DynamicsArms()
+{
+	return GetProxyOnGameThread<FCharDynAnimProxy>().Dynamics;
 }
 
 FAnimInstanceProxy* UCharDynAnimInstance::CreateAnimInstanceProxy()
@@ -118,6 +139,35 @@ void FCharDynAnimProxy::Initialize(UAnimInstance* InAnimInstance)
 	// first seen with time pending would start from the world origin.
 	Springs.Reset();
 	for (int32 B = 1; B < GHairCount; ++B) Springs.AddDefaulted_GetRef().SpringBone.BoneName = GHairBones[B];
+	// PRD-912 AC-3: FAnimNode_AnimDynamics in chain mode. BoundBone ponytail_1, ChainEnd ponytail_6:
+	// the bound bone's body is nailed to its animated position (stock linear limits 0..0, bLinearFullyLocked,
+	// AnimNode_AnimDynamics.cpp:1272-1277), so ponytail_1 rides Head as the root of SpringBoneChain3D
+	// does and ponytail_2..6 hang from it. InitPhysics copies the one stock body definition to every
+	// chain bone (UpdateChainPhysicsBodyDefinitions, :831-866), as the editor does.
+	// Every other value is the constructor's (:190-246, AnimNode_AnimDynamics.h:91-110, 241-248).
+	// Arms (one code state, one run): "stock"; "swing" opens the swing axes to +-180 deg, the editor's
+	// range end, which ConstrainAngularRange leaves free (AnimPhysicsSolver.cpp:733-760; the stock
+	// 0..0 range locks each body to its parent, a rigid chain); "swingWorld" also simulates in world
+	// space (stock: Component space, which passes no component motion to the bodies with the stock
+	// ComponentLinearAccScale/VelScale 0 and SimSpaceAngularAlpha 0, :183, 238-239, 600-646).
+	Dynamics.Reset();
+	for (const TCHAR* Name : { TEXT("stock"), TEXT("swing"), TEXT("swingWorld") })
+	{
+		FCharDynDynamicsArm& Arm = Dynamics.AddDefaulted_GetRef();
+		Arm.Name = Name;
+		FAnimNode_AnimDynamics& Node = Arm.Node;
+		Node.bChain = true;
+		Node.BoundBone.BoneName = GHairBones[0];
+		Node.ChainEnd.BoneName = GHairBones[GHairCount - 1];
+		if (Arm.Name != TEXT("stock"))
+		{
+			FAnimPhysConstraintSetup& Setup = Node.PhysicsBodyDefinitions[0].ConstraintSetup;
+			Setup.AngularLimitsMin = FVector(-180.0);
+			Setup.AngularLimitsMax = FVector(180.0);
+		}
+		if (Arm.Name == TEXT("swingWorld")) Node.SimulationSpace = AnimPhysSimSpaceType::World;
+	}
+	bInitDynamics = true;
 }
 
 void FCharDynAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
@@ -133,10 +183,20 @@ void FCharDynAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeco
 		Spring.PreUpdate(InAnimInstance);
 		Spring.UpdateInternal(FAnimationUpdateContext(this, DeltaSeconds));
 	}
+	// AnimDynamics: PreUpdate on the game thread, then UpdateInternal caches the tick's delta as the
+	// step (AnimNode_AnimDynamics.cpp:270-276, 1380-1454). Adaptive substepping is off by default
+	// (:26), so each tick is one step of that delta, capped at MaxPhysicsDeltaTime 1/30 s (:663, 691-701).
+	++Updates;
+	for (FCharDynDynamicsArm& Arm : Dynamics)
+	{
+		Arm.Node.PreUpdate(InAnimInstance);
+		Arm.Node.UpdateInternal(FAnimationUpdateContext(this, DeltaSeconds));
+	}
 }
 
 bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
 {
+	++Evaluations;
 	TArray<FCompactPose> Poses;
 	TArray<FBlendedCurve> Curves;
 	TArray<UE::Anim::FStackAttributeContainer> Attributes;
@@ -175,6 +235,24 @@ bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
 		FComponentSpacePoseContext CS(this);
 		CS.Pose.InitPose(Output.Pose);
 		TArray<FBoneTransform> Transforms;
+		// The AnimDynamics arms read the animated pose, before the springs, and record their output.
+		if (bInitDynamics)
+		{
+			for (FCharDynDynamicsArm& Arm : Dynamics) Arm.Node.Initialize_AnyThread(FAnimationInitializeContext(this));
+			bInitDynamics = false;
+		}
+		for (FCharDynDynamicsArm& Arm : Dynamics)
+		{
+			Arm.Bones.Reset();
+			if (!Arm.Node.IsValidToEvaluate(GetSkeleton(), Bones))
+			{
+				UE_LOGF(LogTemp, Error, "TN_UE_CHARDYN AnimDynamics arm %ls is not valid on the pose", *Arm.Name);
+				continue;
+			}
+			Transforms.Reset();
+			Arm.Node.EvaluateSkeletalControl_AnyThread(CS, Transforms);
+			for (const FBoneTransform& T : Transforms) Arm.Bones.Add(T.Transform.GetLocation());
+		}
 		for (FAnimNode_SpringBone& Spring : Springs)
 		{
 			Spring.SpringBone.Initialize(Bones);
@@ -463,6 +541,18 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 				TArray<TSharedPtr<FJsonValue>> HairPoints;
 				for (const int32 B : Hair) HairPoints.Append(Vec(Comp->GetBoneTransform(B).GetLocation()));
 				S->SetArrayField(TEXT("hair"), HairPoints);
+				// The AnimDynamics arms: ponytail_1..6 (world cm) as each arm wrote them this tick.
+				TSharedRef<FJsonObject> Arms = MakeShared<FJsonObject>();
+				for (const FCharDynDynamicsArm& Arm : Anim->DynamicsArms())
+				{
+					TArray<TSharedPtr<FJsonValue>> Points;
+					for (const FVector& P : Arm.Bones) Points.Append(Vec(Comp->GetComponentTransform().TransformPosition(P)));
+					Arms->SetArrayField(Arm.Name, Points);
+				}
+				S->SetObjectField(TEXT("hairDynamics"), Arms);
+				const FIntPoint Counts = Anim->UpdatesAndEvaluations();
+				S->SetNumberField(TEXT("updates"), Counts.X);
+				S->SetNumberField(TEXT("evaluations"), Counts.Y);
 				TArray<TSharedPtr<FJsonValue>> HairCaps;
 				for (const TPair<FName, FKAggregateGeom>& Pair : SavedGeom)
 					if (HairColliderBones.Contains(Pair.Key))
@@ -588,6 +678,11 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 					if (!Clip) { Result = TEXT("ERROR clip missing: ") + Play->GetStringField(TEXT("clip")); break; }
 					Anim->Play(*Clip, (float)Play->GetNumberField(TEXT("fade")), Play->GetBoolField(TEXT("once")));
 				}
+				// game.ts teleports the root; a game teleports with ETeleportType::TeleportPhysics, which
+				// resets the AnimGraph's dynamics. The cloth keeps its own stock teleport guard, so the
+				// actor move itself stays plain and only the AnimDynamics arms get the reset.
+				if (Tick->GetStringField(TEXT("phase")) == TEXT("teleport") && T > 0 && Ticks[T - 1]->AsObject()->GetStringField(TEXT("phase")) != TEXT("teleport"))
+					Anim->TeleportDynamics();
 				Anim->Advance(Step);
 				++GFrameCounter;
 				World->Tick(LEVELTICK_All, Step);
