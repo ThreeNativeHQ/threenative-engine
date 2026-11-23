@@ -197,6 +197,42 @@ hostTest("the pump keeps stamping while the loop is paused, so a hidden window i
   assert.ok(pump.maxGapMs < 250, `the paused 1.5 s read as a ${pump.maxGapMs} ms pump silence`);
 });
 
+// PRD-906: the host speaks the web Page Visibility contract, so core's one `visibilitychange`
+// listener serves both runtimes. The listener runs before the paused gate parks the loop.
+// Haptics shims answer honestly: an Xvfb host has no motor, so `vibrate` returns false.
+hostTest("hiding the window dispatches visibilitychange with the matching document state", () => {
+  const body = `
+    console.log("TN_TEST_VIS_INITIAL:" + document.visibilityState + ":" + document.hidden);
+    document.addEventListener("visibilitychange", () => {
+      console.log("TN_TEST_VIS:" + document.visibilityState + ":" + document.hidden);
+    });
+    console.log("TN_TEST_VIBRATE:" + navigator.vibrate(20));
+    setTimeout(() => process.exit(0), 6000);`;
+  const game = packageGame("visibility", { window: { height: 300, width: 300 } }, body);
+  const script = `
+    ${JSON.stringify(game)} >${JSON.stringify(`${game}.log`)} 2>&1 &
+    pid=$!
+    for i in $(seq 1 60); do
+      sleep 0.1
+      xwininfo -root -tree | grep -q '("game" "game")' && break
+    done
+    sleep 1
+    id=$(xwininfo -root -tree | grep '("game" "game")' | awk '{print $1}' | head -1)
+    xdotool windowunmap "$id"
+    sleep 1
+    xdotool windowmap "$id"
+    wait $pid
+    echo "TN_TEST_EXIT:$?"
+    cat ${JSON.stringify(`${game}.log`)}
+  `;
+  const out = spawnSync("sh", [xvfb, "sh", "-c", script], { encoding: "utf8", timeout: 90_000 }).stdout;
+  assert.match(out, /TN_TEST_VIS_INITIAL:visible:false/u, "document starts visible");
+  const states = [...out.matchAll(/^\[log\] TN_TEST_VIS:(\w+):(\w+)$/gmu)].map((m) => `${m[1]}:${m[2]}`);
+  assert.deepEqual(states, ["hidden:true", "visible:false"], `listener saw ${states}\n${out.slice(-800)}`);
+  assert.match(out, /TN_TEST_VIBRATE:false/u, "a host with no motor answers false, so core reports it");
+  assert.match(out, /TN_TEST_EXIT:0/u, "process.exit(0) is the quit core calls");
+});
+
 // The playtest runner takes desktop screenshots through a file mailbox: it writes the destination
 // path into `tn-playtest-screenshot-request.txt` under TN_PLAYTEST_MAILBOX_ROOT, and the host saves
 // the next presented frame there after the present. A game that clears the canvas to magenta each

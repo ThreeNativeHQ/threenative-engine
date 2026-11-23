@@ -1,4 +1,5 @@
 import { type Object3D, Scene as ThreeScene, Vector2 } from "three";
+import { installApplicationLifecycle, quitGame } from "./app-lifecycle.js";
 import { createAssetLoader } from "./assets.js";
 import { AutoBatch } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
@@ -718,6 +719,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     input: game.input,
     pointer: pointerEvents,
     physics: undefined as TPhysics,
+    quit: quitGame,
     random,
     raycast: (options) => picker.raycast(options),
     raycastAll: (options, target) => picker.raycastAll(options, target),
@@ -769,6 +771,15 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   game.entities = entities;
   game.scheduler = scheduler;
   game.afterPhysicsPhase = afterPhysicsPhase;
+  // The app's own transitions reach whichever scene is live — a scene change inside a transition
+  // needs no re-registration — and a worker game reads the page's forwarded copy instead of a
+  // `document` it does not have. A runtime with neither has nothing to listen to.
+  game.cleanup.push(
+    installApplicationLifecycle({
+      paused: () => game.scene?.applicationPaused(ctx),
+      resumed: () => game.scene?.applicationResumed(ctx),
+    }),
+  );
   // The scene-owned registries. Pushed after the autobatcher, so they empty before it resets (the
   // order `#teardown` always had), and before the frame loop and plugins, so both release first.
   game.cleanup.push(() => {

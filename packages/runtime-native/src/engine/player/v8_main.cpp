@@ -248,6 +248,10 @@ class V8Game {
     /** Wrappers the adapter's safe points have looked at, and how many are alive (TN_PLAYER_CROSSINGS reports both). */
     uint64_t collectVisits() const { return adapter_ ? adapter_->collectVisits() : 0; }
     uint64_t liveWrappers() const { return adapter_ ? adapter_->liveWrappers() : 0; }
+    /** Tells the game's page whether its window is hidden, as a browser sets `document.hidden` (PRD-906). */
+    void setVisibility(bool hidden);
+    /** The code a game passed to `process.exit`, or -1 while it asked for none. */
+    int quitCode() const { return quitCode_; }
 
   private:
 #if TN_PLAYER_CANVAS2D
@@ -264,6 +268,7 @@ class V8Game {
     // next poll instead of calling the bridge twice (describe() releases a held start once).
     v8::Global<v8::Promise> settling_;
     std::string settlingKey_;
+    int quitCode_ = -1;  // `process.exit`'s code, until the game asks for one
     Object3D* scene_ = nullptr;
     Camera* camera_ = nullptr;
     // The host co-owns the world: the JS `tn.scene`/`tn.camera` is garbage after start(), and a
@@ -433,7 +438,6 @@ class V8Game {
 // A build without Skia answers getContext with null and says so once, never a context that draws nothing.
 constexpr const char* kDocumentShim = R"JS(
 (() => {
-  if (typeof globalThis.document !== "undefined") return;
   const create2d = globalThis.__tnCreateCanvas2D;
   let warned = false;
   const canvas = () => {
@@ -460,7 +464,10 @@ constexpr const char* kDocumentShim = R"JS(
     el.toDataURL = () => { throw new Error("TN_PLAYER_CANVAS_TODATAURL: canvas.toDataURL is not available in the engine player"); };
     return el;
   };
-  globalThis.document = {
+  // A page's document is an event target, so a game's own listeners hear what the host dispatches
+  // (PRD-906). A listener that throws is reported and the rest still run, as a browser's do.
+  const listeners = new Map();
+  const page = {
     createElement: (tag) => {
       if (String(tag).toLowerCase() === "canvas") return canvas();
       throw new Error("TN_PLAYER_DOCUMENT: document.createElement('" + tag + "') is not available in the engine player");
@@ -468,8 +475,45 @@ constexpr const char* kDocumentShim = R"JS(
     // The player has no page: no element has an id. null is the answer the legacy host gives for a non-canvas id,
     // so a game's `document.getElementById("app") ?? undefined` mount lookup reads "none" (vfx-gallery).
     getElementById: () => null,
+    visibilityState: "visible",
+    hidden: false,
+    addEventListener(type, listener) {
+      if (typeof listener !== "function") return;
+      if (!listeners.has(type)) listeners.set(type, new Set());
+      listeners.get(type).add(listener);
+    },
+    removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+    dispatchEvent(event) {
+      // A copy: a listener that removes another must not skip it, as a browser's dispatch does not.
+      for (const listener of [...(listeners.get(event.type) ?? [])]) {
+        try {
+          listener.call(page, event);
+        } catch (error) {
+          console.error("TN_PLAYER_DOCUMENT_LISTENER: a '" + event.type + "' listener threw: " + error);
+        }
+      }
+      return true;
+    },
   };
-  globalThis.document.createElementNS = (_ns, tag) => globalThis.document.createElement(tag);
+  page.createElementNS = (_ns, tag) => page.createElement(tag);
+  if (typeof globalThis.document === "undefined") globalThis.document = page;
+
+  // A player has no page to send it, so the host says when its window hid or showed, in the state a
+  // browser would set and with the event a game listens for.
+  globalThis.__tnSetVisibility = (hidden) => {
+    const current = globalThis.document;
+    if (current === undefined || Boolean(hidden) === Boolean(current.hidden)) return;
+    current.hidden = Boolean(hidden);
+    current.visibilityState = current.hidden ? "hidden" : "visible";
+    if (typeof current.dispatchEvent === "function") current.dispatchEvent({ type: "visibilitychange" });
+    console.log("TN_VISIBILITY:" + JSON.stringify({ state: current.visibilityState }));
+  };
+
+  // The quit a game already knows how to ask for (core's `ctx.quit()` calls it): the player ends the
+  // run with that code. A host that already has one keeps its own.
+  if (typeof globalThis.process === "undefined") {
+    globalThis.process = { exit: (code) => globalThis.__tnPlayerQuit(code ?? 0) };
+  }
 })();
 )JS";
 
@@ -487,6 +531,15 @@ void V8Game::installDocument(v8::Local<v8::Context> ctx) {
             return mystral::canvas::createCanvas2DContext(engine, width, height, canvases_);
         }));
 #endif
+    // The host side of the shim's `process.exit(code)` (PRD-906): the loop reads the code back next pump.
+    ctx->Global()->Set(ctx, v8str(isolate_, "__tnPlayerQuit"), v8::Function::New(ctx,
+        [](const v8::FunctionCallbackInfo<v8::Value>& info) {
+            auto& game = *static_cast<V8Game*>(info.Data().As<v8::External>()->Value());
+            // A process status is 0..255: a code outside it is clamped, and one that is not a number reads as 0.
+            const double code = info.Length() > 0 && info[0]->IsNumber() ? info[0].As<v8::Number>()->Value() : 0;
+            game.quitCode_ = code > 0 ? int(code < 255 ? code : 255) : 0;
+            info.GetReturnValue().SetUndefined();
+        }, v8::External::New(isolate_, this)).ToLocalChecked()).Check();
     v8::Local<v8::Script> shim;
     v8::Local<v8::Value> ignored;
     if (!v8::Script::Compile(ctx, v8str(isolate_, kDocumentShim)).ToLocal(&shim) || !shim->Run(ctx).ToLocal(&ignored))
@@ -1904,6 +1957,22 @@ json::Value V8Game::resource(const std::string& id, uint64_t tick) const {
     return json::Value::makeNull();
 }
 
+void V8Game::setVisibility(bool hidden) {
+    if (isolate_ == nullptr || js_.IsEmpty()) return;
+    v8::Isolate::Scope isolateScope(isolate_);
+    v8::HandleScope scope(isolate_);
+    v8::Local<v8::Context> ctx = js_.Get(isolate_);
+    v8::Context::Scope contextScope(ctx);
+    v8::Local<v8::Value> set;
+    if (!ctx->Global()->Get(ctx, v8str(isolate_, "__tnSetVisibility")).ToLocal(&set) || !set->IsFunction()) return;
+    // The shim reports a listener that throws itself; this catches a shim that is missing or broken,
+    // which would otherwise drop the window's event without a word.
+    v8::TryCatch tryCatch(isolate_);
+    v8::Local<v8::Value> hiddenValue = v8::Boolean::New(isolate_, hidden);
+    (void)set.As<v8::Function>()->Call(ctx, ctx->Global(), 1, &hiddenValue);
+    if (tryCatch.HasCaught()) std::cerr << "TN_PLAYER_VISIBILITY: __tnSetVisibility threw\n";
+}
+
 }  // namespace
 
 
@@ -2057,6 +2126,9 @@ int main(int argc, char** argv) {
     configured.bridgeCalls = [] { return tn::abi::crossings(); };
     configured.frameComplete = [&game](Renderer& renderer, const std::vector<std::string>&) { game.frameDrawn(renderer); };
     configured.frameWithoutView = [&game] { game.frameWithoutView(); };
+    // PRD-906: the window the person hid is the page's visibility, and a game's process.exit ends the run.
+    configured.visibility = [&game](bool hidden) { game.setVisibility(hidden); };
+    configured.exitCode = [&game] { return game.quitCode(); };
     configured.overlay = [&game] { return game.overlay(); };
     configured.drawOverlay = [&game](Renderer& renderer) { game.drawOverlay(renderer); };
     configured.setRenderBarrier = [&game](std::function<void(bool)> barrier) { game.setRenderBarrier(std::move(barrier)); };

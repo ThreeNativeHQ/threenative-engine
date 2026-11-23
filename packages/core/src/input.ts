@@ -5,6 +5,7 @@ import {
   createStandardPad,
   toStandardPad,
 } from "./gamepad-mappings.js";
+import { reportMarkerOnce } from "./report-once.js";
 
 /**
  * One action, read either as a button through `pressed`/`justPressed`, a 2D axis through
@@ -85,6 +86,37 @@ const MOUSE_BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16];
 
 function mouseButtonMask(button: number): number {
   return MOUSE_BUTTON_BITS[button] ?? 0;
+}
+
+const HAPTICS_MARKER = "TN_HAPTICS_UNSUPPORTED";
+
+/** The host's navigator as the haptics read it, or undefined where the runtime has none. */
+function hapticsHost(): Navigator | undefined {
+  return typeof navigator === "undefined" ? undefined : navigator;
+}
+
+/**
+ * `navigator.vibrate`, read by key: the lib types its pattern as an iterable of durations where the
+ * web API and the owned host both take one duration in milliseconds.
+ */
+function phoneVibrator(): ((pattern: number) => boolean) | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  const host = navigator as { vibrate?: (pattern: number) => boolean };
+  // Bound: a browser's vibrate called off its navigator throws "Illegal invocation".
+  return typeof host.vibrate === "function" ? host.vibrate.bind(host) : undefined;
+}
+
+function requireHapticsDuration(durationMs: number): void {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    throw new Error(
+      `TN_HAPTICS_INVALID: durationMs must be a finite, non-negative number of milliseconds, received ${String(durationMs)}.`,
+    );
+  }
+}
+
+function reportHapticsUnsupported(reason: string): false {
+  reportMarkerOnce(HAPTICS_MARKER, `${reason}, so this call returns false and does nothing.`);
+  return false;
 }
 
 export interface IInputGamepad {
@@ -585,6 +617,73 @@ export class InputMap {
         throw error;
       },
     );
+  }
+
+  /**
+   * Godot's `Input.vibrate_handheld`: shake the phone for `durationMs`, through `navigator.vibrate`.
+   *
+   * Returns whether the platform took the request. A browser without the API, or a device with no
+   * motor, reports `TN_HAPTICS_UNSUPPORTED` once and returns false, so a game that vibrates on every
+   * hit does not fill the console. A rumble on a pad is `startJoyVibration`.
+   *
+   * @situation shake the phone when the player takes a hit
+   * @situation vibrate on a mobile tap or a landed shot
+   * @constraint the engine does not decide what vibrates: a game that never calls it never shakes
+   * @constraint throws `TN_HAPTICS_INVALID` on a negative or non-finite duration
+   * @example if (ctx.input.vibrateHandheld(80)) hud.flashHit();
+   */
+  vibrateHandheld(durationMs: number): boolean {
+    requireHapticsDuration(durationMs);
+    const vibrate = phoneVibrator();
+    if (vibrate === undefined)
+      return reportHapticsUnsupported("this runtime has no navigator.vibrate");
+    if (vibrate(durationMs) === false)
+      return reportHapticsUnsupported("navigator.vibrate found no vibration motor here");
+    return true;
+  }
+
+  /**
+   * Godot's `Input.start_joy_vibration`: rumble pad `device` through its
+   * `vibrationActuator.playEffect("dual-rumble")`, with `weak` and `strong` motor magnitudes.
+   *
+   * Returns whether the request was dispatched. A pad, browser or host with no actuator reports
+   * `TN_HAPTICS_UNSUPPORTED` once and returns false; a browser answers with a promise, whose refusal
+   * is reported there rather than thrown. `durationMs` is milliseconds and magnitudes are `0`..`1`.
+   *
+   * @situation rumble the controller when the player fires or crashes
+   * @situation start a joypad vibration on one pad
+   * @constraint throws `TN_HAPTICS_INVALID` on a negative or non-finite duration
+   * @example ctx.input.startJoyVibration(0.4, 0.8, 250);
+   */
+  startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean {
+    requireHapticsDuration(durationMs);
+    const actuator = hapticsHost()?.getGamepads?.()[device]?.vibrationActuator;
+    const playEffect = actuator?.playEffect;
+    if (playEffect === undefined)
+      return reportHapticsUnsupported(`gamepad ${device} has no vibration actuator`);
+    const effect: GamepadEffectParameters = {
+      duration: durationMs,
+      strongMagnitude: strong,
+      weakMagnitude: weak,
+    };
+    const result: unknown = playEffect.call(actuator, "dual-rumble", effect);
+    // The native host answers with the web result string; a browser answers with a promise, whose
+    // refusal lands after this returns and must not escape as an unhandled rejection.
+    if (typeof result === "string") {
+      if (result === "not-supported")
+        return reportHapticsUnsupported(`gamepad ${device} cannot rumble`);
+      return true;
+    }
+    if (result !== undefined && typeof (result as PromiseLike<unknown>).then === "function") {
+      void (result as PromiseLike<unknown>).then(
+        (outcome) => {
+          if (outcome === "not-supported")
+            reportHapticsUnsupported(`gamepad ${device} cannot rumble`);
+        },
+        () => reportHapticsUnsupported(`gamepad ${device} cannot rumble`),
+      );
+    }
+    return true;
   }
 
   pressed(name: string): boolean {

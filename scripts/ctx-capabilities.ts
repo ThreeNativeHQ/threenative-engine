@@ -141,6 +141,83 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
       'ctx.input.setBinding("jump", { keys: ["KeyK"] });\nlocalStorage.setItem("keys", JSON.stringify(ctx.input.bindings()));',
   }),
   member({
+    symbol: "Scene.applicationPaused",
+    signature:
+      "applicationPaused(ctx): void; applicationResumed(ctx): void // optional Scene methods",
+    summary:
+      "Scene hooks for the app leaving and returning to the foreground, after Godot's NOTIFICATION_APPLICATION_PAUSED/RESUMED. Core calls them from `visibilitychange` on the web and on the native host, and forwards them into a worker game.",
+    situations: [
+      "app goes to background",
+      "save the game when the phone sends the app to the background",
+      "pause or resume when the user switches apps",
+      "detect the app being minimised or brought back",
+      "mobile app lifecycle events",
+    ],
+    constraints: [
+      "Fires once per real transition, for the scene active at that moment.",
+      "The paused hook gets one JavaScript turn before the host parks the loop; a localStorage write there is flushed to disk before the app is backgrounded.",
+      "The web, the legacy host (Android, desktop) and the owned desktop engine player all dispatch it; iOS is not proven yet.",
+    ],
+    example:
+      'override applicationPaused(ctx) { localStorage.setItem("save", JSON.stringify(ctx.state.getState())); }',
+  }),
+  member({
+    symbol: "ctx.quit",
+    signature: "ctx.quit(): void",
+    summary:
+      "Quits the app with status 0, after Godot's get_tree().quit(). A web page cannot end its own process, so there the call prints TN_QUIT_UNSUPPORTED once and does nothing.",
+    situations: [
+      "quit button in a pause menu",
+      "exit the game from its own UI",
+      "close the app",
+      "end the process from game code",
+    ],
+    constraints: [
+      "Native host only: the web reports TN_QUIT_UNSUPPORTED once and returns.",
+      "Hide or disable a Quit button on the web rather than offer one that does nothing.",
+    ],
+    example: "onQuit = () => ctx.quit();",
+    overrides: ["TN_QUIT_UNSUPPORTED reports the web, where quit cannot work"],
+  }),
+  member({
+    symbol: "ctx.input.vibrateHandheld",
+    importPath: "src/input.ts",
+    signature: "ctx.input.vibrateHandheld(durationMs: number): boolean",
+    summary:
+      "Vibrates the phone for durationMs through navigator.vibrate, which the native host shims with SDL haptics (the Android system vibrator). Returns whether the platform took the request.",
+    situations: [
+      "vibrate the phone",
+      "haptic feedback on hit",
+      "shake the device when the player takes damage",
+      "mobile vibration",
+    ],
+    constraints: [
+      "A runtime with no API or no motor prints TN_HAPTICS_UNSUPPORTED once and returns false.",
+      "A negative or non-finite duration throws TN_HAPTICS_INVALID.",
+      "iOS is not proven yet.",
+    ],
+    example: "if (ctx.input.vibrateHandheld(80)) hud.flashHit();",
+  }),
+  member({
+    symbol: "ctx.input.startJoyVibration",
+    importPath: "src/input.ts",
+    signature:
+      "ctx.input.startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean",
+    summary:
+      'Rumbles a gamepad through Gamepad.vibrationActuator.playEffect("dual-rumble"), after Godot\'s Input.start_joy_vibration. The native host shims it with SDL_RumbleGamepad. Magnitudes are 0 to 1.',
+    situations: [
+      "controller rumble",
+      "gamepad vibration when the player crashes or fires",
+      "force feedback on a joypad",
+      "rumble the pad",
+    ],
+    constraints: [
+      "A pad or host with no actuator prints TN_HAPTICS_UNSUPPORTED once and returns false.",
+      "A worker game reads no live gamepads, so it reports unsupported.",
+    ],
+    example: "ctx.input.startJoyVibration(0.4, 0.8, 250);",
+  }),
+  member({
     symbol: "ctx.after",
     signature: "ctx.after(delay: number, callback: () => void): ScheduleHandle",
     summary:

@@ -27,6 +27,24 @@ export abstract class Scene<
 
   exit(_ctx: ICtx<TState, TPhysics>): void {}
 
+  /**
+   * The app went to the background — Godot's `NOTIFICATION_APPLICATION_PAUSED`, read from
+   * `visibilitychange` on every runtime. Save here: a backgrounded mobile app can be ended by the
+   * OS without another callback, and the frame loop is already paused when this runs.
+   *
+   * Fired once per real transition, for the scene that is active when it happens.
+   * @situation save the game when the phone sends the app to the background
+   * @example applicationPaused(ctx) { void this.save(ctx); }
+   */
+  applicationPaused(_ctx: ICtx<TState, TPhysics>): void {}
+
+  /**
+   * The app came back — Godot's `NOTIFICATION_APPLICATION_RESUMED`. The clock may have moved while
+   * the game was away; a scene that measures elapsed time re-reads it here rather than trusting it.
+   * @situation resume work that must not run while the app is in the background
+   */
+  applicationResumed(_ctx: ICtx<TState, TPhysics>): void {}
+
   update(_ctx: ICtx<TState, TPhysics>, _dt: number): void {}
 
   render(_ctx: ICtx<TState, TPhysics>): void {}
@@ -237,5 +255,13 @@ export interface ICtx<
   readonly goto: (name: string) => Promise<void>;
   /** Simulation speed multiplier, after Godot's `Engine.time_scale`. Default 1. */
   timeScale: number;
+  /**
+   * Quit the app, as Godot's `get_tree().quit()` does: the native host exits with status 0.
+   *
+   * A web page cannot end its own process, so on the web this reports `TN_QUIT_UNSUPPORTED` once
+   * and does nothing — a Quit button there owns closing the tab itself.
+   * @situation offer a Quit button in a pause menu
+   */
+  readonly quit: () => void;
   physics: TPhysics;
 }

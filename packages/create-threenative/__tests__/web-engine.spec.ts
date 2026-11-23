@@ -179,10 +179,15 @@ describe("createWebEnginePlugin", () => {
       const files = (await readdir(dist, { recursive: true }))
         .sort()
         .filter((name) => /\.(?:js|html|webmanifest)$/u.test(name));
+      // PRD-905: the page names its engine for telemetry (`__TN_ENGINE__`), which is the one byte
+      // range that differs by design between the default and the explicit legacy engine.
       return Promise.all(
         files.map(async (name) => [
           name,
-          (await readFile(path.join(dist, name))).toString("base64"),
+          (await readFile(path.join(dist, name), "utf8")).replace(
+            /globalThis\.__TN_ENGINE__ = "[^"]*";/u,
+            "globalThis.__TN_ENGINE__ = <engine>;",
+          ),
         ]),
       );
     };
