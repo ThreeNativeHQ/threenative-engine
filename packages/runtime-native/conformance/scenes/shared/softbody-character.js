@@ -1,40 +1,32 @@
 import * as THREE from "three/webgpu";
-import {
-  float,
-  Fn,
-  instancedArray,
-  instanceIndex,
-  sin,
-  uniform,
-  vec3,
-  vertexIndex,
-} from "three/tsl";
+import { SoftBody3D } from "@threenative/core";
 import { startVisualScene } from "./scene-support.js";
 
-const COLUMN_SEGMENTS = 10;
-const ROW_SEGMENTS = 14;
-const COLUMNS = COLUMN_SEGMENTS + 1;
-const VERTEX_COUNT = COLUMNS * (ROW_SEGMENTS + 1);
+// A skinned cape on a three-bone character, simulated by the shipped `SoftBody3D` solver on both hosts.
+// The character moves for a fixed number of steps during setup; the frame loop only draws, so every host
+// captures the same cloth state whichever frame it reads back.
+const STEPS = 60;
 
-export function assertSoftBodyCharacterProof(nodes) {
-  if (
-    nodes.positions?.isStorageBufferNode !== true ||
-    nodes.positions.value?.isStorageInstancedBufferAttribute !== true
-  ) {
-    throw new Error("Softbody-character proof requires a storage-backed position buffer.");
+export function assertSoftBodyCharacterProof(cloth) {
+  if (cloth?.isMesh !== true || cloth.debug?.().skinned !== true) {
+    throw new Error("Softbody-character proof requires a skinned SoftBody3D.");
   }
-  if (nodes.positions.value.count !== VERTEX_COUNT) {
-    throw new Error(`Softbody-character proof expected ${VERTEX_COUNT} position elements.`);
+  if (!(cloth.warmupNodes?.length > 0)) {
+    throw new Error("Softbody-character proof requires the solver's compute nodes.");
   }
-  if (nodes.computeNode?.isComputeNode !== true) {
-    throw new Error("Softbody-character proof requires a per-frame ComputeNode.");
+}
+
+function skin(geometry, boneIndex) {
+  const count = geometry.getAttribute("position").count;
+  const index = new Uint16Array(count * 4);
+  const weight = new Float32Array(count * 4);
+  for (let v = 0; v < count; v++) {
+    index[v * 4] = boneIndex;
+    weight[v * 4] = 1;
   }
-  if (nodes.frame?.isNode !== true) {
-    throw new Error("Softbody-character proof requires a frame counter uniform.");
-  }
-  if (nodes.material?.positionNode?.isNode !== true) {
-    throw new Error("Softbody-character proof must feed the position buffer into its material.");
-  }
+  geometry.setAttribute("skinIndex", new THREE.BufferAttribute(index, 4));
+  geometry.setAttribute("skinWeight", new THREE.BufferAttribute(weight, 4));
+  return geometry;
 }
 
 export async function startScene(canvas, dimensions) {
@@ -43,60 +35,71 @@ export async function startScene(canvas, dimensions) {
     dimensions,
     "softbody-character",
     async ({ camera, renderer, scene }) => {
-      const positions = instancedArray(VERTEX_COUNT, "vec3");
-      const frame = uniform(0);
-      const computeNode = Fn(() => {
-        const index = float(instanceIndex);
-        const row = index.div(COLUMNS).floor();
-        const column = index.sub(row.mul(COLUMNS));
-        const sway = sin(frame.mul(0.25).add(row.mul(0.55)));
-        positions.element(instanceIndex).assign(
-          vec3(
-            column.div(COLUMN_SEGMENTS).sub(0.5).add(sway.mul(0.04)),
-            row.div(ROW_SEGMENTS).mul(-1.4).add(0.7),
-            sway.mul(0.18),
-          ),
-        );
-      })().compute(VERTEX_COUNT);
-
-      const material = new THREE.MeshStandardNodeMaterial({ color: 0x4f8fd0, roughness: 0.55 });
-      material.positionNode = positions.element(vertexIndex);
-      assertSoftBodyCharacterProof({ computeNode, frame, material, positions });
-
-      const mesh = new THREE.Mesh(
-        new THREE.PlaneGeometry(1, 1.4, COLUMN_SEGMENTS, ROW_SEGMENTS),
-        material,
+      const hips = new THREE.Bone();
+      hips.position.set(0, 1, 0);
+      const chest = new THREE.Bone();
+      chest.position.set(0, 0.4, 0);
+      const head = new THREE.Bone();
+      head.position.set(0, 0.4, 0);
+      hips.add(chest);
+      chest.add(head);
+      const root = new THREE.Group();
+      root.add(hips);
+      scene.add(root);
+      root.updateMatrixWorld(true);
+      const skeleton = new THREE.Skeleton([hips, chest, head]);
+      const bodyMaterial = new THREE.MeshStandardNodeMaterial({ color: 0xb08a6a, roughness: 0.7 });
+      const body = new THREE.SkinnedMesh(
+        skin(new THREE.CylinderGeometry(0.15, 0.15, 0.4, 24, 6).translate(0, 1.6, 0), 1),
+        bodyMaterial,
       );
-      scene.add(mesh);
+      root.add(body);
+      body.bind(skeleton);
+      const capeGeometry = skin(
+        new THREE.PlaneGeometry(0.5, 0.8, 10, 14).translate(0, 1.4, -0.25),
+        1,
+      );
+      const position = capeGeometry.getAttribute("position");
+      const colour = new Float32Array(position.count * 3);
+      for (let v = 0; v < position.count; v++) colour[v * 3] = position.getY(v) > 1.79 ? 1 : 0;
+      capeGeometry.setAttribute("color", new THREE.BufferAttribute(colour, 3));
+      const capeMaterial = new THREE.MeshStandardNodeMaterial({
+        color: 0x4f8fd0,
+        roughness: 0.55,
+        side: THREE.DoubleSide,
+      });
+      const cape = new THREE.SkinnedMesh(capeGeometry, capeMaterial);
+      root.add(cape);
+      cape.bind(skeleton);
+      root.updateMatrixWorld(true);
+
+      const cloth = new SoftBody3D(cape, {});
+      scene.add(cloth);
+      assertSoftBodyCharacterProof(cloth);
       const key = new THREE.DirectionalLight(0xfff2e0, 3.2);
-      key.position.set(1.2, 1.8, 2.6);
+      key.position.set(1.2, 1.8, -2.6);
       scene.add(key, key.target, new THREE.AmbientLight(0x8fb8d8, 0.55));
 
       // A game warms its pipelines before the first frame; that compile plans the draw before the frame's
       // first uniform upload, which once built a bind group around no uniform buffer (PRD-910).
       await renderer.compileAsync(scene, camera);
-      await renderer.computeAsync(computeNode);
-      let dispatchedFrames = 0;
-      const render = () => {
-        frame.value = dispatchedFrames + 1;
-        renderer.compute(computeNode);
-        renderer.render(scene, camera);
-        dispatchedFrames += 1;
-      };
+      // The character walks forward and turns for one second; the cape trails and swings.
+      for (let step = 0; step < STEPS; step++) {
+        root.position.z = 0.03 * step;
+        chest.rotation.y = 0.4 * Math.sin(step / 9);
+        root.updateMatrixWorld(true);
+        cloth.process(renderer);
+      }
+      camera.position.set(0.45, 1.4, root.position.z - 1.15);
+      camera.lookAt(0, 1.3, root.position.z);
       return {
-        computeNode,
         detail: {
-          columns: COLUMNS,
-          computeDriven: true,
-          dispatchedEveryFrame: true,
-          frameCounter: true,
-          material: "standard",
-          rows: ROW_SEGMENTS + 1,
-          vertexCount: VERTEX_COUNT,
+          bodyCapsules: cloth.debug().bodyCapsules,
+          skinned: true,
+          steps: STEPS,
+          substeps: cloth.debug().substeps,
         },
-        mesh,
-        positions,
-        render,
+        mesh: cloth,
       };
     },
   );

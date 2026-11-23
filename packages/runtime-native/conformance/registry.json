@@ -2435,7 +2435,7 @@
     },
     {
       "id": "softbody-character",
-      "title": "softbody character: a computed cloth position buffer feeds a lit standard material every frame",
+      "title": "softbody character: the skinned SoftBody3D cape solver runs 60 steps on a moving three-bone character and draws the same cloth on every host",
       "category": "webgpu-tsl",
       "status": "implemented",
       "scene": "conformance/scenes/shared/softbody-character.js",
