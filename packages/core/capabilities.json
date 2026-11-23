@@ -8748,7 +8748,8 @@
     {
       "aliases": [],
       "constraints": [
-        "the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials"
+        "the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials",
+        "toybox pieces animate only when the game sets `stylizedUniforms.uTime` and calls `update(seconds)` each frame; `backdrop` is an image URL the game shows behind the scene"
       ],
       "example": "const { group } = createStylizedAsset(\"mountain-snow\", { seed: 8, variant: 1 });",
       "importPath": "@threenative/procedural-environment/stylized",
@@ -8759,9 +8760,11 @@
       "signature": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
       "situations": [
         "create stylized mountain ridges, snowy trees, sandstone formations, or animated water",
-        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme"
+        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme",
+        "create a stylized medieval village: cottages, tavern, barn, windmill, forge, market stall, well, fences and props in a meadow, snowy, or desert theme",
+        "build a 3D platformer level from modular toy-like pieces with realistic materials: snap-together 2 m grass blocks, spinning coins, a jumping bounce pad, hover platforms, and a blurred sky backdrop"
       ],
-      "summary": "Generate a Stylized Biome Kit or Dungeon piece or scene with its Three.js materials.",
+      "summary": "Generate a Stylized Biome Kit, Dungeon, Village or Toybox piece or scene with its Three.js materials.",
       "supersedes": [],
       "symbol": "createStylizedAsset"
     },
@@ -8809,7 +8812,9 @@
       "signature": "export function stylizedAssets(): IStylizedAsset[] { … }",
       "situations": [
         "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon",
-        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes"
+        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes",
+        "browse stylized village houses, timber walls, fences, paths, props, and the assembled village green",
+        "browse toybox platformer modules: grass blocks, cliffs, ramps, deck panels, bounce pads, coins, cannons, floating islands, palms, crates, cut-stone ruins, spinners, spike traps, a goal gate, open sea with shore foam, and assembled garden, obstacle-course and island-cove scenes"
       ],
       "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
       "supersedes": [],
@@ -8829,6 +8834,23 @@
       "summary": "Build stylized heightfield geometry with a color callback and a second-color mask for path edges.",
       "supersedes": [],
       "symbol": "terrain"
+    },
+    {
+      "aliases": [],
+      "constraints": ["four pushers (index 0 to 3); radius 0 turns one off"],
+      "example": "toyboxPush(0, player.position.x, player.position.y, player.position.z, 0.7);",
+      "importPath": "@threenative/procedural-environment/stylized",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i @threenative/procedural-environment"],
+      "signature": "export function toyboxPush(index: number, x: number, y: number, z: number, radius: number): void { … }",
+      "situations": [
+        "make toybox grass, flowers and trees bend away from the player as it walks through them"
+      ],
+      "summary": "Push Toybox grass and leaves aside round a sphere, such as the player or a ball.",
+      "supersedes": [],
+      "symbol": "toyboxPush"
     },
     {
       "aliases": [],

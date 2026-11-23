@@ -512,6 +512,7 @@
         "@threenative/procedural-environment/stylized#sky": "export function sky(options?: { … }",
         "@threenative/procedural-environment/stylized#stylizedAssets": "export function stylizedAssets(): IStylizedAsset[] { … }",
         "@threenative/procedural-environment/stylized#terrain": "export function terrain(options: { … }",
+        "@threenative/procedural-environment/stylized#toyboxPush": "export function toyboxPush(index: number, x: number, y: number, z: number, radius: number): void { … }",
         "@threenative/procedural-environment#bakeCity": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",

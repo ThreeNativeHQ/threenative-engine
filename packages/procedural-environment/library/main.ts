@@ -2,12 +2,18 @@ import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import {
   createStylizedAsset,
   sky as makeStylizedSky,
   stylizedMaterials,
   stylizedUniforms,
+  toyboxPush,
 } from "../src/stylized.js";
 import Outcrop from "../vendor/outcrop.js";
 
@@ -78,7 +84,9 @@ Object.assign(labels.domElement.style, { position: "absolute", inset: "0", point
 canvas.parentElement?.append(labels.domElement);
 
 const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xb9c6d2);
+/** The page's flat background colour; a Toybox story swaps in its backdrop image instead. */
+const backgroundColor = new THREE.Color(0xb9c6d2);
+scene.background = backgroundColor;
 // One prefiltered room environment lights every PBR material (no IBL left the city modules dark);
 // on top, Outcrop's page light: one shadowed sun tinted by the biome's environment row, and a low
 // hemisphere fill so it does not double the environment.
@@ -179,6 +187,8 @@ function lightFor(outcropBiome?: string): void {
   const rock = outcropBiome !== undefined;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   sun.shadow.normalBias = 0;
+  sunShadow(2048, 1);
+  scene.environmentIntensity = 1;
   camera.fov = 40;
   ground.visible = true;
   grid.visible = $("grid").getAttribute("aria-pressed") === "true";
@@ -192,7 +202,7 @@ function lightFor(outcropBiome?: string): void {
     | Record<string, string | number>
     | undefined;
   if (!env) return;
-  (scene.background as THREE.Color).set(env.skyHorizon as string);
+  backgroundColor.set(env.skyHorizon as string);
   (scene.fog as THREE.Fog).color.set(env.skyHorizon as string);
   hemi.color.set(env.skyTop as string).lerp(new THREE.Color("#ffffff"), 0.55);
   hemi.groundColor.set(env.ground as string).multiplyScalar(0.7);
@@ -369,20 +379,92 @@ function clear(): void {
   }
 }
 
+/** Shadow map size and blur radius of the sun; a new size drops the old map. */
+function sunShadow(size: number, radius: number): void {
+  sun.shadow.radius = radius;
+  if (sun.shadow.mapSize.x === size) return;
+  sun.shadow.mapSize.set(size, size);
+  sun.shadow.map?.dispose();
+  sun.shadow.map = null;
+}
+
+/**
+ * The Toybox frame: ambient occlusion darkens joints and contact lines, and bloom lifts the
+ * glows and sunlit highlights, over the same scene render. The other kits render directly.
+ */
+let toyboxPost: EffectComposer | undefined;
+function toyboxComposer(): EffectComposer {
+  if (toyboxPost) return toyboxPost;
+  const composer = new EffectComposer(renderer);
+  composer.renderTarget1.samples = composer.renderTarget2.samples = 4;
+  const size = renderer.getDrawingBufferSize(new THREE.Vector2());
+  composer.addPass(new RenderPass(scene, camera));
+  const occlusion = new GTAOPass(scene, camera, size.x, size.y);
+  occlusion.updateGtaoMaterial({
+    radius: 0.55,
+    distanceExponent: 1.3,
+    thickness: 1.2,
+    scale: 1.15,
+    samples: 16,
+    screenSpaceRadius: false,
+  });
+  occlusion.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 6, rings: 2 });
+  occlusion.blendIntensity = 0.85;
+  composer.addPass(occlusion);
+  composer.addPass(new UnrealBloomPass(size, 0.3, 0.45, 1.25));
+  composer.addPass(new OutputPass());
+  toyboxPost = composer;
+  return composer;
+}
+
+/**
+ * Each Toybox backdrop once: its sky panorama, and the environment prefiltered from it, which
+ * lights every surface from the sky above and the cloud below.
+ */
+const backdrops = new Map<string, { texture: THREE.Texture; env?: THREE.Texture }>();
+function useBackdrop(): void {
+  const url = route.kind === "toybox" ? scenePreview?.backdrop : undefined;
+  scene.background = backgroundColor;
+  if (!url) return;
+  let entry = backdrops.get(url);
+  if (!entry) {
+    const texture = new THREE.TextureLoader().load(url, () => {
+      const pmrem = new THREE.PMREMGenerator(renderer);
+      created.env = pmrem.fromEquirectangular(texture).texture;
+      pmrem.dispose();
+      if (scenePreview?.backdrop === url) scene.environment = created.env;
+      invalidate();
+    });
+    texture.colorSpace = THREE.SRGBColorSpace;
+    texture.mapping = THREE.EquirectangularReflectionMapping;
+    const created: { texture: THREE.Texture; env?: THREE.Texture } = { texture };
+    entry = created;
+    backdrops.set(url, entry);
+  }
+  scene.background = entry.texture;
+  stylizedSky.visible = false;
+  if (entry.env) scene.environment = entry.env;
+}
+
 function stylizedLighting(preview?: StylizedPreview): void {
   const env = preview?.env;
   renderer.toneMapping = THREE.NeutralToneMapping;
-  renderer.toneMappingExposure = 1;
-  const studio = route.kind === "dungeon" && !preview?.view;
-  scene.environment = studio ? roomEnvironment : null;
+  // Toybox surfaces are PBR (clearcoat plastic, metal): they take the room environment until the
+  // story's own sky panorama loads (useBackdrop), and get a larger, softer shadow map.
+  const toybox = route.kind === "toybox";
+  const [intensity, exposure, map, blur] = toybox ? [0.8, 0.92, 4096, 3] : [1, 1, 2048, 1];
+  scene.environment = toybox ? roomEnvironment : null;
+  scene.environmentIntensity = intensity;
+  renderer.toneMappingExposure = exposure;
+  sunShadow(map, blur);
   hemi.color.set(env?.hemi.sky ?? 0xd6e4ff);
   hemi.groundColor.set(env?.hemi.ground ?? 0x7f93c4);
-  hemi.intensity = env?.hemi.intensity ?? (studio ? 1.12 : 1.9);
-  sun.color.set(env?.sun.color ?? (studio ? 0xffedda : 0xfff3dc));
+  hemi.intensity = env?.hemi.intensity ?? 1.9;
+  sun.color.set(env?.sun.color ?? 0xfff3dc);
   sun.intensity = env?.sun.intensity ?? 3;
   sky.elevation = 49;
   sky.azimuth = -54;
-  (scene.background as THREE.Color).set(env?.horizon ?? 0xb7c6e6);
+  backgroundColor.set(env?.horizon ?? 0xb7c6e6);
   (scene.fog as THREE.Fog).color.set(env?.horizon ?? 0xb7c6e6);
   if (preview?.view) ground.visible = grid.visible = figure.visible = false;
   if (!env) return;
@@ -403,6 +485,35 @@ function stylizedLighting(preview?: StylizedPreview): void {
   shadow.far = env.shadow * 6;
   shadow.updateProjectionMatrix();
   sun.shadow.normalBias = Math.max(0.02, env.shadow * 0.0012);
+  if (toybox && preview) fitSunShadow(preview.group, env.sun.dir);
+  useBackdrop();
+}
+
+/**
+ * Fits the sun's shadow frustum to the parts of `model` that cast shadows, so a scene and a single
+ * coin both get sharp shadows, and an open sea to the horizon does not blur them.
+ */
+function fitSunShadow(model: THREE.Object3D, dir: [number, number, number]): void {
+  const box = new THREE.Box3();
+  model.traverse((node) => {
+    if (node instanceof THREE.Mesh && node.castShadow) box.expandByObject(node, false);
+  });
+  if (box.isEmpty()) return;
+  const { center, radius } = box.getBoundingSphere(new THREE.Sphere());
+  const reach = Math.max(2, radius);
+  sun.target.position.copy(center);
+  sun.position
+    .set(...dir)
+    .normalize()
+    .multiplyScalar(reach * 3)
+    .add(center);
+  const shadow = sun.shadow.camera;
+  shadow.left = shadow.bottom = -reach;
+  shadow.right = shadow.top = reach;
+  shadow.near = reach;
+  shadow.far = reach * 5;
+  shadow.updateProjectionMatrix();
+  sun.shadow.normalBias = Math.max(0.012, reach * 0.0012);
 }
 
 /** The canvas renders on demand: after a change, while the camera moves, or while a _WIND model sways. */
@@ -595,10 +706,11 @@ const BACKGROUNDS: { name: string; color?: string; floor?: string }[] = [
 function applyBackground(): void {
   const { name, color, floor } = BACKGROUNDS[state.background] ?? { name: "biome sky" };
   if (color) {
-    (scene.background as THREE.Color).set(color);
+    backgroundColor.set(color);
     (scene.fog as THREE.Fog).color.set(color);
     (ground.material as THREE.MeshStandardMaterial).color.set(floor ?? color);
   }
+  useBackdrop();
   $("background").title = `Background: ${name}`;
   $("background").setAttribute("aria-label", `Background: ${name}`);
 }
@@ -753,6 +865,11 @@ async function show(): Promise<void> {
   clear();
   scenePreview = undefined;
   invalidate();
+  $("intro").hidden = Boolean(route.kind);
+  if (!route.kind) {
+    say("Pick an asset or an overview from the list");
+    return;
+  }
   const kindRows = catalog.elements.filter((e) => e.kind === route.kind);
   const element = kindRows.find((e) => e.id === route.id);
   const biome =
@@ -864,39 +981,38 @@ const here = (kind: string, id?: string, category?: string) =>
 /** A category node: its docs, its overview and one story per element. */
 function categoryNode(kind: string, category: string, members: IElement[], open: boolean) {
   const docs = tab === "docs";
-  const group = node(`${kind}/${category}`, category, open, "pl-1");
+  const group = node(`${kind}/${category}`, category, open, "pl-5");
   const at = hashOf(kind, undefined, category);
   const current = here(kind, undefined, category);
   group.append(
-    leaf(at, "Docs", "doc", current && docs, "pl-10", "docs"),
-    leaf(at, "Overview", "story", current && !docs, "pl-10", "controls"),
+    leaf(at, "Docs", "doc", current && docs, "pl-14", "docs"),
+    leaf(at, "Overview", "story", current && !docs, "pl-14", "controls"),
     ...members.map((e) =>
-      leaf(hashOf(kind, e.id), e.name, "story", here(kind, e.id) && !docs, "pl-10", "controls"),
+      leaf(hashOf(kind, e.id), e.name, "story", here(kind, e.id) && !docs, "pl-14", "controls"),
     ),
   );
   return group;
 }
 
-/** An element node: its docs and its default story. */
 /** An element node: its docs, its default story, a story per biome option and a tiled story. */
 function elementNode(e: IElement) {
   const docs = tab === "docs";
   const current = here(e.kind, e.id);
   const story = current && !docs && !route.tiled;
-  const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-1");
+  const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-5");
   const at = hashOf(e.kind, e.id);
   const biome = controlsFor(e.kind, e.id).find((c) => c.key === "biome" && c.type === "select");
   const tile = tileControl(e.kind, e.id);
   group.append(
-    leaf(at, "Docs", "doc", current && docs, "pl-10", "docs"),
-    leaf(at, "Default", "story", story && !touched.has("biome"), "pl-10", "controls"),
+    leaf(at, "Docs", "doc", current && docs, "pl-14", "docs"),
+    leaf(at, "Default", "story", story && !touched.has("biome"), "pl-14", "controls"),
     ...(biome?.options ?? []).map((o) =>
       leaf(
         hashOf(e.kind, e.id, undefined, [["biome", o]]),
         optionName(o),
         "story",
         story && touched.get("biome") === o,
-        "pl-10",
+        "pl-14",
         "controls",
       ),
     ),
@@ -908,32 +1024,37 @@ function elementNode(e: IElement) {
         `Tiled ×3 (${tile.label})`,
         "story",
         current && !docs && route.tiled === tile.key,
-        "pl-10",
+        "pl-14",
         "controls",
       ),
     );
   return group;
 }
 
-/** One kind: an uppercase section with its overview, then a node per category or per element. */
+/** One kind: a pack inside its collection, with its overview, then a node per category or per element. */
 const isBackdrop = (row: IElement) => row.category === "Scenes" || row.id === "sky-dome";
 const kindName = (kind: string) => (kind === "stylized" ? "Stylized Biome Kit" : title(kind));
-const isRuntimeKind = (kind: string) => kind === "stylized" || kind === "dungeon";
+/** The pack name under its collection heading: the Stylized collection holds Biome, Dungeon and Village kits. */
+const packName = (kind: string) =>
+  kind === "stylized" ? "Biome Kit" : isRuntimeKind(kind) ? `${title(kind)} Kit` : title(kind);
+const isRuntimeKind = (kind: string) =>
+  kind === "stylized" || kind === "dungeon" || kind === "village" || kind === "toybox";
 const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
 
 function kindSection(kind: string, rows: IElement[], searching: boolean) {
   const summary = el(
     "summary",
-    "mt-3 flex items-center gap-1.5 py-1 pl-1 text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted hover:text-ink",
+    "flex items-center gap-1.5 rounded py-1 pr-2 pl-1 font-bold text-ink hover:bg-hover",
   );
   summary.append(
-    iconEl("chevron", "chev transition-transform", 12),
-    el("span", "flex-1", kindName(kind)),
-    el("span", "font-normal tracking-normal", String(rows.length)),
+    iconEl("chevron", "chev text-muted transition-transform", 12),
+    iconEl("group", "text-group"),
+    el("span", "flex-1 truncate", packName(kind)),
+    el("span", "font-normal text-muted", String(rows.length)),
   );
-  const section = folder(kind, true, summary);
+  const section = folder(kind, searching || route.kind === kind, summary);
   section.append(
-    leaf(hashOf(kind), "Overview", "story", here(kind) && tab !== "docs", "pl-5", "controls"),
+    leaf(hashOf(kind), "Overview", "story", here(kind) && tab !== "docs", "pl-10", "controls"),
   );
   for (const category of [...new Set(rows.map((e) => e.category ?? ""))]) {
     const members = rows.filter((e) => (e.category ?? "") === category);
@@ -954,9 +1075,30 @@ function renderTree(): void {
   const searching = $<HTMLInputElement>("search").value.trim() !== "";
   const nav = $("tree");
   nav.replaceChildren();
-  for (const kind of kinds()) {
-    const rows = catalog.elements.filter((e) => e.kind === kind && visible(e));
-    if (rows.length) nav.append(kindSection(kind, rows, searching));
+  // collections first (Realistic, Stylized), then one pack per kind inside each
+  for (const [style, label] of Object.entries(catalog.styles)) {
+    const packs = kinds()
+      .map((kind) =>
+        catalog.elements.filter((e) => e.kind === kind && e.styleTags[0] === style && visible(e)),
+      )
+      .filter((rows) => rows.length);
+    if (!packs.length) continue;
+    const summary = el(
+      "summary",
+      "mt-3 flex items-center gap-1.5 py-1 pl-1 text-[11px] font-extrabold uppercase tracking-[0.2em] text-muted hover:text-ink",
+    );
+    summary.append(
+      iconEl("chevron", "chev transition-transform", 12),
+      el("span", "flex-1", label),
+      el(
+        "span",
+        "font-normal tracking-normal",
+        String(packs.reduce((n, rows) => n + rows.length, 0)),
+      ),
+    );
+    const collection = folder(`style/${style}`, true, summary);
+    for (const rows of packs) collection.append(kindSection(rows[0]?.kind ?? "", rows, searching));
+    nav.append(collection);
   }
   if (!nav.childElementCount) nav.append(el("p", "px-1 py-3 text-muted", "No matching assets"));
   nav.querySelector("[aria-current=page]")?.scrollIntoView({ block: "center" });
@@ -1206,7 +1348,7 @@ function readHash(): void {
   const q = new URLSearchParams(query);
   const known = kinds();
   const category = id ? null : q.get("category");
-  const routeKind = known.includes(kind) ? kind : (known[0] ?? "");
+  const routeKind = known.includes(kind) ? kind : "";
   const tiled = q.get("tiled");
   route = {
     kind: routeKind,
@@ -1336,6 +1478,7 @@ function resize(): void {
     canvas.height !== Math.floor(h * renderer.getPixelRatio())
   ) {
     renderer.setSize(w, h, false);
+    toyboxPost?.setSize(w, h);
     invalidate();
     labels.setSize(w, h);
     camera.aspect = w / Math.max(1, h);
@@ -1351,14 +1494,34 @@ renderer.setAnimationLoop(() => {
   const animate = swaying && state.wind;
   if (animate && isRuntimeKind(route.kind)) {
     stylizedUniforms.uTime.value += Math.min(dt, 0.1);
-    scenePreview?.update?.(stylizedUniforms.uTime.value);
+    const t = stylizedUniforms.uTime.value;
+    if (route.kind === "toybox") content.traverse((node) => node.userData.animate?.(node, t));
+    else scenePreview?.update?.(t);
   } else if (animate) wind.uTime.value += dt;
   if (!(moved || dirty || animate)) return;
   dirty = false;
-  renderer.render(scene, camera);
+  if (route.kind === "toybox") toyboxComposer().render(dt);
+  else renderer.render(scene, camera);
   labels.render(scene, camera);
 });
 for (const type of ["click", "change", "input"]) document.addEventListener(type, invalidate);
+// Toybox grass and leaves part around the pointer, as they would round a player (toyboxPush).
+const pointer = new THREE.Raycaster();
+canvas.addEventListener("pointermove", (event) => {
+  if (route.kind !== "toybox") return;
+  const rect = canvas.getBoundingClientRect();
+  pointer.setFromCamera(
+    new THREE.Vector2(
+      ((event.clientX - rect.left) / rect.width) * 2 - 1,
+      -((event.clientY - rect.top) / rect.height) * 2 + 1,
+    ),
+    camera,
+  );
+  const hit = pointer.intersectObject(content, true)[0];
+  if (hit) toyboxPush(0, hit.point.x, hit.point.y, hit.point.z, 0.7);
+  else toyboxPush(0, 0, -1e4, 0, 0);
+  invalidate();
+});
 
 try {
   catalog = (await (await fetch("/api/catalog")).json()) as typeof catalog;
