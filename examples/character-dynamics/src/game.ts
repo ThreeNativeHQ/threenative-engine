@@ -59,7 +59,7 @@ import {
 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/hair.js";
-import { strandAtlas } from "./hair-atlas.js";
+import { strandAtlas, strandTangents } from "./hair-atlas.js";
 import {
   type IProbeCapsule,
   centroid,
@@ -547,7 +547,13 @@ class CharacterDynamics extends Scene<IState> {
               alphaTest: 0.5,
             }),
           }
-        : createHairCardMaterial({ atlas, alphaToCoverage: true });
+        : createHairCardMaterial({
+            atlas,
+            tangent: strandTangents(),
+            // The tangent map already points along the strand (+V); upstream's -1.09 suits its own atlases.
+            anisotropyRotation: 0,
+            alphaToCoverage: true,
+          });
       if (plain) passes.outer.opacityNode = texture(atlas).r;
       [passes.inner, passes.outer, passes.blend].forEach((material, order) => {
         if (material === null) return;
