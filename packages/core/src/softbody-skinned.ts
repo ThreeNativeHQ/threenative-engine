@@ -78,8 +78,8 @@ export interface ISkinnedSoftBody3DOptions {
   readonly substeps?: number;
   /**
    * Constraint iterations per substep. On the one-dispatch path (see `singleDispatch`) each is a sweep
-   * of per-constraint coloured Gauss-Seidel, any number from 2. On the multi-dispatch path each is a
-   * Jacobi pass, and the count must be even. Default 2.
+   * of per-constraint coloured Gauss-Seidel, any whole number from 1 (Chaos's stock count). On the multi-dispatch
+   * path each is a Jacobi pass, and the count must be even and at least 2. Default 2.
    */
   readonly iterations?: number;
   /**
@@ -710,8 +710,9 @@ export function createSkinnedCloth(
   if (skinIndex === undefined || skinWeight === undefined)
     throw new Error("SoftBody3D skinned cloth needs skinIndex and skinWeight attributes.");
   const substeps = check("substeps", options.substeps ?? 6, 1, 32);
-  const iterations = check("iterations", options.iterations ?? 2, 2, 16);
+  const iterations = check("iterations", options.iterations ?? 2, 1, 16);
   if (!Number.isInteger(substeps)) throw new Error("SoftBody3D.substeps must be an integer.");
+  if (!Number.isInteger(iterations)) throw new Error("SoftBody3D.iterations must be an integer.");
   const stretchK = check("stretchStiffness", options.stretchStiffness ?? 1, 0, 1);
   const bendK = check("bendStiffness", options.bendStiffness ?? 0.25, 0, 1);
   const dampingValue = check("damping", options.damping ?? -Math.log(1 - 0.01) * 60);
@@ -799,7 +800,9 @@ export function createSkinnedCloth(
       `SoftBody3D.singleDispatch solves in one workgroup of at most ${SINGLE_DISPATCH_MAX} particles; this cloth has ${vertexCount}.`,
     );
   if (!single && iterations % 2 !== 0)
-    throw new Error("SoftBody3D.iterations must be even: the passes ping-pong two buffers.");
+    throw new Error(
+      "SoftBody3D.iterations must be even, at least 2: the passes ping-pong two buffers.",
+    );
   if (!mask.some((m) => m >= 1))
     throw new Error(
       "SoftBody3D skinned cloth has no vertex with mask 1; nothing holds it on the body.",

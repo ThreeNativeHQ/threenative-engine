@@ -441,6 +441,12 @@ describe("SoftBody3D on a SkinnedMesh", () => {
     ).toThrow(/even/);
     // Gauss-Seidel sweeps do not ping-pong, so the one-dispatch path takes any count.
     expect(() => new SoftBody3D(character().cape, { iterations: 3 })).not.toThrow();
+    // One sweep is Chaos's stock count; the Jacobi path cannot ping-pong it, and 2.5 is no count.
+    expect(() => new SoftBody3D(character().cape, { iterations: 1 })).not.toThrow();
+    expect(
+      () => new SoftBody3D(character().cape, { iterations: 1, singleDispatch: false }),
+    ).toThrow(/even, at least 2/);
+    expect(() => new SoftBody3D(character().cape, { iterations: 2.5 })).toThrow(/integer/);
   });
 
   it("reports a teleport when the reference bone jumps past the auto distance, and a manual reset", () => {
