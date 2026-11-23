@@ -833,6 +833,20 @@ export class AudioBus {
   }
 }
 
+/**
+ * Pauses every live bus that is playing and returns those, so the caller lifts exactly the pause it applied.
+ *
+ * `game.pause()` reaches the mix this way because a game holds no single bus: it builds one per
+ * category (music, effects, ambience) and the registry is the only place that knows them all.
+ * Buses built after the pause are not in the returned list, so a scene change during a pause is
+ * left to the scene that built them.
+ */
+export function pauseAudioBuses(): readonly AudioBus[] {
+  const buses = [...audioState().buses].filter((bus) => !bus.paused);
+  for (const bus of buses) bus.pause();
+  return buses;
+}
+
 export function audioRuntimeSnapshot(): IAudioRuntimeSnapshot {
   let queued = 0;
   let voices = 0;
