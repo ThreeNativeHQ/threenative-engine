@@ -165,6 +165,12 @@ void processTouchEvent(const SDL_TouchFingerEvent& event);
  */
 bool getGamepadState(int index, GamepadState* state);
 
+/** Rumble pad `index` (SDL_RumbleGamepad). Strengths 0..1. False: no pad or no motor. */
+bool rumbleGamepad(int index, float weak, float strong, uint32_t durationMs);
+
+/** Vibrate the handheld device (SDL haptics, the Android system vibrator). False: no motor. */
+bool vibrateDevice(uint32_t durationMs);
+
 /**
  * Fills `state` with one SDL gamepad in the W3C "standard" mapping — the single interface a game
  * reads a controller through, so both hosts (`navigator.getGamepads` in the legacy runtime and

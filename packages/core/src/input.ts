@@ -5,6 +5,7 @@ import {
   createStandardPad,
   toStandardPad,
 } from "./gamepad-mappings.js";
+import { reportMarkerOnce } from "./report-once.js";
 
 /**
  * One action, read either as a button through `pressed`/`justPressed`, a 2D axis through
@@ -64,6 +65,9 @@ export interface IInputAction {
   readonly up?: readonly string[];
 }
 
+/** The same binding with writable fields, for the engine's own copies. */
+type WritableInputAction = { -readonly [K in keyof IInputAction]: IInputAction[K] };
+
 export type InputBindings = Record<string, IInputAction>;
 
 /**
@@ -82,6 +86,37 @@ const MOUSE_BUTTON_BITS: readonly number[] = [1, 4, 2, 8, 16];
 
 function mouseButtonMask(button: number): number {
   return MOUSE_BUTTON_BITS[button] ?? 0;
+}
+
+const HAPTICS_MARKER = "TN_HAPTICS_UNSUPPORTED";
+
+/** The host's navigator as the haptics read it, or undefined where the runtime has none. */
+function hapticsHost(): Navigator | undefined {
+  return typeof navigator === "undefined" ? undefined : navigator;
+}
+
+/**
+ * `navigator.vibrate`, read by key: the lib types its pattern as an iterable of durations where the
+ * web API and the owned host both take one duration in milliseconds.
+ */
+function phoneVibrator(): ((pattern: number) => boolean) | undefined {
+  if (typeof navigator === "undefined") return undefined;
+  const host = navigator as { vibrate?: (pattern: number) => boolean };
+  // Bound: a browser's vibrate called off its navigator throws "Illegal invocation".
+  return typeof host.vibrate === "function" ? host.vibrate.bind(host) : undefined;
+}
+
+function requireHapticsDuration(durationMs: number): void {
+  if (!Number.isFinite(durationMs) || durationMs < 0) {
+    throw new Error(
+      `TN_HAPTICS_INVALID: durationMs must be a finite, non-negative number of milliseconds, received ${String(durationMs)}.`,
+    );
+  }
+}
+
+function reportHapticsUnsupported(reason: string): false {
+  reportMarkerOnce(HAPTICS_MARKER, `${reason}, so this call returns false and does nothing.`);
+  return false;
 }
 
 export interface IInputGamepad {
@@ -148,6 +183,80 @@ const DEFAULT_BINDINGS: InputBindings = {
     up: ["KeyW", "ArrowUp"],
   },
 };
+
+const BINDING_KEY_FIELDS = ["down", "keys", "left", "right", "up"] as const;
+const BINDING_INDEX_FIELDS = ["buttons", "gamepadAxes", "mouseButtons"] as const;
+const BINDING_FLAG_FIELDS = [
+  "captureOnClick",
+  "pinch",
+  "pointer",
+  "pointerRelative",
+  "scroll",
+] as const;
+
+function describeValue(value: unknown): string {
+  return JSON.stringify(value) ?? String(value);
+}
+
+/** A JSON-safe copy: the arrays are copied, so neither the caller nor the map aliases the other. */
+function copyBinding(binding: IInputAction): IInputAction {
+  const copy: WritableInputAction = { ...binding };
+  if (binding.buttons !== undefined) copy.buttons = [...binding.buttons];
+  if (binding.down !== undefined) copy.down = [...binding.down];
+  if (binding.gamepadAxes !== undefined) copy.gamepadAxes = [...binding.gamepadAxes];
+  if (binding.keys !== undefined) copy.keys = [...binding.keys];
+  if (binding.left !== undefined) copy.left = [...binding.left];
+  if (binding.mouseButtons !== undefined) copy.mouseButtons = [...binding.mouseButtons];
+  if (binding.right !== undefined) copy.right = [...binding.right];
+  if (binding.up !== undefined) copy.up = [...binding.up];
+  return copy;
+}
+
+function isKeyCodes(value: unknown): value is readonly string[] {
+  return Array.isArray(value) && value.every((code) => typeof code === "string");
+}
+
+function isDeviceIndices(value: unknown): value is readonly number[] {
+  return Array.isArray(value) && value.every((index) => Number.isInteger(index) && index >= 0);
+}
+
+/**
+ * The one check both the constructor and `setBinding` run: a field of the wrong shape silently
+ * never fires, so it throws `TN_BINDING_INVALID` instead. Returns the map's own copy.
+ */
+function validateBinding(action: string, binding: IInputAction): IInputAction {
+  const candidate: unknown = binding;
+  if (candidate === null || typeof candidate !== "object" || Array.isArray(candidate)) {
+    throw new TypeError(
+      `TN_BINDING_INVALID: input action "${action}" binding must be an object, received ${describeValue(candidate)}.`,
+    );
+  }
+  for (const field of BINDING_KEY_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && !isKeyCodes(value)) {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be an array of keyboard codes, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  for (const field of BINDING_INDEX_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && !isDeviceIndices(value)) {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be an array of non-negative integer device indices, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  for (const field of BINDING_FLAG_FIELDS) {
+    const value = binding[field];
+    if (value !== undefined && typeof value !== "boolean") {
+      throw new TypeError(
+        `TN_BINDING_INVALID: input action "${action}" field "${field}" must be a boolean, received ${describeValue(value)}.`,
+      );
+    }
+  }
+  return copyBinding(binding);
+}
 
 const WHEEL_LINE_PIXELS = 16;
 const WHEEL_PAGE_PIXELS = 800;
@@ -308,14 +417,17 @@ export class InputMap {
       );
     }
     this.gamepadDeadZone = deadZone;
-    this.#bindings = { ...DEFAULT_BINDINGS, ...bindings };
-    // Bindings are fixed at construction; freezing the key list keeps tick() from calling
-    // Object.keys every step.
+    this.#bindings = { ...DEFAULT_BINDINGS };
+    for (const [action, binding] of Object.entries(bindings)) {
+      this.#bindings[action] = validateBinding(action, binding);
+    }
+    // The action names never change: `setBinding` only replaces a declared one. Freezing the key
+    // list keeps tick() from calling Object.keys every step.
     this.#bindingNames = Object.keys(this.#bindings);
     this.#target = target;
     this.#pointerTarget = pointerTarget;
     this.#source = source;
-    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
+    this.#refreshDerivedBindings();
     this.raw = {
       gamepad: { axes: this.#gamepadAxes, buttons: this.#gamepadButtons },
       keys: this.#heldKeys,
@@ -341,23 +453,17 @@ export class InputMap {
       if (code !== undefined) this.#heldKeys.delete(code);
     });
     this.#listen(this.#target, "mousemove", (event) => this.#mouseEvent(event));
-    if (
-      this.#bindingNames.some(
-        (name) =>
-          this.#bindings[name]?.pointerRelative === true &&
-          this.#bindings[name]?.captureOnClick !== false,
-      )
-    ) {
-      this.#listen(this.#pointerTarget, "click", (event) => {
-        // Touch and pen gestures must not enter desktop relative-mouse mode.
-        const pointerType = (event as PointerEvent).pointerType;
-        if (pointerType && pointerType !== "mouse") return;
-        this.#captureFromClick();
-      });
-    }
+    this.#listen(this.#pointerTarget, "click", (event) => {
+      // Read per click, not at construction: `setBinding` can add a relative binding later.
+      if (!this.#wantsCaptureOnClick()) return;
+      // Touch and pen gestures must not enter desktop relative-mouse mode.
+      const pointerType = (event as PointerEvent).pointerType;
+      if (pointerType && pointerType !== "mouse") return;
+      this.#captureFromClick();
+    });
     this.#listen(this.#pointerTarget, "pointerdown", (event) => this.#pointerEvent(event, "down"));
-    if (this.#bindingNames.some((name) => this.#bindings[name]?.scroll === true))
-      this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
+    // Always attached for the same reason: the wheel delta is only read by a scroll binding.
+    this.#listen(this.#target, "wheel", (event) => this.#wheelEvent(event));
     this.#listen(this.#pointerTarget, "pointermove", (event) => this.#pointerEvent(event));
     this.#listen(this.#pointerTarget, "pointerup", (event) => this.#pointerEvent(event, "up"));
     this.#listen(this.#pointerTarget, "pointercancel", (event) =>
@@ -380,6 +486,43 @@ export class InputMap {
         this.#syncCaptured((event as Event & { captured?: boolean }).captured),
       );
     }
+  }
+
+  /**
+   * Replaces one declared action's binding — the Godot `InputMap.action_erase_events` +
+   * `action_add_event` pair. `pressed`, `axis` and `vector` read the new binding on the next
+   * `tick`. An action the game never declared in `defineGame({ input })` throws
+   * `TN_BINDING_UNKNOWN`: there is nothing to replace.
+   *
+   * ```ts
+   * onRebind: (action, binding) => map.setBinding(action, binding) // an options menu's key picker
+   * ```
+   */
+  setBinding(action: string, binding: IInputAction): void {
+    if (!Object.hasOwn(this.#bindings, action)) {
+      throw new RangeError(
+        `TN_BINDING_UNKNOWN: input action "${action}" is not declared in this game's bindings; declare it in defineGame({ input: { ... } }) before rebinding it.`,
+      );
+    }
+    this.#bindings[action] = validateBinding(action, binding);
+    this.#refreshDerivedBindings();
+  }
+
+  /**
+   * A JSON-safe copy of every binding, so a game can save it and later feed each entry back to
+   * `setBinding`. Mutating the copy changes nothing; the returned arrays are copies too.
+   *
+   * ```ts
+   * localStorage.setItem("keys", JSON.stringify(map.bindings())) // an options menu saves here
+   * ```
+   */
+  bindings(): InputBindings {
+    const copy: InputBindings = {};
+    for (const name of this.#bindingNames) {
+      const binding = this.#bindings[name];
+      if (binding !== undefined) copy[name] = copyBinding(binding);
+    }
+    return copy;
   }
 
   /**
@@ -474,6 +617,73 @@ export class InputMap {
         throw error;
       },
     );
+  }
+
+  /**
+   * Godot's `Input.vibrate_handheld`: shake the phone for `durationMs`, through `navigator.vibrate`.
+   *
+   * Returns whether the platform took the request. A browser without the API, or a device with no
+   * motor, reports `TN_HAPTICS_UNSUPPORTED` once and returns false, so a game that vibrates on every
+   * hit does not fill the console. A rumble on a pad is `startJoyVibration`.
+   *
+   * @situation shake the phone when the player takes a hit
+   * @situation vibrate on a mobile tap or a landed shot
+   * @constraint the engine does not decide what vibrates: a game that never calls it never shakes
+   * @constraint throws `TN_HAPTICS_INVALID` on a negative or non-finite duration
+   * @example if (ctx.input.vibrateHandheld(80)) hud.flashHit();
+   */
+  vibrateHandheld(durationMs: number): boolean {
+    requireHapticsDuration(durationMs);
+    const vibrate = phoneVibrator();
+    if (vibrate === undefined)
+      return reportHapticsUnsupported("this runtime has no navigator.vibrate");
+    if (vibrate(durationMs) === false)
+      return reportHapticsUnsupported("navigator.vibrate found no vibration motor here");
+    return true;
+  }
+
+  /**
+   * Godot's `Input.start_joy_vibration`: rumble pad `device` through its
+   * `vibrationActuator.playEffect("dual-rumble")`, with `weak` and `strong` motor magnitudes.
+   *
+   * Returns whether the request was dispatched. A pad, browser or host with no actuator reports
+   * `TN_HAPTICS_UNSUPPORTED` once and returns false; a browser answers with a promise, whose refusal
+   * is reported there rather than thrown. `durationMs` is milliseconds and magnitudes are `0`..`1`.
+   *
+   * @situation rumble the controller when the player fires or crashes
+   * @situation start a joypad vibration on one pad
+   * @constraint throws `TN_HAPTICS_INVALID` on a negative or non-finite duration
+   * @example ctx.input.startJoyVibration(0.4, 0.8, 250);
+   */
+  startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean {
+    requireHapticsDuration(durationMs);
+    const actuator = hapticsHost()?.getGamepads?.()[device]?.vibrationActuator;
+    const playEffect = actuator?.playEffect;
+    if (playEffect === undefined)
+      return reportHapticsUnsupported(`gamepad ${device} has no vibration actuator`);
+    const effect: GamepadEffectParameters = {
+      duration: durationMs,
+      strongMagnitude: strong,
+      weakMagnitude: weak,
+    };
+    const result: unknown = playEffect.call(actuator, "dual-rumble", effect);
+    // The native host answers with the web result string; a browser answers with a promise, whose
+    // refusal lands after this returns and must not escape as an unhandled rejection.
+    if (typeof result === "string") {
+      if (result === "not-supported")
+        return reportHapticsUnsupported(`gamepad ${device} cannot rumble`);
+      return true;
+    }
+    if (result !== undefined && typeof (result as PromiseLike<unknown>).then === "function") {
+      void (result as PromiseLike<unknown>).then(
+        (outcome) => {
+          if (outcome === "not-supported")
+            reportHapticsUnsupported(`gamepad ${device} cannot rumble`);
+        },
+        () => reportHapticsUnsupported(`gamepad ${device} cannot rumble`),
+      );
+    }
+    return true;
   }
 
   pressed(name: string): boolean {
@@ -736,6 +946,20 @@ export class InputMap {
         if ((this.#latchedPointerButtons & mouseButtonMask(mouseButtons[index] as number)) !== 0)
           return true;
       }
+    }
+    return false;
+  }
+
+  /** Recomputes what the constructor cached from the bindings, after `setBinding` replaced one. */
+  #refreshDerivedBindings(): void {
+    this.#tracksPinch = this.#bindingNames.some((name) => this.#bindings[name]?.pinch === true);
+  }
+
+  /** Whether any binding asks for automatic click capture, read per click so a rebind takes hold. */
+  #wantsCaptureOnClick(): boolean {
+    for (const name of this.#bindingNames) {
+      const binding = this.#bindings[name];
+      if (binding?.pointerRelative === true && binding.captureOnClick !== false) return true;
     }
     return false;
   }

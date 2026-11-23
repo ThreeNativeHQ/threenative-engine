@@ -418,6 +418,7 @@ test("preserves starter state and stays flat across ten real HMR updates", async
         pooled: 0,
         queued: 0,
         recentCues: [],
+        silent: false,
         unsupported: [],
         voices: 0,
       });

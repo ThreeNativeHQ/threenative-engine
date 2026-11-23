@@ -1,4 +1,5 @@
 import { type Object3D, Scene as ThreeScene, Vector2 } from "three";
+import { installApplicationLifecycle, quitGame } from "./app-lifecycle.js";
 import { createAssetLoader } from "./assets.js";
 import { AutoBatch } from "./auto-batch.js";
 import { CanvasLayer } from "./canvas-layer.js";
@@ -706,6 +707,24 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     get alpha() {
       return loopState.current?.alpha ?? 0;
     },
+    /**
+     * Simulation speed multiplier, after Godot's `Engine.time_scale`.
+     *
+     * ```ts
+     * ctx.timeScale = 0.2; // slow motion
+     * ```
+     */
+    get timeScale() {
+      return loopState.current?.timeScale ?? 1;
+    },
+    set timeScale(value: number) {
+      const loop = loopState.current;
+      // No loop yet means the call ran before the frame loop existed, which is a mistake to fix at
+      // the call site rather than a value to queue: the loop is the only place the scale lives.
+      if (loop === undefined)
+        throw new Error("TN_TIME_SCALE_UNAVAILABLE: ctx.timeScale needs a started game.");
+      loop.timeScale = value;
+    },
     interpolate: (object) => interpolation.track(object),
     resetInterpolation: (object) => interpolation.reset(object),
     add: (object) => {
@@ -759,6 +778,7 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     input: game.input,
     pointer: pointerEvents,
     physics: undefined as TPhysics,
+    quit: quitGame,
     random,
     raycast: (options) => picker.raycast(options),
     raycastAll: (options, target) => picker.raycastAll(options, target),
@@ -811,6 +831,15 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
   game.entities = entities;
   game.scheduler = scheduler;
   game.afterPhysicsPhase = afterPhysicsPhase;
+  // The app's own transitions reach whichever scene is live — a scene change inside a transition
+  // needs no re-registration — and a worker game reads the page's forwarded copy instead of a
+  // `document` it does not have. A runtime with neither has nothing to listen to.
+  game.cleanup.push(
+    installApplicationLifecycle({
+      paused: () => game.scene?.applicationPaused(ctx),
+      resumed: () => game.scene?.applicationResumed(ctx),
+    }),
+  );
   // The scene-owned registries. Pushed after the autobatcher, so they empty before it resets (the
   // order `#teardown` always had), and before the frame loop and plugins, so both release first.
   game.cleanup.push(() => {

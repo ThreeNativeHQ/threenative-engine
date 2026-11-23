@@ -1,4 +1,4 @@
-import { useUiState } from "@threenative/ui";
+import { useUiIntent, useUiState } from "@threenative/ui";
 import type { GameState } from "../state.js";
 import { CIRCUIT } from "../track/circuit.js";
 
@@ -374,6 +374,10 @@ function driftPopup(state: GameState | undefined): number | undefined {
 
 export function Hud() {
   const state = useUiState<GameState>();
+  // The one control the HUD sends the game: `pause` with no payload, and the game decides what
+  // pausing means. The button is also the only way a playtest can reach that intent, which is
+  // what proves the mix is silenced by it.
+  const send = useUiIntent();
   if (state === undefined) return null;
   const drift = driftPopup(state);
   const statusClass =
@@ -400,7 +404,18 @@ export function Hud() {
         </div>
         <StandingBoard state={state} />
       </div>
-      <div className="absolute right-5 top-4">
+      <div className="absolute right-5 top-4 flex flex-col items-end gap-2">
+        <button
+          aria-label={state.paused ? "Resume race" : "Pause race"}
+          aria-pressed={state.paused}
+          className="pointer-events-auto border border-cyan/50 bg-black/55 px-3 py-1 text-[10px] font-bold tracking-[0.24em] text-cyan"
+          data-testid="pause-toggle"
+          data-tn-interactive
+          onClick={() => send(state.paused ? "resume" : "pause")}
+          type="button"
+        >
+          {state.paused ? "resume" : "pause"}
+        </button>
         <LapPanel state={state} />
       </div>
       <div className="absolute bottom-5 left-5">
