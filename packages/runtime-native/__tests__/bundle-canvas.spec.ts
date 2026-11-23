@@ -13,6 +13,8 @@ const bundlerScript = path.resolve("packages/runtime-native/scripts/bundle.mjs")
 // This package declares no Vite of its own: `bundle.mjs` builds with the *game's* pinned copy,
 // so a fixture game borrows the one the scaffolder ships.
 const viteInstall = path.resolve("packages/create-threenative/node_modules/vite");
+/** A project name a telemetry field has to carry intact, quotes included (PRD-905). */
+const GAME_NAME = 'Three "Identity" Proof';
 
 test("native project prelude preserves independent canvases for loading text", () => {
   const bundler = readFileSync(new URL("../scripts/bundle.mjs", import.meta.url), "utf8");
@@ -108,6 +110,10 @@ export default {
       "android",
       "--output",
       output,
+      "--game-name",
+      GAME_NAME,
+      "--engine-name",
+      "threenative",
     ],
     { cwd: project },
   );
@@ -121,6 +127,10 @@ export default {
     },
   };
   runInNewContext(await readFile(output, "utf8"), context);
+  // PRD-905: a native bundle names the game and the engine drawing it, ahead of every game module
+  // and with a quote in the name escaped, so an event reported from it is not "unknown".
+  expect(context.__TN_GAME__).toBe(GAME_NAME);
+  expect(context.__TN_ENGINE__).toBe("threenative");
   expect(JSON.parse(String(context.tnThreeIdentity))).toEqual({
     copies: ["project", "project"],
     sharedStack: true,

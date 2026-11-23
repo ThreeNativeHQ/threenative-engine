@@ -61,7 +61,7 @@ function samePath(left, right) {
 }
 
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true },
+  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true, gameName, engine },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
   // An older CLI passes the canonical cache path without ever downloading it: this packager can
@@ -108,7 +108,7 @@ export async function packageEngineDesktop(
   rmSync(output, { force: true, recursive: true });
   mkdirSync(output, { recursive: true });
   const outfile = join(output, "game.js");
-  const bundled = await bundle({ entry, outfile });
+  const bundled = await bundle({ entry, outfile, gameName, engine });
   await cook({ project, outfile });
   copyFileSync(player, join(output, PLAYER));
   chmodSync(join(output, PLAYER), 0o755);
@@ -180,7 +180,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority", "--fullscreen"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority", "--fullscreen", "--game-name", "--engine-name"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_ENGINE_PACKAGE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
@@ -195,6 +195,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       width: flags.has("--width") ? Number(flags.get("--width")) : undefined,
       height: flags.has("--height") ? Number(flags.get("--height")) : undefined,
       title: flags.get("--title"),
+      gameName: flags.get("--game-name"),
+      engine: flags.get("--engine-name"),
       priority: flags.get("--priority"),
       fullscreen: flags.has("--fullscreen") ? flags.get("--fullscreen") !== "false" : undefined,
     });
