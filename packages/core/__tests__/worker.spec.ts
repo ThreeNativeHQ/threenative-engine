@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { IGamePlatformSource } from "../src/game.js";
+import { reloadAfterGpuMemoryLoss, routeGpuMemoryReload } from "../src/launch-diagnostics.js";
 import { detectPlatform } from "../src/platform.js";
 import { serveWorkerGame, startWorkerGame } from "../src/worker.js";
 
@@ -99,6 +100,51 @@ afterEach(() => {
 });
 
 describe("worker game host (PRD-752)", () => {
+  it("ends the worker, and its GPU device, when the page goes away, not when it enters the back-forward cache", () => {
+    // A reload storm stacked one live device per reload until the GPU ran out of memory.
+    const { scope, worker } = link();
+    const { container, view } = page();
+    serveWorkerGame({ start: () => new Promise(() => {}) }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    void handle.ready.catch(() => undefined);
+    view.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: true }));
+    expect(worker.terminate).not.toHaveBeenCalled();
+    view.dispatchEvent(Object.assign(new Event("pagehide"), { persisted: false }));
+    expect(worker.terminate).toHaveBeenCalledTimes(1);
+    routeGpuMemoryReload(undefined);
+  });
+
+  it("reloads the page once when the worker's GPU ran out of memory: the page holds the guard", async () => {
+    const { scope, worker } = link();
+    const { container } = page();
+    const reload = vi.fn();
+    const stored = new Map<string, string>();
+    vi.stubGlobal("location", { reload });
+    vi.stubGlobal("sessionStorage", {
+      getItem: (key: string) => stored.get(key) ?? null,
+      setItem: (key: string, value: string) => stored.set(key, value),
+    });
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    serveWorkerGame({ start: () => new Promise(() => {}) }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    void handle.ready.catch(() => undefined);
+    const oom = "TN_WASM_DEVICE_ERROR: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY";
+    expect(reloadAfterGpuMemoryLoss(oom)).toBe(true);
+    reloadAfterGpuMemoryLoss(oom);
+    await vi.waitFor(() => expect(reload).toHaveBeenCalledTimes(1), { timeout: 2_000 });
+    await tick(500);
+    expect(reload).toHaveBeenCalledTimes(1);
+    handle.stop();
+    routeGpuMemoryReload(undefined);
+    warn.mockRestore();
+  });
+
   it.each([false, true])(
     "observes worker and HUD traffic only with debug enabled (%s)",
     async (enabled) => {

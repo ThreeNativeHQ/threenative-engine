@@ -698,6 +698,73 @@ describe("the Wasm engine's WebGPURenderer sample count", () => {
     errors.mockRestore();
   });
 
+  it("names GPU memory running out on backend.device.lost too, so core can reload the page", async () => {
+    // A reload storm filled an 8 GB GPU: the host failed with TN_WASM_DEVICE_ERROR mid-run, the page drew
+    // nothing, and only a manual reload brought the game back.
+    let hostState = 1;
+    const oom = "TN_WASM_DEVICE_ERROR: vkAllocateMemory failed with VK_ERROR_OUT_OF_DEVICE_MEMORY";
+    const { Renderer, canvas, scene, camera, module } = host(
+      (field) => (field === 11 ? 1 : 0),
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      undefined,
+      () => hostState,
+    );
+    Reflect.set(module, "UTF8ToString", () => oom);
+    const errors = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const renderer = new Renderer({ canvas }) as {
+      backend: { device?: { lost: Promise<{ reason: string; message: string }> } };
+      init(): Promise<unknown>;
+      render(scene: unknown, camera: unknown): void;
+    };
+    await renderer.init();
+    renderer.render(scene, camera);
+    hostState = 2;
+    for (let frame = 0; frame < 5; frame += 1) renderer.render(scene, camera);
+    await expect(renderer.backend.device?.lost).resolves.toEqual({
+      reason: "unknown",
+      message: oom,
+    });
+    expect(
+      errors.mock.calls.filter((call) => String(call[0]).startsWith("TN_WASM_RENDERER_LOST")),
+    ).toHaveLength(1);
+    errors.mockRestore();
+  });
+
+  it("destroys the engine's GPU device when the page goes away, not when it enters the back-forward cache", async () => {
+    // A reload left the device for the browser to free with the old document; a reload storm stacked them
+    // until vkAllocateMemory failed. The device is the one Dawn's bindings asked navigator.gpu for.
+    const device = { destroy: vi.fn() };
+    const prototype = { requestAdapter: async () => ({ requestDevice: async () => device }) };
+    const gpu = Object.create(prototype) as typeof prototype;
+    const listeners = new Map<string, (event: Event) => void>();
+    vi.stubGlobal("navigator", { gpu });
+    vi.stubGlobal("addEventListener", (type: string, listener: (event: Event) => void) =>
+      listeners.set(type, listener),
+    );
+    try {
+      const { Renderer, canvas, module } = host();
+      // As emdawnwebgpu does: the adapter is asked for inside tnw_web_init, the device on a later poll.
+      Reflect.set(module, "_tnw_web_init", () => {
+        void gpu.requestAdapter().then((adapter) => adapter.requestDevice());
+        return 0;
+      });
+      const renderer = new Renderer({ canvas }) as { init(): Promise<unknown> };
+      await renderer.init();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      // The hook lasted the one call: navigator.gpu is the browser's again.
+      expect(Object.hasOwn(gpu, "requestAdapter")).toBe(false);
+      listeners.get("pagehide")?.(Object.assign(new Event("pagehide"), { persisted: true }));
+      expect(device.destroy).not.toHaveBeenCalled();
+      listeners.get("pagehide")?.(Object.assign(new Event("pagehide"), { persisted: false }));
+      expect(device.destroy).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("splits an overlay draw on the overlay's own counts, so its main pass is never negative", async () => {
     // Field 0 answers for the renderer that drew last (the overlay's few draws) and field 27 for the world's renderer
     // (its shadow pass), so a loading cover over a shadowed world read 2 - 15 = -13 main draws, and one negative pass
