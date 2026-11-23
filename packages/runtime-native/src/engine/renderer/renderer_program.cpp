@@ -73,7 +73,11 @@ void Renderer::buildLayouts(Program& program) {
                        std::to_string(int(e.sampler.type));
         program.layouts[g] = layouts_->bindGroup(keys[g], entries);
     }
-    program.pipelineLayout = layouts_->pipeline(keys[0] + "\x1e" + keys[1], program.layouts[0], program.layouts[1]);
+    program.usesViewGroup = program.vertex.usesViewGroup || program.fragment.usesViewGroup;
+    program.viewLightCount = std::max(program.vertex.viewLightCount, program.fragment.viewLightCount);
+    program.pipelineLayout = layouts_->pipeline(
+        keys[0] + "\x1e" + keys[1] + (program.usesViewGroup ? "\x1ev" : ""),
+        program.layouts[0], program.layouts[1], program.usesViewGroup ? viewLayout_ : nullptr);
     std::vector<uint8_t> vertexBuiltIn(program.vertex.uniforms.size(), 0);
     std::vector<uint8_t> fragmentBuiltIn(program.fragment.uniforms.size(), 0);
     for (int s = 0; s < kSlotCount; ++s) {
@@ -121,7 +125,9 @@ void Renderer::buildLayouts(Program& program) {
 Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
     ++programKeyBuilds_;
     ++programLookups_;
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
+    const bool sharedView = sharedViewEnabled();
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights +
+                            (sharedView ? "|sv1" : "|sv0");
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
@@ -179,8 +185,8 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
             return refuseBuild(d.code + ": " + d.node + ": " + d.reason);
         }
     source.vertex.setInvariantPosition(vv.invariantPosition);
-    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
-    shader::StageModule fragment = shader::buildStage(source.fragment, 1);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView);
+    shader::StageModule fragment = shader::buildStage(source.fragment, 1, sharedView);
     if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
         const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
@@ -279,12 +285,13 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
         // shadow reads included, to write one normal (a splatted ground paid that twice a frame).
         f.pruneDeadStatements();
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return store(nullptr);
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
         shader::positionalGraphTextures(*module);
         shader::positionalSerialNames(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
-                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         if (!same) return store(nullptr);
@@ -317,12 +324,13 @@ const shader::StageModule* Renderer::prepassFragment(Program& program) {
         const std::size_t varyings = f.varyings().size();
         keepDiscardsOnly(f, variant.alphaToCoverage ? source.alpha : shader::kInvalid);
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
         shader::positionalGraphTextures(*module);
         shader::positionalSerialNames(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
-                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         // A fragment side effect (a storage or storage-texture write) would run twice: such a draw keeps the shipped path.
@@ -362,7 +370,8 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.map = (kind.alphaHash || masked) && variant.map;
     kind.normalMap = false;
     kind.pbrMaps = 0;
-    const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
+    const bool sharedView = sharedViewEnabled();
+    const std::string key = std::string(masked ? "depth-masked|" : "depth|") + kind.key() + (sharedView ? "|sv1" : "|sv0");
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     waste::debugAdd(waste::counters().programBuilds);  // PRD-876 Phase 1: the depth pass's own build
     std::string canonical;
@@ -380,7 +389,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     };
     if (masked) {
         const auto source = shader::buildMaskedDepth(kind);
-        shader::StageModule vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
+        shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView), fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
@@ -397,13 +406,13 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     }
     // three's shadow pass draws with the default positionNode, the same transform as a basic material.
     const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
-    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program: " +
         (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
     if (kind.alphaHash) {
-        fragment = shader::buildStage(source.fragment, 1);
+        fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
     }
     return built(std::move(vertex), std::move(fragment));
@@ -447,6 +456,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     shader::positionalSerialNames(vertex);
     shader::positionalSerialNames(fragment);
     auto built = std::make_unique<Program>();
+    built->sharedView = sharedViewEnabled();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
     {

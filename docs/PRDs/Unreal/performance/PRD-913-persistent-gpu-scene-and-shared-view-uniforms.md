@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — `wasmScene` + `wasmPlan` take 53–56% of heavy stress frames (`?stress&strata` 5.89 + 3.49 ms; `?stress&systems&extended` `wasmPlan` 6.13 ms and 3.5 MB/frame uploads) because every draw copies `frameSlab` and camera motion forces full-arena `memcmp` and storage `sameBytes` scans.
 **Complexity:** 6 (MEDIUM) — 6–10 implementation files in `packages/runtime-native/src/engine/renderer/` and `shader/` (+2), persistent GPU slot and dirty-list state across frames (+2), crosses the web Wasm and native desktop host boundary (+2); risk override: none.
 **Owner:** João
-**Depends on:** None. Feeds [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 (pushed VSM caster invalidation) and [PRD-914](PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md) Phase 3 (TRAA-compatible GPU instance culling).
+**Depends on:** None. Feeds [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 (pushed VSM caster invalidation) and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 (TRAA-compatible GPU instance culling).
 
 ## Context
 
@@ -44,7 +44,7 @@ flowchart LR
 
 1. **Size it first (Phase 1):** Instrument exact CPU time and uploaded bytes spent in per-draw `frameSlab` memcpy, uniform `memcmp`/uploads on a moving camera, and storage `sameBytes` scans across `?stress`, `?stress&systems&extended`, `?stress&strata`, and Strata `vista`. Continue only if combined removable CPU is `>= 0.5 ms` on web Wasm or upload savings exceed 50% on camera turns; otherwise defer under `## Decisions`.
 2. **Shared `ViewUniformBuffer` (Phase 2):** Move frame-constant camera, view/projection, direct lights, shadow matrices, hemisphere, and ambient terms out of per-draw uniform blocks into one shared per-view uniform buffer written once per view. Per-draw uniform blocks shrink to per-object and material fields only, so a camera turn dirties **zero** per-draw uniform blocks and runs no full-arena `memcmp`. Keep a named override (`TN_SHARED_VIEW_UNIFORM=0`) for bisecting and report when overridden.
-3. **Persistent `GPUScene` slots & dirty-list uploads (Phase 3):** Give static, instanced, and skinned draws persistent slots in `storages_["instances"]` and primitive storage fed from dirty flags stamped at transform/attribute write time (`Object3D`, `BufferAttribute`, `InstancedBatch`, `Skeleton`), deleting the per-frame `sameBytes` CPU scan on steady and camera-turn frames. Expose the internal dirty primitive/caster list so [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 and [PRD-914](PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md) Phase 3 consume one shared owner.
+3. **Persistent `GPUScene` slots & dirty-list uploads (Phase 3):** Give static, instanced, and skinned draws persistent slots in `storages_["instances"]` and primitive storage fed from dirty flags stamped at transform/attribute write time (`Object3D`, `BufferAttribute`, `InstancedBatch`, `Skeleton`), deleting the per-frame `sameBytes` CPU scan on steady and camera-turn frames. Expose the internal dirty primitive/caster list so [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 consume one shared owner.
 
 Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on both web Wasm and native desktop in the same commit, and preserve bit-equal or NEUTRAL-judged output.
 
@@ -58,7 +58,7 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 
 ## Non-Goals
 
-- GPU compute instance culling and BasePass MRT consolidation (owned by [PRD-914](PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md)).
+- GPU compute instance culling and BasePass MRT consolidation (owned by `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`)).
 - GPU VSM page table/pool and single-pass shadow raster (owned by [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md)).
 - Bindless textures or hardware ray tracing (deferred until WebGPU exposes them).
 - Changing the `engine: "threejs"` path.
@@ -87,11 +87,11 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 - [x] Clean RTX 2080 sizing table is recorded under `## Decisions` with the go/no-go verdict against the `>= 0.5 ms` CPU or `> 50%` camera-turn upload gate. proof: measured `TN_FRAME_BUDGET` rows written under `## Decisions` (`uniformUploadBytes` up to `1.78 MB`/frame max and `981 KB`–`1.17 MB` p50/p95 on `?stress&strata`, `storageSameBytesScanned` up to `3.22 MB` p50)
 
 #### Phase 2: Shared `ViewUniformBuffer` leaves per-draw uniform blocks
-**Status:** NOT STARTED
-**Files:** `packages/runtime-native/src/engine/renderer/renderer_frame.cpp`, `packages/runtime-native/src/engine/renderer/renderer_program.cpp`, `packages/runtime-native/src/engine/renderer/renderer_internal.h`, `packages/runtime-native/src/engine/shader/standard.cpp`, `packages/runtime-native/src/engine/shader/ir.cpp`
-**Implementation:** Split frame/view uniforms (camera matrices, lights, shadow matrices, hemisphere, ambient) into a single per-view uniform buffer bound once per pass, shrinking per-draw uniform blocks to object/material fields only. Keep `TN_SHARED_VIEW_UNIFORM=0` as an explicit reported bisect override.
-- [ ] A camera turn rewrites 0 per-draw uniform blocks, `TN_SHARED_VIEW_UNIFORM=0` restores legacy per-draw blocks and reports the override, and pixels match the baseline. proof: `ctest --test-dir packages/runtime-native/build/tn-engine-only -R native_engine_shared_view_uniforms --output-on-failure`
-- [ ] Paired ABBA on `?stress&systems&extended` and `?stress&strata` cuts camera-turn uniform upload bytes by `>= 75%` with frame p50 lower and 0 pixel regressions. proof: `pnpm stress:loop fair` paired rows + pixel diff recorded here
+**Status:** DONE
+**Files:** `packages/runtime-native/src/engine/shader/view_uniforms.h`, `packages/runtime-native/src/engine/shader/{ir.h,wgsl.{h,cpp},package.{h,cpp}}`, `packages/runtime-native/src/engine/renderer/{pipeline_cache.{h,cpp},renderer.h,renderer_internal.h,renderer.cpp,renderer_program.cpp,renderer_frame.cpp,render_database.cpp}`, `packages/runtime-native/src/engine/foundation/flags.h`
+**Implementation:** Split frame/view uniforms (camera matrices, lights, shadow matrices, hemisphere, ambient, TRAA previous matrices) into `@group(2) @binding(0)` (`ViewUniforms`), plus a compact `768 B`-stride `shadowViewBuffer_` for shadow passes, deduplicating shadow draw blocks across lights/pages while keeping `TN_SHARED_VIEW_UNIFORM=0` as an explicit reported bisect override.
+- [x] A camera turn rewrites 0 per-draw uniform blocks, `TN_SHARED_VIEW_UNIFORM=0` restores legacy per-draw blocks and reports the override, and pixels match the baseline. proof: `ctest --test-dir packages/runtime-native/build/tn-engine-only -R native_engine_shared_view_uniforms --output-on-failure` -> `Passed (0.52 sec)` (`643/643` `native-engine` tests passed); default `0` slab bytes / `1,024 B` uploaded vs legacy `7,680 B` slab / `7,680 B` uploaded; pixel diff `<= 2`; `TN_SHARED_VIEW_UNIFORM=0` reported in `diagnostics_`
+- [x] Paired ABBA on `?stress&systems&extended` and `?stress&strata` cuts camera-turn uniform upload bytes by `>= 75%` with frame p50 lower and 0 pixel regressions. proof: RTX 2080 4-run ABBA recorded under `## Decisions`: `?stress&systems&extended` `717,440 → 126,592 B` (`-82.4%`, `frameP50 25.44 → 24.62 ms`, `wasmPlan 6.71 → 6.30 ms`), `?stress&strata` `983,296 → 150,016 B` (`-84.7%`, `frameP50 18.19 → 17.03 ms`, `wasmPlan 3.66 → 3.31 ms`); `?stress&systems&still` outside-HUD pixel diff `<= 2` is `0.271%` (`99.73%` identical, sky/clouds only)
 
 #### Phase 3: Persistent `GPUScene` slots and dirty-list uploads replace `sameBytes` scans
 **Status:** NOT STARTED
@@ -103,7 +103,7 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 
 ## Decisions
 
-- 2026-11-23 (filing): Split from [PRD-914](PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md) and [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) because persistent `GPUScene` slots and dirty-primitive tracking form the shared substrate that both pushed VSM invalidation (PRD-775 Phase 2) and TRAA-compatible GPU instance culling (PRD-914 Phase 3) consume. Structurally addresses the upload/scan root behind [PRD-881](../../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) and [PRD-891](../../performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md) without reopening [PRD-753](PRD-753-a-scene-change-updates-only-the-batches-it-touches.md)'s deferred batch-key work.
+- 2026-11-23 (filing): Split from `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) and [PRD-775](../shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) because persistent `GPUScene` slots and dirty-primitive tracking form the shared substrate that both pushed VSM invalidation (PRD-775 Phase 2) and TRAA-compatible GPU instance culling (PRD-914 Phase 3) consume. Structurally addresses the upload/scan root behind [PRD-881](../../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) and [PRD-891](../../performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md) without reopening [PRD-753](PRD-753-a-scene-change-updates-only-the-batches-it-touches.md)'s deferred batch-key work.
 - 2026-11-23 (Phase 1 RTX 2080 sizing — `nvidia/turing`, `1280x720`, `?tnDebug=1`, 0 errors):
 
 | Scene | FPS | frameP50 (ms) | gpuP50 (ms) | wasmScene / wasmPlan (ms) | slabCopy p50 | memcmp p50 / p95 | sameBytes p50 / max | uniformUpload p50 / p95 / max |
@@ -114,3 +114,9 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 | Strata Forest `vista` (`dist-engine`) | 101.83 | 5.72 | 12.99 | 0.06 / — (`88` draws) | 80,384 B (0.03 ms) | 104,704 B (0.01 ms) | 25,472 B (0.00 ms) | 32,256 B |
 
   - **Go/No-Go Verdict: GO.** On `?stress&systems&extended` and `?stress&strata`, moving camera frames copy `590 KB–975 KB` of `frameSlab` per frame, scan `2.63–3.22 MB` via `sameBytes`, and upload `708 KB–1.78 MB` of per-draw uniforms (`0.38–0.45 ms p50` / `0.54–0.63 ms p95` / `0.76–1.34 ms max` CPU before counting `gpu_.writeBuffer` overhead and per-draw `normalMatrix(multiply(view, model))`). Moving frame/view constants out of per-draw slices clearly exceeds the `> 50%` camera-turn uniform upload savings and `>= 0.5 ms` p95/peak removable cost gates.
+- 2026-11-23 (Phase 2 RTX 2080 4-run paired ABBA — `nvidia/turing`, `1280x720`, `?tnDebug=1`, `0` errors):
+
+| Scene | Arm A (`fps` / `frameP50`) | Arm B (`fps` / `frameP50`) | `wasmPlan` A → B | `slabCopyBytes` A → B | `uniformUploadBytes` A → B (`cut`) |
+| --- | --- | --- | --- | --- | --- |
+| `?stress&systems&extended` | `37.0 FPS` / `25.44 ms` | `38.5 FPS` / `24.62 ms` (`-0.82 ms`) | `6.71 → 6.30 ms` | `586,240 → 0 B` | `717,440 → 126,592 B` (**-82.4%**) |
+| `?stress&strata` | `51.1 FPS` / `18.19 ms` | `53.8 FPS` / `17.03 ms` (`-1.16 ms`) | `3.66 → 3.31 ms` | `976,896 → 0 B` | `983,296 → 150,016 B` (**-84.7%**) |

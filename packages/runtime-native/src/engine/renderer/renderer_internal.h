@@ -501,6 +501,8 @@ struct Renderer::Planned {
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;
     uint32_t memberCount = 0;
+    uint32_t viewOffset = 0;
+    bool shadowViewSlice = false;
 };
 
 /**
@@ -518,9 +520,9 @@ struct Renderer::MainRow {
     uintptr_t material = 0, positions = 0, indices = 0;
     uint64_t id = 0, slot = 0;
     WGPURenderPipeline pipeline = nullptr;
-    WGPUBindGroup vertexGroup = nullptr, mapGroup = nullptr;
-    uint32_t vertexOffset = 0, fragmentOffset = 0;
-    bool fragmentBlock = false;
+    WGPUBindGroup vertexGroup = nullptr, mapGroup = nullptr, viewGroup = nullptr;
+    uint32_t vertexOffset = 0, fragmentOffset = 0, viewOffset = 0;
+    bool vertexBlock = true, fragmentBlock = false;
     struct Vertex { uint32_t location; WGPUBuffer buffer; uint64_t offset, size; };
     std::vector<Vertex> vertex;
     WGPUBuffer index = nullptr;

@@ -33,6 +33,7 @@ inline constexpr Flag ShadowPageScan{"TN_SHADOW_PAGE_SCAN", Read::Once};
 inline constexpr Flag ProjectionWalks{"TN_PROJECTION_WALKS", Read::Once};
 inline constexpr Flag BatchDecisionCache{"TN_BATCH_DECISION_CACHE", Read::Once};
 inline constexpr Flag GpuJointDrawUse{"TN_GPU_JOINT_DRAW_USE", Read::Once};
+inline constexpr Flag SharedViewUniform{"TN_SHARED_VIEW_UNIFORM", Read::Live};
 
 // Player (the native host).
 inline constexpr Flag GameSpans{"TN_GAME_SPANS", Read::Live};

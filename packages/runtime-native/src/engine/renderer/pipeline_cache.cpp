@@ -554,14 +554,14 @@ WGPUBindGroupLayout PipelineLayoutCache::bindGroup(const std::string& key,
 }
 
 WGPUPipelineLayout PipelineLayoutCache::pipeline(const std::string& key, WGPUBindGroupLayout first,
-                                                 WGPUBindGroupLayout second) {
+                                                 WGPUBindGroupLayout second, WGPUBindGroupLayout third) {
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
         wgpuPipelineLayoutAddRef(found->second);
         return found->second;
     }
-    WGPUBindGroupLayout layouts[2] = {first, second};
+    WGPUBindGroupLayout layouts[3] = {first, second, third};
     WGPUPipelineLayoutDescriptor descriptor = {};
-    descriptor.bindGroupLayoutCount = 2;
+    descriptor.bindGroupLayoutCount = third ? 3 : 2;
     descriptor.bindGroupLayouts = layouts;
     WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device_, &descriptor);
     if (!layout) return nullptr;

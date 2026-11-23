@@ -212,6 +212,18 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    {
+        WGPUBindGroupLayoutEntry viewEntry{};
+        viewEntry.binding = 0;
+        viewEntry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+        viewEntry.buffer.type = WGPUBufferBindingType_Uniform;
+        viewEntry.buffer.hasDynamicOffset = true;
+        viewEntry.buffer.minBindingSize = 0;
+        WGPUBindGroupLayoutDescriptor viewLayoutDesc{};
+        viewLayoutDesc.entryCount = 1;
+        viewLayoutDesc.entries = &viewEntry;
+        viewLayout_ = wgpuDeviceCreateBindGroupLayout(device, &viewLayoutDesc);
+    }
     outputUploaded_.clear();
     WGPUSamplerDescriptor nearest = {};
     nearest.magFilter = WGPUFilterMode_Nearest;
@@ -492,6 +504,22 @@ Renderer::~Renderer() {
     wgpuTextureRelease(lut_);
     releaseEnvironments();
     releaseMaterialTextures();
+    if (viewGroup_) wgpuBindGroupRelease(viewGroup_);
+    if (shadowViewGroup_) wgpuBindGroupRelease(shadowViewGroup_);
+    if (viewLayout_) wgpuBindGroupLayoutRelease(viewLayout_);
+    if (viewCapacity_ != 0) gpu_.destroy(viewBuffer_);
+    if (shadowViewCapacity_ != 0) gpu_.destroy(shadowViewBuffer_);
+}
+
+bool Renderer::sharedViewEnabled() {
+    const char* flag = flags::read<flags::SharedViewUniform>();
+    if (flag != nullptr && std::strcmp(flag, "0") == 0) {
+        static constexpr const char* kNote = "TN_SHARED_VIEW_UNIFORM=0: legacy per-draw frameSlab enabled";
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), kNote) == diagnostics_.end())
+            diagnostics_.push_back(kNote);
+        return false;
+    }
+    return true;
 }
 
 void Renderer::releaseTargets() {
@@ -792,16 +820,23 @@ void Renderer::encodeFrame(FrameJob& job) {
         // program whose providing scene was torn down may keep a null group, but an active draw must
         // never bind it: fail closed rather than send null or silently skip the draw. A stage with no
         // bindings has a valid empty layout, so its group is not required.
+        const bool vertexBlock = p.program->vertex.uniformBlockSize != 0;
         const WGPUBindGroup vertexGroup = p.vertexGroup ? p.vertexGroup : p.program->groups[0];
         if (vertexGroup == nullptr && !p.program->vertex.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
-        TN_ENCODE(SetBindGroup, 0, vertexGroup, 1, &p.vertexOffset);
+        TN_ENCODE(SetBindGroup, 0, vertexGroup, vertexBlock ? 1 : 0, &p.vertexOffset);
         // Plain depth draws have no fragment block; alpha coverage uses its own uniform slice.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         const WGPUBindGroup fragmentGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
         if (fragmentGroup == nullptr && !p.program->fragment.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no fragment bind group");
         TN_ENCODE(SetBindGroup, 1, fragmentGroup, fragmentBlock ? 1 : 0, &p.fragmentOffset);
+        if (p.program->usesViewGroup) {
+            const WGPUBindGroup vg = p.shadowViewSlice ? shadowViewGroup_ : viewGroup_;
+            if (vg == nullptr)
+                throw std::runtime_error("TN_NATIVE_BINDING_NULL: shared view bind group");
+            TN_ENCODE(SetBindGroup, 2, vg, 1, &p.viewOffset);
+        }
         if (item.indices) {
             const auto indices = geometry_->cache.resolved(*item.indices);
             const bool wide = indices.scalar == Scalar::U32;
@@ -970,8 +1005,9 @@ void Renderer::encodeFrame(FrameJob& job) {
                 wgpuRenderBundleEncoderSetVertexBuffer(bundle, v.location, v.buffer, v.offset, v.size);
                 if (v.location < 16) { vertexBuffers[v.location] = v.buffer; vertexOffsets[v.location] = v.offset; }
             }
-            wgpuRenderBundleEncoderSetBindGroup(bundle, 0, row.vertexGroup, 1, &row.vertexOffset);
+            wgpuRenderBundleEncoderSetBindGroup(bundle, 0, row.vertexGroup, row.vertexBlock ? 1 : 0, &row.vertexOffset);
             wgpuRenderBundleEncoderSetBindGroup(bundle, 1, row.mapGroup, row.fragmentBlock ? 1 : 0, &row.fragmentOffset);
+            if (row.viewGroup) wgpuRenderBundleEncoderSetBindGroup(bundle, 2, row.viewGroup, 1, &row.viewOffset);
             if (row.index) {
                 if (index != row.index) wgpuRenderBundleEncoderSetIndexBuffer(bundle, index = row.index, row.indexFormat, 0, row.indexSize);
                 wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, row.indirect ? row.indirect : pass.indirect,

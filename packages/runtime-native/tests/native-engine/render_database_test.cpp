@@ -1613,6 +1613,17 @@ constexpr uint64_t kFrameSlabArenaBytes = 6144, kFrameSlabArenaHash = 0x81822b8c
 // 2037 -> 2034 with three 0.187.0's physical lighting (73be3a6e9): the flip moves the same pixels, shaded r187's way.
 constexpr int kFrameSlabLightFlipDiffers = 2034;
 void frameSlabIsPerProgram() {
+    struct SharedViewGuard {
+        std::optional<std::string> prior;
+        explicit SharedViewGuard(const char* value) {
+            if (const char* current = std::getenv("TN_SHARED_VIEW_UNIFORM")) prior = current;
+            setenv("TN_SHARED_VIEW_UNIFORM", value, 1);
+        }
+        ~SharedViewGuard() {
+            if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
+            else unsetenv("TN_SHARED_VIEW_UNIFORM");
+        }
+    } guard("0");
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     EventQueue events;
