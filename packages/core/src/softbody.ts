@@ -593,7 +593,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
           "SoftBody3D on a skinned mesh simulates in world space; add it to the scene root.",
         );
       if (skinned.windFromScene) windAt(this.parent, skinned.wind);
-      skinned.step((node) => renderer.compute(node), this.#readback?.data);
+      skinned.step((nodes) => renderer.compute(nodes), this.#readback?.data);
       this.#steps += 1;
       this.#readback?.request(renderer);
       return;

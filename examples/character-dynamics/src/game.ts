@@ -152,6 +152,21 @@ function arm(): string {
   return value;
 }
 
+/** `?probe=0` turns the probe's GPU readback off for the run; the acceptance scenes probe every frame by default. */
+function probeReadbackEveryFrames(): number {
+  return new URLSearchParams(globalThis.location?.search ?? "").get("probe") === "0" ? 0 : 1;
+}
+
+/** `?strands=N` sets the strand guide count (default 64), so AC-4 can run the 2,000 guides it bounds. */
+function strandCountFromUrl(): number {
+  const raw = new URLSearchParams(globalThis.location?.search ?? "").get("strands");
+  if (raw === null) return 64;
+  const count = Number(raw);
+  if (!Number.isInteger(count) || count < 1 || count > 4000)
+    throw new Error(`CHARACTER_DYNAMICS_STRAND_COUNT strands=${raw}`);
+  return count;
+}
+
 function boneOf(root: Object3D, name: string): Bone {
   const bone = root.getObjectByName(name) as Bone | undefined;
   if (bone === undefined) throw new Error(`CHARACTER_DYNAMICS_BONE_MISSING ${name}`);
@@ -340,7 +355,7 @@ class CharacterDynamics extends Scene<IState> {
       damping: 2,
       gravity: [0, -GRAVITY, 0] as [number, number, number],
       wind: [0, 0, 0] as [number, number, number],
-      readbackEveryFrames: 1,
+      readbackEveryFrames: probeReadbackEveryFrames(),
       readbackInFlight: 256,
     };
     // PlaneGeometry has no duplicate positions, so SoftBody3D's welded order is the vertex order.
@@ -490,7 +505,7 @@ class CharacterDynamics extends Scene<IState> {
     // `?arm=strands`: 64 guides of 16 points on the GPU, each the ponytail curve resampled and spread
     // across the back of the head; the rigid ponytail hides. Lines read the solver's buffer directly.
     const STRAND_POINTS = 16;
-    const STRAND_COUNT = 64;
+    const STRAND_COUNT = strandCountFromUrl();
     const strandTuning = (): Record<string, number> => {
       const query = new URLSearchParams(globalThis.location?.search ?? "");
       const tuning: Record<string, number> = {};
@@ -540,7 +555,7 @@ class CharacterDynamics extends Scene<IState> {
           pointsPerStrand: STRAND_POINTS,
           bone: head,
           colliders: hairCapsules,
-          readbackEveryFrames: 1,
+          readbackEveryFrames: probeReadbackEveryFrames(),
           readbackInFlight: 256,
           // Named overrides from the URL, for tuning runs: ?airDrag=0&iterations=8
           ...strandTuning(),
@@ -685,7 +700,7 @@ class CharacterDynamics extends Scene<IState> {
       cloth = ctx.add(
         new SoftBody3D(capeSkin, {
           cloth: "color.r",
-          readbackEveryFrames: 1,
+          readbackEveryFrames: probeReadbackEveryFrames(),
           readbackInFlight: 256,
           ...tuning,
           ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),

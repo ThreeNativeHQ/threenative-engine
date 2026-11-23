@@ -558,7 +558,7 @@ export interface ISkinnedClothState {
   /** True when no `wind` option was given: the cloth reads the scene's `WindField3D`s each step. */
   readonly windFromScene: boolean;
   /** Uploads this step's bone, capsule and carry uniforms, then dispatches the carry and every substep. */
-  step(dispatch: (node: ComputeNode) => void, sample?: Float32Array): void;
+  step(dispatch: (nodes: readonly ComputeNode[]) => void, sample?: Float32Array): void;
   requestReset(): void;
   readonly lastReset: SoftBodyResetCause | undefined;
   readonly resets: number;
@@ -1003,6 +1003,10 @@ export function createSkinnedCloth(
     x.element(instanceIndex).assign(p);
   })().compute(vertexCount);
   finalizePass.setName("softbody.skinned.finalize");
+  const substepPasses: ComputeNode[] = [predictPass, iteratePass];
+  for (let k = 2; k < iterations; k += 2) substepPasses.push(iterateBackPass, iteratePass);
+  substepPasses.push(finalizePass);
+  const firstSubstepPasses = [carryPass, ...substepPasses];
 
   // Per-step CPU state.
   const boneMatrix = new Matrix4();
@@ -1222,18 +1226,13 @@ export function createSkinnedCloth(
       (forces.array[1] as Vector4).set(wind.x, wind.y, wind.z, 0);
       prevRefPosition.copy(nowPosition);
       prevRefQuaternion.copy(nowQuaternion);
-      dispatch(carryPass);
-      // Each dispatch takes the uniform values set before it, so every substep interpolates its own pose.
+      // One compute call per substep: a call uploads the uniforms once and then encodes its passes
+      // in order, so each substep still interpolates its own pose. A call per pass paid that upload
+      // 25 times a frame (0.7-1.5 ms of CPU submission on the owned engine).
       for (let s = 0; s < substeps; s++) {
         alphaPrev.value = s / substeps;
         alpha.value = (s + 1) / substeps;
-        dispatch(predictPass);
-        dispatch(iteratePass);
-        for (let k = 2; k < iterations; k += 2) {
-          dispatch(iterateBackPass);
-          dispatch(iteratePass);
-        }
-        dispatch(finalizePass);
+        dispatch(s === 0 ? firstSubstepPasses : substepPasses);
       }
     },
   };
