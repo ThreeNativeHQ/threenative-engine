@@ -2445,6 +2445,19 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "hair-guides",
+      "title": "hair guides: the HairStrands3D solver runs 60 steps on a moving, turning head and its cards draw the same hair on every host",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/hair-guides.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [
