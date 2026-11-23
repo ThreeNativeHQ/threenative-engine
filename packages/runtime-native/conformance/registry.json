@@ -487,6 +487,19 @@
       "required": true
     },
     {
+      "id": "material-anisotropy",
+      "title": "material anisotropy: the anisotropic GGX highlight, its rotation and its map",
+      "category": "materials",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/material-anisotropy.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.04,
+        "perceptualDeltaE": 7.0
+      },
+      "desktopGate": true,
+      "required": true
+    },
+    {
       "id": "13-texture-material",
       "title": "texture material",
       "category": "materials",

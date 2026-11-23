@@ -217,7 +217,8 @@ struct DrawItem {
     const Texture* normalMap = nullptr;
     double normalScaleX = 1, normalScaleY = 1;
     /** MeshStandardMaterial's roughnessMap, metalnessMap, aoMap and emissiveMap, and MeshPhysicalMaterial's
-     *  specularColorMap, specularIntensityMap and clearcoat maps, by shader::PbrMap (decoded image, uv present). */
+     *  specularColorMap, specularIntensityMap, clearcoat maps and anisotropyMap, by shader::PbrMap (decoded image,
+     *  uv present). */
     std::array<const Texture*, shader::kPbrMapCount> pbrMaps{};
     double aoMapIntensity = 1;
     /** The environment (scene.environment or material.envMap): its PMREM is sampled for IBL. */
@@ -1013,9 +1014,9 @@ private:
         kRoughnessMapUvTransform, kMetalnessMapUvTransform, kAoMapUvTransform, kEmissiveMapUvTransform,
         kBumpMapUvTransform, kSpecularColorMapUvTransform,
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
-        kClearcoatNormalMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
+        kClearcoatNormalMapUvTransform, kAnisotropyMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
