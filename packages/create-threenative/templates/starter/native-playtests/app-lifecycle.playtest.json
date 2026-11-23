@@ -14,18 +14,12 @@
       {
         "id": "state",
         "path": "saves",
-        "atSteps": [
-          { "label": "playing", "equals": 0 },
-          { "label": "resumed", "equals": 1 }
-        ]
+        "atSteps": [{ "label": "playing", "equals": 0 }, { "label": "resumed", "equals": 1 }]
       },
       {
         "id": "state",
         "path": "restored",
-        "atSteps": [
-          { "label": "playing", "equals": false },
-          { "label": "resumed", "equals": true }
-        ]
+        "atSteps": [{ "label": "playing", "equals": false }, { "label": "resumed", "equals": true }]
       }
     ]
   }
