@@ -6,6 +6,9 @@ import { materials } from "../vendor/stylized-biome-kit/core.js";
 import { buildDungeonPart, dungeonEntries } from "./dungeon/catalog.js";
 import { THEME_BIOMES, THEME_NAMES, dungeonMaterials } from "./dungeon/mesh.js";
 import { buildDungeonScene, dungeonScenes } from "./dungeon/scene.js";
+import { buildVillagePart, villageEntries } from "./village/catalog.js";
+import { VILLAGE_BIOMES, VILLAGE_THEMES } from "./village/kit.js";
+import { buildVillageScene, villageScenes } from "./village/scene.js";
 
 export { uniforms as stylizedUniforms } from "../vendor/stylized-biome-kit/core.js";
 export const stylizedMaterials: Record<string, Material> = { ...materials, ...dungeonMaterials };
@@ -14,7 +17,7 @@ export { scatter, sky, terrain } from "../vendor/stylized-biome-kit/ground.js";
 export interface IStylizedAsset {
   id: string;
   name: string;
-  kind: "stylized" | "dungeon";
+  kind: "stylized" | "dungeon" | "village";
   category: string;
   biomes: string[];
   variants: number;
@@ -32,6 +35,11 @@ const dungeonRows = [
   ...dungeonEntries,
 ];
 
+const villageRows = [
+  ...Object.entries(villageScenes).map(([id, name]) => ({ id, name, category: "Scenes" })),
+  ...villageEntries,
+];
+
 const biomeIds: Record<string, string[]> = {
   forest: ["alpine", "forest"],
   snow: ["alpine", "tundra"],
@@ -43,6 +51,7 @@ const biomeIds: Record<string, string[]> = {
  * List the Stylized Biome Kit pieces and scenes, including available variants.
  * @situation browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon
  * @situation browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes
+ * @situation browse stylized village houses, timber walls, fences, paths, props, and the assembled village green
  * @requires npm i @threenative/procedural-environment
  * @example const rows = stylizedAssets();
  */
@@ -79,17 +88,38 @@ export function stylizedAssets(): IStylizedAsset[] {
         variantNames: THEME_NAMES,
       }),
     ),
+    ...villageRows.map(
+      ({ id, name, category }): IStylizedAsset => ({
+        id: `village-${id}`,
+        name,
+        category,
+        kind: "village",
+        biomes: [...VILLAGE_BIOMES],
+        variants: VILLAGE_THEMES.length,
+        variantNames: VILLAGE_THEMES,
+      }),
+    ),
   ];
 }
 
-function dungeonAsset(id: string, { variant = 0, seed = 1, overrides }: IStylizedAssetOptions) {
-  if (!Number.isInteger(variant) || variant < 0 || variant >= THEME_NAMES.length)
-    throw new Error(`Invalid dungeon theme variant ${variant}`);
-  if (overrides) throw new Error("Dungeon assets accept a theme variant and seed");
-  const key = id.slice("dungeon-".length);
-  const scene =
-    key === "courtyard" || key === "assembly" ? buildDungeonScene(key, seed, variant) : undefined;
-  const group = scene?.group ?? buildDungeonPart(key, seed, variant);
+function themedAsset(id: string, { variant = 0, seed = 1, overrides }: IStylizedAssetOptions) {
+  const village = id.startsWith("village-");
+  const kit = village ? "Village" : "Dungeon";
+  const themes = village ? VILLAGE_THEMES : THEME_NAMES;
+  if (!Number.isInteger(variant) || variant < 0 || variant >= themes.length)
+    throw new Error(`Invalid ${kit.toLowerCase()} theme variant ${variant}`);
+  if (overrides) throw new Error(`${kit} assets accept a theme variant and seed`);
+  const key = id.slice(id.indexOf("-") + 1);
+  const scene = village
+    ? Object.hasOwn(villageScenes, key)
+      ? buildVillageScene(key as keyof typeof villageScenes, seed, variant)
+      : undefined
+    : key === "courtyard" || key === "assembly"
+      ? buildDungeonScene(key, seed, variant)
+      : undefined;
+  const group =
+    scene?.group ??
+    (village ? buildVillagePart(key, seed, variant) : buildDungeonPart(key, seed, variant));
   const lights: PointLight[] = [];
   group.traverse((node) => {
     if (node instanceof PointLight && node.userData.fire) lights.push(node);
@@ -123,9 +153,10 @@ function biomeScene(id: string, { variant = 0, seed, overrides }: IStylizedAsset
 }
 
 /**
- * Generate a Stylized Biome Kit or Dungeon piece or scene with its Three.js materials.
+ * Generate a Stylized Biome Kit, Dungeon or Village piece or scene with its Three.js materials.
  * @situation create stylized mountain ridges, snowy trees, sandstone formations, or animated water
  * @situation create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme
+ * @situation create a stylized medieval village: cottages, tavern, barn, windmill, forge, market stall, well, fences and props in a meadow, snowy, or desert theme
  * @constraint the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials
  * @requires npm i @threenative/procedural-environment
  * @example const { group } = createStylizedAsset("mountain-snow", { seed: 8, variant: 1 });
@@ -143,7 +174,7 @@ export function createStylizedAsset(
   const { variant = 0, seed, overrides } = options;
   if (seed !== undefined && !Number.isSafeInteger(seed))
     throw new Error("Stylized seed must be an integer");
-  if (id.startsWith("dungeon-")) return dungeonAsset(id, options);
+  if (id.startsWith("dungeon-") || id.startsWith("village-")) return themedAsset(id, options);
   const entry = CATALOG.find((asset) => asset.id === id);
   if (!entry) return biomeScene(id, options);
   if (!Number.isInteger(variant) || variant < 0 || variant >= entry.variants.length) {

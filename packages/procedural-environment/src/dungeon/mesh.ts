@@ -27,8 +27,20 @@ export type XYZ = [number, number, number];
 export const THEME_NAMES = ["Ancient Ruins", "Ice Dungeon", "Lava Depths"] as const;
 export const THEME_BIOMES = ["forest", "tundra", "volcanic"] as const;
 
+/** The colours a builder paints with; a kit may add its own keys. */
+export interface IKitPalette {
+  stone: number;
+  joint: number;
+  growth: number;
+  wood: number;
+  iron: number;
+  cloth: number;
+  fire: number;
+  pale: number;
+}
+
 // Kit tones (vendor/stylized-biome-kit/palettes.js): ROCK alpine, snow and a basalt take on desert.
-const PALETTES = [
+const PALETTES: readonly IKitPalette[] = [
   {
     stone: 0xa2a8b6,
     joint: 0x6e7488,
@@ -59,7 +71,7 @@ const PALETTES = [
     fire: 0xff5a19,
     pale: 0xffcb61,
   },
-] as const;
+];
 
 const glow = new MeshBasicMaterial({ name: "Dungeon glow", vertexColors: true, toneMapped: false });
 glow.onBeforeCompile = (shader) => {
@@ -100,18 +112,24 @@ export const dungeonMaterials = { dungeonGlow: glow };
 type Finish = keyof typeof finishes | "metal";
 type FireShape = [base: number, maxSway: number];
 
-export class DungeonMesh {
+export class DungeonMesh<P extends IKitPalette = IKitPalette> {
   readonly rng: RNG;
-  readonly palette: (typeof PALETTES)[number];
+  readonly palette: P;
   readonly parts: Record<keyof typeof finishes, BufferGeometry[]> = { solid: [], glow: [] };
   readonly lights: PointLight[] = [];
+  /** How strongly the kit's painted brush strokes and worn edges show on each colour. */
+  readonly painted = new Map<number, number>();
 
   constructor(
     readonly seed: number,
     readonly theme: number,
+    palettes: readonly P[] = PALETTES as readonly P[],
   ) {
     this.rng = new RNG(seed);
-    this.palette = PALETTES[theme] ?? PALETTES[0];
+    const palette = palettes[theme] ?? palettes[0];
+    if (!palette) throw new Error("DungeonMesh needs at least one palette");
+    this.palette = palette;
+    this.painted.set(palette.wood, 0.5).set(palette.stone, 1);
   }
 
   add(
@@ -138,7 +156,7 @@ export class DungeonMesh {
     const light = shade.clone().lerp(new Color(0xffffff), 0.18);
     const dark = shade.clone().multiplyScalar(0.72);
     const growth = new Color(this.palette.growth);
-    const rock = color === this.palette.stone ? 1 : color === this.palette.wood ? 0.5 : 0;
+    const rock = this.painted.get(color) ?? 0;
     const k = (this.rng.seed() % 97) / 9.7;
     const rim = finish === "metal" ? 0 : 0.035;
     const vertex = new Color();
@@ -262,9 +280,10 @@ export class DungeonMesh {
     this.lights.push(lamp);
   }
 
+  /** `id` is prefixed with `dungeon-` unless it already names its own kit, as `village-inn` does. */
   finish(id: string): Group {
     const group = new Group();
-    group.name = `dungeon-${id}`;
+    group.name = id.startsWith("village-") ? id : `dungeon-${id}`;
     for (const key of Object.keys(finishes) as (keyof typeof finishes)[]) {
       const parts = this.parts[key];
       if (!parts.length) continue;

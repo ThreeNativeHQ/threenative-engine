@@ -36,7 +36,7 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 From the repository root, `pnpm asset-library` builds this package and opens a Storybook-style
 viewer. Search the sidebar by name or filter by biome and style tags. Selecting several tags
 shows assets with any of those tags. Nature and city modules are tagged Realistic, the Biome
-Kit and the Dungeon kit, one collection, are tagged Stylized. Open a story to orbit the asset.
+Kit, the Dungeon kit, and the Village kit, one collection, are tagged Stylized. Open a story to orbit the asset.
 GLB stories run the package's bake with the selected controls. The Docs tab shows the exact
 bake call and mesh attributes, and the Stats tab shows dimensions and triangle counts.
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
@@ -81,6 +81,30 @@ function tick(elapsedSeconds: number) {
 The wall torch, brazier, hanging lamp, candle cluster, and altar carry their own point light. The
 shader moves the flame and embers, and `update` flickers the emitted light. The Theme control in the
 viewer corresponds to variant indices 0, 1, and 2.
+
+### Village kit
+
+The **Village** section belongs to the same collection: it uses the Biome Kit's faceted painted
+material and palettes. It has 43 pieces and two assembled scenes, Village green and Walled town.
+Each piece comes in Meadow Village, Snowy Village, and Desert Village (variants 0, 1, and 2).
+Snow, grass, or sand settles on roofs and stone tops for each theme.
+
+- Buildings: cottage, two-storey house, tavern, barn, watchtower, windmill, forge, market stall, well.
+- Enterable buildings: the house, the inn, and the shop have hollow walls, an open door, a plank
+  floor, and furniture inside (bed, hearth, bar, shop counter). The `-cutaway` ids leave off the roof
+  to show the room from above. Both scenes place walk-in houses, named `village-home`,
+  `village-inn`, and `village-shop`.
+- City walls: a 4 m wall segment along X with its outer face on +Z, a round wall tower, and a
+  gatehouse with a half-raised portcullis.
+- Walls, fences, paths, and props: timber-framed wall modules, fences, a gate, cobblestones, a cart,
+  haystacks, a lamp post, a signpost, and the dungeon crate, barrel, sack, table, and bench.
+
+```ts
+import { createStylizedAsset } from "@threenative/procedural-environment/stylized";
+
+const inn = createStylizedAsset("village-inn", { seed: 4, variant: 1 });
+const town = createStylizedAsset("village-town", { variant: 2 }); // group, view, env
+```
 
 ## Trees, cover and the forest floor
 

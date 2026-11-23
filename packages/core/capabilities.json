@@ -8759,9 +8759,10 @@
       "signature": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
       "situations": [
         "create stylized mountain ridges, snowy trees, sandstone formations, or animated water",
-        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme"
+        "create modular dungeon walls, stairs, arches, dungeon props and fixtures in an overgrown, frozen, or volcanic theme",
+        "create a stylized medieval village: cottages, tavern, barn, windmill, forge, market stall, well, fences and props in a meadow, snowy, or desert theme"
       ],
-      "summary": "Generate a Stylized Biome Kit or Dungeon piece or scene with its Three.js materials.",
+      "summary": "Generate a Stylized Biome Kit, Dungeon or Village piece or scene with its Three.js materials.",
       "supersedes": [],
       "symbol": "createStylizedAsset"
     },
@@ -8809,7 +8810,8 @@
       "signature": "export function stylizedAssets(): IStylizedAsset[] { … }",
       "situations": [
         "browse procedural stylized biome assets for alpine forest, snow peaks, or desert canyon",
-        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes"
+        "browse modular dungeon walls, stone floors, arches, doors, props, fixtures, and assembled dungeon scenes",
+        "browse stylized village houses, timber walls, fences, paths, props, and the assembled village green"
       ],
       "summary": "List the Stylized Biome Kit pieces and scenes, including available variants.",
       "supersedes": [],

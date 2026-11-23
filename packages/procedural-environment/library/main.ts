@@ -922,7 +922,8 @@ function elementNode(e: IElement) {
 /** One kind: an uppercase section with its overview, then a node per category or per element. */
 const isBackdrop = (row: IElement) => row.category === "Scenes" || row.id === "sky-dome";
 const kindName = (kind: string) => (kind === "stylized" ? "Stylized Biome Kit" : title(kind));
-const isRuntimeKind = (kind: string) => kind === "stylized" || kind === "dungeon";
+const isRuntimeKind = (kind: string) =>
+  kind === "stylized" || kind === "dungeon" || kind === "village";
 const hasLod = (kind: string) => kind !== "city" && !isRuntimeKind(kind);
 
 function kindSection(kind: string, rows: IElement[], searching: boolean) {
