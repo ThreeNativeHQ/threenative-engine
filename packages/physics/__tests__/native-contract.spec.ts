@@ -150,17 +150,48 @@ describe("native physics contract", () => {
         shape: {
           collisionLayer: 1,
           collisionMask: 0xffff,
-          kind: "convexHull",
+          kind: "cylinder" as "box",
           sensor: false,
-          vertices: new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]),
-          x: 0,
-          y: 0,
-          z: 0,
+          x: 1,
+          y: 1,
+          z: 1,
         },
         type: "fixed",
       }),
-    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*convexHull/);
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_UNSUPPORTED.*cylinder/);
     expect(createBody).not.toHaveBeenCalled();
+  });
+
+  it("hands a convex hull to the native host as its own points", () => {
+    const createBody = vi.fn((_options: { shape: INativeShapeDescriptor }) => 3);
+    const native = createNativePhysicsSimulation(
+      { createBody } as unknown as INativeSimulation,
+      "0.30.0",
+    );
+    const vertices = new Float32Array([0, 0, 0, 1, 0, 0, 0, 1, 0, 0, 0, 1]);
+    const hull = {
+      collisionLayer: 1,
+      collisionMask: 0xffff,
+      kind: "convexHull" as const,
+      sensor: false,
+      vertices,
+      x: 0,
+      y: 0,
+      z: 0,
+    };
+    const pose = { mass: 1, position: { x: 0, y: 0, z: 0 }, rotation: { w: 1, x: 0, y: 0, z: 0 } };
+    native.createBody({ ...pose, sensor: false, shape: hull, type: "dynamic" });
+    const shape = createBody.mock.calls[0]?.[0].shape;
+    expect(shape?.kind).toBe("convexHull");
+    expect(shape?.vertices).toBe(vertices);
+    expect(() =>
+      native.createBody({
+        ...pose,
+        sensor: false,
+        shape: { ...hull, vertices: undefined },
+        type: "dynamic",
+      }),
+    ).toThrow(/TN_NATIVE_PHYSICS_SHAPE_INVALID: convexHull requires vertices/);
   });
 
   it("hands a heightfield to the native host as its own column-major samples", () => {

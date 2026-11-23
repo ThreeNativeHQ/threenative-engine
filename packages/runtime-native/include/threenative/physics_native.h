@@ -180,6 +180,14 @@ bool tn_physics_add_trimesh_body(TnPhysicsSimulation *simulation,
                                  const TnPhysicsBodyOptions *options,
                                  const float *vertices, uint32_t vertex_floats,
                                  const uint32_t *indices, uint32_t index_count);
+/**
+ * Add a body whose collider is the convex hull of `vertices`, a flat `x, y, z` float array of
+ * `vertex_floats` elements copied during the call. Fewer than four points, a non-finite value or
+ * a cloud Rapier cannot hull is refused.
+ */
+bool tn_physics_add_convex_hull_body(TnPhysicsSimulation *simulation,
+                                     const TnPhysicsBodyOptions *options,
+                                     const float *vertices, uint32_t vertex_floats);
 /*
  * A fixed heightfield body, and the in-place refresh of one: `heights` holds `rows * columns`
  * samples in column-major order spanning `scale`, centred on the body, copied during the call.
@@ -270,6 +278,15 @@ int32_t tn_physics_intersect_shape(
     TnPhysicsSimulation *simulation,
     const TnPhysicsShapeQueryOptions *query, TnPhysicsQueryHit *output,
     size_t output_capacity);
+/*
+ * A shape query whose volume is built from a mesh: the convex hull of `vertices` when `indices`
+ * is NULL and `index_count` is 0, else the triangle mesh they index. The query's shape_type and
+ * sizes are ignored; its pose, mask and limit apply. Returns -1 when the mesh is invalid.
+ */
+int32_t tn_physics_intersect_mesh_shape(
+    TnPhysicsSimulation *simulation, const TnPhysicsShapeQueryOptions *query,
+    const float *vertices, uint32_t vertex_floats, const uint32_t *indices,
+    uint32_t index_count, TnPhysicsQueryHit *output, size_t output_capacity);
 int32_t tn_physics_intersect_point(
     TnPhysicsSimulation *simulation, float position_x, float position_y,
     float position_z, uint32_t collision_mask, uint32_t max_results,
