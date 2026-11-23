@@ -25,7 +25,7 @@ Each fix needs the same two features: memory shared by a workgroup, and a barrie
 
 1. The IR gains a workgroup-scoped array declaration and a `Barrier` statement (workgroup and storage scopes). WGSL output emits `var<workgroup>` and `workgroupBarrier()` / `storageBarrier()`.
 2. The TSL bridge in `packages/three-native` maps `workgroupArray` and `workgroupBarrier` / `storageBarrier` to them, and fails closed on any other barrier form.
-3. The skinned cape solves a whole frame (all substeps, coloured constraint batches) in one dispatch when its particle count fits one workgroup, and keeps today's path above that size.
+3. The skinned cape solves a whole frame (all substeps, coloured constraint batches) in one dispatch when its particle count fits one workgroup (≤ 256), and keeps today's path above that size.
 4. `HairStrands3D` runs one thread per point, with each strand's points in workgroup memory.
 
 ## Phases
@@ -37,7 +37,7 @@ Each fix needs the same two features: memory shared by a workgroup, and a barrie
 
 ### Phase 2 — Solvers
 
-- [ ] The skinned cape solves a frame in one dispatch at ≤ 1,024 particles, with coloured Gauss-Seidel. proof: `softbody-skinned.spec.ts` plus `acceptance-cloth.playtest.json` (stretch ≤ 10%, PRD-911 AC-1).
+- [ ] The skinned cape solves a frame in one dispatch at ≤ 256 particles, with coloured Gauss-Seidel. proof: `softbody-skinned.spec.ts` plus `acceptance-cloth.playtest.json` (stretch ≤ 10%, PRD-911 AC-1).
 - [ ] `HairStrands3D` runs one thread per point in workgroup memory. proof: `hair-strands.spec.ts` plus `acceptance-hair.playtest.json` on `?arm=strands` (`hairStretch` 0, `hairInsideHead` 0).
 
 ## Acceptance Criteria
@@ -49,3 +49,7 @@ Each fix needs the same two features: memory shared by a workgroup, and a barrie
 ## Blocked on
 
 - A locked GPU clock for the AC-1 and AC-2 timing (`sudo nvidia-smi -lgc`), or the owner's leave to time on display `:0`: the owner, per run.
+
+## Decisions
+
+- 2026-11-23, lead: the one-dispatch cape path covers ≤ 256 particles, not 1,024. WebGPU's default `maxComputeInvocationsPerWorkgroup` is 256 and `computeNode` caps the workgroup there (`graph.cpp`); the test cape has 209 particles. A larger cloth keeps the multi-dispatch path.
