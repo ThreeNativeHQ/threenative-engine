@@ -234,27 +234,6 @@ class CharacterDynamics extends Scene<IState> {
       (hairBones[index] as Bone).add(mesh);
     }
 
-    // The head sphere and neck capsule the ponytail collides with, in world space. The probe reads
-    // the same shapes with its own clearance, so a simulated chain reads zero penetrations.
-    const headCentre = new Vector3();
-    const neckCentre = new Vector3();
-    const headSphere: ISpringBoneCapsule = { a: new Vector3(), b: new Vector3(), radius: 0.11 };
-    const neckCapsule: ISpringBoneCapsule = { a: new Vector3(), b: new Vector3(), radius: 0.06 };
-    const hairColliders = [headSphere, neckCapsule];
-    const updateHairColliders = (): void => {
-      head.getWorldPosition(headCentre);
-      neck.getWorldPosition(neckCentre);
-      headSphere.a.copy(headCentre).setY(headCentre.y + 0.09);
-      headSphere.b.copy(headSphere.a);
-      neckCapsule.a.copy(neckCentre);
-      neckCapsule.b.copy(headCentre);
-    };
-    updateHairColliders();
-    const ponytail =
-      armName === "hair"
-        ? new SpringBoneChain3D(hairBones[0] as Bone, { colliders: hairColliders })
-        : undefined;
-
     const hairWorld: Vector3[] = hairBones.map(() => new Vector3());
     const readHairWorld = (): void => {
       for (let index = 0; index < hairBones.length; index++)
@@ -400,6 +379,34 @@ class CharacterDynamics extends Scene<IState> {
       probeCapsules = measureBodyCapsules(capeSkin, 16, restWorld, COLLIDER_THICKNESS);
       skinnedCape = capeSkin;
     }
+    // The ponytail collides with the head and neck capsules measured from the skin, by the same
+    // physics-asset rule as the cape's body capsules. The probe reads the same shapes.
+    const headBones = new Set<Object3D>([head, neck]);
+    const hairCapsules = measureBodyCapsules(skinnedCape as SkinnedMesh).filter((capsule) =>
+      headBones.has(capsule.bone),
+    );
+    if (hairCapsules.length === 0) throw new Error("CHARACTER_DYNAMICS_NO_HEAD_CAPSULE");
+    const hairColliders: ISpringBoneCapsule[] = hairCapsules.map((capsule) => ({
+      a: new Vector3(),
+      b: new Vector3(),
+      radius: capsule.radius,
+    }));
+    const updateHairColliders = (): void => {
+      hairCapsules.forEach((capsule, index) => {
+        const collider = hairColliders[index] as ISpringBoneCapsule;
+        capsule.bone.updateWorldMatrix(true, false);
+        collider.a.copy(capsule.start ?? new Vector3()).applyMatrix4(capsule.bone.matrixWorld);
+        collider.b.copy(capsule.end).applyMatrix4(capsule.bone.matrixWorld);
+      });
+    };
+    updateHairColliders();
+    console.info(
+      `TN_CHARACTER_DYNAMICS_HAIR_COLLIDERS:${JSON.stringify(hairCapsules.map((c) => `${c.bone.name}:${c.radius.toFixed(3)}`))}`,
+    );
+    const ponytail =
+      armName === "hair"
+        ? new SpringBoneChain3D(hairBones[0] as Bone, { colliders: hairColliders })
+        : undefined;
     if (armName === "cloth") {
       const capeSkin = skinnedCape as SkinnedMesh;
       // Named overrides from the URL, for tuning runs: ?substeps=10&colliders=0

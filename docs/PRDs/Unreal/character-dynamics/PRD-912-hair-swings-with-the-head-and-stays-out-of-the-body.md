@@ -35,7 +35,7 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 #### Phase 1: Bone chains
 
 - [ ] `SpringBoneChain3D` swings the mannequin's ponytail chain with Unreal's defaults and resets past the error threshold. proof: `pnpm exec vitest run packages/core/__tests__/spring-bone-chain.spec.ts` plus AC-3. — 2026-11-23, open on AC-3 only: the unit half passes (9/9, including "resets to the pose when a particle strays past the error distance").
-- [ ] The chain collides with the auto-measured head and neck capsules. proof: AC-1 on the chain arm.
+- [x] The chain collides with the auto-measured head and neck capsules. proof: AC-1 on the chain arm. — 2026-11-23: the scene takes the head and neck capsules from `measureBodyCapsules` (Unreal's physics-asset rule merges the head into `neck_01`: one capsule, r 0.105 m) and passes them to `SpringBoneChain3D`; `acceptance-hair.playtest.json` exits 0 on `?arm=hair` in 2 runs, `hairInsideHead` 0 in every phase.
 
 #### Phase 2: Guide strands on the GPU
 
