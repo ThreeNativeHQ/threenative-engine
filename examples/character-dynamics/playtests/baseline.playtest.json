@@ -92,7 +92,8 @@
       {
         "id": "GameState",
         "path": "finite",
-        "equals": true
+        "equals": true,
+        "allowTrivial": "finite starts true and must stay true through all eight phases"
       }
     ]
   }
