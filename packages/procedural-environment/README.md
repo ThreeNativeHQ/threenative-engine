@@ -36,7 +36,7 @@ kits (forest, coastal, alpine, desert, tundra) where they overlap.
 From the repository root, `pnpm asset-library` builds this package and opens a Storybook-style
 viewer. Search the sidebar by name or filter by biome and style tags. Selecting several tags
 shows assets with any of those tags. Nature and city modules are tagged Realistic, the Biome
-Kit is tagged Stylized, and the Dungeon kit is tagged Low Poly. Open a story to orbit the asset.
+Kit and the Dungeon kit, one collection, are tagged Stylized. Open a story to orbit the asset.
 GLB stories run the package's bake with the selected controls. The Docs tab shows the exact
 bake call and mesh attributes, and the Stats tab shows dimensions and triangle counts.
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes

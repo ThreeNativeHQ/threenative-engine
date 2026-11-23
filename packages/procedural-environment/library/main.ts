@@ -373,12 +373,11 @@ function stylizedLighting(preview?: StylizedPreview): void {
   const env = preview?.env;
   renderer.toneMapping = THREE.NeutralToneMapping;
   renderer.toneMappingExposure = 1;
-  const studio = route.kind === "dungeon" && !preview?.view;
-  scene.environment = studio ? roomEnvironment : null;
+  scene.environment = null;
   hemi.color.set(env?.hemi.sky ?? 0xd6e4ff);
   hemi.groundColor.set(env?.hemi.ground ?? 0x7f93c4);
-  hemi.intensity = env?.hemi.intensity ?? (studio ? 1.12 : 1.9);
-  sun.color.set(env?.sun.color ?? (studio ? 0xffedda : 0xfff3dc));
+  hemi.intensity = env?.hemi.intensity ?? 1.9;
+  sun.color.set(env?.sun.color ?? 0xfff3dc);
   sun.intensity = env?.sun.intensity ?? 3;
   sky.elevation = 49;
   sky.azimuth = -54;
@@ -753,6 +752,11 @@ async function show(): Promise<void> {
   clear();
   scenePreview = undefined;
   invalidate();
+  $("intro").hidden = Boolean(route.kind);
+  if (!route.kind) {
+    say("Pick an asset or an overview from the list");
+    return;
+  }
   const kindRows = catalog.elements.filter((e) => e.kind === route.kind);
   const element = kindRows.find((e) => e.id === route.id);
   const biome =
@@ -1206,7 +1210,7 @@ function readHash(): void {
   const q = new URLSearchParams(query);
   const known = kinds();
   const category = id ? null : q.get("category");
-  const routeKind = known.includes(kind) ? kind : (known[0] ?? "");
+  const routeKind = known.includes(kind) ? kind : "";
   const tiled = q.get("tiled");
   route = {
     kind: routeKind,
