@@ -67,6 +67,7 @@ type WorkerInbound =
   | IWorkerResizeMessage
   | IWorkerEventMessage
   | IWorkerRpcMessage
+  | { type: "tn-worker-visibility"; hidden: boolean }
   | { type: "tn-worker-gamepads"; gamepads: (WorkerGamepad | null)[] };
 
 type WorkerOutbound =
@@ -281,6 +282,10 @@ export function serveWorkerGame(
     if (debug) debugWorkerPost("workerPost", scope, message);
     else scope.postMessage(message);
   };
+  // A worker has no `document` to watch, so the page forwards app visibility (its `visibilitychange`)
+  // and core's lifecycle listener reads this copy exactly as it reads a page's document.
+  const visibility = Object.assign(new EventTarget(), { visibilityState: "visible" as string });
+  scope.__tnAppVisibility = visibility;
   const ui = holdUiBridge(scope);
 
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
@@ -433,6 +438,14 @@ export function serveWorkerGame(
     }
   };
 
+  /** The page's app visibility, published on the worker's copy of the document and announced once per real change. */
+  const applyVisibility = (hidden: boolean): void => {
+    const state = hidden ? "hidden" : "visible";
+    if (visibility.visibilityState === state) return;
+    visibility.visibilityState = state;
+    visibility.dispatchEvent(new Event("visibilitychange"));
+  };
+
   const onMessage = (event: Event): void => {
     const message = (event as MessageEvent).data as WorkerInbound;
     if (message.type === "tn-worker-init" && message.globals.__THREENATIVE_DEBUG__ === true)
@@ -457,6 +470,9 @@ export function serveWorkerGame(
         break;
       case "tn-worker-gamepads":
         gamepads = message.gamepads;
+        break;
+      case "tn-worker-visibility":
+        applyVisibility(message.hidden);
         break;
     }
   };
@@ -545,6 +561,13 @@ export function startWorkerGame(
   };
   listen(windowHost, "gamepadconnected", pollGamepads);
   listen(windowHost, "gamepaddisconnected", pollGamepads);
+  // The worker's game cannot see the page's document; this is how it hears the app leave the screen.
+  listen(documentHost, "visibilitychange", () =>
+    send({
+      hidden: documentHost.visibilityState === "hidden",
+      type: "tn-worker-visibility",
+    }),
+  );
 
   const eventFields = (event: Event): Record<string, unknown> => {
     // quality-allow: a DOM event is copied by key into a structured-clone message
