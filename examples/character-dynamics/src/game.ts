@@ -19,6 +19,7 @@ import {
   SkeletalMesh3D,
   SoftBody3D,
   SpringBoneChain3D,
+  WindField3D,
   defineGame,
   measureBodyCapsules,
 } from "@threenative/core";
@@ -347,6 +348,16 @@ class CharacterDynamics extends Scene<IState> {
     };
     placeCape();
     let cloth: SoftBody3D;
+    // ?wind=<m/s>: a WindField3D blowing from the front, read by the skinned cape every step.
+    const windSpeed = Number(
+      new URLSearchParams(globalThis.location?.search ?? "").get("wind") ?? 0,
+    );
+    if (windSpeed > 0)
+      ctx.add(
+        new WindField3D(
+          facing.clone().multiplyScalar(-windSpeed).toArray() as [number, number, number],
+        ),
+      );
     let probeCapsules: ISoftBodyCapsule[] = [];
     let skinnedCape: SkinnedMesh | undefined;
     // The skinned cape exists in every arm: the cloth arm simulates it, and every arm's probe measures

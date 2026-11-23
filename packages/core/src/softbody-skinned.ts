@@ -87,7 +87,7 @@ export interface ISkinnedSoftBody3DOptions {
   readonly damping?: number;
   /** World gravity, m/s². Default (0, -9.81, 0). */
   readonly gravity?: readonly [number, number, number];
-  /** World wind velocity, m/s. Default (0, 0, 0). */
+  /** World wind velocity, m/s. Default: the sum of the `WindField3D`s at the scene root, read every step. */
   readonly wind?: readonly [number, number, number];
   /**
    * Per-triangle aerodynamic drag coefficient, Chaos Cloth's model: each triangle feels
@@ -501,6 +501,8 @@ export interface ISkinnedClothState {
   readonly substeps: number;
   readonly gravity: Vector3;
   readonly wind: Vector3;
+  /** True when no `wind` option was given: the cloth reads the scene's `WindField3D`s each step. */
+  readonly windFromScene: boolean;
   /** Uploads this step's bone, capsule and carry uniforms, then dispatches the carry and every substep. */
   step(dispatch: (node: ComputeNode) => void): void;
   requestReset(): void;
@@ -1000,6 +1002,7 @@ export function createSkinnedCloth(
     substeps,
     gravity,
     wind,
+    windFromScene: options.wind === undefined,
     get lastReset() {
       return lastReset;
     },

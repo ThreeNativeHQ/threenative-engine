@@ -23,6 +23,7 @@ import {
   skinnedWorldPosition,
 } from "../src/softbody-skinned.js";
 import { SoftBody3D } from "../src/softbody.js";
+import { WindField3D } from "../src/wind-field.js";
 
 function renderer(dispatched: unknown[]): IRendererLike {
   return {
@@ -245,6 +246,23 @@ describe("SoftBody3D on a SkinnedMesh", () => {
     cloth.reset();
     cloth.process(r);
     expect(cloth.lastReset).toBe("manual");
+  });
+
+  it("reads the scene's WindField3D every step, and an explicit wind option overrides it", () => {
+    const { scene, cape } = character();
+    const field = new WindField3D([4, 0, 1]);
+    scene.add(field);
+    const cloth = new SoftBody3D(cape, { bodyColliders: false });
+    scene.add(cloth);
+    cloth.process(renderer([]));
+    expect(cloth.wind.toArray()).toEqual([4, 0, 1]);
+    field.velocity.set(-2, 0, 0);
+    cloth.process(renderer([]));
+    expect(cloth.wind.toArray()).toEqual([-2, 0, 0]);
+    const fixed = new SoftBody3D(character().cape, { bodyColliders: false, wind: [1, 0, 0] });
+    scene.add(fixed);
+    fixed.process(renderer([]));
+    expect(fixed.wind.toArray()).toEqual([1, 0, 0]);
   });
 
   it("brings the pin bones to this step's pose before skinning the pins", () => {

@@ -35,6 +35,7 @@ import {
   buildClothTopology,
   simulateClothReference,
 } from "./softbody-topology.js";
+import { windAt } from "./wind-field.js";
 
 export type { IClothReferenceOptions, IClothTopology, IClothTopologyOptions };
 export { buildClothTopology, simulateClothReference };
@@ -569,6 +570,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
         throw new Error(
           "SoftBody3D on a skinned mesh simulates in world space; add it to the scene root.",
         );
+      if (skinned.windFromScene) windAt(this.parent, skinned.wind);
       skinned.step((node) => renderer.compute(node));
       this.#steps += 1;
       this.#readback?.request(renderer);

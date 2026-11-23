@@ -47,7 +47,7 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 #### Phase 2: The body and the wind
 
 - [ ] `bodyColliders: "auto"` measures capsules from the mannequin's skin weights and reports them. The override replaces them. proof: unit spec on the mannequin bind pose, plus AC-2.
-- [ ] `WindField3D` drives cloth drag and lift, and the same field is readable by PRD-912. proof: unit spec on a still cloth in a known wind, plus the scene's wind phase.
+- [x] `WindField3D` drives cloth drag and lift, and the same field is readable by PRD-912. proof: unit spec on a still cloth in a known wind, plus the scene's wind phase. — 2026-11-23: `WindField3D` (`@threenative/core`) holds a world velocity; a skinned `SoftBody3D` reads the sum of the fields at its scene root every step, and an explicit `wind` option overrides them; `windAt(scene, out)` gives spring bones the same value. Unit: `softbody-skinned.spec.ts` "reads the scene's WindField3D every step…" (14/14). The force itself runs only on the GPU, so the "known wind" proof is the scene: `wind.playtest.json` exits 0 on `?arm=cloth&wind=10` (standing cape 43.7° off vertical) and exits 1 on `?arm=cloth` (0.6°), owned engine, nvidia adapter.
 
 #### Phase 3: Fast on every engine, findable by agents
 

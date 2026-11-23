@@ -4478,6 +4478,36 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function windAt(root: Object3D | null, out: Vector3): Vector3 { … }",
+      "situations": ["read the scene's wind for hair, grass or particles"],
+      "summary": "Sum of the velocities of every `WindField3D` directly under `root` (the scene), into `out`.",
+      "supersedes": [],
+      "symbol": "windAt"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const wind = ctx.add(new WindField3D([4, 0, 0])); wind.velocity.set(6, 0, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "velocity; a SoftBody3D `wind` option replaces the scene's fields for that cloth"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WindField3D extends Object3D { … }",
+      "situations": ["make a cape or flag blow in the wind", "wind that moves cloth and hair"],
+      "summary": "A uniform wind, Unreal's WindDirectionalSource in its simplest form: one world velocity in metres per second. A skinned `SoftBody3D` at the same scene root reads the sum of every `WindField3D` there each step, unless its own `wind` option overrides it. `windAt` gives any other system (spring bones, grass) the same value.",
+      "supersedes": [],
+      "symbol": "WindField3D"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "call `VelocityTracker.update()` before the render and `commit()` after it",
         "a pass is only given a velocity target when a temporal stage consumes it"
