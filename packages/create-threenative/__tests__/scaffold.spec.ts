@@ -117,19 +117,19 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
     shared: "338b7550c51646228d2402f8287702c30356b95b161db37126766af996142bed",
-    kit: "12b3aa8227bfc74a196fa3e77d7dcddcaad70e48179aff3a3f1c182fe68b6683",
+    kit: "b481f869ef53eab5c55f9b99f7b8516cb914d49fda831c3697ddf07cdca77c63",
   },
   adventure: {
     shared: "1debd4cba921bfa7983f7d691d97803f886e3b49e9668e95848252b30fbdab2e",
-    kit: "ff6db4d8a856364d0d3241d9bdbfcf180fe2d0b9d230d3421078c15e1907dd3f",
+    kit: "245f731799f22ab8a612a950b5a351c62f4ea58b231bf7c92282001011c618f3",
   },
   collectathon: {
     shared: "93698a87a739d485965a0944f8f937eefcae12b160bbbd46e77b2cab2dfc3bd6",
-    kit: "ebad84786f37b8a3323b80e913544e5135977ae6a1afe4d180abef0994954c25",
+    kit: "effacfbf368f5b9d618d7e15c383b8a59bdf38ce02e9167d3257407998b31f4d",
   },
   kart: {
     shared: "90ba84dc1d69109d48329367fa964820399d3278690298b602fb27a3b3bf61a6",
-    kit: "a32ebf3e2b39589463616810b786f0dab486c5259fc27df7b97a39b1a06d6492",
+    kit: "8049185dcff1af7640e79fb2c304806c9f6e334e623e013d7d6a8062636bc893",
   },
   minimal: {
     shared: "1679219fa9cc716c78a465538ecdbbf8f72042f8cee999a90d0de24117be2c65",
@@ -137,19 +137,19 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   platformer: {
     shared: "440f9209909baa20c18551e47376b0da07cb4ed04203107d77c7b32d3ab5ff48",
-    kit: "20d5c7b3743a3758ea223645cc8bd19faef46e710ece7ab271f9631fae03362e",
+    kit: "7fd109cf8e4529f0cd6f7861f184dd01551e49acd82d41c2ab53e547f1edab18",
   },
   puzzle: {
     shared: "a2ab39eed4397e8a01ab34f5599dbbb06d6b1b5687caf947bdcb5488ea354081",
-    kit: "92a3e0910b175829494bf91c921396c054a6af7d92121bee9c747ccbae864547",
+    kit: "70becc3e53d4af0f521d955104268ca5456d52ff527ff7284e3367cd7caaff20",
   },
   racing: {
     shared: "c5d695ebd42cfa5e00d801c0e28593e48e103bc29df6bd4202be53dfd865e158",
-    kit: "7b9753f54c21966ac1422690cb30c893663fbfe6134b891c0a6bbf96e393f907",
+    kit: "49fc59c5652819f85e74ccf574614af245181a00061e8cf71c073c0e444b6123",
   },
   rain: {
     shared: "6cbc850151563faa6ce951ea8754e1dabfa181e3bf2bcf0d396ab83c9fe34bae",
-    kit: "acf020c9c3896d3ed893acade7f02d36dc9ee33e814e112e9fc93f924047d240",
+    kit: "3ce3e91cbadace50fd771d17c06cc747ff879651bffe6fad4ced02e68233900b",
   },
   rts: {
     shared: "3cfd956fc05a92d239796dd917a4d08bf83b4d930da38c273d8ea410e6e6eb63",
@@ -157,27 +157,27 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   runner: {
     shared: "2f873b69b143966ce8d26d9543332b12881449a57428dc49d39ddab6e7ba8b95",
-    kit: "1d6dde77b1d52b433d919bda20c85e3d29c884cd284bec0c5ed084beaee847be",
+    kit: "4f490532f3c9d2be1cf720519ea8a411788d6fc1583676d26895d2862fbd5403",
   },
   sailing: {
     shared: "8e2f530efbcad088b9ad6f5a18e8171d5c3394b09bf9123910b6849197d06675",
-    kit: "e01e471a03e2335e3cb78bf272ea9bd10f27237692a006708f606e3df54be055",
+    kit: "5117ac473704046237f61a56d5898996e56b70d85f1d6ab16a6405f3aacb0f91",
   },
   shooter: {
     shared: "86acdd592e8429e0bfa45ff6ee23ac762648c793681cecad78d964bfd7a376f2",
-    kit: "da484a38134c67e2993e152455bfa0bbcc4654a925da6ea7995d18f17c4747bc",
+    kit: "333e32a53066c54345ab44e0371a324fdf339d6e63162398d274fed0d29df9d4",
   },
   snow: {
     shared: "64fe50f677e02c8ef1be25bbf4d48fdd893ba3b4da63e7f75a73fabde3597c77",
-    kit: "e4b8b6a8a4fddb5e9d734c1563a208d60c24f0796da757028f1fc5b5c151c94b",
+    kit: "4cbb68651f6d498e79f9990e3acfb814ee9b6289478b55e2046cb45c0eb368cb",
   },
   starter: {
     shared: "ae365edb8c346a22e6acf1db9a3a082f15b368bd9bed06f91f13bb1ac1a91f79",
-    kit: "ece85d7b034d1d4d4f74d410f04bbd765776afe503ba76167b6080768e597884",
+    kit: "4dec70be4ffa2c96815279b01b912e1f4b203fe7e6ff2927760384bf2d8c47a1",
   },
   "tower-defense": {
     shared: "abc227934b6dbeaf1cacc0406305406244b85dc13bea68e022f94d9e157efe90",
-    kit: "e394e746cd12cfcb35e778bcabf89e371ec1fa0a0eb44b1407f47187f55ec17e",
+    kit: "68413189c4b9f3817c15c5c11721ceee42c78bcb7df42412973c9cfb081622e4",
   },
   // scaffold-pin:end
 };

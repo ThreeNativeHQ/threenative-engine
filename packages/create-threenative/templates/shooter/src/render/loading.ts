@@ -315,6 +315,9 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
       // A renderer without compileAsync is not a reason to keep the world hidden.
     }
     startupReady = true;
+    // A launch is entered by the time it is ready; lifting here, not on the next scene tick, keeps
+    // the hand-off frames a paused or stepped clock renders from showing the cover.
+    if (host.sceneLoad.progress >= 1) finish();
   });
 
   return {

@@ -425,6 +425,19 @@ describe("template loading screen", () => {
     expect(fill.scale.x).toBeCloseTo(track.scale.x * 0.5, 6);
   });
 
+  it("lifts a finished launch at readiness, before any scene tick calls update", async () => {
+    const source = host();
+    source.startup.whenReady = () => Promise.resolve();
+    source.startup.progress = 1;
+    source.sceneLoad.progress = 1;
+    source.renderer.compileAsync = vi.fn(() => Promise.resolve());
+    createLoadingScreen(source);
+    await Promise.resolve();
+    await Promise.resolve();
+
+    expect(source.canvasLayer.opaque).toBe(false);
+  });
+
   it("holds the cover until the level change in flight has entered", async () => {
     const source = host();
     // A restart: `whenReady()` resolved at launch, so readiness alone can no longer lift the cover.
