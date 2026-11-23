@@ -278,6 +278,15 @@ int32_t tn_physics_intersect_shape(
     TnPhysicsSimulation *simulation,
     const TnPhysicsShapeQueryOptions *query, TnPhysicsQueryHit *output,
     size_t output_capacity);
+/*
+ * A shape query whose volume is built from a mesh: the convex hull of `vertices` when `indices`
+ * is NULL and `index_count` is 0, else the triangle mesh they index. The query's shape_type and
+ * sizes are ignored; its pose, mask and limit apply. Returns -1 when the mesh is invalid.
+ */
+int32_t tn_physics_intersect_mesh_shape(
+    TnPhysicsSimulation *simulation, const TnPhysicsShapeQueryOptions *query,
+    const float *vertices, uint32_t vertex_floats, const uint32_t *indices,
+    uint32_t index_count, TnPhysicsQueryHit *output, size_t output_capacity);
 int32_t tn_physics_intersect_point(
     TnPhysicsSimulation *simulation, float position_x, float position_y,
     float position_z, uint32_t collision_mask, uint32_t max_results,

@@ -412,4 +412,48 @@ describe("Wasm physics host (PRD-899)", () => {
     for (const [axis, value] of compat.entries())
       expect(crate[axis], `pose field ${axis}`).toBeCloseTo(value, 2);
   });
+
+  it("reads a teleported body at its new position before the next step", () => {
+    // The web backend read the pose live; the native host served a cached bulk read and kept the
+    // pre-teleport pose until the next step.
+    const world = simulation();
+    const id = world.createBody(body("dynamic", { x: 0, y: 5, z: 0 })).body.id;
+    world.step(1 / 60, { kinematicCount: 0, kinematicTransforms: new Float32Array(0) });
+    expect(world.readBodyTransform?.(id)?.position.y).toBeLessThan(5);
+    world.setBodyTransform?.(id, { x: 7, y: 8, z: 9 });
+    expect(world.readBodyTransform?.(id)?.position).toEqual({ x: 7, y: 8, z: 9 });
+    world.dispose();
+  });
+
+  it("answers convex hull and trimesh shape queries, as the web backend does", () => {
+    const world = simulation();
+    const near = world.createBody(body("fixed", { x: 0, y: 0, z: 0 })).body.id;
+    const far = world.createBody(body("fixed", { x: 5, y: 0, z: 0 })).body.id;
+    const cube = new Float32Array([
+      -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5,
+      -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5,
+    ]);
+    const at = (x: number, shape: IPhysicsBodyCreateOptions["shape"]) =>
+      world
+        .intersectShape({
+          collisionMask: 0xffff,
+          maxResults: 4,
+          position: { x, y: 0, z: 0 },
+          rotation: { w: 1, x: 0, y: 0, z: 0 },
+          shape,
+        })
+        .map((hit) => hit.body.id);
+    const hull = { ...box(0, 0, 0), kind: "convexHull" as const, vertices: cube };
+    expect(at(0, hull)).toEqual([near]);
+    expect(at(5, hull)).toEqual([far]);
+    expect(at(2.5, hull)).toEqual([]);
+    const triangle = {
+      ...box(0, 0, 0),
+      indices: new Uint32Array([0, 1, 2]),
+      kind: "trimesh" as const,
+      vertices: new Float32Array([-1, 0, -1, 1, 0, -1, 0, 0, 1]),
+    };
+    expect(at(5, triangle)).toEqual([far]);
+    world.dispose();
+  });
 });

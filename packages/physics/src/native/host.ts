@@ -333,6 +333,12 @@ function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor
   return primitiveShape(shape);
 }
 
+/** A shape query's volume: a primitive, or a mesh-built hull or trimesh as the web backend allows. */
+function nativeQueryShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
+  if (shape.kind === "convexHull" || shape.kind === "trimesh") return nativeBodyShape(shape);
+  return primitiveShape(shape);
+}
+
 function opaqueNativeShape(shape: INativeShapeDescriptor): unknown {
   return Object.freeze({ backend: "native", kind: shape.kind });
 }
@@ -655,6 +661,8 @@ export function createNativePhysicsSimulation(
       if (raw.setBodyTransform === undefined)
         throw new Error("TN_NATIVE_PHYSICS_SET_TRANSFORM_MISSING: runtime ABI is too old");
       raw.setBodyTransform(id, position);
+      // The body moved now, not at the next step: the cached bulk transform read is stale.
+      bodyTransformsDirty = true;
     },
     // Keep the optional raw members: an older runtime must throw rather than accept a call and
     // drop the actuation, which would make the same game diverge by platform.
@@ -793,7 +801,7 @@ export function createNativePhysicsSimulation(
         maxResults: query.maxResults,
         position: query.position,
         rotation: query.rotation,
-        shape: primitiveShape(query.shape),
+        shape: nativeQueryShape(query.shape),
       });
       if (!Array.isArray(hits) || hits.length > query.maxResults)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed shape query result");

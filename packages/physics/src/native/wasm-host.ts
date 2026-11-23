@@ -25,6 +25,7 @@ const EXPORTS = [
   "tn_physics_destroy",
   "tn_physics_drain_collision_events",
   "tn_physics_free",
+  "tn_physics_intersect_mesh_shape",
   "tn_physics_intersect_point",
   "tn_physics_intersect_ray",
   "tn_physics_intersect_shape",
@@ -62,6 +63,15 @@ type Actuation =
   | "tn_physics_apply_body_impulse"
   | "tn_physics_set_body_linear_velocity";
 type Fields = Record<string, unknown>;
+/** The crate's shape-query types: primitives, and the mesh-built hull (5) and trimesh (3). A
+ * heightfield (4) is no query volume. */
+const QUERY_SHAPE_TYPES: Readonly<Record<string, number>> = {
+  box: 0,
+  capsule: 2,
+  convexHull: 5,
+  sphere: 1,
+  trimesh: 3,
+};
 
 const MAX_EXACT_FLOAT_ID = 16_777_215;
 const F32_MAX = 3.4028234663852886e38;
@@ -234,6 +244,7 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
     let nextVehicleId = 0;
     const first: IScratch = { bytes: 0, ptr: 0 };
     const second: IScratch = { bytes: 0, ptr: 0 };
+    const third: IScratch = { bytes: 0, ptr: 0 };
     const ensure = (scratch: IScratch, bytes: number): number => {
       if (scratch.bytes >= bytes) return scratch.ptr;
       const size = Math.max(64, bytes, scratch.bytes * 2);
@@ -243,6 +254,23 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
       scratch.ptr = alloc(size);
       scratch.bytes = size;
       return scratch.ptr;
+    };
+    /** A mesh-built query volume's buffers in Wasm memory: vertices, then a trimesh's indices. */
+    const meshBuffers = (shape: Fields, trimesh: boolean): [number, number, number, number] => {
+      const { vertices, indices } = shape;
+      if (!(vertices instanceof Float32Array)) throw INVALID;
+      if (!trimesh) return [copyIn(second, vertices), vertices.length, 0, 0];
+      if (!(indices instanceof Uint32Array)) throw INVALID;
+      return [copyIn(second, vertices), vertices.length, copyIn(third, indices), indices.length];
+    };
+    /** A shape query's crate type, with the buffers of a mesh-built one (convex hull or trimesh). */
+    const queryVolume = (
+      shape: Fields,
+    ): { type: number; mesh?: [number, number, number, number] } => {
+      const type = QUERY_SHAPE_TYPES[shape.kind as string];
+      if (type === undefined || !Object.hasOwn(QUERY_SHAPE_TYPES, shape.kind as string))
+        throw INVALID;
+      return type === 3 || type === 5 ? { mesh: meshBuffers(shape, type === 3), type } : { type };
     };
     const live = () => {
       if (simulation === 0) throw new Error("physics simulation is disposed");
@@ -856,11 +884,14 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
         if (query === undefined) throw new Error("intersectShape requires query options");
         let pointer: number;
         let limit: number;
+        // A mesh-built volume (convex hull, or trimesh): its buffers' pointers and lengths.
+        let mesh: [number, number, number, number] | undefined;
         try {
           const value = fields(query);
           const shape = fields(value.shape);
-          const shapeType = ["box", "sphere", "capsule"].indexOf(shape.kind as string);
-          if (typeof shape.kind !== "string" || shapeType < 0) throw INVALID;
+          const volume = queryVolume(shape);
+          const shapeType = volume.type;
+          mesh = volume.mesh;
           limit = maxResults(value);
           pointer = ensure(first, limit * QUERY_HIT_BYTES);
           views();
@@ -876,7 +907,10 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
         } catch (error) {
           throw fail(error, "intersectShape query options are invalid");
         }
-        const count = wasm.tn_physics_intersect_shape(simulation, record, pointer, limit);
+        const count =
+          mesh === undefined
+            ? wasm.tn_physics_intersect_shape(simulation, record, pointer, limit)
+            : wasm.tn_physics_intersect_mesh_shape(simulation, record, ...mesh, pointer, limit);
         if (count < 0) throw new Error("intersectShape query was rejected");
         return queryHits(pointer, count);
       },
@@ -905,7 +939,7 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
         if (simulation === 0) return;
         wasm.tn_physics_destroy(simulation);
         simulation = 0;
-        for (const scratch of [first, second]) {
+        for (const scratch of [first, second, third]) {
           if (scratch.bytes > 0) wasm.tn_physics_free(scratch.ptr, scratch.bytes);
           scratch.bytes = 0;
           scratch.ptr = 0;
