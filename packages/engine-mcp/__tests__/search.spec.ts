@@ -692,6 +692,17 @@ describe("threenative-engine-mcp", () => {
     expect(results[0]?.symbol).toBe("SoftBody3D");
   });
 
+  // PRD-911: the brief never says "cloth". A cape is a cape, a skirt is a skirt, and both ride a
+  // skinned character; the row has to come first and carry the skinned example with it.
+  it.each(["character with a cape", "skirt on a skinned mesh"])(
+    "leads '%s' with SoftBody3D and its skinned example (PRD-911)",
+    (query) => {
+      const first = searchResults(query, workspaceManifest)[0];
+      expect(first?.symbol, query).toBe("SoftBody3D");
+      expect(first?.example, query).toContain("SkinnedMesh");
+    },
+  );
+
   it("ranks fluid simulation for ocean currents affecting a ship", () => {
     const results = searchResults(
       "ocean fluid dynamics and currents affect the ship",

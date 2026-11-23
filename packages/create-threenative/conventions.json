@@ -244,6 +244,14 @@
       ]
     },
     {
+      "id": "skinned-cloth",
+      "name": "Cape and skirt cloth",
+      "default": "skinned cloth follows the skin where its mask is 1 and clears the body",
+      "override": "`bodyColliders`; `cloth`",
+      "marker": "TN_SOFTBODY_RESET",
+      "kits": ["adventure"]
+    },
+    {
       "id": "rough-diffuse",
       "name": "Rough diffuse",
       "default": "on",
