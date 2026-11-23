@@ -54,7 +54,7 @@ function samplingRenderer(sample: () => ArrayBuffer): IRendererLike {
 }
 
 /** The cloth's rest sample in unique-vertex order, with vertex 0 pushed up by `stretch` metres. */
-function stretchedCape(cape: SkinnedMesh, stretch: number): Float32Array {
+function stretchedCape(cape: SkinnedMesh, stretch: number): Float32Array<ArrayBuffer> {
   const sample = new Float32Array(buildClothTopology(cape.geometry, { pinned: [0] }).positions);
   sample[1] = (sample[1] as number) + stretch;
   return sample;
