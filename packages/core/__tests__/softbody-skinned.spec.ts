@@ -147,6 +147,33 @@ describe("skinned SoftBody3D helpers", () => {
     expect(capsules[0]?.radius).toBeCloseTo(0.15, 2);
   });
 
+  it("merges a bone smaller than Unreal's 20 cm MinBoneSize into its parent, as fingers into a hand", () => {
+    const { root, chest, cape } = character();
+    const hand = new Bone();
+    hand.position.set(0.4, 0, 0);
+    chest.add(hand);
+    const finger = new Bone();
+    finger.position.set(0.15, 0, 0);
+    hand.add(finger);
+    root.updateMatrixWorld(true);
+    const skeleton = new Skeleton([...cape.skeleton.bones, hand, finger]);
+    const parts = [
+      skin(new CylinderGeometry(0.15, 0.15, 0.4, 24, 6).translate(0, 1.6, 0), 1),
+      skin(new CylinderGeometry(0.05, 0.05, 0.3, 12, 4).rotateZ(Math.PI / 2).translate(0.55, 1.4, 0), 3),
+      skin(new CylinderGeometry(0.01, 0.01, 0.06, 8, 2).rotateZ(Math.PI / 2).translate(0.75, 1.4, 0), 4),
+    ];
+    for (const geometry of parts) {
+      const mesh = new SkinnedMesh(geometry, new MeshStandardNodeMaterial());
+      root.add(mesh);
+      mesh.bind(skeleton);
+    }
+    cape.bind(skeleton);
+    root.updateMatrixWorld(true);
+    const bones = measureBodyCapsules(cape).map((capsule) => capsule.bone);
+    expect(bones).toContain(hand);
+    expect(bones).not.toContain(finger);
+  });
+
   it("shrinks an auto capsule so the cloth's rest pose clears it by the collider thickness", () => {
     const { cape } = character();
     // A rest cloth vertex 0.1 m behind the chest axis, inside the 0.15 m measured skin.

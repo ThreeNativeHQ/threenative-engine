@@ -20,6 +20,7 @@
  * never leave the GPU unless the game asks for readback.
  */
 import {
+  Box3,
   type BufferGeometry,
   Matrix4,
   type Object3D,
@@ -172,6 +173,8 @@ export function skinnedWorldPosition(mesh: SkinnedMesh, vertex: number, out: Vec
 
 /** @internal Up to this many bones move the pinned vertices (unrolled at constant indices). */
 export const MAX_PIN_BONES = 8;
+/** Unreal's FPhysAssetCreateParams::MinBoneSize, 20 cm, in metres. */
+const MIN_BONE_SIZE = 0.2;
 /** @internal Up to this many body capsules (unrolled at constant indices). */
 export const MAX_BODY_CAPSULES = 16;
 /** @internal Jacobi over-relaxation over the stretch constraints. */
@@ -379,12 +382,33 @@ export function measureBodyCapsules(
       byBone.set(bone, list);
     }
   }
-  const capsules: Array<ISoftBodyCapsule & { readonly weight: number }> = [];
+  // Unreal's physics-asset rule: walk the skeleton from the leaves up, and a bone whose skin (plus what
+  // merged into it) spans less than MinBoneSize merges into its parent, so fingers and toes become part
+  // of the hand and foot instead of taking capsule slots (UE 5.8.3:
+  // Engine/Source/Developer/PhysicsUtilities/Private/PhysicsAssetUtils.cpp:321-345, size from
+  // CalcBoneInfoLength :160-177, MinBoneSize 20 cm in PhysicsAssetUtils.h:46).
+  const merged = new Map<Object3D, number>();
   const inverse = new Matrix4();
+  for (let index = source.skeleton.bones.length - 1; index >= 0; index--) {
+    const bone = source.skeleton.bones[index] as Object3D;
+    const points = byBone.get(bone) ?? [];
+    bone.updateWorldMatrix(true, false);
+    inverse.copy(bone.matrixWorld).invert();
+    const box = new Box3();
+    for (const p of points) box.expandByPoint(point.copy(p).applyMatrix4(inverse));
+    const size = (merged.get(bone) ?? 0) + (box.isEmpty() ? 0 : box.getSize(point).length() / 2);
+    merged.set(bone, size);
+    const parent = bone.parent;
+    if (size >= MIN_BONE_SIZE || parent === null || !bones.has(parent)) continue;
+    merged.set(parent, (merged.get(parent) ?? 0) + size);
+    if (points.length > 0) byBone.set(parent, [...(byBone.get(parent) ?? []), ...points]);
+    byBone.delete(bone);
+  }
+  const capsules: Array<ISoftBodyCapsule & { readonly weight: number }> = [];
   const a = new Vector3();
   const b = new Vector3();
   for (const [bone, points] of byBone) {
-    if (points.length < 24) continue;
+    if (!((merged.get(bone) ?? 0) >= MIN_BONE_SIZE) || points.length < 4) continue;
     bone.updateWorldMatrix(true, false);
     a.setFromMatrixPosition(bone.matrixWorld);
     const centroid = points
