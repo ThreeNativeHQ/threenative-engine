@@ -40,7 +40,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `audio/`, `conventions.ts`, `entities/`, `game.ts`, `gauges.ts`, `kart/`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `track/`, `ui/`.
-17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+18 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-racing.md`.
 <!-- /shared -->
