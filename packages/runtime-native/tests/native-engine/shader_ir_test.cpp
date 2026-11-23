@@ -320,6 +320,54 @@ void pruneDead() {
     if (!after.wgsl.ok() || after.wgsl.code.find("textureSample(t_lit") != std::string::npos) std::fputs(after.wgsl.code.c_str(), stderr);
 }
 
+// PRD-913: memory shared by a workgroup, and a barrier between the steps of a solve.
+void workgroupMemory() {
+    Program p(Stage::Compute);
+    p.setWorkgroup(64);
+    const auto out = p.storageBuffer("out", Type::f32());
+    const auto partial = p.workgroupArray("partial", Type::f32(), 64);
+    CHECK(p.workgroupArray("partial", Type::f32(), 64) == partial);  // the same declaration is one array
+    const auto index = p.builtin("localInvocationIndex");
+    p.store(partial, index, p.construct(Type::f32(), {index}));
+    p.barrier(BarrierScope::Workgroup);
+    p.store(out, index, p.loadStorage(partial, p.constant(int32_t(0))));
+    p.barrier(BarrierScope::Storage);
+    CHECK(p.ok());
+    CHECK(p.dump().find("workgroupBarrier") != std::string::npos && p.dump().find("storageBarrier") != std::string::npos);
+    const auto module = buildStage(p, 1);
+    CHECK(module.wgsl.ok());
+    const auto& code = module.wgsl.code;
+    CHECK(code.find("var<workgroup> s_partial: array<f32, 64>;") != std::string::npos);
+    CHECK(code.find("  workgroupBarrier();") != std::string::npos && code.find("  storageBarrier();") != std::string::npos);
+    CHECK(code.find("s_partial[") != std::string::npos);
+    // Workgroup memory is no binding: only `out` reaches the layout, and the array is declared before the entry point.
+    CHECK(module.bindings.size() == 1 && module.bindings[0].name == "s_out");
+    CHECK(code.find("var<workgroup>") < code.find("@compute"));
+    // Pruning keeps a barrier, which orders memory and so is live without a reader.
+    p.pruneDeadStatements();
+    CHECK(buildStage(p, 1).wgsl.code.find("workgroupBarrier();") != std::string::npos);
+    if (!module.wgsl.ok()) std::fputs(code.c_str(), stderr);
+
+    // Fail closed: a barrier and workgroup memory belong to a compute stage; a size is whole and positive; one name keeps one shape.
+    Program fragment(Stage::Fragment);
+    fragment.barrier(BarrierScope::Workgroup);
+    CHECK(!fragment.ok());
+    Program vertex(Stage::Vertex);
+    (void)vertex.workgroupArray("w", Type::f32(), 4);
+    CHECK(!vertex.ok());
+    Program empty(Stage::Compute);
+    (void)empty.workgroupArray("w", Type::f32(), 0);
+    CHECK(!empty.ok());
+    Program clash(Stage::Compute);
+    (void)clash.workgroupArray("w", Type::f32(), 4);
+    (void)clash.workgroupArray("w", Type::f32(), 8);
+    CHECK(!clash.ok());
+    Program shadow(Stage::Compute);
+    (void)shadow.storageBuffer("w", Type::f32());
+    (void)shadow.workgroupArray("w", Type::f32(), 4);
+    CHECK(!shadow.ok());
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported}, {"prune_dead", pruneDead})
+TN_TEST_MAIN({"storage_textures", storageTextures}, {"order", order}, {"types", types}, {"unsupported", unsupported}, {"prune_dead", pruneDead}, {"workgroup_memory", workgroupMemory})
