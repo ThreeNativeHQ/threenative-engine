@@ -1,5 +1,6 @@
 // The renderer: renderPrepared: one frame's plan, uniforms, shadow pages and passes. PRD-840 split renderer.cpp by concern; renderer_internal.h holds what they share.
 #include "engine/renderer/renderer_internal.h"
+#include <chrono>  // PRD-913 Phase 1: the debug-only uniform and storage scan counters time their scans
 
 namespace tn::engine {
 
@@ -1252,6 +1253,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             put(block, f, fs[kHemisphereGround], lights.hemisphereGround);
         }
     };
+    // PRD-913 Phase 1 (debug only): the bytes each draw's slot copies from its program's frame slab, and what those
+    // copies cost. The clock is read only under `tnDebug`; a frame's copies are summed and counted once after the plan.
+    const bool slabCopyTimed = waste::debugEnabled().load(std::memory_order_relaxed);
+    uint64_t slabCopyNanos = 0, slabCopyBytes = 0;
     for (std::size_t opaqueIdx = 0; opaqueIdx < opaque.size(); ++opaqueIdx) {
         const DrawItem& item = *mainItems[opaqueIdx];
         if (!item.mainPass) continue;
@@ -1339,7 +1344,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const uint64_t f = v + aligned(program.vertex.uniformBlockSize);
         const auto* vs = program.vertexSlots;
         const auto* fs = program.fragmentSlots;
+        const auto slabCopyStart = slabCopyTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
         std::memcpy(frameUniforms_.data() + v, program.frameSlab.data(), slotBytes);
+        if (slabCopyTimed) {
+            slabCopyNanos += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - slabCopyStart).count());
+            slabCopyBytes += slotBytes;
+        }
         put(frameUniforms_, v, vs[kModelMatrix], item.matrixWorld);
         if (item.instanceMatrices) put(frameUniforms_, v, vs[kInstanceBase], std::array<double, 1>{instanceBases.at(&item)});
         put(frameUniforms_, v, vs[kNormalMatrix], normalMatrix(multiply(view, item.matrixWorld)));
@@ -1420,6 +1431,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         plan.back().slot = slotKey;
         plan.back().prepass = prepassPipeline;
         plan.back().prepassSolid = equalDraw && solidCandidate && !program.hasDiscard;
+    }
+    if (slabCopyTimed) {
+        waste::debugAdd(waste::counters().uniformSlabCopyBytes, slabCopyBytes);
+        waste::debugAdd(waste::counters().uniformSlabCopyMicros, slabCopyNanos / 1000);
     }
 
     if (features().stablePasses && !compilation)
@@ -2757,6 +2772,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // 256-byte aligned, so a slot that moved re-sends whole), and a mostly-dirty arena still makes one write, so
     // this never costs more calls than the single write it replaced.
     const uint64_t uniformBytes = frameUniforms_.size();
+    // PRD-913 Phase 1 (debug only): what the dirty scan reads — the arena once when the whole compare finds nothing to
+    // send, the arena again a block at a time when it does — and what reading it costs.
+    const bool uniformScanTimed = waste::debugEnabled().load(std::memory_order_relaxed);
+    const auto uniformScanStart =
+        uniformScanTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+    const auto countUniformScan = [&] {
+        waste::debugAdd(waste::counters().uniformMemcmpBytes, uniformBytes);
+        waste::debugAdd(waste::counters().uniformMemcmpMicros,
+            static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - uniformScanStart).count()) / 1000);
+    };
     if (uniformBytes != 0 && uploadedUniforms_.size() != uniformBytes) {
         gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
         uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
@@ -2782,6 +2808,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 closeRun();
             }
         }
+        if (uniformScanTimed) countUniformScan();  // the scan's cost stops at the compare loop, not at the writes
         if (dirty * 2 >= uniformBytes) {  // mostly dirty: stop scanning early and send one write
             gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
             uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
@@ -2794,10 +2821,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
         waste::debugAdd(waste::counters().uniformUploadBytes, dirty);
+    } else if (uniformScanTimed) {
+        countUniformScan();
     }
     job.uniformBytes = frameUniforms_.size();
     bool jointBufferMoved = false;
     bool instancesUploaded = false;
+    // PRD-913 Phase 1 (debug only): the bytes the storage upload's same-bytes scan reads, and what reading them costs.
+    const bool storageScanTimed = waste::debugEnabled().load(std::memory_order_relaxed);
+    uint64_t storageScanNanos = 0, storageScanBytes = 0;
     for (auto& [name, storage] : storages_) {
         const uint64_t prefix = name == "boneMatrices" ? jointPrefix : 0;
         if (prefix + storage.data.size() * 4 > storage.capacity) {
@@ -2851,6 +2883,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         bool mostlyDirty = dirtyBytes * 2 >= bytes;
         if (!mostlyDirty) {
             for (const auto& [from, to] : spans) {
+                const auto spanScanStart =
+                    storageScanTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+                bool spanScanned = true;
                 for (uint64_t at = from; at < to; at += block) {
                     const uint64_t end = std::min(at + block, to);
                     if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) {
@@ -2858,9 +2893,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         dirtyBytes += end - at;
                         if (dirtyBytes * 2 >= bytes) {
                             mostlyDirty = true;
+                            spanScanned = false;
                             break;
                         }
                     }
+                }
+                if (storageScanTimed) {
+                    storageScanNanos += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - spanScanStart).count());
+                    if (spanScanned) storageScanBytes += to - from;  // every block was compared, so the span's bytes were read
                 }
                 if (mostlyDirty) break;
             }
@@ -2890,6 +2931,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             storage.uploaded.clear();
             storage.uploadedBuffer = Handle{};
         }
+    }
+    if (storageScanTimed) {
+        waste::debugAdd(waste::counters().storageSameBytesScanned, storageScanBytes);
+        waste::debugAdd(waste::counters().storageSameBytesMicros, storageScanNanos / 1000);
     }
 
     if (instancesUploaded)  // the GPU holds what these places hold: the next plan may leave a place with this stamp alone

@@ -4147,6 +4147,122 @@ void mainInstanceFrustumCull() {
         CHECK(recoveredPx == baselinePx);
     }
 }
+
+// PRD-913 Phase 1: size the per-draw work a frame repeats without needing it. A steady frame still copies every draw's
+// frame slab into its uniform slot, then compares the whole arena against the bytes the GPU holds and sends nothing, so
+// the compare reads exactly the arena; a camera turn moves every slot, so the copy runs again and the compare reads at
+// least the arena; a moved instance makes the storage scan read the page it wrote. Each frame fails on the counter it
+// owns, so a path that came back or went away shows here and not as a pixel difference.
+void uniformScanCounters() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    struct Scan {
+        uint64_t slabCopyBytes, slabCopyMicros, memcmpBytes, memcmpMicros, storageBytes, storageMicros;
+    };
+    const auto sample = [] {
+        const auto& c = waste::counters();
+        return Scan{c.uniformSlabCopyBytes.load(),  c.uniformSlabCopyMicros.load(),  c.uniformMemcmpBytes.load(),
+                    c.uniformMemcmpMicros.load(),   c.storageSameBytesScanned.load(), c.storageSameBytesMicros.load()};
+    };
+    const auto since = [](const Scan& before, const Scan& after) {
+        return Scan{after.slabCopyBytes - before.slabCopyBytes, after.slabCopyMicros - before.slabCopyMicros,
+                    after.memcmpBytes - before.memcmpBytes,     after.memcmpMicros - before.memcmpMicros,
+                    after.storageBytes - before.storageBytes,   after.storageMicros - before.storageMicros};
+    };
+
+    constexpr uint32_t kInstances = 4;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial paint;
+    paint.color = {0.8f, 0.5f, 0.3f};
+    BufferStore matrices(Scalar::F32, kInstances * 16);
+    std::vector<float> instanceData(kInstances * 16, 0.0f);
+    for (uint32_t i = 0; i < kInstances; ++i) {
+        float* m = instanceData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = 0.5f;
+        m[15] = 1.0f;
+        m[12] = -1.5f + float(i);  // four half-metre instances across the view, one store they all share
+        m[14] = -0.5f;
+    }
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+
+    std::array<DrawItem, 2> items;
+    for (DrawItem& item : items) {
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions;
+        item.normals = &ball->normals;
+        item.indices = &ball->indices;
+        item.material = &paint;
+    }
+    items[0].key = items[0].id = 1;
+    items[0].instanceMatrices = &matrices;
+    items[0].instanceCount = kInstances;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[0].geometryBox = Box3();
+    items[0].geometryBox->min.set(-1, -1, -1);  // the unit ball each instance scales down
+    items[0].geometryBox->max.set(1, 1, 1);
+    items[1].key = items[1].id = 2;
+    items[1].matrixWorld = {0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 2.5, 0, 0, 1};
+
+    LightState lights;
+    const DirectLight sun = DirectLight::directional({0, 1, 0}, {1, 1, 1});
+    lights.direct.push_back(sun);
+
+    // camera(1) at z = 4 turned by `yaw` about y: a turn moves every draw's view-dependent slot, a held camera none.
+    const auto turned = [](double yaw) {
+        CameraState c = camera(1);
+        const double cs = std::cos(yaw), sn = std::sin(yaw);
+        c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+        c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 4 * sn, 0, -4 * cs, 1};
+        return c;
+    };
+    const CameraState held = turned(0), turnedCam = turned(0.2);
+
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const std::span<const DrawItem> scene(items.data(), items.size());
+    for (int frame = 0; frame < 2; ++frame)  // programs, slots and the first uploads settle
+        renderer.render(scene, held, lights, {0, 0, 0, 1});
+
+    waste::setDebugEnabled(true);
+    auto before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan steady = since(before, sample());
+    const uint64_t steadyBytes = renderer.lastFrame().uniformBytes;
+
+    before = sample();
+    renderer.render(scene, turnedCam, lights, {0, 0, 0, 1});
+    const Scan turn = since(before, sample());
+    const uint64_t turnBytes = renderer.lastFrame().uniformBytes;
+
+    instanceData[12] += 0.25f;  // instance 0 slid 25 cm: the page it lives in no longer matches the GPU's copy
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+    matrices.needsUpdate();
+    before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan movedInstance = since(before, sample());
+    waste::setDebugEnabled(false);
+
+    std::fprintf(stderr,
+                 "TN_DEBUG uniform scan: steady %llu slab bytes in %llu us, %llu memcmp bytes in %llu us of %llu; turn "
+                 "%llu slab bytes, %llu memcmp bytes of %llu; moved instance %llu storage bytes in %llu us\n",
+                 (unsigned long long)steady.slabCopyBytes, (unsigned long long)steady.slabCopyMicros,
+                 (unsigned long long)steady.memcmpBytes, (unsigned long long)steady.memcmpMicros,
+                 (unsigned long long)steadyBytes, (unsigned long long)turn.slabCopyBytes,
+                 (unsigned long long)turn.memcmpBytes, (unsigned long long)turnBytes,
+                 (unsigned long long)movedInstance.storageBytes, (unsigned long long)movedInstance.storageMicros);
+    CHECK(steady.slabCopyBytes > 0);  // every draw's slot is written from its program's slab, every frame
+    CHECK(steadyBytes > 0);
+    CHECK(steady.memcmpBytes == steadyBytes);  // one whole-arena pass found nothing to send
+    CHECK(turn.slabCopyBytes > 0);
+    CHECK(turnBytes > 0);
+    CHECK(turn.memcmpBytes >= turnBytes);  // every slot moved, so the compare read at least the arena
+    CHECK(movedInstance.storageBytes > 0);
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4197,4 +4313,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
              {"indirect_record", indirectRecord},
              {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
-             {"main_instance_frustum_cull", mainInstanceFrustumCull})
+             {"main_instance_frustum_cull", mainInstanceFrustumCull},
+             {"uniform_scan_counters", uniformScanCounters})
