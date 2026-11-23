@@ -1,6 +1,6 @@
 /// <reference types="vite/client" />
 /**
- * Character-dynamics verification scene (PRD epic `docs/PRDs/Unreal/character-dynamics/`).
+ * Character-dynamics verification scene (PRD epic `docs/PRDs/done/character-dynamics/`, follow-up PRD-914).
  *
  * One animated mannequin wears a cape and runs a fixed motion script: idle, jog, turn, sprint,
  * hard stop, jump, snap turn, teleport. The scene measures what a cape must do on a moving body

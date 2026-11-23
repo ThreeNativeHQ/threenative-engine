@@ -23,7 +23,7 @@ flowchart LR
 
 ## What we have today (measured 2026-11-22)
 
-`SoftBody3D` (`packages/core/src/softbody.ts`) is one explicit mass-spring kernel in TSL compute: one spring per triangle edge, one stiffness, exponential damping, pins that snap to their initial **local** position, axis-aligned box collisions, and simulation in the mesh's local space. It has no bend, tether, body collider, skinning link, teleport guard or self-collision. It cannot be parented under a bone, because a reparent fires `removed` and that detaches it. Hair has no code: [PRD-671](../rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md) (strands) and [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md) (cards) never started.
+`SoftBody3D` (`packages/core/src/softbody.ts`) is one explicit mass-spring kernel in TSL compute: one spring per triangle edge, one stiffness, exponential damping, pins that snap to their initial **local** position, axis-aligned box collisions, and simulation in the mesh's local space. It has no bend, tether, body collider, skinning link, teleport guard or self-collision. It cannot be parented under a bone, because a reparent fires `removed` and that detaches it. Hair has no code: [PRD-671](../../Unreal/rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md) (strands) and [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md) (cards) never started.
 
 Baseline run: `examples/character-dynamics`, `?arm=softbody`, owned Wasm engine, RTX 2080, headed WebGPU. The cape gets the incumbent's best chance: its frame follows `spine_03` every tick and its gravity is turned into that frame.
 
