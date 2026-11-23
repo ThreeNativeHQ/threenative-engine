@@ -2,13 +2,13 @@
 prd_contract: v1
 ---
 
-# PRD-907 — A cape on a skinned character trails, swings and stays out of the body
+# PRD-911 — A cape on a skinned character trails, swings and stays out of the body
 
 **Status:** NOT STARTED
-**Priority:** P1 — The incumbent `SoftBody3D` stretches a cape to 2.4× its length and passes it through the legs (PRD-906 baseline). Every "character with a cape" request ships that today.
+**Priority:** P1 — The incumbent `SoftBody3D` stretches a cape to 2.4× its length and passes it through the legs (PRD-910 baseline). Every "character with a cape" request ships that today.
 **Complexity:** 8 (HIGH) — vendored solver merge (+2), skinned pins on GPU (+2), inertia and teleport guards (+2), body capsules auto-measured (+1), native proof (+1)
 **Owner:** João
-**Depends on:** [PRD-906](PRD-906-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (scene, probe, Unreal reference). Related: [PRD-730](../animation/PRD-730-distant-characters-skin-once-and-cost-40-percent-less-cpu.md) (skin once on GPU).
+**Depends on:** [PRD-910](PRD-910-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (scene, probe, Unreal reference). Related: [PRD-730](../animation/PRD-730-distant-characters-skin-once-and-cost-40-percent-less-cpu.md) (skin once on GPU).
 
 ## Context
 
@@ -23,13 +23,13 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 - **Inertia.** Simulation in world space, with Unreal's reference-frame split: linear and angular velocity scale 0.75 and fictitious forces on by default (`ChaosClothConfig.h:413,446,479-492`). Overrides: `velocityScale`, `angularVelocityScale`, `fictitiousForces`.
 - **Guards.** Teleport when the root moves farther than 300 cm (scaled to the measured character height) in a step, or when dt is above 1.5× the step. Teleport drops velocity; `reset()` restores the skinned pose (`SkeletalMeshComponent.cpp:471-473`, `ChaosClothingSimulationCloth.cpp:1101-1129`). An edge ratio past the extreme-deformation threshold resets the cloth (`ChaosClothingSimulationSolver.cpp:2293-2330`).
 - **Body.** `bodyColliders: "auto"` (the default for a skinned source) measures one capsule per torso, upper-leg and upper-arm bone from the bind pose and its skin weights. They follow bones, are interpolated per substep, and use thickness 1 cm and friction 0.8 (`PBDSoftBodyCollisionConstraint.h:215-217`). Override: `bodyColliders: [...]` or `false`. `softBodyCollision` boxes keep working.
-- **Wind.** One `wind` vector or a `WindField3D` that cloth and hair (PRD-908) both read, with per-triangle drag 0.035 and lift 0.035 at air density 1.225 (`ChaosClothConfig.h:318,344`, `ChaosClothingSimulationCloth.cpp:41`).
+- **Wind.** One `wind` vector or a `WindField3D` that cloth and hair (PRD-912) both read, with per-triangle drag 0.035 and lift 0.035 at air density 1.225 (`ChaosClothConfig.h:318,344`, `ChaosClothingSimulationCloth.cpp:41`).
 - **Fast by construction.** All of it runs in TSL compute on the owned engine and the desktop host. Positions stay on the GPU. The render mesh reads them in its position node. No CPU readback happens unless `readbackEveryFrames` asks for it.
 - **Searchable.** The JSDoc carries `@situation` lines for "cape on a character", "skirt", "coat tails", "cloth sticks to the body" and "cloth on a skinned mesh". The convention "cloth stays out of the body that wears it" joins `packages/create-threenative/conventions.json`.
 
 ## Acceptance Criteria
 
-- [ ] AC-1: On the PRD-906 scene (`?arm=cloth`, owned engine), max edge stretch stays ≤ 10% in every phase (the incumbent reaches 141%). proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
+- [ ] AC-1: On the PRD-910 scene (`?arm=cloth`, owned engine), max edge stretch stays ≤ 10% in every phase (the incumbent reaches 141%). proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
 - [ ] AC-2: No cape vertex sits deeper than the collision thickness inside the measured body capsules in any phase (the incumbent puts up to 29 vertices inside). proof: same scenario.
 - [ ] AC-3: The hem trail angle in jog and sprint, and the swing after the hard stop, fall within the Unreal reference ± its 3-run spread. proof: same scenario against `tools/unreal-reference/character-dynamics/reference.json`.
 - [ ] AC-4: After the 8 m teleport, the first post-teleport sample shows stretch ≤ 10% and no velocity carried over. proof: same scenario.
@@ -47,7 +47,7 @@ Upgrade `SoftBody3D` in place. It keeps its Godot name and its flag API, so `exa
 #### Phase 2: The body and the wind
 
 - [ ] `bodyColliders: "auto"` measures capsules from the mannequin's skin weights and reports them. The override replaces them. proof: unit spec on the mannequin bind pose, plus AC-2.
-- [ ] `WindField3D` drives cloth drag and lift, and the same field is readable by PRD-908. proof: unit spec on a still cloth in a known wind, plus the scene's wind phase.
+- [ ] `WindField3D` drives cloth drag and lift, and the same field is readable by PRD-912. proof: unit spec on a still cloth in a known wind, plus the scene's wind phase.
 
 #### Phase 3: Fast on every engine, findable by agents
 

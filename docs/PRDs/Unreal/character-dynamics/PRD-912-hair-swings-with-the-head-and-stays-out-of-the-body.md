@@ -2,13 +2,13 @@
 prd_contract: v1
 ---
 
-# PRD-908 — Hair swings with the head and stays out of the body
+# PRD-912 — Hair swings with the head and stays out of the body
 
 **Status:** NOT STARTED
 **Priority:** P2 — No hair moves today. A character request with a ponytail or long hair gets a rigid mesh.
 **Complexity:** 7 (HIGH) — spring bone chain (+1), GPU guide strands transliterated from WGSL (+2), card skinning to guides (+2), shared colliders and wind (+1), native proof (+1)
 **Owner:** João
-**Depends on:** [PRD-906](PRD-906-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (scene, hair probe, reference). Reuses the body colliders and `WindField3D` from [PRD-907](PRD-907-a-cape-on-a-skinned-character-trails-swings-and-stays-out-of-the-body.md).
+**Depends on:** [PRD-910](PRD-910-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (scene, hair probe, reference). Reuses the body colliders and `WindField3D` from [PRD-911](PRD-911-a-cape-on-a-skinned-character-trails-swings-and-stays-out-of-the-body.md).
 
 ## Context
 
@@ -18,13 +18,13 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 
 - **Bone chains, the default for game characters.** `SpringBoneChain3D` is a `Skeleton3D` modifier, in Godot's `SpringBoneSimulator3D` vocabulary. It takes a root bone name and simulates the chain below it with Unreal's SpringBone defaults, a stretch limit and a reset past an error threshold. It suits a ponytail, braids, ears, tails, a scarf on bones and dangling props. The work is tiny per bone, so it runs on the CPU in the fixed step; it has no GPU round trip.
 - **Guide strands, for hair cards and strands.** `HairStrands3D` takes guide curves (from a GLB curve, card spines, or generated), and simulates them in TSL compute. The kernel is a line-by-line transliteration of the frostbitten WGSL, with its MIT header. Cards (PRD-909) or ribbons (PRD-671) follow the guides in their position node, so the sim never leaves the GPU.
-- **Shared world.** Both read the PRD-907 body capsules (head and neck capsules auto-measured) and `WindField3D`. Both have teleport and reset guards with the PRD-907 thresholds.
+- **Shared world.** Both read the PRD-911 body capsules (head and neck capsules auto-measured) and `WindField3D`. Both have teleport and reset guards with the PRD-911 thresholds.
 - **Auto by default.** The chain stiffness and damping are Unreal's. Segment rest lengths come from the bind pose. Collider radii come from the skin. Each value has a named override.
 - **Searchable.** `@situation` lines cover "ponytail", "long hair moves", "braid", "tail swings", "hair cards follow the head" and "jiggle bones".
 
 ## Acceptance Criteria
 
-- [ ] AC-1: On the PRD-906 scene (`?arm=hair`), no hair vertex enters the head or neck capsule beyond its thickness in any phase. proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
+- [ ] AC-1: On the PRD-910 scene (`?arm=hair`), no hair vertex enters the head or neck capsule beyond its thickness in any phase. proof: `examples/character-dynamics/playtests/acceptance.playtest.json`
 - [ ] AC-2: The max hair segment stretch stays ≤ 5% in every phase. proof: same scenario.
 - [ ] AC-3: The ponytail tip swing after the hard stop and the snap turn is within the Unreal reference ± its 3-run spread. proof: same scenario against `tools/unreal-reference/character-dynamics/reference.json`.
 - [ ] AC-4: Hair simulation costs ≤ 0.15 ms GPU at 1080p on the RTX 2080 owned-engine lane for 2,000 guides of 16 points, with no steady-state readback. proof: `node packages/playtest/dist/runner/cli.js perf` with `?probe=0`.

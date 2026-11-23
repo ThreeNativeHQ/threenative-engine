@@ -7,15 +7,15 @@
 
 | PRD | Outcome | Depends on |
 |---|---|---|
-| [PRD-906](PRD-906-a-running-character-proves-its-cape-and-hair-in-one-scene.md) | One verification scene measures cape and hair on a running, turning, jumping mannequin, against an Unreal 5.8.3 reference | none |
-| [PRD-907](PRD-907-a-cape-on-a-skinned-character-trails-swings-and-stays-out-of-the-body.md) | `SoftBody3D` simulates cloth on a skinned character: skinned pins, XPBD, tethers, body capsules, teleport guards | 906 |
-| [PRD-908](PRD-908-hair-swings-with-the-head-and-stays-out-of-the-body.md) | Hair and bone chains swing with the head: a spring bone chain and GPU guide strands | 906, 907 (colliders, wind) |
+| [PRD-910](PRD-910-a-running-character-proves-its-cape-and-hair-in-one-scene.md) | One verification scene measures cape and hair on a running, turning, jumping mannequin, against an Unreal 5.8.3 reference | none |
+| [PRD-911](PRD-911-a-cape-on-a-skinned-character-trails-swings-and-stays-out-of-the-body.md) | `SoftBody3D` simulates cloth on a skinned character: skinned pins, XPBD, tethers, body capsules, teleport guards | 906 |
+| [PRD-912](PRD-912-hair-swings-with-the-head-and-stays-out-of-the-body.md) | Hair and bone chains swing with the head: a spring bone chain and GPU guide strands | 906, 907 (colliders, wind) |
 | [PRD-909](PRD-909-hair-cards-read-as-hair-under-any-light.md) | Hair cards read as hair: a generated hair material with coverage, root-tip colour and an anisotropic highlight | 906 |
 
 ```mermaid
 flowchart LR
-  S[PRD-906 verification scene + Unreal reference] --> C[PRD-907 skinned cloth]
-  S --> H[PRD-908 hair motion]
+  S[PRD-910 verification scene + Unreal reference] --> C[PRD-911 skinned cloth]
+  S --> H[PRD-912 hair motion]
   S --> M[PRD-909 hair material]
   C -- body colliders, wind --> H
   M -- cards that 908 moves --> H
@@ -38,7 +38,7 @@ Baseline run: `examples/character-dynamics`, `?arm=softbody`, owned Wasm engine,
 | snap turn | 0.73 m | 141% | 19 |
 | teleport 8 m | 0.73 m | 112% | 23 |
 
-❌ The cape reads as a stiff board, never trails the motion (it lives in the body frame), stretches to 2.4× its length, and passes through the legs. Upstream three.js gives the same numbers (max stretch 135%), so the fault is the solver, not the engine. ⚠️ The owned engine also logs `createBindGroup ... resource ... undefined` three times in `WebGPURenderer.render` on this scene (PRD-906 owns the fix).
+❌ The cape reads as a stiff board, never trails the motion (it lives in the body frame), stretches to 2.4× its length, and passes through the legs. Upstream three.js gives the same numbers (max stretch 135%), so the fault is the solver, not the engine. ⚠️ The owned engine also logs `createBindGroup ... resource ... undefined` three times in `WebGPURenderer.render` on this scene (PRD-910 owns the fix).
 
 ## What Unreal does (UE 5.8.3, read 2026-11-22)
 
@@ -68,4 +68,4 @@ Owner rule (2026-11-03): copy an MIT upstream verbatim with its licence notice. 
 2. **Flexible and searchable.** Each new API is an option on a Godot-named node (`SoftBody3D`, `Skeleton3D` modifiers). Every value has a named override on the same object. Each export carries `@situation`, `@constraint`, `@override` and `@example`, so `engine_search_capabilities` returns it for "cape", "skirt", "cloth on a character", "hair", "ponytail" and "hair cards". A PRD is not done until a cold search for its situation returns its row first.
 3. **Auto by default.** The engine measures what it can: body capsules from the skeleton and skin weights, the cloth mask from vertex colour or skin weights, the rest lengths, and the teleport threshold from the character's height. The game overrides each one by name.
 4. **Mechanism in `packages/core`, look in generated `src/render/`.** The solver, colliders and wind sit in core. The hair material, cape material and colours sit in the template source.
-5. **One proof scene.** Every claim is a number from `examples/character-dynamics` (PRD-906), on the owned engine, compared with the Unreal reference run of the same scene.
+5. **One proof scene.** Every claim is a number from `examples/character-dynamics` (PRD-910), on the owned engine, compared with the Unreal reference run of the same scene.

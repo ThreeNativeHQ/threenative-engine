@@ -2,10 +2,10 @@
 prd_contract: v1
 ---
 
-# PRD-906 — A running character proves its cape and hair in one scene
+# PRD-910 — A running character proves its cape and hair in one scene
 
 **Status:** PARTIAL — the scene and its cape probe run (2026-11-22); hair probe, Unreal reference and owned-engine bind-group fix are open.
-**Priority:** P1 — PRD-907, PRD-908 and PRD-909 cannot claim a result until this scene measures hair and holds an Unreal reference.
+**Priority:** P1 — PRD-911, PRD-912 and PRD-909 cannot claim a result until this scene measures hair and holds an Unreal reference.
 **Complexity:** 6 (HIGH) — new example and probe (+2), Unreal reference scene with Chaos Cloth and a groom (+2), owned-engine bind-group bug (+2)
 **Owner:** João
 **Depends on:** none. Epic: [character dynamics](README.md).
@@ -49,7 +49,7 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 #### Phase 2: The scene measures hair and fails closed
 
 - [ ] A hair arm puts a ponytail chain and a fringe of cards on the head, and the probe prints hair metrics per phase. proof: the AC-1 command.
-- [ ] The playtest asserts the per-phase bounds that PRD-907 and PRD-908 set, read from `GameState.phases`. The incumbent arm fails them. proof: `examples/character-dynamics/playtests/acceptance.playtest.json` (red on `?arm=softbody`, green on the new arms).
+- [ ] The playtest asserts the per-phase bounds that PRD-911 and PRD-912 set, read from `GameState.phases`. The incumbent arm fails them. proof: `examples/character-dynamics/playtests/acceptance.playtest.json` (red on `?arm=softbody`, green on the new arms).
 - [ ] The probe math has a unit check: a known cape pose gives a known stretch, trail and penetration count. proof: `pnpm --filter character-dynamics exec vitest run`
 
 #### Phase 3: The Unreal reference
@@ -64,4 +64,4 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 ## Decisions
 
 - 2026-11-22 (agent): the incumbent gets its best chance in the baseline. Its frame follows `spine_03` by hand and its gravity turns into that frame, because `SoftBody3D` cannot be parented under a bone. A worse baseline would prove nothing.
-- 2026-11-22 (agent): the metrics are behavioural numbers, not pixels, because the claim is about motion. A visual judge still runs on the PRD-907 and PRD-908 captures.
+- 2026-11-22 (agent): the metrics are behavioural numbers, not pixels, because the claim is about motion. A visual judge still runs on the PRD-911 and PRD-912 captures.

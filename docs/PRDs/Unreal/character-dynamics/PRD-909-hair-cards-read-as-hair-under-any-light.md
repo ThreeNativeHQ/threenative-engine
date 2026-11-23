@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P2 — No hair material exists. A character with hair cards renders them as opaque or sorted-alpha planes with a plastic highlight.
 **Complexity:** 6 (MEDIUM) — vendored TSL card path (+1), alpha-to-coverage and core pass on the owned engine (+2), shadow alpha agreement (+1), visual judge (+1), native proof (+1)
 **Owner:** João
-**Depends on:** [PRD-906](PRD-906-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (the scene that shows the hair). Supersedes the unstarted plan in [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md). Strand drawing stays in [PRD-671](../rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md).
+**Depends on:** [PRD-910](PRD-910-a-running-character-proves-its-cape-and-hair-in-one-scene.md) (the scene that shows the hair). Supersedes the unstarted plan in [PRD-VQ-15](../../rendering/PRD-VQ-15-hair-card-material-qualification.md). Strand drawing stays in [PRD-671](../rendering/PRD-671-a-character-wears-strand-hair-that-catches-light-along-each-strand.md).
 
 ## Context
 
@@ -23,7 +23,7 @@ Unreal draws far and low-tier hair as cards and near hair as strands (PRD-671). 
 
 ## Acceptance Criteria
 
-- [ ] AC-1: At the close pose of the PRD-906 scene, a fresh visual judge returns IMPROVEMENT for the hair material over a plain `MeshStandardMaterial` with alpha test, and names the highlight and the soft edge. proof: headed `--browser-recipe webgpu` captures on the owned engine, 2 runs per arm, judge subagent.
+- [ ] AC-1: At the close pose of the PRD-910 scene, a fresh visual judge returns IMPROVEMENT for the hair material over a plain `MeshStandardMaterial` with alpha test, and names the highlight and the soft edge. proof: headed `--browser-recipe webgpu` captures on the owned engine, 2 runs per arm, judge subagent.
 - [ ] AC-2: The hair shadow coverage matches the visible coverage within 5% of the masked pixels. proof: `pnpm exec vitest run packages/create-threenative/__tests__/hair-card-material.spec.ts`
 - [ ] AC-3: The desktop host renders the hair close pose within the conformance tolerance. proof: `pnpm parity --target desktop --only-tests hair-cards`
 
@@ -32,7 +32,7 @@ Unreal draws far and low-tier hair as cards and near hair as strands (PRD-671). 
 #### Phase 1: The material in a template
 
 - [ ] The vendored `hairNodes` land with their MIT header, behind `createHairCardMaterial` in the starter template's `src/render/`. proof: `pnpm exec vitest run packages/create-threenative/__tests__/hair-card-material.spec.ts`
-- [ ] The PRD-906 hair arm wears cards with the material. proof: AC-1.
+- [ ] The PRD-910 hair arm wears cards with the material. proof: AC-1.
 
 #### Phase 2: Shadows and every engine
 
@@ -41,7 +41,7 @@ Unreal draws far and low-tier hair as cards and near hair as strands (PRD-671). 
 
 ## Blocked on
 
-- A license-clear hair-card asset with a coverage atlas. Unblocked by a CC0 search through the asset MCP (`asset_search` "hair cards"), or by cards baked from PRD-908 guides.
+- A license-clear hair-card asset with a coverage atlas. Unblocked by a CC0 search through the asset MCP (`asset_search` "hair cards"), or by cards baked from PRD-912 guides.
 
 ## Decisions
 
