@@ -89,6 +89,15 @@ export interface ISkinnedSoftBody3DOptions {
    * one compute call per substep with Jacobi passes. `true` with more than 256 particles throws.
    */
   readonly singleDispatch?: boolean;
+  /**
+   * Strength of the centrifugal force the reference bone's turning puts on the cloth, 0..2: 1 is Chaos
+   * Cloth's FullScale model, 0 is none. The force is -w x (w x (x - bone position)) with w the bone's full
+   * turn rate this step, whatever `angularVelocityScale` removes from the carry
+   * (UE 5.8.3: Engine/Plugins/ChaosCloth/Source/ChaosCloth/Public/ChaosCloth/ChaosClothConfig.h:475-492,
+   * Engine/Plugins/ChaosCloth/Source/ChaosCloth/Private/ChaosCloth/ChaosClothingSimulationSolver.cpp:1341-1349,
+   * Engine/Source/Runtime/Experimental/Chaos/Public/Chaos/SoftsExternalForces.h:61-65,226). Default 1.
+   */
+  readonly fictitiousAngularScale?: number;
   /** Stretch constraint stiffness, 0..1. Default 1. */
   readonly stretchStiffness?: number;
   /** Bend constraint stiffness, 0..1. Default 0.25. */
@@ -631,6 +640,30 @@ export function frameCarry(
     .multiplyScalar(1 - linearShare);
 }
 
+/**
+ * @internal Chaos's fictitious angular velocity: the reference bone's whole turn this step, as axis times
+ * angle taken in its old frame and carried into world space by its new rotation, per second, times the
+ * scale (UE 5.8.3: ChaosClothingSimulationSolver.cpp:1170-1176,1341-1348). A zero step gives zero.
+ */
+export function fictitiousAngularVelocity(
+  prevQuaternion: Quaternion,
+  quaternion: Quaternion,
+  timeStep: number,
+  scale: number,
+  out: Vector3,
+): Vector3 {
+  const delta = prevQuaternion.clone().invert().multiply(quaternion);
+  if (delta.w < 0) delta.set(-delta.x, -delta.y, -delta.z, -delta.w);
+  const sine = Math.hypot(delta.x, delta.y, delta.z);
+  if (sine < 1e-9 || timeStep <= 0) return out.set(0, 0, 0);
+  const angle = 2 * Math.atan2(sine, delta.w);
+  return out
+    .set(delta.x, delta.y, delta.z)
+    .multiplyScalar(angle / sine)
+    .applyQuaternion(quaternion)
+    .multiplyScalar(scale / timeStep);
+}
+
 function rotate(q: Node<"vec4">, v: Node<"vec3">): Node<"vec3"> {
   const u = q.xyz;
   const t = u.cross(v).mul(2);
@@ -643,6 +676,8 @@ export interface ISkinnedClothState {
   readonly nodes: readonly ComputeNode[];
   readonly uniqueVertexCount: number;
   readonly springCount: number;
+  /** The fictitious angular velocity of the last step, rad/s in world space (see `fictitiousAngularScale`). */
+  readonly spin: Vector3;
   /** True when the whole frame is one dispatch (PRD-913). */
   readonly singleDispatch: boolean;
   readonly capsules: readonly ISoftBodyCapsule[];
@@ -696,6 +731,12 @@ export function createSkinnedCloth(
   const frictionValue = check("friction", options.friction ?? 0.8);
   const tetherSlack = check("tetherSlack", options.tetherSlack ?? 0);
   const timeStep = check("timeStep", options.timeStep ?? 1 / 60, 1e-4, 1);
+  const fictitiousScale = check(
+    "fictitiousAngularScale",
+    options.fictitiousAngularScale ?? 1,
+    0,
+    2,
+  );
   const extremeDeformationEdgeRatio =
     options.extremeDeformationEdgeRatio === undefined
       ? undefined
@@ -917,7 +958,11 @@ export function createSkinnedCloth(
   const alpha = uniform(1);
   const alphaPrev = uniform(0);
   const h = uniform(timeStep / substeps);
-  const forces: UniformArrayNode<"vec4"> = uniformArray([new Vector4(), new Vector4()], "vec4");
+  // Gravity, wind, then the fictitious angular velocity and the reference bone's position.
+  const forces: UniformArrayNode<"vec4"> = uniformArray(
+    Array.from({ length: 4 }, () => new Vector4()),
+    "vec4",
+  );
   const damping = uniform(dampingValue);
   const drag = uniform(dragValue);
   const lift = uniform(liftValue);
@@ -1015,10 +1060,14 @@ export function createSkinnedCloth(
     at: Node<"float">,
   ): Node<"vec3"> => {
     const m = infoBuffer.element(instanceIndex).x;
+    // Centrifugal acceleration of a reference frame that turns: -w x (w x r).
+    const w = forces.element(2).xyz;
+    const centrifugal = w.cross(w.cross(from.sub(forces.element(3).xyz))).negate();
     v.addAssign(
       forces
         .element(0)
         .xyz.add(aero.mul(inverseMassBuffer.element(instanceIndex)))
+        .add(centrifugal)
         .mul(h),
     );
     v.mulAssign(exp(damping.mul(h).negate()));
@@ -1239,6 +1288,7 @@ export function createSkinnedCloth(
   const prevRefQuaternion = refQuaternion.clone();
   const nowPosition = new Vector3();
   const nowQuaternion = new Quaternion();
+  const spin = new Vector3();
   const carryOut = { rotation: new Quaternion(), translation: new Vector3() };
   const a = new Vector3();
   const b = new Vector3();
@@ -1298,6 +1348,7 @@ export function createSkinnedCloth(
     substeps,
     gravity,
     wind,
+    spin,
     windFromScene: options.wind === undefined,
     get lastReset() {
       return lastReset;
@@ -1450,6 +1501,16 @@ export function createSkinnedCloth(
       }
       (forces.array[0] as Vector4).set(gravity.x, gravity.y, gravity.z, 0);
       (forces.array[1] as Vector4).set(wind.x, wind.y, wind.z, 0);
+      // A teleport has no turn: the carry takes all of it, so no centrifugal force follows it.
+      fictitiousAngularVelocity(
+        prevRefQuaternion,
+        nowQuaternion,
+        teleport ? 0 : timeStep,
+        fictitiousScale,
+        spin,
+      );
+      (forces.array[2] as Vector4).set(spin.x, spin.y, spin.z, 0);
+      (forces.array[3] as Vector4).set(nowPosition.x, nowPosition.y, nowPosition.z, 0);
       prevRefPosition.copy(nowPosition);
       prevRefQuaternion.copy(nowQuaternion);
       // One compute call per substep: a call uploads the uniforms once and then encodes its passes

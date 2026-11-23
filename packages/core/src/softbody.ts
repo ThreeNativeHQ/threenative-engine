@@ -568,6 +568,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
             bodyCapsules: this.#skinned.capsules.length,
             substeps: this.#skinned.substeps,
             singleDispatch: this.#skinned.singleDispatch,
+            fictitiousAngularVelocity: this.#skinned.spin.toArray(),
             teleportDistance: this.#skinned.teleportDistance,
             lastReset: this.#skinned.lastReset,
             resets: this.#skinned.resets,

@@ -20,6 +20,7 @@ import {
   buildTethers,
   colourClothConstraints,
   createSkinnedCloth,
+  fictitiousAngularVelocity,
   fitCapsule,
   frameCarry,
   measureBodyCapsules,
@@ -208,6 +209,56 @@ describe("skinned SoftBody3D helpers", () => {
     frameCarry(new Vector3(), new Quaternion(), new Vector3(4, 0, 0), turn, 0, 0, out);
     expect(out.translation.x).toBeCloseTo(4);
     expect(out.rotation.angleTo(turn)).toBeCloseTo(0);
+  });
+
+  it("gives Chaos's fictitious angular velocity: the whole turn of the reference bone, per second, in world space", () => {
+    const out = new Vector3();
+    const turn = new Quaternion().setFromAxisAngle(new Vector3(0, 1, 0), 0.1);
+    // 0.1 rad about world Y in 1/60 s is 6 rad/s, whatever angularVelocityScale carried.
+    fictitiousAngularVelocity(new Quaternion(), turn, 1 / 60, 1, out);
+    expect(out.toArray()).toEqual([0, expect.closeTo(6, 5), 0]);
+    expect(fictitiousAngularVelocity(new Quaternion(), turn, 1 / 60, 2, out).y).toBeCloseTo(12, 5);
+    expect(fictitiousAngularVelocity(new Quaternion(), turn, 1 / 60, 0, out).length()).toBe(0);
+    // The turn is read in the old frame and carried by the new rotation: a bone lying on its back that
+    // turns about its own up axis spins about the world axis that axis now points along.
+    const lying = new Quaternion().setFromAxisAngle(new Vector3(1, 0, 0), Math.PI / 2);
+    const lyingTurned = lying.clone().multiply(turn);
+    fictitiousAngularVelocity(lying, lyingTurned, 1 / 60, 1, out);
+    expect(out.length()).toBeCloseTo(6, 4);
+    expect(out.z).toBeCloseTo(6, 0);
+    // The short way round: a negated quaternion is the same turn, and a still bone has none.
+    const negated = new Quaternion(-turn.x, -turn.y, -turn.z, -turn.w);
+    expect(fictitiousAngularVelocity(new Quaternion(), negated, 1 / 60, 1, out).y).toBeCloseTo(
+      6,
+      4,
+    );
+    expect(fictitiousAngularVelocity(turn, turn, 1 / 60, 1, out).length()).toBe(0);
+  });
+
+  it("reports the fictitious angular velocity of a turning reference bone and none after a teleport", () => {
+    const { scene, root, cape } = character();
+    const cloth = new SoftBody3D(cape, { bodyColliders: false });
+    scene.add(cloth);
+    cloth.process(renderer([]));
+    expect(cloth.debug().fictitiousAngularVelocity).toEqual([0, 0, 0]);
+    root.rotation.y += 0.05;
+    root.updateMatrixWorld(true);
+    cloth.process(renderer([]));
+    const [x, y, z] = cloth.debug().fictitiousAngularVelocity as number[];
+    expect(y).toBeCloseTo(3, 4); // 0.05 rad in 1/60 s
+    expect(Math.hypot(x as number, z as number)).toBeLessThan(1e-4);
+    root.rotation.y += 2; // past teleportRotation: the carry takes all of it
+    root.updateMatrixWorld(true);
+    cloth.process(renderer([]));
+    expect(cloth.debug().fictitiousAngularVelocity).toEqual([0, 0, 0]);
+    const off = new SoftBody3D(character().cape, {
+      bodyColliders: false,
+      fictitiousAngularScale: 0,
+    });
+    expect(off.debug().fictitiousAngularVelocity).toEqual([0, 0, 0]);
+    expect(() => new SoftBody3D(character().cape, { fictitiousAngularScale: 3 })).toThrow(
+      /fictitiousAngularScale/,
+    );
   });
 
   it("measures a body capsule from the skin: a 0.15 m cylinder gives a 0.15 m capsule", () => {

@@ -863,6 +863,8 @@ class CharacterDynamics extends Scene<IState> {
     // Every landed readback is measured, not only the newest: under the stepped playtest clock a
     // copy takes tens of steps to land, and a per-phase max over the newest sample alone missed most
     // steps (and the 45-step teleport phase entirely).
+    const seriesRows: (string | number)[][] | undefined =
+      new URLSearchParams(globalThis.location?.search ?? "").get("series") === "1" ? [] : undefined;
     const measure = (): void => {
       for (const sample of cloth.takeSamples()) measureSample(sample);
     };
@@ -895,11 +897,19 @@ class CharacterDynamics extends Scene<IState> {
       if (phaseName === "settle") restHem = hemC.clone();
       if (restHem !== undefined)
         metrics.hemOffset = Math.max(metrics.hemOffset, hemC.distanceTo(restHem));
-      metrics.hemTrail = Math.max(metrics.hemTrail, trailAngleDegrees(topWorld, hemWorld));
-      metrics.maxStretch = Math.max(
-        metrics.maxStretch,
-        maxEdgeStretch(data, topology.springs, topology.restLengths),
-      );
+      const trailNow = trailAngleDegrees(topWorld, hemWorld);
+      const stretchNow = maxEdgeStretch(data, topology.springs, topology.restLengths);
+      // `?series=1`: one row per measured step, [step, phase, trail, hem offset, stretch], for a per-frame A/B.
+      if (seriesRows !== undefined)
+        seriesRows.push([
+          sampleStep - 1,
+          phaseName,
+          Number(trailNow.toFixed(2)),
+          Number((restHem === undefined ? 0 : hemC.distanceTo(restHem)).toFixed(4)),
+          Number(stretchNow.toFixed(4)),
+        ]);
+      metrics.hemTrail = Math.max(metrics.hemTrail, trailNow);
+      metrics.maxStretch = Math.max(metrics.maxStretch, stretchNow);
       // AC-2: free vertices (the pinned top row follows the skin) deeper than the collider thickness
       // inside the body capsules the solver measures, at the pose that produced this sample.
       const worldPositions = new Float32Array(free.length * 3);
@@ -1066,6 +1076,8 @@ class CharacterDynamics extends Scene<IState> {
       frameCtx.state.set(state);
       if (complete) {
         frameCtx.state.flush();
+        if (seriesRows !== undefined)
+          console.log(`TN_CHARACTER_DYNAMICS_SERIES:${JSON.stringify(seriesRows)}`);
         console.log(
           `TN_CHARACTER_DYNAMICS:${JSON.stringify({ arm: armName, finite, height, phases })}`,
         );
