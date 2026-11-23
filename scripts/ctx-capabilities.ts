@@ -108,7 +108,8 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     situations: [
       "slow motion",
       "bullet time",
-      "hit-stop freeze frame",
+      "freeze frame on impact",
+      "hitstop",
       "speed up or slow down the game",
       "fast forward the simulation",
     ],
