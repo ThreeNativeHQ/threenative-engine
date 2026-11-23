@@ -235,5 +235,7 @@ export interface ICtx<
    */
   readonly startup: IStartupStatus;
   readonly goto: (name: string) => Promise<void>;
+  /** Simulation speed multiplier, after Godot's `Engine.time_scale`. Default 1. */
+  timeScale: number;
   physics: TPhysics;
 }

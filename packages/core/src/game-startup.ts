@@ -647,6 +647,24 @@ export async function startGameWorld<TState extends Record<string, unknown>, TPh
     get alpha() {
       return loopState.current?.alpha ?? 0;
     },
+    /**
+     * Simulation speed multiplier, after Godot's `Engine.time_scale`.
+     *
+     * ```ts
+     * ctx.timeScale = 0.2; // slow motion
+     * ```
+     */
+    get timeScale() {
+      return loopState.current?.timeScale ?? 1;
+    },
+    set timeScale(value: number) {
+      const loop = loopState.current;
+      // No loop yet means the call ran before the frame loop existed, which is a mistake to fix at
+      // the call site rather than a value to queue: the loop is the only place the scale lives.
+      if (loop === undefined)
+        throw new Error("TN_TIME_SCALE_UNAVAILABLE: ctx.timeScale needs a started game.");
+      loop.timeScale = value;
+    },
     interpolate: (object) => interpolation.track(object),
     resetInterpolation: (object) => interpolation.reset(object),
     add: (object) => {
