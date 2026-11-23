@@ -17,6 +17,7 @@ import type { IRendererLike } from "../src/renderer.js";
 import {
   buildClothAdjacency,
   buildTethers,
+  fitCapsule,
   frameCarry,
   measureBodyCapsules,
   readClothMask,
@@ -198,6 +199,22 @@ describe("skinned SoftBody3D helpers", () => {
     const bones = measureBodyCapsules(cape).map((capsule) => capsule.bone);
     expect(bones).toContain(hand);
     expect(bones).not.toContain(finger);
+  });
+
+  it("fits Unreal's auto capsule: along the skin's long axis, enclosing it, past the child joint", () => {
+    // A 0.6 m arm of radius 0.05 skinned to one bone whose child joint sits 0.1 m out: the capsule
+    // follows the skin, not the bone-to-child segment (PhysicsAssetUtils.cpp:944-965).
+    const points: Vector3[] = [];
+    for (let i = 0; i <= 12; i++)
+      for (let k = 0; k < 8; k++) {
+        const angle = (k / 8) * Math.PI * 2;
+        points.push(new Vector3(i * 0.05, 1.4 + Math.cos(angle) * 0.05, Math.sin(angle) * 0.05));
+      }
+    const fit = fitCapsule(points);
+    expect(fit.radius).toBeCloseTo(0.0505, 3);
+    expect(Math.abs(fit.end.x - fit.start.x)).toBeCloseTo(0.303, 3);
+    expect((fit.end.x + fit.start.x) / 2).toBeCloseTo(0.3, 3);
+    expect(fit.start.y).toBeCloseTo(1.4, 3);
   });
 
   it("shrinks an auto capsule so the cloth's rest pose clears it by the collider thickness", () => {

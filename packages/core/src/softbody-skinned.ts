@@ -419,35 +419,14 @@ export function measureBodyCapsules(
   for (const [bone, points] of byBone) {
     if (!((merged.get(bone) ?? 0) >= MIN_BONE_SIZE) || points.length < 4) continue;
     bone.updateWorldMatrix(true, false);
-    a.setFromMatrixPosition(bone.matrixWorld);
-    const centroid = points
-      .reduce((sum, p) => sum.add(p), new Vector3())
-      .divideScalar(points.length);
-    const toward = centroid.clone().sub(a);
-    let end: Vector3 | undefined;
-    let bestDot = 0.2;
-    for (const child of bone.children) {
-      if ((child as { isBone?: boolean }).isBone !== true) continue;
-      const dir = child.getWorldPosition(new Vector3()).sub(a);
-      const dot = dir.clone().normalize().dot(toward.clone().normalize());
-      if (dir.lengthSq() > 1e-8 && dot > bestDot) {
-        bestDot = dot;
-        end = child.getWorldPosition(new Vector3());
-      }
-    }
-    b.copy(end ?? a.clone().addScaledVector(toward, 2));
+    // Unreal's auto capsule (UE 5.8.3: PhysicsAssetUtils.cpp:864-868, 881-889, 944-965): the principal
+    // axis of the skin's covariance, the skin's box in that frame, then a capsule along the box's longest
+    // side whose segment is that half-side and whose radius is the larger other half-side, both x1.01.
+    const fit = fitCapsule(points);
+    a.copy(fit.start);
+    b.copy(fit.end);
     const ab = b.clone().sub(a);
-    const distances = points
-      .map((p) => {
-        const t =
-          ab.lengthSq() > 1e-10
-            ? Math.min(1, Math.max(0, p.clone().sub(a).dot(ab) / ab.lengthSq()))
-            : 0;
-        return p.distanceTo(a.clone().addScaledVector(ab, t));
-      })
-      .sort((x, y) => x - y);
-    // The 40th percentile hugs the narrow side of a torso, where a cape lies, instead of the shoulders.
-    let radius = distances[Math.floor(distances.length * 0.4)] as number;
+    let radius = fit.radius;
     // A cloth that fits at rest stays at rest: no capsule may reach a rest cloth vertex, or collision and
     // the pins fight from the first step and the fight turns into velocity once the body moves.
     for (let v = 0; v + 2 < clearOf.length; v += 3) {
@@ -462,7 +441,7 @@ export function measureBodyCapsules(
     inverse.copy(bone.matrixWorld).invert();
     capsules.push({
       bone,
-      start: new Vector3(),
+      start: a.clone().applyMatrix4(inverse),
       end: b.clone().applyMatrix4(inverse),
       radius,
       weight: points.length,
@@ -472,6 +451,70 @@ export function measureBodyCapsules(
     .sort((x, y) => y.weight - x.weight)
     .slice(0, maxCapsules)
     .map(({ weight: _weight, ...capsule }) => capsule);
+}
+
+/** @internal Unreal's FKSphylElem fit to a point set, in the points' own frame. */
+export function fitCapsule(points: readonly Vector3[]): {
+  readonly start: Vector3;
+  readonly end: Vector3;
+  readonly radius: number;
+} {
+  const mean = points.reduce((sum, p) => sum.add(p), new Vector3()).divideScalar(points.length);
+  let xx = 0;
+  let xy = 0;
+  let xz = 0;
+  let yy = 0;
+  let yz = 0;
+  let zz = 0;
+  for (const p of points) {
+    const dx = p.x - mean.x;
+    const dy = p.y - mean.y;
+    const dz = p.z - mean.z;
+    xx += dx * dx;
+    xy += dx * dy;
+    xz += dx * dz;
+    yy += dy * dy;
+    yz += dy * dz;
+    zz += dz * dz;
+  }
+  // Power iteration for the covariance's largest eigenvector (Unreal's ComputeEigenVector).
+  const axis = new Vector3(1, 1, 1).normalize();
+  for (let n = 0; n < 32; n++) {
+    const next = new Vector3(
+      xx * axis.x + xy * axis.y + xz * axis.z,
+      xy * axis.x + yy * axis.y + yz * axis.z,
+      xz * axis.x + yz * axis.y + zz * axis.z,
+    );
+    if (next.lengthSq() < 1e-20) break;
+    axis.copy(next.normalize());
+  }
+  const x = axis
+    .clone()
+    .cross(Math.abs(axis.y) < 0.9 ? new Vector3(0, 1, 0) : new Vector3(1, 0, 0))
+    .normalize();
+  const frame = [x, axis.clone().cross(x).normalize(), axis];
+  const low = [Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY, Number.POSITIVE_INFINITY];
+  const high = [Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY, Number.NEGATIVE_INFINITY];
+  for (const p of points)
+    frame.forEach((direction, k) => {
+      const t = p.dot(direction);
+      low[k] = Math.min(low[k] as number, t);
+      high[k] = Math.max(high[k] as number, t);
+    });
+  const extent = frame.map((_, k) => ((high[k] as number) - (low[k] as number)) / 2);
+  const center = frame.reduce(
+    (sum, direction, k) =>
+      sum.addScaledVector(direction, ((high[k] as number) + (low[k] as number)) / 2),
+    new Vector3(),
+  );
+  const longest = extent.indexOf(Math.max(...extent));
+  const half = ((extent[longest] as number) * 1.01) / 2;
+  const along = frame[longest] as Vector3;
+  return {
+    start: center.clone().addScaledVector(along, -half),
+    end: center.clone().addScaledVector(along, half),
+    radius: Math.max(...extent.filter((_, k) => k !== longest)) * 1.01,
+  };
 }
 
 /** @internal Fraction of the reference motion carried rigidly: x' = pivot + t + R (x - pivot). */

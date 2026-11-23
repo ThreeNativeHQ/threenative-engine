@@ -47,7 +47,16 @@ import {
   SkinnedMesh,
   Vector3,
 } from "three";
-import { attribute, cameraViewMatrix, length, normalize, uniform, varying, vec4 } from "three/tsl";
+import {
+  attribute,
+  cameraViewMatrix,
+  length,
+  normalize,
+  texture,
+  uniform,
+  varying,
+  vec4,
+} from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/hair.js";
 import { strandAtlas } from "./hair-atlas.js";
@@ -523,7 +532,23 @@ class CharacterDynamics extends Scene<IState> {
           vec4(varying(normalize(cardPosition.sub(headFrame.mul(vec4(0, 0, 0, 1)).xyz))), 0),
         ).xyz,
       );
-      const passes = createHairCardMaterial({ atlas: strandAtlas(), alphaToCoverage: true });
+      const atlas = strandAtlas();
+      // `?hairMat=plain` is PRD-909 AC-1's control: a stock material cut by the same coverage.
+      const plain =
+        new URLSearchParams(globalThis.location?.search ?? "").get("hairMat") === "plain";
+      const passes = plain
+        ? {
+            inner: null,
+            blend: null,
+            outer: new MeshStandardNodeMaterial({
+              color: 0x3a2a1e,
+              roughness: 0.5,
+              side: DoubleSide,
+              alphaTest: 0.5,
+            }),
+          }
+        : createHairCardMaterial({ atlas, alphaToCoverage: true });
+      if (plain) passes.outer.opacityNode = texture(atlas).r;
       [passes.inner, passes.outer, passes.blend].forEach((material, order) => {
         if (material === null) return;
         material.positionNode = cardPosition;
@@ -599,8 +624,10 @@ class CharacterDynamics extends Scene<IState> {
     };
     followBone();
 
-    // Follow camera: rear three-quarter view so a trailing cape reads against the body.
-    const cameraOffset = new Vector3(2.4, 1.5, -3.4)
+    // Follow camera: rear three-quarter view so a trailing cape reads against the body. `?view=close`
+    // frames the back of the head for the hair-card judge (PRD-909 AC-1).
+    const close = new URLSearchParams(globalThis.location?.search ?? "").get("view") === "close";
+    const cameraOffset = (close ? new Vector3(0.45, 1.75, -0.75) : new Vector3(2.4, 1.5, -3.4))
       .multiplyScalar(height / 1.8)
       .applyAxisAngle(new Vector3(0, 1, 0), bindYaw);
     const look = new Vector3();
@@ -610,7 +637,7 @@ class CharacterDynamics extends Scene<IState> {
         .applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y)
         .add(character.position);
       ctx.camera.position.copy(eye);
-      look.copy(character.position).setY(character.position.y + 0.55 * height);
+      look.copy(character.position).setY(character.position.y + (close ? 0.88 : 0.55) * height);
       ctx.camera.lookAt(look);
     };
     placeCamera();
