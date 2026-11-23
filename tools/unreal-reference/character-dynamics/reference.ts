@@ -13,6 +13,9 @@
  *   run      editor: build_scene.py plays drive.json 3 times at a fixed 1/60 s step.
  *   metrics  Saved/runs/run-N.json -> reference.json, with the game's own probe math (probe.ts).
  *
+ * The ponytail (PRD-912 AC-3) is the game's 6-bone chain under Head, added in `prepare` to the caped
+ * mesh only, and simulated by stock FAnimNode_SpringBone nodes in the CharDynProbe anim proxy.
+ *
  * The probe definitions are the game's: hem and top rows, the body frame (the cape frame on
  * spine_03), and the free cape vertices deeper than the 1 cm collider thickness inside the capsules
  * the cloth collides with (game.ts: countInsideCapsules(free, pose.capsules, COLLIDER_THICKNESS)).
@@ -72,7 +75,19 @@ const SCRIPT: readonly IPhase[] = [
 const COLS = 11;
 const ROWS = 19;
 const CAPE_WIDTH = 0.5;
-const METRICS = ["hemOffset", "hemTrail", "maxStretch", "bodyPenetration"] as const;
+const METRICS = [
+  "hemOffset",
+  "hemTrail",
+  "maxStretch",
+  "bodyPenetration",
+  "hairTipOffset",
+  "hairStretch",
+  "hairInsideHead",
+] as const;
+/** game.ts: ponytail_1 .. ponytail_6 under Head. */
+const HAIR_BONES = 6;
+/** game.ts measureHair: the clearance countInsideCapsules adds to each hair collider. */
+const HAIR_THICKNESS = 0.005;
 /** game.ts COLLIDER_THICKNESS, metres: the probe's shrink and the rest clearance of every capsule. */
 const COLLIDER_THICKNESS = 0.01;
 
@@ -292,6 +307,33 @@ async function prepare(): Promise<void> {
     .setAttribute("JOINTS_0", accessor(jointsAttr, "VEC4"))
     .setAttribute("WEIGHTS_0", accessor(weights, "VEC4"));
   (root.listMeshes()[0] ?? fail("no mesh")).addPrimitive(cape);
+
+  // The game's ponytail (game.ts): 6 bones under Head, placed on the Idle_Loop t = 0 pose with the
+  // root 12 cm back and 15 cm up from Head, then 5 cm back and 6 cm down per bone, each with the
+  // rotation of its parent. Only the caped mesh gets them, so body.glb's physics asset is unchanged.
+  const back = facing.clone().negate();
+  const anchor = at("Head");
+  let parentT0 = (t0.get(byName("Head")) as Matrix4).clone();
+  let parentRest = (rest.get(byName("Head")) as Matrix4).clone();
+  let parentNode = byName("Head");
+  const ibmArray = Array.from(ibmAccessor.getArray() ?? fail("no inverse bind array"));
+  for (let index = 0; index < HAIR_BONES; index++) {
+    anchor.add(
+      index === 0
+        ? back.clone().multiplyScalar(0.12).setY(0.15)
+        : back.clone().multiplyScalar(0.05).setY(-0.06),
+    );
+    const local = anchor.clone().applyMatrix4(parentT0.clone().invert());
+    const bone = doc.createNode(`ponytail_${index + 1}`).setTranslation(local.toArray());
+    parentNode.addChild(bone);
+    skin.addJoint(bone);
+    const localM = new Matrix4().makeTranslation(local);
+    parentT0 = parentT0.multiply(localM);
+    parentRest = parentRest.multiply(localM);
+    ibmArray.push(...parentRest.clone().invert().toArray());
+    parentNode = bone;
+  }
+  ibmAccessor.setArray(new Float32Array(ibmArray));
   await io.write(path.join(GEN, "mannequin_cape.glb"), doc);
 
   const restBones: Record<string, number[]> = {};
@@ -485,6 +527,12 @@ interface ISample {
   neck: number[];
   /** The posed capsules the cloth collides with: per capsule a xyz, b xyz, radius (world cm). */
   capsules: number[];
+  /** The Head bone frame: origin, axis x, axis y, axis z (Unreal world, cm). */
+  headFrame: number[];
+  /** ponytail_1 .. ponytail_6 (world cm). */
+  hair: number[];
+  /** Stock capsules of the bones the ponytail falls onto: a xyz, b xyz, radius (world cm). */
+  hairCapsules: number[];
 }
 interface IRun {
   initial: ISample;
@@ -521,11 +569,44 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
   }
   // The pinned top row follows the skin; game.ts counts only the free rows.
   const free = Array.from({ length: (ROWS - 1) * COLS }, (_, k) => COLS + k);
+  const capsulesOf = (flat: number[]) => {
+    const out: { a: Vector3; b: Vector3; radius: number }[] = [];
+    for (let c = 0; c + 6 < flat.length; c += 7)
+      out.push({
+        a: toThree(flat, c),
+        b: toThree(flat, c + 3),
+        radius: (flat[c + 6] as number) / map.scale,
+      });
+    return out;
+  };
+  const hairOf = (sample: ISample) => {
+    if (sample.hair?.length !== HAIR_BONES * 3) fail("a sample has no hair; rebuild and rerun");
+    const out = new Float32Array(HAIR_BONES * 3);
+    for (let b = 0; b < HAIR_BONES; b++) toThree(sample.hair, b * 3).toArray(out, b * 3);
+    return out;
+  };
+  // game.ts hairRestLengths: the segment lengths on the Idle_Loop t = 0 pose.
+  const restHair = hairOf(run.initial);
+  const hairRestLengths = Array.from({ length: HAIR_BONES - 1 }, (_, k) =>
+    new Vector3()
+      .fromArray(restHair, k * 3)
+      .distanceTo(new Vector3().fromArray(restHair, k * 3 + 3)),
+  );
   const phases: Record<string, Record<(typeof METRICS)[number] | "samples", number>> = {};
   let restHem: Vector3 | undefined;
+  let hairRestTip: Vector3 | undefined;
   let tick = 0;
   for (const phase of SCRIPT) {
-    const m = { hemOffset: 0, hemTrail: 0, maxStretch: 0, bodyPenetration: 0, samples: 0 };
+    const m = {
+      hemOffset: 0,
+      hemTrail: 0,
+      maxStretch: 0,
+      bodyPenetration: 0,
+      hairTipOffset: 0,
+      hairStretch: 0,
+      hairInsideHead: 0,
+      samples: 0,
+    };
     for (let k = 0; k < phase.ticks; k++) {
       const sample = run.ticks[tick++] ?? fail(`run has only ${tick - 1} ticks`);
       const world = new Float32Array(COLS * ROWS * 3);
@@ -543,19 +624,31 @@ function metricsOfRun(run: IRun, cape: ICape, map: ReturnType<typeof fitMap>) {
         m.maxStretch,
         probe.maxEdgeStretch(world, cape.springs, cape.restLengths),
       );
-      const capsules: { a: Vector3; b: Vector3; radius: number }[] = [];
-      for (let c = 0; c + 6 < sample.capsules.length; c += 7)
-        capsules.push({
-          a: toThree(sample.capsules, c),
-          b: toThree(sample.capsules, c + 3),
-          radius: (sample.capsules[c + 6] as number) / map.scale,
-        });
+      const capsules = capsulesOf(sample.capsules);
       if (capsules.length === 0) fail(`no capsules at tick ${tick}`);
       const freeWorld = new Float32Array(free.length * 3);
       free.forEach((v, k) => freeWorld.set(world.subarray(v * 3, v * 3 + 3), k * 3));
       m.bodyPenetration = Math.max(
         m.bodyPenetration,
         probe.countInsideCapsules(freeWorld, capsules, COLLIDER_THICKNESS),
+      );
+      // game.ts measureHair: the tip in the Head frame, the segment stretch, and the simulated
+      // points (all but the root) inside the head, back and shoulder capsules.
+      const hair = hairOf(sample);
+      for (const value of hair)
+        if (!Number.isFinite(value)) fail(`non-finite hair at tick ${tick}`);
+      const tipLocal = new Vector3()
+        .fromArray(hair, (HAIR_BONES - 1) * 3)
+        .applyMatrix4(frame(sample.headFrame).invert());
+      if (phase.name === "settle") hairRestTip = tipLocal.clone();
+      if (hairRestTip !== undefined)
+        m.hairTipOffset = Math.max(m.hairTipOffset, tipLocal.distanceTo(hairRestTip));
+      m.hairStretch = Math.max(m.hairStretch, probe.maxSegmentStretch(hair, hairRestLengths));
+      const hairCapsules = capsulesOf(sample.hairCapsules);
+      if (hairCapsules.length === 0) fail(`no hair capsules at tick ${tick}`);
+      m.hairInsideHead = Math.max(
+        m.hairInsideHead,
+        probe.countInsideCapsules(hair.subarray(3), hairCapsules, HAIR_THICKNESS),
       );
       m.samples++;
     }
@@ -599,6 +692,9 @@ function metrics(): void {
       hemTrail: "deg",
       maxStretch: "fraction of rest length",
       bodyPenetration: "cape vertices",
+      hairTipOffset: "m",
+      hairStretch: "fraction of rest length",
+      hairInsideHead: "hair bones",
     },
     probe: {
       hem: "bottom row (11 vertices)",
@@ -606,6 +702,11 @@ function metrics(): void {
       bodyFrame: "cape frame on spine_03 (game.ts capeMatrix)",
       bodyPenetration: `free cape vertices (rows 1-18) deeper than ${COLLIDER_THICKNESS} m inside the posed physics-asset capsules the cloth collides with`,
       height: cape.height,
+      hairTip:
+        "ponytail_6 in the Head bone frame; offset from its spot at the end of settle (game.ts measureHair)",
+      hairStretch:
+        "largest |segment / rest - 1| over ponytail_1..6, rest on the Idle_Loop t = 0 pose",
+      hairInsideHead: `ponytail_2..6 inside the stock capsules of Head, spine_03, spine_02, upperarm_l, upperarm_r plus ${HAIR_THICKNESS} m (game.ts also has neck_01; Unreal generates no neck_01 body)`,
     },
     map: { scale: map.scale, residualCm: map.residual, bones: map.bones },
     cloth: scene.cloth,
@@ -619,7 +720,15 @@ function metrics(): void {
     determinism:
       "3 separate simulations (a fresh world and fresh clothing actors per run, CharDynProbe RunDrive); Chaos Cloth at a fixed step is deterministic, so the run files are byte-identical and the spread is 0",
     differences: scene.differences,
-    hair: "not captured: the mannequin has no ponytail bones in Unreal; adding the game.ts 6-bone chain needs a re-import and an AnimDynamics or SpringBone chain in the anim proxy (PRD-912 AC-3 stays open)",
+    hair: {
+      node: "FAnimNode_SpringBone, one per simulated bone (ponytail_2..6), parent first, each fed the previous node's pose, driven in UCharDynAnimInstance's proxy; ponytail_1 rides Head (SpringBoneChain3D's root)",
+      defaults:
+        "stock (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_SpringBone.cpp:16-38): SpringStiffness 50, SpringDamping 4, ErrorResetThresh 256 cm, bLimitDisplacement false, translate X/Y/Z on, rotate X/Y/Z off; fixed step 1/120 s (:62-63); no gravity, no collision",
+      differences:
+        "SpringBoneChain3D (game) keeps each segment at its rest length, rotates the bones toward the particles and pushes them out of the body capsules; the stock SpringBone translates the bone only, so segments stretch, and it has no collider. Its damping acts on the world velocity and OwnerVelocity is 0 for an actor's own component (AnimNode_SpringBone.cpp:139-157, 257-266), so each spring trails its target by damping * speed / stiffness (27 cm at 3.4 m/s) and the 5 springs add up. Teleport: SpringBone resets past 256 cm of error, SpringBoneChain3D past 1.5 m of root move or 1 m of error",
+      start:
+        "the springs are placed on the Idle_Loop t = 0 pose by a zero-length evaluation before tick 1 (InitAnim's zero tick, SkeletalMeshComponent.cpp:1213-1216; the game builds SpringBoneChain3D on that pose)",
+    },
     phases,
   };
   writeFileSync(path.join(HERE, "reference.json"), `${JSON.stringify(record, null, 2)}\n`);

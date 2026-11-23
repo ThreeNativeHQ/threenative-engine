@@ -9,7 +9,7 @@ public class CharDynProbe : ModuleRules
 		PrivateDependencyModuleNames.AddRange(new string[] {
 			"UnrealEd", "Json", "JsonUtilities",
 			"ClothingSystemRuntimeCommon", "ClothingSystemRuntimeInterface", "ClothingSystemEditorInterface",
-			"SkeletalMeshEditor", "PhysicsCore",
+			"SkeletalMeshEditor", "PhysicsCore", "AnimGraphRuntime",
 		});
 	}
 }

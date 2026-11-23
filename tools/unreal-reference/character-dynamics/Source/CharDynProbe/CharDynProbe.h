@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "Animation/AnimInstance.h"
 #include "Animation/AnimInstanceProxy.h"
+#include "BoneControllers/AnimNode_SpringBone.h"
 #include "Kismet/BlueprintFunctionLibrary.h"
 #include "CharDynProbe.generated.h"
 
@@ -37,6 +38,8 @@ class UCharDynAnimInstance : public UAnimInstance
 public:
 	void Play(UAnimSequence* Clip, float Fade, bool bOnce);
 	void Advance(float DeltaSeconds);
+	/** Puts the ponytail springs back in their just-initialized state (no time pending). */
+	void ResetSprings();
 
 	TArray<FCharDynLayer> Outgoing;
 	FCharDynLayer Current;
@@ -54,10 +57,17 @@ struct FCharDynAnimProxy : public FAnimInstanceProxy
 {
 	FCharDynAnimProxy() = default;
 	explicit FCharDynAnimProxy(UAnimInstance* Instance) : FAnimInstanceProxy(Instance) {}
+	virtual void Initialize(UAnimInstance* InAnimInstance) override;
 	virtual void PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds) override;
 	virtual bool Evaluate(FPoseContext& Output) override;
 
 	TArray<FCharDynLayer> Layers;
+	/**
+	 * The ponytail: one stock FAnimNode_SpringBone per simulated bone (ponytail_2 .. ponytail_6),
+	 * parent first, each fed the pose the previous one wrote, as a chain of SpringBone nodes in an
+	 * AnimGraph. ponytail_1 rides Head, as the root of the game's SpringBoneChain3D does.
+	 */
+	TArray<FAnimNode_SpringBone> Springs;
 };
 
 UCLASS()

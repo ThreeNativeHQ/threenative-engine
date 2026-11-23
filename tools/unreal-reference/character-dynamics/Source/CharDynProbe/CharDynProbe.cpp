@@ -28,6 +28,9 @@ IMPLEMENT_MODULE(FDefaultModuleImpl, CharDynProbe);
 static constexpr int32 GCols = 11;
 static constexpr int32 GRows = 19;
 static const FName GCapeSlot(TEXT("M_Cape"));
+/** game.ts: the 6-bone chain under Head. SpringBoneChain3D simulates every bone below the root. */
+static const TCHAR* const GHairBones[] = { TEXT("ponytail_1"), TEXT("ponytail_2"), TEXT("ponytail_3"), TEXT("ponytail_4"), TEXT("ponytail_5"), TEXT("ponytail_6") };
+static constexpr int32 GHairCount = UE_ARRAY_COUNT(GHairBones);
 
 // --- animation: the game's AnimationPlayer crossfade ---------------------------------------
 
@@ -94,9 +97,27 @@ void UCharDynAnimInstance::Advance(float Dt)
 	}
 }
 
+void UCharDynAnimInstance::ResetSprings()
+{
+	// Initialize_AnyThread's reset (AnimNode_SpringBone.cpp:46): the next evaluation with no time
+	// pending places each spring on its bone (:117-122).
+	for (FAnimNode_SpringBone& Spring : GetProxyOnGameThread<FCharDynAnimProxy>().Springs) Spring.RemainingTime = 0.f;
+}
+
 FAnimInstanceProxy* UCharDynAnimInstance::CreateAnimInstanceProxy()
 {
 	return new FCharDynAnimProxy(this);
+}
+
+void FCharDynAnimProxy::Initialize(UAnimInstance* InAnimInstance)
+{
+	FAnimInstanceProxy::Initialize(InAnimInstance);
+	// The ponytail nodes exist from initialization, as an AnimGraph's do, so the zero-length tick in
+	// USkeletalMeshComponent::InitAnim (SkeletalMeshComponent.cpp:1213-1216) evaluates them with
+	// RemainingTime 0 and places each spring on its bone (AnimNode_SpringBone.cpp:117-122). A node
+	// first seen with time pending would start from the world origin.
+	Springs.Reset();
+	for (int32 B = 1; B < GHairCount; ++B) Springs.AddDefaulted_GetRef().SpringBone.BoneName = GHairBones[B];
 }
 
 void FCharDynAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeconds)
@@ -104,6 +125,14 @@ void FCharDynAnimProxy::PreUpdate(UAnimInstance* InAnimInstance, float DeltaSeco
 	FAnimInstanceProxy::PreUpdate(InAnimInstance, DeltaSeconds);
 	const UCharDynAnimInstance* Instance = CastChecked<UCharDynAnimInstance>(InAnimInstance);
 	Layers = Instance->Evaluated.Num() ? Instance->Evaluated : TArray<FCharDynLayer>{ Instance->Current };
+	// The ponytail springs, stock defaults (AnimNode_SpringBone.cpp:16-38). An AnimGraph runs each
+	// node's PreUpdate on the game thread, then UpdateInternal with the tick's delta
+	// (AnimNode_SpringBone.cpp:55-64, 242-271); nothing else in the graph touches them.
+	for (FAnimNode_SpringBone& Spring : Springs)
+	{
+		Spring.PreUpdate(InAnimInstance);
+		Spring.UpdateInternal(FAnimationUpdateContext(this, DeltaSeconds));
+	}
 }
 
 bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
@@ -115,28 +144,51 @@ bool FCharDynAnimProxy::Evaluate(FPoseContext& Output)
 	float Total = 0.f;
 	for (const FCharDynLayer& Layer : Layers)
 		if (Layer.Clip && Layer.Weight > 0.f) Total += Layer.Weight;
-	if (Total <= 0.f)
+	// No clip yet (InitAnim's zero-length tick): the ref pose, with the springs still on top, as an
+	// AnimGraph evaluates them. That first evaluation has RemainingTime 0 and places each spring.
+	if (Total <= 0.f) Output.ResetToRefPose();
+	else
 	{
-		Output.ResetToRefPose();
-		return true;
+		Poses.Reserve(Layers.Num());
+		Curves.Reserve(Layers.Num());
+		Attributes.Reserve(Layers.Num());
+		for (const FCharDynLayer& Layer : Layers)
+		{
+			if (!Layer.Clip || Layer.Weight <= 0.f) continue;
+			FCompactPose& Pose = Poses.AddDefaulted_GetRef();
+			Pose.SetBoneContainer(&Output.Pose.GetBoneContainer());
+			FBlendedCurve& Curve = Curves.AddDefaulted_GetRef();
+			Curve.InitFrom(Output.Curve);
+			UE::Anim::FStackAttributeContainer& Attribute = Attributes.AddDefaulted_GetRef();
+			FAnimationPoseData Data(Pose, Curve, Attribute);
+			Layer.Clip->GetAnimationPose(Data, FAnimExtractContext(Layer.Time, false, {}, !Layer.bOnce));
+			Weights.Add(Layer.Weight / Total);
+		}
+		FAnimationPoseData Out(Output);
+		FAnimationRuntime::BlendPosesTogether(Poses, Curves, Attributes, Weights, Out);
 	}
-	Poses.Reserve(Layers.Num());
-	Curves.Reserve(Layers.Num());
-	Attributes.Reserve(Layers.Num());
-	for (const FCharDynLayer& Layer : Layers)
+	// The springs in component space, as FAnimNode_SkeletalControlBase applies a control at alpha 1
+	// (AnimNode_SkeletalControlBase.cpp:191-197), then back to local space at the graph root.
+	if (Springs.Num())
 	{
-		if (!Layer.Clip || Layer.Weight <= 0.f) continue;
-		FCompactPose& Pose = Poses.AddDefaulted_GetRef();
-		Pose.SetBoneContainer(&Output.Pose.GetBoneContainer());
-		FBlendedCurve& Curve = Curves.AddDefaulted_GetRef();
-		Curve.InitFrom(Output.Curve);
-		UE::Anim::FStackAttributeContainer& Attribute = Attributes.AddDefaulted_GetRef();
-		FAnimationPoseData Data(Pose, Curve, Attribute);
-		Layer.Clip->GetAnimationPose(Data, FAnimExtractContext(Layer.Time, false, {}, !Layer.bOnce));
-		Weights.Add(Layer.Weight / Total);
+		const FBoneContainer& Bones = Output.Pose.GetBoneContainer();
+		FComponentSpacePoseContext CS(this);
+		CS.Pose.InitPose(Output.Pose);
+		TArray<FBoneTransform> Transforms;
+		for (FAnimNode_SpringBone& Spring : Springs)
+		{
+			Spring.SpringBone.Initialize(Bones);
+			if (!Spring.IsValidToEvaluate(GetSkeleton(), Bones))
+			{
+				UE_LOGF(LogTemp, Error, "TN_UE_CHARDYN spring bone %ls is not in the pose", *Spring.SpringBone.BoneName.ToString());
+				continue;
+			}
+			Transforms.Reset();
+			Spring.EvaluateSkeletalControl_AnyThread(CS, Transforms);
+			if (Transforms.Num()) CS.Pose.LocalBlendCSBoneTransforms(Transforms, 1.f);
+		}
+		FCSPose<FCompactPose>::ConvertComponentPosesToLocalPoses(MoveTemp(CS.Pose), Output.Pose);
 	}
-	FAnimationPoseData Out(Output);
-	FAnimationRuntime::BlendPosesTogether(Poses, Curves, Attributes, Weights, Out);
 	return true;
 }
 
@@ -312,9 +364,9 @@ FString UCharDynProbeLibrary::DescribeMesh(USkeletalMesh* Mesh, UPhysicsAsset* B
 // --- run -----------------------------------------------------------------------------------
 
 /** World ends of a physics-asset capsule on its posed bone (ChaosClothingSimulationCollider.cpp:590-597). */
-static void CapsuleEnds(const USkeletalMeshComponent* Comp, const USkeletalBodySetup* Setup, const FKSphylElem& E, FVector& OutA, FVector& OutB)
+static void CapsuleEnds(const USkeletalMeshComponent* Comp, FName Bone, const FKSphylElem& E, FVector& OutA, FVector& OutB)
 {
-	FTransform BoneT = Comp->GetBoneTransform(Comp->GetBoneIndex(Setup->BoneName));
+	FTransform BoneT = Comp->GetBoneTransform(Comp->GetBoneIndex(Bone));
 	BoneT.RemoveScaling();
 	const FVector Half = E.Rotation.RotateVector(FVector::UpVector) * (E.Length / 2.f);
 	OutA = BoneT.TransformPosition(E.Center - Half);
@@ -379,7 +431,11 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 		const int32 Pelvis = Comp->GetBoneIndex(TEXT("pelvis"));
 		const int32 Neck = Comp->GetBoneIndex(TEXT("neck_01"));
 		const int32 Head = Comp->GetBoneIndex(TEXT("Head"));
-		if (!Anim || Spine == INDEX_NONE || Pelvis == INDEX_NONE || Neck == INDEX_NONE || Head == INDEX_NONE) Result = TEXT("ERROR anim instance or bones missing");
+		TArray<int32> Hair;
+		for (const TCHAR* Name : GHairBones) Hair.Add(Comp->GetBoneIndex(Name));
+		// game.ts hairBoneNames: the capsules the ponytail falls onto (Unreal generates no neck_01 body).
+		const TSet<FName> HairColliderBones = { TEXT("Head"), TEXT("neck_01"), TEXT("spine_03"), TEXT("spine_02"), TEXT("upperarm_l"), TEXT("upperarm_r") };
+		if (!Anim || Spine == INDEX_NONE || Pelvis == INDEX_NONE || Neck == INDEX_NONE || Head == INDEX_NONE || Hair.Contains(INDEX_NONE)) Result = TEXT("ERROR anim instance or bones missing");
 		else
 		{
 			auto Sample = [&](bool bCloth) -> FString
@@ -395,6 +451,30 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 				S->SetArrayField(TEXT("pelvis"), Vec(Comp->GetBoneTransform(Pelvis).GetLocation()));
 				S->SetArrayField(TEXT("neck"), Vec(Comp->GetBoneTransform(Neck).GetLocation()));
 				S->SetArrayField(TEXT("head"), Vec(Comp->GetBoneTransform(Head).GetLocation()));
+				// The ponytail: the Head frame (origin, unit axes), the 6 bones (world cm), and the stock
+				// (unshrunk) capsules of the bones it falls onto, as game.ts measures them (a xyz, b xyz, r).
+				FTransform HeadT = Comp->GetBoneTransform(Head);
+				HeadT.RemoveScaling();
+				TArray<TSharedPtr<FJsonValue>> HeadFrame = Vec(HeadT.GetLocation());
+				HeadFrame.Append(Vec(HeadT.GetUnitAxis(EAxis::X)));
+				HeadFrame.Append(Vec(HeadT.GetUnitAxis(EAxis::Y)));
+				HeadFrame.Append(Vec(HeadT.GetUnitAxis(EAxis::Z)));
+				S->SetArrayField(TEXT("headFrame"), HeadFrame);
+				TArray<TSharedPtr<FJsonValue>> HairPoints;
+				for (const int32 B : Hair) HairPoints.Append(Vec(Comp->GetBoneTransform(B).GetLocation()));
+				S->SetArrayField(TEXT("hair"), HairPoints);
+				TArray<TSharedPtr<FJsonValue>> HairCaps;
+				for (const TPair<FName, FKAggregateGeom>& Pair : SavedGeom)
+					if (HairColliderBones.Contains(Pair.Key))
+						for (const FKSphylElem& E : Pair.Value.SphylElems)
+						{
+							FVector A, B;
+							CapsuleEnds(Comp, Pair.Key, E, A, B);
+							HairCaps.Append(Vec(A));
+							HairCaps.Append(Vec(B));
+							HairCaps.Add(MakeShared<FJsonValueNumber>(E.Radius));
+						}
+				S->SetArrayField(TEXT("hairCapsules"), HairCaps);
 				// The capsules the cloth collides with, posed: a xyz, b xyz, radius (world cm).
 				TArray<TSharedPtr<FJsonValue>> Caps;
 				if (Asset->PhysicsAsset)
@@ -403,7 +483,7 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 							for (const FKSphylElem& E : Setup->AggGeom.SphylElems)
 							{
 								FVector A, B;
-								CapsuleEnds(Comp, Setup, E, A, B);
+								CapsuleEnds(Comp, Setup->BoneName, E, A, B);
 								Caps.Append(Vec(A));
 								Caps.Append(Vec(B));
 								Caps.Add(MakeShared<FJsonValueNumber>(E.Radius));
@@ -435,6 +515,12 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 			// tick here runs inside one editor frame, so each hand tick is its own frame.
 			++GFrameCounter;
 			World->Tick(LEVELTICK_All, 0.f);
+			// The world's zero-length tick still advances 0.5 ms (AWorldSettings::FixupDeltaSeconds clamps
+			// to MinUndilatedFrameTime), so the springs are reset here and placed on the Idle_Loop t = 0
+			// pose by this zero-length evaluation, as InitAnim's zero tick places them when the graph's
+			// entry pose is Idle_Loop (SkeletalMeshComponent.cpp:1213-1216; the game builds its
+			// SpringBoneChain3D on that pose). Less than one 1/120 s step is pending before tick 1.
+			Anim->ResetSprings();
 			Comp->TickAnimation(0.f, false);
 			Comp->RefreshBoneTransforms();
 			// Named override, applied in both engines (game.ts: measureBodyCapsules(capeSkin, 16, restWorld,
@@ -461,7 +547,7 @@ FString UCharDynProbeLibrary::RunDrive(USkeletalMesh* Mesh, const TArray<UAnimSe
 					{
 						FKSphylElem& E = Setup->AggGeom.SphylElems[K];
 						FVector A, B;
-						CapsuleEnds(Comp, Setup, E, A, B);
+						CapsuleEnds(Comp, Setup->BoneName, E, A, B);
 						float Clear = TNumericLimits<float>::Max();
 						int32 Inside = 0;
 						for (const FVector& P : Rest)

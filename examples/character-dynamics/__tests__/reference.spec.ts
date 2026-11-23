@@ -6,7 +6,16 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const PHASES = ["settle", "jog", "jogTurn", "sprint", "hardStop", "jump", "snapTurn", "teleport"];
-const METRICS = ["hemOffset", "hemTrail", "maxStretch", "bodyPenetration"];
+const METRICS = [
+  "hemOffset",
+  "hemTrail",
+  "maxStretch",
+  "bodyPenetration",
+  // PRD-912 AC-3: the ponytail on stock AnimNode_SpringBone.
+  "hairTipOffset",
+  "hairStretch",
+  "hairInsideHead",
+];
 
 interface ISpread {
   mean: number;
@@ -48,6 +57,14 @@ describe("Unreal character-dynamics reference", () => {
   // spine_03 capsule held 34 rest vertices and stretched the settled cape 253%).
   it.each(["settle", "teleport"])("%s, a cape at rest, stretches under 20%%", (phase) => {
     expect(record.phases[phase]?.maxStretch?.max).toBeLessThan(0.2);
+  });
+
+  // The tip offset is measured from the tip's spot at the end of settle, so settle itself is 0;
+  // a ponytail that never leaves that spot in a moving phase is not simulated.
+  it("the ponytail rests in settle and swings in the moving phases", () => {
+    expect(record.phases.settle?.hairTipOffset?.max).toBe(0);
+    for (const phase of ["jog", "sprint", "hardStop", "snapTurn"])
+      expect(record.phases[phase]?.hairTipOffset?.min, phase).toBeGreaterThan(0.005);
   });
 
   it("has no phase the script does not run", () => {
