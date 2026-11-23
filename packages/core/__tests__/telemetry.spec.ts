@@ -150,6 +150,25 @@ describe("telemetry", () => {
     expect(sent()).toHaveLength(1);
   });
 
+  it.each<[string, boolean, string]>([
+    ["the engine player, which has no network fetch", false, "TN_TELEMETRY off (no network)"],
+    ["the legacy host, whose fetch reaches the network", true, "TN_TELEMETRY on"],
+  ])("on %s it reports %#", async (_name, network, line) => {
+    vi.resetModules();
+    vi.stubGlobal("location", undefined);
+    vi.stubGlobal("__THREENATIVE_NATIVE__", {
+      platform: { formFactor: "desktop", maxTouchPoints: 0, os: "linux", runtime: "native" },
+    });
+    if (network) vi.stubGlobal("__httpRequestAsync", () => undefined);
+    const fresh = await import("../src/telemetry.js");
+    try {
+      fresh.installTelemetry(undefined);
+      expect(bootLine()).toBe(line);
+    } finally {
+      fresh.uninstallTelemetry();
+    }
+  });
+
   it("installs nothing on a host that is no platform a game runs on", () => {
     vi.stubGlobal("location", undefined);
     const warn = console.warn;

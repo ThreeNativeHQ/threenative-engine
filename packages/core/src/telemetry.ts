@@ -107,6 +107,12 @@ export function installTelemetry(options: ITelemetryOptions | undefined): void {
     console.info("TN_TELEMETRY off (no platform)");
     return;
   }
+  // The legacy native host fetches through `__httpRequestAsync` (runtime.cpp); the engine player
+  // has no network fetch by design (`engine/player/core-host.mjs`), so it says so instead of "on".
+  if (platform !== "web" && typeof globalValue("__httpRequestAsync") !== "function") {
+    console.info("TN_TELEMETRY off (no network)");
+    return;
+  }
   const state: IInstalled = {
     console: { error: console.error, warn: console.warn },
     events: 0,
