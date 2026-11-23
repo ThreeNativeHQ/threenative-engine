@@ -61,7 +61,10 @@ function page() {
   }) as unknown as EventTarget & Record<string, unknown>;
   let resize: (() => void) | undefined;
   vi.stubGlobal("window", view);
-  vi.stubGlobal("document", Object.assign(new EventTarget(), { createElement: () => canvas }));
+  vi.stubGlobal(
+    "document",
+    Object.assign(new EventTarget(), { createElement: () => canvas, visibilityState: "visible" }),
+  );
   vi.stubGlobal(
     "ResizeObserver",
     class {
@@ -1042,6 +1045,37 @@ describe("worker game host (PRD-752)", () => {
     await tick();
     expect(heard).toHaveBeenCalledTimes(1);
     handle.stop();
+  });
+
+  it("forwards app visibility into the worker game", async () => {
+    // The worker's game has no `document`; a phone backgrounding the app must still reach it, or a
+    // worker game can never save on pause. The page owns the DOM, so it forwards the transition.
+    const { scope, worker } = link();
+    const { container } = page();
+    serveWorkerGame({ start: async () => undefined }, scope);
+    const handle = startWorkerGame(
+      worker as unknown as Worker,
+      container as unknown as HTMLElement,
+    );
+    await handle.ready;
+    const pageDocument = globalThis.document as Document & { visibilityState: string };
+    const visibility = scope.__tnAppVisibility as EventTarget & { visibilityState: string };
+    const transitions = vi.fn();
+    visibility.addEventListener("visibilitychange", transitions);
+    try {
+      expect(visibility.visibilityState).toBe("visible");
+      pageDocument.visibilityState = "hidden";
+      pageDocument.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(visibility.visibilityState).toBe("hidden");
+      expect(transitions).toHaveBeenCalledTimes(1);
+      // A repeated event is not a second transition.
+      pageDocument.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(transitions).toHaveBeenCalledTimes(1);
+    } finally {
+      handle.stop();
+    }
   });
 
   it("gives the worker an AudioContext that plays through the page's own", async () => {
