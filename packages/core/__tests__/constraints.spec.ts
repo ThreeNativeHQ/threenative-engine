@@ -335,7 +335,9 @@ describe("core constraints", () => {
           " ",
         ),
       )
-      .join("\n");
+      .join("\n")
+      // "In flight" is a readback queue's depth (`maxInFlight`, `readbackInFlight`), not a light.
+      .replace(/[Ii]n[ -]?[Ff]light/gu, "inQueue");
 
     expect(source).not.toMatch(/material|light|tonemapping|postprocessing|\.wgsl/iu);
 
@@ -585,7 +587,11 @@ describe("core constraints", () => {
     // `softbody.ts` clones the game-owned node material so its position node can read the cloth
     // buffer without mutating a surface another mesh may share. It may never originate or tune a
     // visible property; the solver accepts every response value from the game.
-    const softbody = readFileSync(path.join(sourceDirectory, "softbody.ts"), "utf8");
+    // "In flight" is the readback queue's depth (`readbackInFlight`), not a light.
+    const softbody = readFileSync(path.join(sourceDirectory, "softbody.ts"), "utf8").replace(
+      /[Ii]n[ -]?[Ff]light/gu,
+      "inQueue",
+    );
     expect(softbody).not.toMatch(
       /new\s+\w*Material|new\s+Color|light|tonemapping|postprocessing|\.wgsl/iu,
     );

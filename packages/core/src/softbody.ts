@@ -319,6 +319,12 @@ function clothPass(options: {
  * position buffers, and replaces only the cloned material's position node. It adds no material,
  * colour, texture, wind, stiffness, damping, or pinning default.
  *
+ * Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)
+ * pins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos
+ * Cloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured
+ * from the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that
+ * carries the cloth with no velocity (`TN_SOFTBODY_RESET`).
+ *
  * @situation make a flag, cape, or curtain move as cloth
  * @situation simulate a deforming surface while keeping one edge pinned
  * @situation simulate cloth sails blowing in the wind
@@ -330,13 +336,6 @@ function clothPass(options: {
  * @override readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it
  * @override readbackInFlight keeps up to N copies in flight so a probe sees every step; default 1
  * @example const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });
- *
- * Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)
- * pins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos
- * Cloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured
- * from the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that
- * carries the cloth with no velocity (`TN_SOFTBODY_RESET`).
- *
  * @situation put a cape on a character
  * @situation cape on a character that trails when it runs
  * @situation make a skirt, coat tails or a tabard move on an animated character
@@ -548,7 +547,7 @@ export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IC
   takeSamples(): IGPUReadbackSample[] {
     const samples = this.#readback?.take();
     if (samples === undefined) return [];
-    return samples.map((sample) => ({
+    return Array.from(samples, (sample) => ({
       data: compactClothVec3Readback(sample.data, this.uniqueVertexCount),
       staleFrames: sample.staleFrames,
     }));

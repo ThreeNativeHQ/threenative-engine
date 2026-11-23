@@ -218,6 +218,7 @@ export const countLoop = <T extends "uint" | "int" = "uint">(
   body: (index: Node<T>) => void,
   type?: T,
 ): void =>
+  // quality-allow: three's Loop types fix the index name to `i`; the runtime takes any `name`.
   (Loop as unknown as (p: object, f: (inputs: Record<string, Node<T>>) => void) => void)(
     { type: type ?? "uint", start: 0, end, name },
     (inputs) => body(inputs[name] as Node<T>),
@@ -225,6 +226,7 @@ export const countLoop = <T extends "uint" | "int" = "uint">(
 
 /** A workgroup-shared vec3 array, one slot per thread; three's types omit its `element`. */
 export const workgroupVec3 = (count = SINGLE_DISPATCH_MAX): StorageBufferNode<"vec3"> =>
+  // quality-allow: three's WorkgroupInfoNode types omit `element`, which the runtime node has.
   workgroupArray("vec3", count) as unknown as StorageBufferNode<"vec3">;
 
 /** One workgroup of this many threads solves the whole cloth in one dispatch; WebGPU's default invocation limit. */
@@ -460,6 +462,7 @@ export function buildTethers(
  * pose and collision thickness, so a probe that calls it the same way reads the solver's capsules.
  * @situation measure the body capsules a cape or skirt collides with
  * @situation check whether cloth is inside a skinned character's body
+ * @example const capsules = measureBodyCapsules(capeSkinnedMesh); // [{ bone, start, end, radius }, ...]
  */
 export function measureBodyCapsules(
   source: SkinnedMesh,

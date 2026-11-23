@@ -6,7 +6,7 @@ import { Object3D, Vector3 } from "three";
  * step, unless its own `wind` option overrides it. `windAt` gives any other system (spring bones, grass)
  * the same value.
  * @situation make a cape or flag blow in the wind
- * @situation wind that moves cloth and hair
+ * @situation wind that blows cloth and hair
  * @override velocity; a SoftBody3D `wind` option replaces the scene's fields for that cloth
  * @example const wind = ctx.add(new WindField3D([4, 0, 0])); wind.velocity.set(6, 0, 1);
  */
@@ -25,6 +25,7 @@ export class WindField3D extends Object3D {
 /**
  * Sum of the velocities of every `WindField3D` directly under `root` (the scene), into `out`.
  * @situation read the scene's wind for hair, grass or particles
+ * @example const wind = windAt(scene, new Vector3()); // sum of the WindField3D velocities under the scene
  */
 export function windAt(root: Object3D | null, out: Vector3): Vector3 {
   out.set(0, 0, 0);

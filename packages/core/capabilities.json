@@ -2239,10 +2239,10 @@
       "package": "@threenative/core",
       "signature": "export class HairStrands3D extends Object3D implements IComputeDriven { … }",
       "situations": [
-        "long hair moves with the head",
+        "long hair follows the head",
         "hair cards follow the head",
         "simulate hair guide strands on the GPU",
-        "braid or fringe of hair cards that swings"
+        "braid or fringe of hair cards on a character"
       ],
       "summary": "Simulate hair guide strands on the GPU: hair cards or strands that swing with the head, hang under gravity, keep their styled shape near the root and stay out of the head and body. The kernel is frostbitten-hair-webgpu's guide solver (MIT): Verlet, then the length, global-shape, local-shape and collision constraints per iteration. Defaults are Unreal's groom solver (5 substeps, 5 iterations, air drag 0.1) and frostbitten's stiffnesses. Roots and the rest shape ride on `bone`. Positions stay on the GPU: cards or ribbons read {@link positions} in their position node. Add it to the scene root; it simulates in world space.",
       "supersedes": [],
@@ -2715,7 +2715,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const capsules = measureBodyCapsules(capeSkinnedMesh); // [{ bone, start, end, radius }, ...]",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -3804,7 +3804,7 @@
         "a skinned source simulates in world space: add the SoftBody3D to the scene root",
         "a skinned source needs an indexed geometry, at least one vertex with mask 1, and pins weighted to at most 8 bones"
       ],
-      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });\nGiven a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates)\npins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos\nCloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured\nfrom the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that\ncarries the cloth with no velocity (`TN_SOFTBODY_RESET`).\nconst cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: \"color.r\" }));",
+      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });\nconst cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: \"color.r\" }));",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
@@ -3831,7 +3831,7 @@
         "cloth sticks to the body or passes through the legs",
         "cloth stretches too much on a running character"
       ],
-      "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default.",
+      "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default. Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates) pins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos Cloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured from the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that carries the cloth with no velocity (`TN_SOFTBODY_RESET`).",
       "supersedes": [],
       "symbol": "SoftBody3D"
     },
@@ -4037,7 +4037,7 @@
     {
       "aliases": [],
       "constraints": ["CPU, fixed step, at most 32 bones per chain"],
-      "example": "import { SpringBoneChain3D } from \"@threenative/core\";\nconst root = character.getObjectByName(\"ponytail_01\") as Bone;\nconst ponytail = new SpringBoneChain3D(root, { stiffness: 50, damping: 4 });\n// in the scene's fixed step:\nupdate(_ctx, dt) { ponytail.step(dt); }",
+      "example": "import { SpringBoneChain3D } from \"@threenative/core\";\nconst root = character.getObjectByName(\"ponytail_01\") as Bone;\nconst ponytail = new SpringBoneChain3D(root, { stiffness: 50, damping: 4 });\nponytail.step(1 / 60); // once per fixed step, in the scene's update(ctx, dt): ponytail.step(dt)",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
@@ -4047,9 +4047,9 @@
       "signature": "export class SpringBoneChain3D { … }",
       "situations": [
         "make a ponytail or braid swing with the head",
-        "make a tail or ears swing as the character moves",
+        "make a tail or ears bounce on a character",
         "jiggle bones on a character",
-        "hair that moves with the head"
+        "hair, a ponytail or a braid that moves with the head"
       ],
       "summary": "Simulate a chain of bones for a ponytail, braid, tail, ears or a dangling prop. Unreal's `AnimNode_SpringBone` algorithm and defaults (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_SpringBone.cpp:16-20): stiffness 50, damping 4, a 1/120 s fixed step and an error-reset threshold. The root bone is the anchor and follows its animated parent; the first-child path below it is simulated. Call {@link step} once per fixed step, after the animation mixer poses the root's parent. The simulator owns every chain bone's rotation, the root's included (its position follows the parent); keep them out of animation clips.",
       "supersedes": [],
@@ -4504,7 +4504,7 @@
     {
       "aliases": [],
       "constraints": [],
-      "example": "",
+      "example": "const wind = windAt(scene, new Vector3()); // sum of the WindField3D velocities under the scene",
       "importPath": "@threenative/core",
       "kind": "function",
       "overrides": [],
@@ -4526,7 +4526,7 @@
       ],
       "package": "@threenative/core",
       "signature": "export class WindField3D extends Object3D { … }",
-      "situations": ["make a cape or flag blow in the wind", "wind that moves cloth and hair"],
+      "situations": ["make a cape or flag blow in the wind", "wind that blows cloth and hair"],
       "summary": "A uniform wind, Unreal's WindDirectionalSource in its simplest form: one world velocity in metres per second. A skinned `SoftBody3D` at the same scene root reads the sum of every `WindField3D` there each step, unless its own `wind` option overrides it. `windAt` gives any other system (spring bones, grass) the same value.",
       "supersedes": [],
       "symbol": "WindField3D"

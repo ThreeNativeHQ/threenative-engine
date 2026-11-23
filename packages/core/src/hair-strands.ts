@@ -128,10 +128,10 @@ function check(name: string, value: number, min: number, max = Number.POSITIVE_I
  * shape ride on `bone`. Positions stay on the GPU: cards or ribbons read {@link positions} in their
  * position node. Add it to the scene root; it simulates in world space.
  *
- * @situation long hair moves with the head
+ * @situation long hair follows the head
  * @situation hair cards follow the head
  * @situation simulate hair guide strands on the GPU
- * @situation braid or fringe of hair cards that swings
+ * @situation braid or fringe of hair cards on a character
  * @constraint WebGPU compute; one thread per point with each strand in workgroup memory (at most 256 points per workgroup), the whole step in one dispatch, at most 8 colliders; world space at the scene root
  * @override substeps, iterations, airDrag, wind, globalStiffness, localStiffness, colliders, teleportDistance
  * @example
@@ -320,6 +320,7 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
       const shared = workgroupVec3(groupSize);
       const targets = workgroupVec3(groupSize);
       const shape = workgroupVec3(groupSize);
+      // quality-allow: three's WorkgroupInfoNode types omit `element`, which the runtime node has.
       const lengths = workgroupArray("float", groupSize) as unknown as StorageBufferNode<"float">;
       const earlier = vec3(0).toVar();
       // What a thread reads from storage is read once: the loops below touch registers and workgroup memory.

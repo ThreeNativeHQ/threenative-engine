@@ -67,17 +67,16 @@ function at<T>(items: readonly T[], index: number): T {
  * keep them out of animation clips.
  *
  * @situation make a ponytail or braid swing with the head
- * @situation make a tail or ears swing as the character moves
+ * @situation make a tail or ears bounce on a character
  * @situation jiggle bones on a character
- * @situation hair that moves with the head
+ * @situation hair, a ponytail or a braid that moves with the head
  * @constraint CPU, fixed step, at most 32 bones per chain
  * @override stiffness, damping, gravityScale, colliders, teleportDistance, errorResetDistance
  * @example
  * import { SpringBoneChain3D } from "@threenative/core";
  * const root = character.getObjectByName("ponytail_01") as Bone;
  * const ponytail = new SpringBoneChain3D(root, { stiffness: 50, damping: 4 });
- * // in the scene's fixed step:
- * update(_ctx, dt) { ponytail.step(dt); }
+ * ponytail.step(1 / 60); // once per fixed step, in the scene's update(ctx, dt): ponytail.step(dt)
  */
 export class SpringBoneChain3D {
   readonly root: Bone;
