@@ -1,6 +1,6 @@
 {
   "name": "native-app-lifecycle",
-  "target": "android",
+  "target": "desktop",
   "schemaVersion": 1,
   "warmupFrames": 0,
   "steps": [
