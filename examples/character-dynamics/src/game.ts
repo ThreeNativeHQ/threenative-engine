@@ -50,6 +50,7 @@ import {
 import {
   attribute,
   cameraViewMatrix,
+  clamp,
   length,
   normalize,
   texture,
@@ -490,8 +491,14 @@ class CharacterDynamics extends Scene<IState> {
       // reads the atlas at its own U offset, so the coverage of one layer fills the gaps of the next. The
       // position node reads the solver's buffer, so nothing reads back.
       const LAYERS = 3;
-      const vertices = LAYERS * STRAND_COUNT * STRAND_POINTS * 2;
-      const cardPoint = new Float32Array(vertices);
+      // Four card rows per solver segment, on a Catmull-Rom curve through the solver points: the
+      // anisotropy frame comes from screen derivatives, constant per triangle, so a straight-segment card
+      // shades in facets.
+      const SUBDIVISIONS = 4;
+      const ROWS = (STRAND_POINTS - 1) * SUBDIVISIONS + 1;
+      const vertices = LAYERS * STRAND_COUNT * ROWS * 2;
+      const cardStrand = new Float32Array(vertices);
+      const cardRow = new Float32Array(vertices);
       const cardLayer = new Float32Array(vertices);
       const cardAcross = new Float32Array(vertices * 3);
       const cardUv = new Float32Array(vertices * 2);
@@ -499,26 +506,26 @@ class CharacterDynamics extends Scene<IState> {
       const triangles: number[] = [];
       for (let layer = 0; layer < LAYERS; layer++)
         for (let g = 0; g < STRAND_COUNT; g++)
-          for (let p = 0; p < STRAND_POINTS; p++) {
-            const v = ((layer * STRAND_COUNT + g) * STRAND_POINTS + p) * 2;
-            const half = 0.012 * (1 - (0.5 * p) / (STRAND_POINTS - 1));
+          for (let r = 0; r < ROWS; r++) {
+            const v = ((layer * STRAND_COUNT + g) * ROWS + r) * 2;
+            const along = r / (ROWS - 1);
+            const half = 0.012 * (1 - 0.5 * along);
             for (const side of [0, 1]) {
-              cardPoint[v + side] = g * STRAND_POINTS + p;
+              cardStrand[v + side] = g * STRAND_POINTS;
+              cardRow[v + side] = r / SUBDIVISIONS;
               cardLayer[v + side] = layer;
-              cardUv.set([side + layer * 0.37, p / (STRAND_POINTS - 1)], (v + side) * 2);
+              cardUv.set([side + layer * 0.37, along], (v + side) * 2);
               acrossHead
                 .clone()
                 .multiplyScalar(side === 0 ? -half : half)
                 .toArray(cardAcross, (v + side) * 3);
             }
-            if (p + 1 < STRAND_POINTS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+            if (r + 1 < ROWS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
           }
       const cardGeometry = new BufferGeometry();
-      cardGeometry.setAttribute(
-        "position",
-        new BufferAttribute(new Float32Array(cardPoint.length * 3), 3),
-      );
-      cardGeometry.setAttribute("guidePoint", new BufferAttribute(cardPoint, 1));
+      cardGeometry.setAttribute("position", new BufferAttribute(new Float32Array(vertices * 3), 3));
+      cardGeometry.setAttribute("strand", new BufferAttribute(cardStrand, 1));
+      cardGeometry.setAttribute("row", new BufferAttribute(cardRow, 1));
       cardGeometry.setAttribute("layer", new BufferAttribute(cardLayer, 1));
       cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
       cardGeometry.setAttribute("uv", new BufferAttribute(cardUv, 2));
@@ -526,8 +533,28 @@ class CharacterDynamics extends Scene<IState> {
       // PRD-909's card material from the starter template's generated `src/render/hair.ts`, with a
       // generated strand atlas; each pass reads the solver buffer in its position node.
       const headCentre = headFrame.mul(vec4(0, 0, 0, 1)).xyz;
-      const cardBase = strands.positions
-        .element(attribute("guidePoint", "float").toUint())
+      // Catmull-Rom through the four solver points around the row, clamped to the strand's ends.
+      const row = attribute("row", "float");
+      const segment = row.min(STRAND_POINTS - 2).floor();
+      const t = row.sub(segment);
+      const solverPositions = strands.positions;
+      const solverPoint = (offset: number) =>
+        solverPositions.element(
+          attribute("strand", "float")
+            .add(clamp(segment.add(offset), 0, STRAND_POINTS - 1))
+            .toUint(),
+        );
+      const p0 = solverPoint(-1);
+      const p1 = solverPoint(0);
+      const p2 = solverPoint(1);
+      const p3 = solverPoint(2);
+      const spline = p1
+        .mul(2)
+        .add(p2.sub(p0).mul(t))
+        .add(p0.mul(2).sub(p1.mul(5)).add(p2.mul(4)).sub(p3).mul(t.mul(t)))
+        .add(p3.sub(p0).add(p1.sub(p2).mul(3)).mul(t.mul(t).mul(t)))
+        .mul(0.5);
+      const cardBase = spline
         // The head frame carries the rig's import scale: take its direction, keep the authored width.
         .add(
           normalize(headFrame.mul(vec4(attribute("across", "vec3"), 0)).xyz).mul(
