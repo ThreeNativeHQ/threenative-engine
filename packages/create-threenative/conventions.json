@@ -466,9 +466,9 @@
     },
     {
       "id": "telemetry",
-      "name": "Error telemetry",
-      "default": "a `TN_*` warning, error or uncaught exception reports itself",
-      "override": "`defineGame({ telemetry: false })`; `TN_TELEMETRY=0`, `DO_NOT_TRACK=1`",
+      "name": "Telemetry",
+      "default": "`TN_*` faults are reported",
+      "override": "`defineGame({ telemetry: false })`",
       "marker": "TN_TELEMETRY",
       "kits": "all"
     }

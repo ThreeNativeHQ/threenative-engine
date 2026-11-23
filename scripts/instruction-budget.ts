@@ -38,7 +38,9 @@ export const INSTRUCTION_BUDGETS: IBudgetConfig = {
   // 1,250 measured 2026-11-12 after PRD-880's `#gamepad` row: the widest kit renders 1,234 words
   // and four others sat within four words of the old 1,200, so one mandatory convention row broke
   // six kits. The cap is that measured maximum plus one median row (15 words).
-  defaultMaxWords: 1250,
+  // 1,271 measured 2026-11-22 after PRD-905's `#telemetry` row: action-rpg renders 1,256 words, plus
+  // one median row, by the same rule.
+  defaultMaxWords: 1271,
   overrides: {},
 };
 
