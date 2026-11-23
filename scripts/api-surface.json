@@ -326,12 +326,20 @@
         "@threenative/core#WorldEnvironment": "export class WorldEnvironment { … }",
         "@threenative/core#zenithTransmittance": "export function zenithTransmittance( parameters: IAtmosphereParameters | IResolvedAtmosphereParameters, ): AtmosphereRgb { … }",
         "src/assets.ts#ctx.assets.memo": "ctx.assets.memo<T>(key: string, build: () => T | Promise<T>): Promise<T>",
+        "src/game.ts#game.pause": "game.pause(options?: { readonly audio?: boolean }): void; game.resume(): void",
         "src/game.ts#renderer.matrixWorld": "renderer.matrixWorld?: \"visible\" | \"all\"",
         "src/game.ts#renderer.minimumProjectedPixels": "renderer.minimumProjectedPixels?: number | false",
         "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
+        "src/input.ts#ctx.input.startJoyVibration": "ctx.input.startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean",
+        "src/input.ts#ctx.input.vibrateHandheld": "ctx.input.vibrateHandheld(durationMs: number): boolean",
+        "src/input.ts#InputMap.setBinding": "ctx.input.setBinding(action: string, binding: IInputAction): void; ctx.input.bindings(): InputBindings",
         "src/scene.ts#ctx.after": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
         "src/scene.ts#ctx.beforeRender": "ctx.beforeRender(callback: () => void): () => void",
-        "src/scene.ts#ctx.startup.progress": "ctx.startup.progress: number"
+        "src/scene.ts#ctx.quit": "ctx.quit(): void",
+        "src/scene.ts#ctx.sceneLoad.progress": "ctx.sceneLoad.progress: number",
+        "src/scene.ts#ctx.startup.progress": "ctx.startup.progress: number",
+        "src/scene.ts#ctx.timeScale": "ctx.timeScale: number",
+        "src/scene.ts#Scene.applicationPaused": "applicationPaused(ctx): void; applicationResumed(ctx): void // optional Scene methods"
       }
     },
     "@threenative/metahuman": {

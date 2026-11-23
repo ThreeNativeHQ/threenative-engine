@@ -2790,6 +2790,19 @@ private:
         });
     }
 
+    void dispatchVisibility(bool hidden) {
+        if (!jsEngine_ || hidden == documentHidden_) return;
+        documentHidden_ = hidden;
+        auto document = jsEngine_->getGlobalProperty("document");
+        if (jsEngine_->isUndefined(document)) return;
+        jsEngine_->setProperty(document, "visibilityState", jsEngine_->newString(hidden ? "hidden" : "visible"));
+        jsEngine_->setProperty(document, "hidden", jsEngine_->newBoolean(hidden));
+        auto event = jsEngine_->newObject();
+        jsEngine_->setProperty(event, "type", jsEngine_->newString("visibilitychange"));
+        dispatchToListeners("document", "visibilitychange", event);
+        std::cout << "TN_VISIBILITY:{\"state\":\"" << (hidden ? "hidden" : "visible") << "\"}" << std::endl;
+    }
+
     void drainLifecycleMarkers() {
         std::string marker;
         while (platform::takeLifecycleMarker(marker)) {
@@ -2797,6 +2810,10 @@ private:
 #if defined(__ANDROID__)
             __android_log_print(ANDROID_LOG_INFO, MYSTRAL_LOG_TAG, "%s", marker.c_str());
 #endif
+            // Runs before the pause gate parks the loop, so a `visibilitychange` listener gets one
+            // JavaScript turn to save, and the gate's localStorage flush persists what it wrote.
+            if (marker.find("\"event\":\"paused\"") != std::string::npos) dispatchVisibility(true);
+            else if (marker.find("\"event\":\"resumed\"") != std::string::npos) dispatchVisibility(false);
         }
         if (!platform::isPaused() && !countedPausedTimers_.empty()) {
             const uint64_t skipped = platform::takeDroppedTimerFirings();
@@ -3042,6 +3059,7 @@ private:
     std::unique_ptr<js::ModuleSystem> moduleSystem_;
     std::unordered_set<int> activeWorkerIds_;
     storage::LocalStorage localStorage_;
+    bool documentHidden_ = false;
     HostGapMeter hostGapMeter_;
     using PerformanceClock = std::chrono::steady_clock;
     PerformanceClock::time_point performanceOrigin_ = PerformanceClock::now();
@@ -3309,6 +3327,10 @@ private:
         // the same protection via canvasElement_ below.
         jsEngine_->freezeHandle(document);
         jsEngine_->setProperty(document, "pointerLockElement", jsEngine_->newNull());
+        // The web Page Visibility contract: the lifecycle drain below flips these and dispatches
+        // `visibilitychange` on document, so a game hears background and resume on both runtimes.
+        jsEngine_->setProperty(document, "visibilityState", jsEngine_->newString("visible"));
+        jsEngine_->setProperty(document, "hidden", jsEngine_->newBoolean(false));
 
         // document.addEventListener
         jsEngine_->setProperty(document, "addEventListener",
@@ -3865,6 +3887,18 @@ private:
             jsEngine_->setGlobalProperty("navigator", navigator);
         }
 
+        // navigator.vibrate(ms | [ms, ...]) -> the device motor through SDL haptics. False: no motor.
+        jsEngine_->setProperty(navigator, "vibrate",
+            jsEngine_->newFunction("vibrate", [this](void*, const std::vector<js::JSValueHandle>& args) {
+                if (args.empty()) return jsEngine_->newBoolean(false);
+                auto first = args[0];
+                if (jsEngine_->isArray(first)) first = jsEngine_->getPropertyIndex(first, 0);
+                const double ms = jsEngine_->isUndefined(first) ? 0.0 : jsEngine_->toNumber(first);
+                const bool ok = platform::vibrateDevice(static_cast<uint32_t>(std::max(0.0, ms)));
+                return jsEngine_->newBoolean(ok);
+            })
+        );
+
         jsEngine_->setProperty(navigator, "getGamepads",
             jsEngine_->newFunction("getGamepads", [this](void* ctx, const std::vector<js::JSValueHandle>& args) {
                 int count = platform::getGamepadCount();
@@ -3877,6 +3911,24 @@ private:
                         jsEngine_->setProperty(gamepad, "index", jsEngine_->newNumber(state.index));
                         jsEngine_->setProperty(gamepad, "id", jsEngine_->newString(state.id.c_str()));
                         jsEngine_->setProperty(gamepad, "connected", jsEngine_->newBoolean(state.connected));
+                        // Gamepad.vibrationActuator.playEffect("dual-rumble", {duration, weakMagnitude,
+                        // strongMagnitude}) -> SDL_RumbleGamepad. Returns the web result string.
+                        auto actuator = jsEngine_->newObject();
+                        const int padIndex = state.index;
+                        jsEngine_->setProperty(actuator, "playEffect",
+                            jsEngine_->newFunction("playEffect", [this, padIndex](void*, const std::vector<js::JSValueHandle>& args) {
+                                if (args.size() < 2) return jsEngine_->newString("invalid-parameter");
+                                const auto num = [this, &args](const char* key) {
+                                    auto v = jsEngine_->getProperty(args[1], key);
+                                    return jsEngine_->isUndefined(v) ? 0.0 : jsEngine_->toNumber(v);
+                                };
+                                const bool ok = platform::rumbleGamepad(padIndex,
+                                    static_cast<float>(num("weakMagnitude")), static_cast<float>(num("strongMagnitude")),
+                                    static_cast<uint32_t>(std::max(0.0, num("duration"))));
+                                return jsEngine_->newString(ok ? "complete" : "not-supported");
+                            })
+                        );
+                        jsEngine_->setProperty(gamepad, "vibrationActuator", actuator);
 
                         // Axes
                         auto axes = jsEngine_->newArray(state.numAxes);

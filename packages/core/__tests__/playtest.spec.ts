@@ -379,6 +379,7 @@ describe("playtest plugin", () => {
           pooled: 0,
           queued: 0,
           recentCues: [],
+          silent: false,
           unsupported: [],
           voices: 0,
         },
@@ -403,6 +404,16 @@ describe("playtest plugin", () => {
           reason: "cache API unavailable",
         },
         assets: {},
+        audio: {
+          cues: {},
+          paused: 0,
+          pooled: 0,
+          queued: 0,
+          recentCues: [],
+          silent: false,
+          unsupported: [],
+          voices: 0,
+        },
         state: { score: 0 },
       });
       expect(snapshot.runtimeDiagnosticsSeries).toEqual([]);

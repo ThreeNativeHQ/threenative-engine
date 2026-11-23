@@ -49,6 +49,10 @@ struct Game {
      *  requestAnimationFrame fires while nothing is drawn yet (a loader that adds in slices per frame,
      *  core's describe() waiting for the scene the game enters). */
     std::function<void()> frameWithoutView;
+    /** The window was minimized or hidden (true), or shown again (false): the game's page visibility. */
+    std::function<void(bool hidden)> visibility;
+    /** The exit code a game asked for with `process.exit`, or a negative value while it asked for none. */
+    std::function<int()> exitCode;
     /**
      * three's overlay render (core's canvas layer). overlay: 0 for none this frame, 1 drawn over the world frame, 2
      * drawn alone (a held loader frame: no world this frame, published or not). drawOverlay: after the world frame,

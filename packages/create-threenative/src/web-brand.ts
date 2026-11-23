@@ -130,6 +130,26 @@ export function withBuildId(html: string): string {
   );
 }
 
+/**
+ * The game's own name and the engine drawing it, written before the game module (PRD-905).
+ *
+ * Error telemetry has to name the game a `TN_*` code broke and the renderer it ran on, and neither
+ * is something core can read at run time: the project's name lives in `threenative.config.ts` and
+ * the engine is an import alias this plugin resolves. So both ride the page, in the same inline
+ * script shape `withBuildId` uses, escaped the same way so a name can never close the tag.
+ */
+export function withBootGlobals(
+  html: string,
+  config: Pick<IResolvedThreeNativeConfig, "app" | "engine">,
+): string {
+  const write = (name: string, value: string): string =>
+    `globalThis.${name} = ${JSON.stringify(value).replaceAll("<", "\\u003c")}; `;
+  return html.replace(
+    /<script/iu,
+    `<script>${write("__TN_GAME__", config.app.name)}${write("__TN_ENGINE__", config.engine)}</script>\n    <script`,
+  );
+}
+
 export interface IBundleFile {
   readonly fileName: string;
   readonly type: string;
@@ -351,7 +371,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     },
     transformIndexHtml(html, context) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
-      const output = withBuildId(updateLaunchMarkup(root, config, html));
+      const output = withBootGlobals(withBuildId(updateLaunchMarkup(root, config, html)), config);
       // Before the first script, so it runs ahead of the game module.
       const isolated = threaded
         ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`)

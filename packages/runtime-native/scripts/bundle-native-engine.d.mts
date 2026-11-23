@@ -7,6 +7,10 @@ export function bundleNativeEngine(options: {
   define?: Record<string, string>;
   /** Install the player's core host (rAF, timers, `performance`, the canvas global) before a script entry; booted games always get it. */
   host?: boolean;
+  /** The game's name, written to `__TN_GAME__` ahead of every module for error telemetry (PRD-905); omitted writes nothing. */
+  gameName?: string;
+  /** The renderer engine's name, written to `__TN_ENGINE__` the same way (PRD-905). */
+  engine?: string;
 }): Promise<{ outfile: string; bytes: number; profile: { engine: "native"; gameRuntime: "v8" } }>;
 
 /** Cooks a project's assets decoder-free into `<bundle dir>/native/assets.tnpk`; returns that path, or undefined when the game has no assets to pack. */

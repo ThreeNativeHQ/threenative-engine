@@ -1,0 +1,61 @@
+{
+  "clock": "wall-clock",
+  "name": "starter-restart-loading",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 60,
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "play-scene-loads",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restart",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "restarted",
+      "waitTicks": 120,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "loadLowest",
+        "atSteps": [
+          {
+            "label": "restarted",
+            "lte": 0.99
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "status",
+        "atSteps": [
+          {
+            "label": "restarted",
+            "equals": "playing"
+          }
+        ]
+      }
+    ]
+  }
+}
