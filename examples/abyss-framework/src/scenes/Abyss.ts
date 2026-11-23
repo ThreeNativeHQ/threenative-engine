@@ -33,8 +33,6 @@ const initialState = {
   pulsing: false,
   score: 0,
   status: "attract" as AbyssStatus,
-  /** Fixed updates per wall second at `timeScale` 0.5, against the same measure at 1. */
-  stepRateRatio: 0,
 };
 
 export type AbyssState = typeof initialState;
@@ -221,16 +219,6 @@ export class Abyss extends Scene<AbyssState> {
     let nextHunter = 6;
     let best = 0;
     let simulationTime = 0;
-    // The playtest proves `ctx.timeScale` by halving it, so the loop's own step rate is measured
-    // here rather than restated: fixed updates per wall second, before and after the key that
-    // halves the scale. `performance.now()` is the wall clock; the update count is what the loop
-    // really ran.
-    let windowStartMs = performance.now();
-    let windowSteps = 0;
-    let scaleOneRate = 0;
-    let slowStartMs = 0;
-    let slowSteps = 0;
-    let stepRateRatio = 0;
     const target = new THREE.Vector2();
     const temporary = new THREE.Vector3();
     // Seeded from the live pointer, not from NaN: an unequal first comparison
@@ -256,7 +244,6 @@ export class Abyss extends Scene<AbyssState> {
         pulsing,
         score,
         status,
-        stepRateRatio,
       });
     };
     const start = () => {
@@ -286,28 +273,6 @@ export class Abyss extends Scene<AbyssState> {
       field.w = VIEW * 2 * frameCtx.viewport.size.aspect;
       uField.value.x = field.w;
       simulationTime += dt;
-      // One key drives the feature this fixture exists to prove; the scenario presses it. The
-      // scale is a loop setting, so the fixture holds no copy of it beyond what it measures.
-      if (frameCtx.input.pressed("slow")) {
-        frameCtx.timeScale = 0.5;
-        slowStartMs = performance.now();
-        slowSteps = 0;
-      }
-      const wallMs = performance.now();
-      if (frameCtx.timeScale === 1) {
-        windowSteps += 1;
-        const windowMs = wallMs - windowStartMs;
-        if (windowMs >= 1_000) {
-          scaleOneRate = (windowSteps * 1_000) / windowMs;
-          windowSteps = 0;
-          windowStartMs = wallMs;
-        }
-      } else {
-        slowSteps += 1;
-        const slowMs = wallMs - slowStartMs;
-        if (scaleOneRate > 0 && slowMs >= 1_000)
-          stepRateRatio = (slowSteps * 1_000) / slowMs / scaleOneRate;
-      }
       const now = simulationTime * 1_000;
       const move = frameCtx.input.vector("move");
       const pulse = frameCtx.input.pressed("pulse") && energy > 1;

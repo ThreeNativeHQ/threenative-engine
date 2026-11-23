@@ -43,7 +43,7 @@ A 2026-11-22 audit (two read-only scouts, re-checked by the lead) found three ga
 - [x] `ctx.timeScale = 0.5` gives half the ticks per wall second with the same `step`. `0` freezes the simulation. A non-finite value throws `TN_TIME_SCALE_INVALID`. proof: `pnpm exec vitest run packages/core/__tests__/loop-time-scale.spec.ts`
   result: ✅ `loop-time-scale.spec.ts` 7 cases, red before: 230 vs 115 ticks over the same 3.84 s at step 1/60, 0 freezes with rendering running, NaN/Infinity/-1 throw. All 13 `FixedStepLoop` specs, 165 passed.
 - [x] A playtest scenario with `timeScale = 0.5` advances a timer half as far in the same wall time. proof: scenario under `packages/playtest`, run with `--browser-recipe webgpu`
-  result: ✅ `examples/abyss-framework/playtests/time-scale-half.playtest.json` passes with `--browser-recipe webgpu --headed` (adapter nvidia/turing): fixed updates per wall second at scale 0.5 over the scale-1 rate = 0.505 (bound 0.4 to 0.6).
+  result: ✅ `examples/native-smoke/playtests/time-scale-half.playtest.json` passes with `--url ...?timeScale --browser-recipe webgpu --headed` (adapter nvidia/turing): the smoke scene's own fixed steps per wall second at scale 0.5 over the rate at scale 1 = 0.507 (bound 0.4 to 0.6). A first version in `abyss-framework` passed at 0.505, but that example is the framework-vs-vanilla LOC benchmark and `count-loc --check` rejected the 37 probe lines, so the probe moved to the smoke game behind `debugFlag("timeScale")`.
 
 ### Phase 3 — Key rebinding
 
