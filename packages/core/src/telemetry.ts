@@ -21,6 +21,13 @@ const ENDPOINT = "https://threenative.com/api/telemetry";
 const MARKER = /\bTN_[A-Z0-9_]+/u;
 const MAX_EVENTS = 50;
 const MAX_MESSAGE = 200;
+/**
+ * The most text one warning costs: arguments are read, and the marker and scrub patterns run, over
+ * this prefix only. A 4 KB warning repeated each frame cost 69 µs a call unbounded (PRD-905).
+ */
+const MAX_SCAN = 512;
+/** Raw warning prefixes remembered per session, so a repeat skips the scrub; bounded memory. */
+const MAX_SEEN = 256;
 const MAX_NAME = 64;
 const MAX_BACKEND = 32;
 
@@ -53,7 +60,8 @@ const ON_FLAG: ILaunchFlagSpec = {
 type ConsoleMethod = (...args: unknown[]) => void;
 type Level = "error" | "warn";
 type Listener = (event: unknown) => void;
-type Report = (level: Level, text: string) => void;
+/** `read` runs only when an event can still be sent, so a capped session reads no argument. */
+type Report = (level: Level, read: () => string | undefined) => void;
 
 /** The console methods install replaced, as they were before. */
 interface IConsoleScope {
@@ -70,6 +78,7 @@ interface IListenable {
 interface IInstalled {
   readonly console: IConsoleScope;
   readonly sent: Set<string>;
+  readonly seen: Set<string>;
   listeners: Array<readonly [type: string, listener: Listener]>;
   session: string;
   events: number;
@@ -117,16 +126,20 @@ export function installTelemetry(options: ITelemetryOptions | undefined): void {
     console: { error: console.error, warn: console.warn },
     events: 0,
     listeners: [],
+    seen: new Set(),
     sent: new Set(),
     session: newSession(),
   };
-  const record: Report = (level, text) => {
-    if (sending) return;
+  const record: Report = (level, read) => {
+    if (sending || state.events >= MAX_EVENTS) return;
+    const text = read();
+    if (text === undefined || !text.includes("TN_") || state.seen.has(text)) return;
+    if (state.seen.size < MAX_SEEN) state.seen.add(text);
     const code = MARKER.exec(text)?.[0];
     if (code === undefined) return;
     const message = scrub(text);
     const key = `${code}\n${message}`;
-    if (state.sent.has(key) || state.events >= MAX_EVENTS) return;
+    if (state.sent.has(key)) return;
     state.sent.add(key);
     state.events += 1;
     sending = true;
@@ -222,8 +235,7 @@ function telemetryPlatform(): string | undefined {
 function wrap(original: ConsoleMethod, level: Level, record: Report): ConsoleMethod {
   return (...args: unknown[]) => {
     try {
-      const text = textOf(args);
-      if (text !== undefined) record(level, text);
+      record(level, () => textOf(args));
     } catch {
       // Reporting is a side channel: the game's own log line still goes where it always went.
     }
@@ -231,14 +243,19 @@ function wrap(original: ConsoleMethod, level: Level, record: Report): ConsoleMet
   };
 }
 
-/** The text a console call carries: its string arguments and any `Error`'s message, in order. */
+/**
+ * The text a console call carries: its string arguments and any `Error`'s message, in order, cut at
+ * `MAX_SCAN` characters.
+ */
 function textOf(args: readonly unknown[]): string | undefined {
-  const parts: string[] = [];
+  let text: string | undefined;
   for (const arg of args) {
-    if (typeof arg === "string") parts.push(arg);
-    else if (arg instanceof Error) parts.push(arg.message);
+    const part = typeof arg === "string" ? arg : arg instanceof Error ? arg.message : undefined;
+    if (part === undefined) continue;
+    text = text === undefined ? part.slice(0, MAX_SCAN) : `${text} ${part.slice(0, MAX_SCAN)}`;
+    if (text.length >= MAX_SCAN) return text.slice(0, MAX_SCAN);
   }
-  return parts.length === 0 ? undefined : parts.join(" ");
+  return text;
 }
 
 /** The `error` and `unhandledrejection` listeners, for a host whose global is an event target. */
@@ -251,7 +268,7 @@ function listen(record: Report): Array<readonly [type: string, listener: Listene
     return [];
   const pairs: Array<readonly [type: string, listener: Listener]> = [];
   const listenFor = (type: string, pick: (event: unknown) => string): void => {
-    const listener: Listener = (event) => record("error", pick(event));
+    const listener: Listener = (event) => record("error", () => pick(event).slice(0, MAX_SCAN));
     scope.addEventListener?.(type, listener);
     pairs.push([type, listener]);
   };

@@ -104,6 +104,28 @@ describe("telemetry", () => {
     expect(sent()).toHaveLength(50);
   });
 
+  it("does no work per warning once the session cap is reached, and scans a bounded prefix", () => {
+    installTelemetry(undefined);
+    for (let index = 0; index < 50; index += 1) console.warn(`TN_CAP_${index}: x`);
+    let reads = 0;
+    const late = new Error("unused");
+    Object.defineProperty(late, "message", {
+      get: () => {
+        reads += 1;
+        return "TN_LATE: after the cap";
+      },
+    });
+    console.warn(late);
+    expect(reads).toBe(0);
+    uninstallTelemetry();
+    beacon.mockClear();
+    installTelemetry(undefined);
+    console.warn(`TN_HUGE: ${"/very/long/path".repeat(100_000)}`);
+    const [event] = sent();
+    expect(event?.code).toBe("TN_HUGE");
+    expect(String(event?.message).length).toBeLessThanOrEqual(200);
+  });
+
   it("never sends a log or info marker such as TN_FRAME_BUDGET", () => {
     vi.spyOn(console, "log").mockImplementation(() => undefined);
     installTelemetry(undefined);
