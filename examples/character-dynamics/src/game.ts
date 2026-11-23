@@ -670,6 +670,10 @@ class CharacterDynamics extends Scene<IState> {
     // Follow camera: rear three-quarter view so a trailing cape reads against the body. `?view=close`
     // frames the back of the head for the hair-card judge (PRD-909 AC-1).
     const close = new URLSearchParams(globalThis.location?.search ?? "").get("view") === "close";
+    // The close view lights the hair as a look-dev rig does: the key comes from behind the character
+    // and to the camera's side, so the strands the camera sees are lit (the default key is in front).
+    if (close)
+      key.position.copy(new Vector3(2, 6, -4).applyAxisAngle(new Vector3(0, 1, 0), bindYaw));
     const cameraOffset = (close ? new Vector3(0.45, 1.75, -0.75) : new Vector3(2.4, 1.5, -3.4))
       .multiplyScalar(height / 1.8)
       .applyAxisAngle(new Vector3(0, 1, 0), bindYaw);
