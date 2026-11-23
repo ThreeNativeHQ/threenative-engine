@@ -2,606 +2,606 @@
 <defs><pattern id="gap" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="8" height="8" fill="#8a3b37"/><rect width="4" height="8" fill="#e0625a"/></pattern>
 <style>.a{fill:#9aa49f;font-size:10px;font-weight:600;letter-spacing:.06em}.s{fill:#e7ebe8;font-size:10.5px;font-weight:600}.l{fill:#fff;font-size:9.5px}.g{fill:#e7ebe8;font-size:12px}.h{fill:#e7ebe8;font-size:17px;font-weight:700}</style></defs>
 <rect width="1200" height="720" rx="10" fill="#121513"/>
-<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 24% done, 22% in progress (share of 676K Unreal lines)</text>
-<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 24%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 22%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 33%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 18%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
-<rect x="10" y="66" width="343.60301046210975" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="8" y="26" class="h">Unreal 5.8.3 → ThreeNative: 23% done, 21% in progress (share of 704K Unreal lines)</text>
+<rect x="8" y="40" width="11" height="11" rx="2" fill="#3aa56c"/><text x="24" y="50" class="g">Done 23%</text><rect x="93.4" y="40" width="11" height="11" rx="2" fill="#d9961f"/><text x="109.4" y="50" class="g">In progress 21%</text><rect x="225" y="40" width="11" height="11" rx="2" fill="#4a86d6"/><text x="241" y="50" class="g">Not started 36%</text><rect x="356.6" y="40" width="11" height="11" rx="2" fill="#6c7176"/><text x="372.6" y="50" class="g">Deferred 17%</text><rect x="468.40000000000003" y="40" width="11" height="11" rx="2" fill="url(#gap)"/><text x="484.40000000000003" y="50" class="g">No PRD 1%</text><rect x="567" y="40" width="11" height="11" rx="2" fill="#3b403d"/><text x="583" y="50" class="g">Out of scope by rule 1%</text><rect x="758" y="40" width="11" height="11" rx="2" fill="#2c322f"/><text x="774" y="50" class="g">Not split 1%</text>
+<rect x="10" y="66" width="329.933023921651" height="644" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
 <text x="17" y="79" class="a">LIGHTING &amp; GI · 199K</text>
-<rect x="14" y="85" width="335.60301046210975" height="246.81476595230424" rx="4" fill="#232826"/>
+<rect x="14" y="85" width="321.933023921651" height="246.81476595230419" rx="4" fill="#232826"/>
 <text x="18" y="96" class="s">Lumen</text>
-<rect x="15" y="98" width="52.741403342088105" height="71.5575955249335" rx="2" fill="#d9961f"><title>Lumen · Scene data and primitive updates · In progress</title></rect>
-<rect x="15" y="166.5575955249335" width="32.96337708880507" height="3" fill="#fff" opacity=".85"/>
+<rect x="15" y="98" width="50.53925217044829" height="71.5575955249335" rx="2" fill="#d9961f"><title>Lumen · Scene data and primitive updates · In progress</title></rect>
+<rect x="15" y="166.5575955249335" width="31.587032606530183" height="3" fill="#fff" opacity=".85"/>
 <text x="18" y="109" class="l">Scene d…</text>
-<rect x="15" y="170.5575955249335" width="52.741403342088105" height="53.68240687351218" rx="2" fill="#6c7176"><title>Lumen · ReSTIR gather · Deferred</title></rect>
+<rect x="15" y="170.5575955249335" width="50.53925217044829" height="53.68240687351215" rx="2" fill="#6c7176"><title>Lumen · ReSTIR gather · Deferred</title></rect>
 <text x="18" y="181.5575955249335" class="l">ReSTIR …</text>
-<rect x="15" y="225.24000239844568" width="52.741403342088105" height="52.607344559104575" rx="2" fill="#d9961f"><title>Lumen · Direct lighting accumulation, update budget and combine · In progress</title></rect>
-<rect x="15" y="274.84734695755026" width="35.160935561392066" height="3" fill="#fff" opacity=".85"/>
-<text x="18" y="236.24000239844568" class="l">Direct …</text>
-<rect x="15" y="278.84734695755026" width="52.741403342088105" height="50.967418994753984" rx="2" fill="#d9961f"><title>Lumen · Card capture and physical atlas · In progress</title></rect>
-<rect x="15" y="326.81476595230424" width="35.160935561392066" height="3" fill="#fff" opacity=".85"/>
-<text x="18" y="289.84734695755026" class="l">Card ca…</text>
-<rect x="68.7414033420881" y="98" width="51.86653350604253" height="50.16034557723481" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing common, materials and far field · Deferred</title></rect>
-<text x="71.7414033420881" y="109" class="l">Hardwar…</text>
-<rect x="68.7414033420881" y="149.1603455772348" width="51.86653350604253" height="44.8072174556487" rx="2" fill="#d9961f"><title>Lumen · Probe tracing and radiance cache handoff · In progress</title></rect>
-<rect x="68.7414033420881" y="190.9675630328835" width="24.56835797654646" height="3" fill="#fff" opacity=".85"/>
-<text x="71.7414033420881" y="160.1603455772348" class="l">Probe t…</text>
-<rect x="68.7414033420881" y="194.9675630328835" width="51.86653350604253" height="44.64051104355778" rx="2" fill="#3aa56c"><title>Lumen · Shared and glue · Done</title></rect>
-<text x="71.7414033420881" y="205.9675630328835" class="l">Shared …</text>
-<rect x="68.7414033420881" y="240.60807407644128" width="51.86653350604253" height="44.38118995808301" rx="2" fill="#d9961f"><title>Lumen · Reflection tracing · In progress</title></rect>
-<rect x="68.7414033420881" y="281.9892640345243" width="28.290836457841376" height="3" fill="#fff" opacity=".85"/>
-<text x="71.7414033420881" y="251.60807407644128" class="l">Reflect…</text>
-<rect x="68.7414033420881" y="285.9892640345243" width="51.86653350604253" height="43.825501917779945" rx="2" fill="#3aa56c"><title>Lumen · Radiosity · Done</title></rect>
-<text x="71.7414033420881" y="296.9892640345243" class="l">Radiosi…</text>
-<rect x="121.60793684813063" y="98" width="47.438993889788264" height="44.87013427162117" rx="2" fill="#3b403d"><title>Lumen · Stochastic direct lighting · Out of scope by rule</title></rect>
-<text x="124.60793684813063" y="109" class="l">Stocha…</text>
-<rect x="170.0469307379189" y="98" width="45.17608804918996" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Lumen scene, reflection view and surface cache views · In progress</title></rect>
-<rect x="170.0469307379189" y="139.87013427162117" width="26.694961119975886" height="3" fill="#fff" opacity=".85"/>
-<text x="173.0469307379189" y="109" class="l">Lumen …</text>
-<rect x="216.22301878710886" y="98" width="44.898561861192036" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
-<rect x="216.22301878710886" y="139.87013427162117" width="38.48448159530746" height="3" fill="#fff" opacity=".85"/>
-<text x="219.22301878710886" y="109" class="l">Shared…</text>
-<rect x="262.1215806483009" y="98" width="43.126663891666965" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
-<rect x="262.1215806483009" y="139.87013427162117" width="22.831763236764864" height="3" fill="#fff" opacity=".85"/>
-<text x="265.1215806483009" y="109" class="l">Share…</text>
-<rect x="306.2482445399679" y="98" width="41.354765922141894" height="44.87013427162117" rx="2" fill="#d9961f"><title>Lumen · Integrate, tile classification and upsample · In progress</title></rect>
-<rect x="306.2482445399679" y="139.87013427162117" width="31.01607444160642" height="3" fill="#fff" opacity=".85"/>
-<text x="309.2482445399679" y="109" class="l">Integ…</text>
-<rect x="121.60793684813063" y="143.87013427162117" width="45.14806965591683" height="40.20845343063411" rx="2" fill="url(#gap)"><title>Lumen · Surface cache residency, resolution and feedback · No PRD</title></rect>
-<text x="124.60793684813063" y="154.87013427162117" class="l">Surfac…</text>
-<rect x="121.60793684813063" y="185.07858770225528" width="45.14806965591683" height="37.68332162927186" rx="2" fill="#d9961f"><title>Lumen · Light culling into card tiles · In progress</title></rect>
-<rect x="121.60793684813063" y="219.76190933152714" width="30.09871310394455" height="3" fill="#fff" opacity=".85"/>
-<text x="124.60793684813063" y="196.07858770225528" class="l">Light …</text>
-<rect x="121.60793684813063" y="223.76190933152716" width="45.14806965591683" height="34.94599387821532" rx="2" fill="#6c7176"><title>Lumen · Card placement and mesh cards · Deferred</title></rect>
-<text x="124.60793684813063" y="234.76190933152716" class="l">Card p…</text>
-<rect x="121.60793684813063" y="259.70790320974254" width="45.14806965591683" height="34.648919548643335" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced visualize · Deferred</title></rect>
-<text x="124.60793684813063" y="270.70790320974254" class="l">Hardwa…</text>
-<rect x="121.60793684813063" y="295.3568227583858" width="45.14806965591683" height="34.457943193918425" rx="2" fill="#d9961f"><title>Lumen · Froxel volume trace and filter · In progress</title></rect>
-<rect x="121.60793684813063" y="326.81476595230424" width="24.62621981231827" height="3" fill="#fff" opacity=".85"/>
-<text x="124.60793684813063" y="306.3568227583858" class="l">Froxel…</text>
-<rect x="167.75600650404746" y="143.87013427162117" width="36.0962242216319" height="41.0510357605267" rx="2" fill="#d9961f"><title>Lumen · Card shadowing · In progress</title></rect>
-<rect x="167.75600650404746" y="181.92117003214787" width="24.06414948108793" height="3" fill="#fff" opacity=".85"/>
-<text x="170.75600650404746" y="154.87013427162117" class="l">Card…</text>
-<rect x="204.85223072567936" y="143.87013427162117" width="35.72363188795572" height="41.0510357605267" rx="2" fill="#3aa56c"><title>Lumen · Mesh SDF and heightfield culling · Done</title></rect>
-<text x="207.85223072567936" y="154.87013427162117" class="l">Mesh…</text>
-<rect x="241.57586261363508" y="143.87013427162117" width="35.49076167940814" height="41.0510357605267" rx="2" fill="#3aa56c"><title>Lumen · Probe spatial filter and irradiance conversion · Done</title></rect>
-<text x="244.57586261363508" y="154.87013427162117" class="l">Prob…</text>
-<rect x="278.0666242930432" y="143.87013427162117" width="35.07159530402248" height="41.0510357605267" rx="2" fill="url(#gap)"><title>Lumen · Surface cache compression and copy · No PRD</title></rect>
-<text x="281.0666242930432" y="154.87013427162117" class="l">Surf…</text>
-<rect x="314.1382195970657" y="143.87013427162117" width="33.46479086504405" height="41.0510357605267" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing · Deferred</title></rect>
-<text x="317.1382195970657" y="154.87013427162117" class="l">Hard…</text>
-<rect x="167.75600650404746" y="185.92117003214787" width="36.15747328978759" height="36.15896148552574" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced reflections and hit lighting · Deferred</title></rect>
-<text x="170.75600650404746" y="196.92117003214787" class="l">Hard…</text>
-<rect x="167.75600650404746" y="223.0801315176736" width="36.15747328978759" height="35.9217766249798" rx="2" fill="#d9961f"><title>Lumen · Probe and pixel temporal accumulation · In progress</title></rect>
-<rect x="167.75600650404746" y="256.0019081426534" width="12.913383317781282" height="3" fill="#fff" opacity=".85"/>
-<text x="170.75600650404746" y="234.0801315176736" class="l">Prob…</text>
-<rect x="167.75600650404746" y="260.0019081426534" width="36.15747328978759" height="34.472313588310385" rx="2" fill="#6c7176"><title>Lumen · Ray traced translucency · Deferred</title></rect>
-<text x="170.75600650404746" y="271.0019081426534" class="l">Ray …</text>
-<rect x="167.75600650404746" y="295.4742217309638" width="36.15747328978759" height="34.34054422134045" rx="2" fill="#3aa56c"><title>Lumen · Short Range AO and bent normal · Done</title></rect>
-<text x="170.75600650404746" y="306.4742217309638" class="l">Shor…</text>
-<rect x="204.91347979383505" y="185.92117003214787" width="36.27901080870464" height="33.64743152523752" rx="2" fill="#d9961f"><title>Lumen · Tile classification and ray generation · In progress</title></rect>
-<rect x="204.91347979383505" y="216.5686015573854" width="19.78855135020253" height="3" fill="#fff" opacity=".85"/>
-<text x="207.91347979383505" y="196.92117003214787" class="l">Tile…</text>
-<rect x="242.1924906025397" y="185.92117003214787" width="35.00717192592094" height="33.64743152523752" rx="2" fill="#4a86d6"><title>Lumen · BRDF and lighting importance sampling · Not started</title></rect>
-<text x="245.1924906025397" y="196.92117003214787" class="l">BRDF…</text>
-<rect x="278.19966252846064" y="185.92117003214787" width="34.950645753352774" height="33.64743152523752" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
-<rect x="278.19966252846064" y="216.5686015573854" width="22.793899404360506" height="3" fill="#fff" opacity=".85"/>
-<text x="281.19966252846064" y="196.92117003214787" class="l">Shar…</text>
-<rect x="314.15030828181335" y="185.92117003214787" width="33.4527021802964" height="33.64743152523752" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing paths · Deferred</title></rect>
-<text x="317.15030828181335" y="196.92117003214787" class="l">Hard…</text>
-<rect x="204.91347979383505" y="220.5686015573854" width="30.36352431165716" height="36.622947634063195" rx="2" fill="#4a86d6"><title>Lumen · Radiance cache, radiosity and card lighting views · Not started</title></rect>
-<text x="207.91347979383505" y="231.5686015573854" class="l">Rad…</text>
-<rect x="204.91347979383505" y="258.1915491914486" width="30.36352431165716" height="36.34194636542708" rx="2" fill="#d9961f"><title>Lumen · Surface cache sampling at a ray hit · In progress</title></rect>
-<rect x="204.91347979383505" y="291.53349555687566" width="20.242349541104772" height="3" fill="#fff" opacity=".85"/>
-<text x="207.91347979383505" y="269.1915491914486" class="l">Sur…</text>
-<rect x="204.91347979383505" y="295.53349555687566" width="30.36352431165716" height="34.28127039542858" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced card lighting · Deferred</title></rect>
-<text x="207.91347979383505" y="306.53349555687566" class="l">Har…</text>
-<rect x="236.2770041054922" y="220.5686015573854" width="34.84910340465825" height="27.818063289553862" rx="2" fill="#3aa56c"><title>Lumen · Probe tracing with BRDF-driven trace tiles · Done</title></rect>
-<text x="239.2770041054922" y="231.5686015573854" class="l">Prob…</text>
-<rect x="236.2770041054922" y="249.38666484693925" width="34.84910340465825" height="26.78006669713392" rx="2" fill="#3aa56c"><title>Lumen · Software ray tracing against distance fields · Done</title></rect>
-<text x="239.2770041054922" y="260.38666484693925" class="l">Soft…</text>
-<rect x="236.2770041054922" y="277.1667315440732" width="34.84910340465825" height="26.42496259972711" rx="2" fill="#d9961f"><title>Lumen · Final gather method and allow checks · In progress</title></rect>
-<rect x="236.2770041054922" y="300.5916941438003" width="29.621737893959512" height="3" fill="#fff" opacity=".85"/>
-<text x="239.2770041054922" y="288.1667315440732" class="l">Fina…</text>
-<rect x="236.2770041054922" y="304.5916941438003" width="34.84910340465825" height="25.22307180850396" rx="2" fill="#d9961f"><title>Lumen · Probe marking, allocation and indirection · In progress</title></rect>
-<rect x="236.2770041054922" y="326.81476595230424" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="239.2770041054922" y="315.5916941438003" class="l">Prob…</text>
-<rect x="272.12610751015046" y="220.5686015573854" width="25.07240391408976" height="29.38491847957519" rx="2" fill="#d9961f"><title>Lumen · Temporal denoiser · In progress</title></rect>
-<rect x="272.12610751015046" y="246.95352003696058" width="11.031857722199495" height="3" fill="#fff" opacity=".85"/>
-<text x="275.12610751015046" y="231.5686015573854" class="l">Te…</text>
-<rect x="298.1985114242402" y="220.5686015573854" width="24.943492151844623" height="29.38491847957519" rx="2" fill="#d9961f"><title>Lumen · Probe gather and half-resolution interpolation · In progress</title></rect>
-<rect x="298.1985114242402" y="246.95352003696058" width="15.48216754252425" height="3" fill="#fff" opacity=".85"/>
-<text x="301.1985114242402" y="231.5686015573854" class="l">Pr…</text>
-<rect x="324.14200357608485" y="220.5686015573854" width="23.461006886024904" height="29.38491847957519" rx="2" fill="#d9961f"><title>Lumen · Spatial resolve · In progress</title></rect>
-<rect x="324.14200357608485" y="246.95352003696058" width="12.796912846922675" height="3" fill="#fff" opacity=".85"/>
-<text x="327.14200357608485" y="231.5686015573854" class="l">Sp…</text>
-<rect x="272.12610751015046" y="250.95352003696058" width="25.085145192916343" height="23.776577015582802" rx="2" fill="#3aa56c"><title>Lumen · Shared and glue · Done</title></rect>
-<text x="275.12610751015046" y="261.9535200369606" class="l">Sh…</text>
-<rect x="298.2112527030668" y="250.95352003696058" width="24.334209194938467" height="23.776577015582802" rx="2" fill="#4a86d6"><title>Lumen · Radiance storage, spatial filter, mips and irradiance · Not started</title></rect>
-<text x="301.2112527030668" y="261.9535200369606" class="l">Ra…</text>
-<rect x="323.54546189800527" y="250.95352003696058" width="24.05754856410448" height="23.776577015582802" rx="2" fill="#d9961f"><title>Lumen · Translucency radiance cache and glossy reflections on translucent surfaces · In progress</title></rect>
-<rect x="323.54546189800527" y="271.7300970525434" width="6.8735853040298505" height="3" fill="#fff" opacity=".85"/>
-<text x="326.54546189800527" y="261.9535200369606" class="l">Tr…</text>
-<rect x="272.12610751015046" y="275.7300970525434" width="24.332307463166444" height="22.58010387989765" rx="2" fill="#4a86d6"><title>Lumen · Interpolation with parallax correction · Not started</title></rect>
-<text x="275.12610751015046" y="286.7300970525434" class="l">In…</text>
-<rect x="272.12610751015046" y="299.31020093244103" width="24.332307463166444" height="15.544728623928165" rx="2" fill="#d9961f"><title>Lumen · Uniform and adaptive probe placement · In progress</title></rect>
-<rect x="272.12610751015046" y="311.8549295563692" width="11.525829850973578" height="3" fill="#fff" opacity=".85"/>
-<rect x="272.12610751015046" y="315.8549295563692" width="24.332307463166444" height="13.959836395935042" rx="2" fill="#d9961f"><title>Lumen · Per-view history state · In progress</title></rect>
-<rect x="272.12610751015046" y="326.81476595230424" width="10.706215283793236" height="3" fill="#fff" opacity=".85"/>
-<rect x="297.4584149733169" y="275.7300970525434" width="17.045264755393816" height="18.969867800643215" rx="2" fill="#4a86d6"><title>Lumen · Visibility-weighted interpolation · Not started</title></rect>
-<rect x="315.5036797287107" y="275.7300970525434" width="15.574183389464963" height="18.969867800643215" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing · Deferred</title></rect>
-<rect x="332.07786311817574" y="275.7300970525434" width="15.525147343934009" height="18.969867800643215" rx="2" fill="url(#gap)"><title>Lumen · Probe debug overlay · No PRD</title></rect>
-<rect x="297.4584149733169" y="295.6999648531866" width="16.70818873248828" height="17.138038992930035" rx="2" fill="url(#gap)"><title>Lumen · Hair strands · No PRD</title></rect>
-<rect x="297.4584149733169" y="313.83800384611664" width="16.70818873248828" height="15.976762106187607" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
-<rect x="297.4584149733169" y="326.81476595230424" width="11.138792488325521" height="3" fill="#fff" opacity=".85"/>
-<rect x="315.1666037058052" y="295.6999648531866" width="16.755464171687265" height="15.049133446469114" rx="2" fill="url(#gap)"><title>Lumen · Bilateral filter · No PRD</title></rect>
-<rect x="332.92206787749245" y="295.6999648531866" width="14.680942584617299" height="15.049133446469114" rx="2" fill="#d9961f"><title>Lumen · Update priority and trace budget · In progress</title></rect>
-<rect x="332.92206787749245" y="307.7490982996557" width="7.772263721267982" height="3" fill="#fff" opacity=".85"/>
-<rect x="315.1666037058052" y="311.7490982996557" width="9.734576055403465" height="18.06566765264853" rx="2" fill="#4a86d6"><title>Lumen · Probe occlusion depth · Not started</title></rect>
-<rect x="325.90117976120865" y="311.7490982996557" width="9.375044799959312" height="18.06566765264853" rx="2" fill="#d9961f"><title>Lumen · Probe offset out of geometry · In progress</title></rect>
-<rect x="325.90117976120865" y="326.81476595230424" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="336.27622456116796" y="311.7490982996557" width="11.326785900941786" height="9.803878336500816" rx="2" fill="url(#gap)"><title>Lumen · Front layer translucency and water passes · No PRD</title></rect>
-<rect x="336.27622456116796" y="322.55297663615653" width="11.326785900941786" height="7.261789316147713" rx="2" fill="url(#gap)"><title>Lumen · Heightfields in the scene · No PRD</title></rect>
-<rect x="14" y="333.81476595230424" width="179.12251073182645" height="168.36881646793427" rx="4" fill="#232826"/>
-<text x="18" y="344.81476595230424" class="s">Substrate materials</text>
-<rect x="15" y="346.81476595230424" width="176.12251073182645" height="153.36881646793427" rx="2" fill="#4a86d6"><title>Substrate materials · Whole system (not split) · Not started</title></rect>
-<text x="18" y="357.81476595230424" class="l">Whole system (not split)</text>
-<rect x="195.12251073182645" y="333.81476595230424" width="154.4804997302833" height="168.36881646793427" rx="4" fill="#232826"/>
-<text x="199.12251073182645" y="344.81476595230424" class="s">Deferred shading + clust…</text>
-<rect x="196.12251073182645" y="346.81476595230424" width="151.4804997302833" height="153.36881646793427" rx="2" fill="#3aa56c"><title>Deferred shading + clustered lights · Whole system (not split) · Done</title></rect>
-<text x="199.12251073182645" y="357.81476595230424" class="l">Whole system (not split)</text>
-<rect x="14" y="504.1835824202385" width="107.40270559133846" height="201.8164175797615" rx="4" fill="#232826"/>
-<text x="18" y="515.1835824202385" class="s">Reflections</text>
-<rect x="15" y="517.1835824202385" width="104.40270559133846" height="79.16141010600063" rx="2" fill="#d9961f"><title>Reflections · Lumen reflections · In progress</title></rect>
-<rect x="15" y="593.3449925262391" width="56.94693032254825" height="3" fill="#fff" opacity=".85"/>
-<text x="18" y="528.1835824202385" class="l">Lumen reflections</text>
-<rect x="15" y="597.3449925262391" width="56.77585198547496" height="77.10072840841701" rx="2" fill="#4a86d6"><title>Reflections · Reflection captures (box, sphere, real-time) · Not started</title></rect>
-<text x="18" y="608.3449925262391" class="l">Reflecti…</text>
-<rect x="72.77585198547496" y="597.3449925262391" width="46.6268536058635" height="77.10072840841701" rx="2" fill="#3aa56c"><title>Reflections · Screen-space reflections · Done</title></rect>
-<text x="75.77585198547496" y="608.3449925262391" class="l">Screen…</text>
-<rect x="15" y="675.4457209346562" width="104.40270559133846" height="28.55427906534385" rx="2" fill="#d9961f"><title>Reflections · Reflection environment apply · In progress</title></rect>
-<rect x="15" y="701" width="31.320811677401537" height="3" fill="#fff" opacity=".85"/>
-<text x="18" y="686.4457209346562" class="l">Reflection enviro…</text>
-<rect x="123.40270559133846" y="504.1835824202385" width="101.88944109849099" height="201.8164175797615" rx="4" fill="#232826"/>
-<text x="127.40270559133846" y="515.1835824202385" class="s">MegaLights</text>
-<rect x="124.40270559133846" y="517.1835824202385" width="98.88944109849099" height="91.59773060989892" rx="2" fill="#4a86d6"><title>MegaLights · Shaders (not split) · Not started</title></rect>
-<text x="127.40270559133846" y="528.1835824202385" class="l">Shaders (not spl…</text>
-<rect x="124.40270559133846" y="609.7813130301374" width="48.629363197711214" height="51.827841817671924" rx="2" fill="#4a86d6"><title>MegaLights · Core · Not started</title></rect>
-<text x="127.40270559133846" y="620.7813130301374" class="l">Core</text>
-<rect x="124.40270559133846" y="662.6091548478094" width="48.629363197711214" height="41.39084515219065" rx="2" fill="#4a86d6"><title>MegaLights · Ray tracing · Not started</title></rect>
-<text x="127.40270559133846" y="673.6091548478094" class="l">Ray tra…</text>
-<rect x="174.03206878904967" y="609.7813130301374" width="49.26007790077978" height="29.5820018150265" rx="2" fill="#4a86d6"><title>MegaLights · Visualize · Not started</title></rect>
-<text x="177.03206878904967" y="620.7813130301374" class="l">Visuali…</text>
-<rect x="174.03206878904967" y="640.3633148451639" width="49.26007790077978" height="26.090649959464827" rx="2" fill="#4a86d6"><title>MegaLights · Sampling + internals · Not started</title></rect>
-<text x="177.03206878904967" y="651.3633148451639" class="l">Samplin…</text>
-<rect x="174.03206878904967" y="667.4539648046288" width="30.315702441410764" height="36.546035195371246" rx="2" fill="#4a86d6"><title>MegaLights · Resolve · Not started</title></rect>
-<text x="177.03206878904967" y="678.4539648046288" class="l">Res…</text>
-<rect x="205.34777123046044" y="667.4539648046288" width="17.944375459369013" height="36.546035195371246" rx="2" fill="#4a86d6"><title>MegaLights · Denoising · Not started</title></rect>
-<rect x="227.29214668982945" y="504.1835824202385" width="122.3108637722803" height="143.33730165502448" rx="4" fill="#232826"/>
-<text x="231.29214668982945" y="515.1835824202385" class="s">Distance fields</text>
-<rect x="228.29214668982945" y="517.1835824202385" width="119.3108637722803" height="128.33730165502448" rx="2" fill="#4a86d6"><title>Distance fields · Whole system (not split) · Not started</title></rect>
-<text x="231.29214668982945" y="528.1835824202385" class="l">Whole system (not sp…</text>
-<rect x="227.29214668982945" y="649.520884075263" width="122.3108637722803" height="56.479115924737016" rx="4" fill="#232826"/>
-<text x="231.29214668982945" y="660.520884075263" class="s">Ambient occlusion</text>
-<rect x="228.29214668982945" y="662.520884075263" width="75.9821261200255" height="41.479115924737016" rx="2" fill="#d9961f"><title>Ambient occlusion · SSAO / GTAO · In progress</title></rect>
-<rect x="228.29214668982945" y="701" width="67.04305245884602" height="3" fill="#fff" opacity=".85"/>
-<text x="231.29214668982945" y="673.520884075263" class="l">SSAO / GTAO</text>
-<rect x="305.27427280985495" y="662.520884075263" width="22.574899733933137" height="41.479115924737016" rx="2" fill="#2c322f"><title>Ambient occlusion · Rest of Ambient occlusion · Not split</title></rect>
-<text x="308.27427280985495" y="673.520884075263" class="l">Re…</text>
-<rect x="328.8491725437881" y="662.520884075263" width="18.753837918321665" height="41.479115924737016" rx="2" fill="#d9961f"><title>Ambient occlusion · Distance-field AO · In progress</title></rect>
-<rect x="328.8491725437881" y="701" width="9.928502427346764" height="3" fill="#fff" opacity=".85"/>
-<rect x="357.60301046210975" y="66" width="444.15464467706715" height="391.0426302243018" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="364.60301046210975" y="79" class="a">GEOMETRY &amp; SCENE · 156K</text>
-<rect x="361.60301046210975" y="85" width="207.50804061834572" height="368.0426302243018" rx="4" fill="#232826"/>
-<text x="365.60301046210975" y="96" class="s">Nanite</text>
-<rect x="362.60301046210975" y="98" width="73.30449172465882" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · Cluster acceleration structures and BLAS build · Deferred</title></rect>
-<text x="365.60301046210975" y="109" class="l">Cluster acc…</text>
-<rect x="436.90750218676857" y="98" width="72.72815283208826" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · [builder] Page assignment and compression encode · Deferred</title></rect>
-<text x="439.90750218676857" y="109" class="l">[builder] P…</text>
-<rect x="510.6356550188568" y="98" width="56.475396061598644" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · [runtime] Streaming manager · Deferred</title></rect>
-<text x="513.6356550188568" y="109" class="l">[runtime…</text>
-<rect x="362.60301046210975" y="165.6578331487381" width="55.02731822575532" height="46.95295767374279" rx="2" fill="#3aa56c"><title>Nanite · [builder] Cluster build · Done</title></rect>
-<text x="365.60301046210975" y="176.6578331487381" class="l">[builder…</text>
-<rect x="418.6303286878651" y="165.6578331487381" width="52.608141567966925" height="46.95295767374279" rx="2" fill="#4a86d6"><title>Nanite · Raster binning and programmable raster · Not started</title></rect>
-<text x="421.6303286878651" y="176.6578331487381" class="l">Raster …</text>
-<rect x="472.238470255832" y="165.6578331487381" width="48.156043349011725" height="46.95295767374279" rx="2" fill="#6c7176"><title>Nanite · Compute material shading and GBuffer export · Deferred</title></rect>
-<text x="475.238470255832" y="176.6578331487381" class="l">Comput…</text>
-<rect x="521.3945136048437" y="165.6578331487381" width="45.71653747561163" height="46.95295767374279" rx="2" fill="#4a86d6"><title>Nanite · Software rasterizer for small triangles · Not started</title></rect>
-<text x="524.3945136048437" y="176.6578331487381" class="l">Softwa…</text>
-<rect x="362.60301046210975" y="213.61079082248088" width="46.421746575575526" height="46.075393407282974" rx="2" fill="#4a86d6"><title>Nanite · Visualize modes · Not started</title></rect>
-<text x="365.60301046210975" y="224.61079082248088" class="l">Visual…</text>
-<rect x="410.0247570376853" y="213.61079082248088" width="43.708974173217314" height="46.075393407282974" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
-<text x="413.0247570376853" y="224.61079082248088" class="l">Shared…</text>
-<rect x="454.7337312109026" y="213.61079082248088" width="38.57334397638641" height="46.075393407282974" rx="2" fill="#3aa56c"><title>Nanite · [builder] DAG build and error propagation · Done</title></rect>
-<text x="457.7337312109026" y="224.61079082248088" class="l">[buil…</text>
-<rect x="494.307075187289" y="213.61079082248088" width="37.641475593896985" height="46.075393407282974" rx="2" fill="#3aa56c"><title>Nanite · Node and cluster hierarchy traversal · Done</title></rect>
-<text x="497.307075187289" y="224.61079082248088" class="l">Node…</text>
-<rect x="532.948550781186" y="213.61079082248088" width="34.162500299269595" height="46.075393407282974" rx="2" fill="#d9961f"><title>Nanite · Instance culling and instance hierarchy · In progress</title></rect>
-<rect x="532.948550781186" y="256.68618422976385" width="16.076470729068046" height="3" fill="#fff" opacity=".85"/>
-<text x="535.948550781186" y="224.61079082248088" class="l">Inst…</text>
-<rect x="362.60301046210975" y="260.68618422976385" width="37.48818162795243" height="38.86698160097984" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
-<text x="365.60301046210975" y="271.68618422976385" class="l">Shar…</text>
-<rect x="362.60301046210975" y="300.5531658307437" width="37.48818162795243" height="38.335084133622445" rx="2" fill="#3aa56c"><title>Nanite · Hardware raster path · Done</title></rect>
-<text x="365.60301046210975" y="311.5531658307437" class="l">Hard…</text>
-<rect x="362.60301046210975" y="339.8882499643661" width="37.48818162795243" height="36.56209257576438" rx="2" fill="#6c7176"><title>Nanite · Shade binning · Deferred</title></rect>
-<text x="365.60301046210975" y="350.8882499643661" class="l">Shad…</text>
-<rect x="362.60301046210975" y="377.45034254013046" width="37.48818162795243" height="36.384793419978564" rx="2" fill="#6c7176"><title>Nanite · Curve data and decode · Deferred</title></rect>
-<text x="365.60301046210975" y="388.45034254013046" class="l">Curv…</text>
-<rect x="362.60301046210975" y="414.835135960109" width="37.48818162795243" height="36.207494264192746" rx="2" fill="#d9961f"><title>Nanite · [builder] Displacement, skinning and ray tracing encode · In progress</title></rect>
-<rect x="362.60301046210975" y="448.0426302243018" width="3.946124381889729" height="3" fill="#fff" opacity=".85"/>
-<text x="365.60301046210975" y="425.835135960109" class="l">[bui…</text>
-<rect x="401.0911920900622" y="260.68618422976385" width="34.17470381840491" height="39.62931891316083" rx="2" fill="#4a86d6"><title>Nanite · Brick raster and trace · Not started</title></rect>
-<text x="404.0911920900622" y="271.68618422976385" class="l">Bric…</text>
-<rect x="436.2658959084671" y="260.68618422976385" width="33.646843324540725" height="39.62931891316083" rx="2" fill="#3aa56c"><title>Nanite · Vertex factory · Done</title></rect>
-<text x="439.2658959084671" y="271.68618422976385" class="l">Vert…</text>
-<rect x="470.9127392330078" y="260.68618422976385" width="32.5431350191883" height="39.62931891316083" rx="2" fill="#6c7176"><title>Nanite · Cluster data decode and position quantization · Deferred</title></rect>
-<text x="473.9127392330078" y="271.68618422976385" class="l">Clu…</text>
-<rect x="504.4558742521961" y="260.68618422976385" width="31.05552817284382" height="39.62931891316083" rx="2" fill="#4a86d6"><title>Nanite · Curve cluster raster · Not started</title></rect>
-<text x="507.4558742521961" y="271.68618422976385" class="l">Cur…</text>
-<rect x="536.5114024250399" y="260.68618422976385" width="30.59964865541565" height="39.62931891316083" rx="2" fill="#6c7176"><title>Nanite · Stream-out of the cut for ray tracing · Deferred</title></rect>
-<text x="539.5114024250399" y="271.68618422976385" class="l">Str…</text>
-<rect x="401.0911920900622" y="301.3155031429247" width="35.852507610256396" height="31.298670088866515" rx="2" fill="#3aa56c"><title>Nanite · Material tables per primitive · Done</title></rect>
-<text x="404.0911920900622" y="312.3155031429247" class="l">Mate…</text>
-<rect x="401.0911920900622" y="333.6141732317912" width="35.852507610256396" height="30.002490863351" rx="2" fill="#4a86d6"><title>Nanite · [builder] Mesh cards for Lumen · Not started</title></rect>
-<text x="404.0911920900622" y="344.6141732317912" class="l">[bui…</text>
-<rect x="401.0911920900622" y="364.6166640951422" width="35.852507610256396" height="29.208911745688454" rx="2" fill="#6c7176"><title>Nanite · Depth export, material depth and composition · Deferred</title></rect>
-<text x="404.0911920900622" y="375.6166640951422" class="l">Dept…</text>
-<rect x="401.0911920900622" y="394.82557584083065" width="35.852507610256396" height="27.886279882917506" rx="2" fill="#6c7176"><title>Nanite · Two-pass occlusion with HZB · Deferred</title></rect>
-<text x="404.0911920900622" y="405.82557584083065" class="l">Two-…</text>
-<rect x="401.0911920900622" y="423.7118557237481" width="35.852507610256396" height="27.330774500553673" rx="2" fill="#3aa56c"><title>Nanite · Raster and shading bin registries · Done</title></rect>
-<text x="404.0911920900622" y="434.7118557237481" class="l">Rast…</text>
-<rect x="437.9436997003186" y="301.3155031429247" width="33.80974550684374" height="26.724924200301018" rx="2" fill="#6c7176"><title>Nanite · Attribute decode · Deferred</title></rect>
-<text x="440.9436997003186" y="312.3155031429247" class="l">Attr…</text>
-<rect x="472.7534452071623" y="301.3155031429247" width="31.559418524583123" height="26.724924200301018" rx="2" fill="#3b403d"><title>Nanite · Editor hit proxies and selection · Out of scope by rule</title></rect>
-<text x="475.7534452071623" y="312.3155031429247" class="l">Edi…</text>
-<rect x="505.31286373174544" y="301.3155031429247" width="31.313289010898416" height="26.724924200301018" rx="2" fill="#3aa56c"><title>Nanite · [builder] Hierarchy encode · Done</title></rect>
-<text x="508.31286373174544" y="312.3155031429247" class="l">[bu…</text>
-<rect x="537.6261527426439" y="301.3155031429247" width="29.484898337811615" height="26.724924200301018" rx="2" fill="#d9961f"><title>Nanite · Tessellation pattern table · In progress</title></rect>
-<rect x="537.6261527426439" y="325.0404273432257" width="6.552199630624803" height="3" fill="#fff" opacity=".85"/>
-<text x="540.6261527426439" y="312.3155031429247" class="l">Tes…</text>
-<rect x="437.9436997003186" y="329.0404273432257" width="28.839264365941006" height="24.874566980561042" rx="2" fill="#d9961f"><title>Nanite · Patch split and dice queues · In progress</title></rect>
-<rect x="437.9436997003186" y="350.91499432378674" width="6.408725414653556" height="3" fill="#fff" opacity=".85"/>
-<text x="440.9436997003186" y="340.0404273432257" class="l">Pat…</text>
-<rect x="437.9436997003186" y="354.91499432378674" width="28.839264365941006" height="24.384518363504924" rx="2" fill="#6c7176"><title>Nanite · Ray-triangle decode for ray tracing · Deferred</title></rect>
-<text x="440.9436997003186" y="365.91499432378674" class="l">Ray…</text>
-<rect x="437.9436997003186" y="380.29951268729167" width="28.839264365941006" height="23.3390813137853" rx="2" fill="#d9961f"><title>Nanite · Frustum, clip-plane, draw-distance and WPO-distance tests · In progress</title></rect>
-<rect x="437.9436997003186" y="400.63859400107697" width="14.419632182970503" height="3" fill="#fff" opacity=".85"/>
-<text x="440.9436997003186" y="391.29951268729167" class="l">Fru…</text>
-<rect x="437.9436997003186" y="404.63859400107697" width="28.839264365941006" height="22.718353065514293" rx="2" fill="#4a86d6"><title>Nanite · Stats print · Not started</title></rect>
-<text x="440.9436997003186" y="415.63859400107697" class="l">Sta…</text>
-<rect x="437.9436997003186" y="428.35694706659126" width="28.839264365941006" height="22.685683157710514" rx="2" fill="#3aa56c"><title>Nanite · [builder] Graph partitioner · Done</title></rect>
-<text x="440.9436997003186" y="439.35694706659126" class="l">[bu…</text>
-<rect x="467.7829640662596" y="329.0404273432257" width="25.719615944024156" height="25.341651948068375" rx="2" fill="#6c7176"><title>Nanite · Page transcode · Deferred</title></rect>
-<text x="470.7829640662596" y="340.0404273432257" class="l">Pa…</text>
-<rect x="494.50258001028374" y="329.0404273432257" width="25.497569274129205" height="25.341651948068375" rx="2" fill="#4a86d6"><title>Nanite · Voxel brick trace in the rasterizer · Not started</title></rect>
-<text x="497.50258001028374" y="340.0404273432257" class="l">Vo…</text>
-<rect x="521.0001492844129" y="329.0404273432257" width="22.83300923538991" height="25.341651948068375" rx="2" fill="#d9961f"><title>Nanite · Vertex deformation · In progress</title></rect>
-<rect x="521.0001492844129" y="351.3820792912941" width="2.4034746563568326" height="3" fill="#fff" opacity=".85"/>
-<text x="524.0001492844129" y="340.0404273432257" class="l">Ve…</text>
-<rect x="544.8331585198029" y="329.0404273432257" width="22.277892560652617" height="25.341651948068375" rx="2" fill="#3aa56c"><title>Nanite · Material visibility pre-pass · Done</title></rect>
-<text x="547.8331585198029" y="340.0404273432257" class="l">Ma…</text>
-<rect x="467.7829640662596" y="355.3820792912941" width="23.144093316444014" height="24.113977727790655" rx="2" fill="#4a86d6"><title>Nanite · Translucent bins and indirect draws · Not started</title></rect>
-<text x="470.7829640662596" y="366.3820792912941" class="l">Tr…</text>
-<rect x="467.7829640662596" y="380.49605701908473" width="23.144093316444014" height="23.750592197967308" rx="2" fill="#4a86d6"><title>Nanite · Curve segment raster in the rasterizer · Not started</title></rect>
-<text x="470.7829640662596" y="391.49605701908473" class="l">Cu…</text>
-<rect x="467.7829640662596" y="405.24664921705204" width="23.144093316444014" height="22.57968326853654" rx="2" fill="#4a86d6"><title>Nanite · Voxel renderer setup · Not started</title></rect>
-<text x="470.7829640662596" y="416.24664921705204" class="l">Vo…</text>
-<rect x="467.7829640662596" y="428.8263324855886" width="23.144093316444014" height="22.216297738713195" rx="2" fill="#d9961f"><title>Nanite · Tessellation patches in the rasterizer · In progress</title></rect>
-<rect x="467.7829640662596" y="448.0426302243018" width="5.14313184809867" height="3" fill="#fff" opacity=".85"/>
-<text x="470.7829640662596" y="439.8263324855886" class="l">Te…</text>
-<rect x="491.9270573827036" y="355.3820792912941" width="25.758452107420283" height="19.729427126220855" rx="2" fill="#3aa56c"><title>Nanite · Raster pipeline permutations and PSO precache · Done</title></rect>
-<text x="494.9270573827036" y="366.3820792912941" class="l">Ra…</text>
-<rect x="518.6855094901239" y="355.3820792912941" width="25.664397794213187" height="19.729427126220855" rx="2" fill="#4a86d6"><title>Nanite · Translucent vertex factory · Not started</title></rect>
-<text x="521.6855094901239" y="366.3820792912941" class="l">Tr…</text>
-<rect x="545.349907284337" y="355.3820792912941" width="21.761143796118404" height="19.729427126220855" rx="2" fill="#6c7176"><title>Nanite · Brick tiling and scatter · Deferred</title></rect>
-<rect x="491.9270573827036" y="376.11150641751493" width="20.029555388762617" height="21.1581667763395" rx="2" fill="#3aa56c"><title>Nanite · Mesh pass draw lists · Done</title></rect>
-<rect x="491.9270573827036" y="398.26967319385443" width="20.029555388762617" height="17.774178963216514" rx="2" fill="#6c7176"><title>Nanite · Visibility buffer clear and raster context · Deferred</title></rect>
-<rect x="491.9270573827036" y="417.04385215707094" width="20.029555388762617" height="17.125194999055964" rx="2" fill="#4a86d6"><title>Nanite · Stats filter and print · Not started</title></rect>
-<rect x="491.9270573827036" y="435.1690471561269" width="20.029555388762617" height="15.873583068174867" rx="2" fill="#6c7176"><title>Nanite · [builder] Assemblies · Deferred</title></rect>
-<rect x="512.9566127714662" y="376.11150641751493" width="18.193528873900505" height="17.081363979130117" rx="2" fill="#d9961f"><title>Nanite · Edge factors and displacement fade · In progress</title></rect>
-<rect x="512.9566127714662" y="390.19287039664505" width="4.043006416422334" height="3" fill="#fff" opacity=".85"/>
-<rect x="532.1501416453667" y="376.11150641751493" width="17.11524073491728" height="17.081363979130117" rx="2" fill="#4a86d6"><title>Nanite · Debug view modes · Not started</title></rect>
-<rect x="550.265382380284" y="376.11150641751493" width="16.845668700171473" height="17.081363979130117" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
-<rect x="512.9566127714662" y="394.19287039664505" width="18.850572329886745" height="14.518511802225078" rx="2" fill="#4a86d6"><title>Nanite · Packed views and multi-view passes · Not started</title></rect>
-<rect x="532.807185101353" y="394.19287039664505" width="17.6570252594189" height="14.518511802225078" rx="2" fill="#4a86d6"><title>Nanite · Raster and cluster stats · Not started</title></rect>
-<rect x="551.4642103607719" y="394.19287039664505" width="15.646840719683496" height="14.518511802225078" rx="2" fill="#4a86d6"><title>Nanite · Cube shadow emit · Not started</title></rect>
-<rect x="512.9566127714662" y="409.7113821988701" width="15.534816996181348" height="14.269907017530329" rx="2" fill="#6c7176"><title>Nanite · BLAS cache · Deferred</title></rect>
-<rect x="512.9566127714662" y="424.98128921640046" width="15.534816996181348" height="12.56014908892655" rx="2" fill="#4a86d6"><title>Nanite · [builder] Fallback mesh · Not started</title></rect>
-<rect x="512.9566127714662" y="438.54143830532706" width="15.534816996181348" height="12.501191918974712" rx="2" fill="#4a86d6"><title>Nanite · Overflow feedback · Not started</title></rect>
-<rect x="529.4914297676476" y="409.7113821988701" width="12.471960923072515" height="14.195832624513912" rx="2" fill="#4a86d6"><title>Nanite · Ownership visibility · Not started</title></rect>
-<rect x="542.9633906907201" y="409.7113821988701" width="11.83043897435482" height="14.195832624513912" rx="2" fill="#6c7176"><title>Nanite · Auto voxel from depth · Deferred</title></rect>
-<rect x="555.7938296650749" y="409.7113821988701" width="11.317221415380573" height="14.195832624513912" rx="2" fill="#4a86d6"><title>Nanite · Shadow view emit and VSM feedback · Not started</title></rect>
-<rect x="529.4914297676476" y="424.90721482338404" width="10.531998550150092" height="13.962518772468684" rx="2" fill="#4a86d6"><title>Nanite · Skinning view data · Not started</title></rect>
-<rect x="529.4914297676476" y="439.8697335958527" width="10.531998550150092" height="11.172896628449053" rx="2" fill="#d9961f"><title>Nanite · LOD error metric and per-view LOD scale · In progress</title></rect>
-<rect x="529.4914297676476" y="448.0426302243018" width="4.956234611835337" height="3" fill="#fff" opacity=".85"/>
-<rect x="541.0234283177977" y="424.90721482338404" width="8.870284458721926" height="12.135844325377946" rx="2" fill="#6c7176"><title>Nanite · Async raster, shader bundles and work graphs · Deferred</title></rect>
-<rect x="550.8937127765196" y="424.90721482338404" width="7.831307147277471" height="12.135844325377946" rx="2" fill="#6c7176"><title>Nanite · Persistent-thread culling · Deferred</title></rect>
-<rect x="559.725019923797" y="424.90721482338404" width="7.386031156658419" height="12.135844325377946" rx="2" fill="#3aa56c"><title>Nanite · Primitive filter and scatter updates · Done</title></rect>
-<rect x="541.0234283177977" y="438.043059148762" width="6.5204711012006555" height="12.99957107553979" rx="2" fill="#4a86d6"><title>Nanite · [builder] Attribute-weighted simplification · Not started</title></rect>
-<rect x="548.5438994189983" y="438.043059148762" width="10.489608626834297" height="6.466437906954582" rx="2" fill="#4a86d6"><title>Nanite · Directional clipmap shadow views and LOD bias · Not started</title></rect>
-<rect x="548.5438994189983" y="445.50949705571657" width="10.489608626834297" height="5.533133168585209" rx="2" fill="#6c7176"><title>Nanite · GPU streaming requests · Deferred</title></rect>
-<rect x="560.0335080458326" y="438.043059148762" width="7.077543034622863" height="6.8445872406041985" rx="2" fill="#4a86d6"><title>Nanite · Local-light shadow views · Not started</title></rect>
-<rect x="560.0335080458326" y="445.8876463893662" width="2.8011967221755185" height="5.154983834935592" rx="2" fill="#6c7176"><title>Nanite · Shadow raster time budget · Deferred</title></rect>
-<rect x="563.8347047680081" y="445.8876463893662" width="3.2763463124473446" height="3.5592472851374737" rx="2" fill="#4a86d6"><title>Nanite · Small-triangle depth raster into shadow pages · Not started</title></rect>
-<rect x="563.8347047680081" y="450.44689367450366" width="3.2763463124473446" height="0.5957365497981186" rx="2" fill="#6c7176"><title>Nanite · VSM invalidation on LOD delta · Deferred</title></rect>
-<rect x="571.1110510804555" y="85" width="226.64660405872144" height="178.98261967338294" rx="4" fill="#232826"/>
-<text x="575.1110510804555" y="96" class="s">GPU scene + culling</text>
-<rect x="572.1110510804555" y="98" width="111.10338090986954" height="99.25930725725047" rx="2" fill="#3aa56c"><title>GPU scene + culling · Mesh draw commands · Done</title></rect>
-<text x="575.1110510804555" y="109" class="l">Mesh draw commands</text>
-<rect x="572.1110510804555" y="198.25930725725047" width="111.10338090986954" height="63.72331241613247" rx="2" fill="#3aa56c"><title>GPU scene + culling · CPU view visibility · Done</title></rect>
-<text x="575.1110510804555" y="209.25930725725047" class="l">CPU view visibility</text>
-<rect x="684.214431990325" y="98" width="56.80081832775045" height="86.30240737401527" rx="2" fill="#4a86d6"><title>GPU scene + culling · Hierarchical scene culling grid · Not started</title></rect>
-<text x="687.214431990325" y="109" class="l">Hierarch…</text>
-<rect x="742.0152503180755" y="98" width="53.742404821101445" height="86.30240737401527" rx="2" fill="#3aa56c"><title>GPU scene + culling · Instance culling + draw compaction · Done</title></rect>
-<text x="745.0152503180755" y="109" class="l">Instanc…</text>
-<rect x="684.214431990325" y="185.30240737401527" width="43.2412116964839" height="76.68021229936767" rx="2" fill="#3aa56c"><title>GPU scene + culling · GPU scene buffers · Done</title></rect>
-<text x="687.214431990325" y="196.30240737401527" class="l">GPU sc…</text>
-<rect x="728.4556436868089" y="185.30240737401527" width="67.30201145236799" height="44.79359525696549" rx="2" fill="#2c322f"><title>GPU scene + culling · Rest of GPU scene + culling · Not split</title></rect>
-<text x="731.4556436868089" y="196.30240737401527" class="l">Rest of GP…</text>
-<rect x="728.4556436868089" y="231.09600263098076" width="67.30201145236799" height="30.88661704240218" rx="2" fill="#6c7176"><title>GPU scene + culling · Occlusion queries + HZB · Deferred</title></rect>
-<text x="731.4556436868089" y="242.09600263098076" class="l">Occlusion …</text>
-<rect x="571.1110510804555" y="265.98261967338294" width="93.12107497281443" height="187.06001055091883" rx="4" fill="#232826"/>
-<text x="575.1110510804555" y="276.98261967338294" class="s">Virtual textu…</text>
-<rect x="572.1110510804555" y="278.98261967338294" width="90.12107497281443" height="172.06001055091883" rx="2" fill="#6c7176"><title>Virtual texturing · Whole system (not split) · Deferred</title></rect>
-<text x="575.1110510804555" y="289.98261967338294" class="l">Whole system (…</text>
-<rect x="666.2321260532699" y="265.98261967338294" width="131.525529085907" height="92.74393566636383" rx="4" fill="#232826"/>
-<text x="670.2321260532699" y="276.98261967338294" class="s">Mobile renderer</text>
-<rect x="667.2321260532699" y="278.98261967338294" width="128.525529085907" height="77.74393566636383" rx="2" fill="#3aa56c"><title>Mobile renderer · Whole system (not split) · Done</title></rect>
-<text x="670.2321260532699" y="289.98261967338294" class="l">Whole system (not spli…</text>
-<rect x="666.2321260532699" y="360.72655533974677" width="95.96350884354524" height="92.31607488455501" rx="4" fill="#232826"/>
-<text x="670.2321260532699" y="371.72655533974677" class="s">PSO precache</text>
-<rect x="667.2321260532699" y="373.72655533974677" width="92.96350884354524" height="77.31607488455501" rx="2" fill="#3aa56c"><title>PSO precache · Whole system (not split) · Done</title></rect>
-<text x="670.2321260532699" y="384.72655533974677" class="l">Whole system (n…</text>
-<rect x="764.1956348968151" y="360.72655533974677" width="33.56202024236177" height="67.5759957804305" rx="4" fill="#232826"/>
-<text x="768.1956348968151" y="371.72655533974677" class="s">Var…</text>
-<rect x="765.1956348968151" y="373.72655533974677" width="30.56202024236177" height="52.5759957804305" rx="2" fill="#6c7176"><title>Variable rate shading · Whole system (not split) · Deferred</title></rect>
-<text x="768.1956348968151" y="384.72655533974677" class="l">Who…</text>
-<rect x="764.1956348968151" y="430.30255112017727" width="33.56202024236177" height="22.740079104124504" rx="4" fill="#232826"/>
-<rect x="765.1956348968151" y="431.30255112017727" width="30.56202024236177" height="19.740079104124504" rx="2" fill="#3aa56c"><title>Dynamic resolution · Whole system (not split) · Done</title></rect>
-<text x="768.1956348968151" y="442.30255112017727" class="l">Who…</text>
-<rect x="357.60301046210975" y="461.0426302243018" width="444.15464467706715" height="248.95736977569823" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="364.60301046210975" y="474.0426302243018" class="a">FOUNDATION · 100K</text>
-<rect x="361.60301046210975" y="480.0426302243018" width="234.78122665501837" height="225.95736977569823" rx="4" fill="#232826"/>
-<text x="365.60301046210975" y="491.0426302243018" class="s">HW ray tracing + path tracer</text>
-<rect x="362.60301046210975" y="493.0426302243018" width="231.78122665501837" height="210.95736977569823" rx="2" fill="#6c7176"><title>HW ray tracing + path tracer · Whole system (not split) · Deferred</title></rect>
-<text x="365.60301046210975" y="504.0426302243018" class="l">Whole system (not split)</text>
-<rect x="598.3842371171281" y="480.0426302243018" width="199.37341802204878" height="225.95736977569823" rx="4" fill="#232826"/>
-<text x="602.3842371171281" y="491.0426302243018" class="s">Hair strands</text>
-<rect x="599.3842371171281" y="493.0426302243018" width="196.37341802204878" height="210.95736977569823" rx="2" fill="#4a86d6"><title>Hair strands · Whole system (not split) · Not started</title></rect>
-<text x="602.3842371171281" y="504.0426302243018" class="l">Whole system (not split)</text>
-<rect x="805.7576551391769" y="66" width="203.75846579263225" height="356.75145394707187" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="812.7576551391769" y="79" class="a">POST &amp; TEMPORAL · 66K</text>
-<rect x="809.7576551391769" y="85" width="195.75846579263225" height="178.78650851832265" rx="4" fill="#232826"/>
-<text x="813.7576551391769" y="96" class="s">Post chain</text>
-<rect x="810.7576551391769" y="98" width="89.42896722836485" height="121.59258859661315" rx="2" fill="#4a86d6"><title>Post chain · Depth of field (diaphragm) · Not started</title></rect>
-<text x="813.7576551391769" y="109" class="l">Depth of field…</text>
-<rect x="810.7576551391769" y="220.59258859661315" width="89.42896722836485" height="41.193919921709494" rx="2" fill="#3aa56c"><title>Post chain · Tone map + LUT combine · Done</title></rect>
-<text x="813.7576551391769" y="231.59258859661315" class="l">Tone map + LUT…</text>
-<rect x="901.1866223675418" y="98" width="51.15166904223315" height="69.03100946992117" rx="2" fill="#d9961f"><title>Post chain · Motion blur · In progress</title></rect>
-<rect x="901.1866223675418" y="164.03100946992117" width="31.74931181931713" height="3" fill="#fff" opacity=".85"/>
-<text x="904.1866223675418" y="109" class="l">Motion …</text>
-<rect x="953.3382914097749" y="98" width="50.177829522034244" height="69.03100946992117" rx="2" fill="#3aa56c"><title>Post chain · TAA (legacy) · Done</title></rect>
-<text x="956.3382914097749" y="109" class="l">TAA (le…</text>
-<rect x="901.1866223675418" y="168.03100946992117" width="65.67977265062837" height="52.521178769420914" rx="2" fill="#3aa56c"><title>Post chain · Eye adaptation (histogram, basic) · Done</title></rect>
-<text x="904.1866223675418" y="179.03100946992117" class="l">Eye adapta…</text>
-<rect x="901.1866223675418" y="221.5521882393421" width="65.67977265062837" height="40.23432027898056" rx="2" fill="#3aa56c"><title>Post chain · ACES transforms · Done</title></rect>
-<text x="904.1866223675418" y="232.5521882393421" class="l">ACES trans…</text>
-<rect x="967.8663950181701" y="168.03100946992117" width="35.64972591363903" height="50.66255891269435" rx="2" fill="#d9961f"><title>Post chain · Bloom (Gaussian + FFT) · In progress</title></rect>
-<rect x="967.8663950181701" y="215.69356838261552" width="16.453719652448786" height="3" fill="#fff" opacity=".85"/>
-<text x="970.8663950181701" y="179.03100946992117" class="l">Bloo…</text>
-<rect x="967.8663950181701" y="219.69356838261552" width="35.64972591363903" height="26.936957212978314" rx="2" fill="#d9961f"><title>Post chain · Local exposure · In progress</title></rect>
-<rect x="967.8663950181701" y="243.63052559559384" width="22.127416084327674" height="3" fill="#fff" opacity=".85"/>
-<text x="970.8663950181701" y="230.69356838261552" class="l">Loca…</text>
-<rect x="967.8663950181701" y="247.63052559559384" width="35.64972591363903" height="14.15598292272881" rx="2" fill="#4a86d6"><title>Post chain · Lens flares · Not started</title></rect>
-<rect x="809.7576551391769" y="265.78650851832265" width="100.8896467162034" height="152.96494542874922" rx="4" fill="#232826"/>
-<text x="813.7576551391769" y="276.78650851832265" class="s">Denoisers</text>
-<rect x="810.7576551391769" y="278.78650851832265" width="97.8896467162034" height="137.96494542874922" rx="2" fill="#d9961f"><title>Denoisers · Whole system (not split) · In progress</title></rect>
-<rect x="810.7576551391769" y="413.75145394707187" width="48.9448233581017" height="3" fill="#fff" opacity=".85"/>
-<text x="813.7576551391769" y="289.78650851832265" class="l">Whole system (no…</text>
-<rect x="912.6473018553803" y="265.78650851832265" width="92.86881907642885" height="152.96494542874922" rx="4" fill="#232826"/>
-<text x="916.6473018553803" y="276.78650851832265" class="s">TSR</text>
-<rect x="913.6473018553803" y="278.78650851832265" width="32.82388058196864" height="28.54821579036559" rx="2" fill="url(#gap)"><title>TSR · Network weights and layer code · No PRD</title></rect>
-<text x="916.6473018553803" y="289.78650851832265" class="l">Netw…</text>
-<rect x="947.471182437349" y="278.78650851832265" width="28.20887787734773" height="28.54821579036559" rx="2" fill="#3b403d"><title>TSR · Shader parameter structs and permutations · Out of scope by rule</title></rect>
-<text x="950.471182437349" y="289.78650851832265" class="l">Sha…</text>
-<rect x="976.6800603146968" y="278.78650851832265" width="26.836060617112366" height="28.54821579036559" rx="2" fill="#d9961f"><title>TSR · Rejection pass: moire, measure, guide update, resurrection choice · In progress</title></rect>
-<rect x="976.6800603146968" y="304.33472430868824" width="11.18169192379682" height="3" fill="#fff" opacity=".85"/>
-<text x="979.6800603146968" y="289.78650851832265" class="l">Re…</text>
-<rect x="913.6473018553803" y="308.33472430868824" width="22.96113714675539" height="23.457298508579697" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser kernels · Done</title></rect>
-<text x="916.6473018553803" y="319.33472430868824" class="l">Sp…</text>
-<rect x="937.6084390021357" y="308.33472430868824" width="21.761315846328785" height="23.457298508579697" rx="2" fill="url(#gap)"><title>TSR · Thin geometry detection pass · No PRD</title></rect>
-<rect x="960.3697548484645" y="308.33472430868824" width="21.72602698455148" height="23.457298508579697" rx="2" fill="#4a86d6"><title>TSR · Shading analysis library · Not started</title></rect>
-<rect x="983.095781833016" y="308.33472430868824" width="20.42033909879308" height="23.457298508579697" rx="2" fill="#d9961f"><title>TSR · Depth and velocity analysis (depth error, bilaterals, Jacobian, edge) · In progress</title></rect>
-<rect x="983.095781833016" y="328.79202281726793" width="12.011964175760635" height="3" fill="#fff" opacity=".85"/>
-<rect x="913.6473018553803" y="332.79202281726793" width="21.67403065160306" height="21.6482354490293" rx="2" fill="url(#gap)"><title>TSR · Visualization shader (16 views) · No PRD</title></rect>
-<rect x="913.6473018553803" y="355.44025826629723" width="21.67403065160306" height="20.69662891755746" rx="2" fill="#4a86d6"><title>TSR · Update: setup, quality levels and kernel tables · Not started</title></rect>
-<rect x="913.6473018553803" y="377.1368871838547" width="21.67403065160306" height="19.668893863567916" rx="2" fill="#4a86d6"><title>TSR · Decimate history for rejection · Not started</title></rect>
-<rect x="913.6473018553803" y="397.80578104742256" width="21.67403065160306" height="18.94567289964931" rx="2" fill="#3aa56c"><title>TSR · History setup: sizes, jitter, validity and reset · Done</title></rect>
-<rect x="936.3213325069834" y="332.79202281726793" width="23.740207007569666" height="16.61709044133579" rx="2" fill="#3b403d"><title>TSR · Common types, packing and wave helpers · Out of scope by rule</title></rect>
-<rect x="961.061539514553" y="332.79202281726793" width="21.29068156127562" height="16.61709044133579" rx="2" fill="#4a86d6"><title>TSR · Reconstruction kernels and neighbourhood offsets · Not started</title></rect>
-<rect x="983.3522210758288" y="332.79202281726793" width="20.16389985598039" height="16.61709044133579" rx="2" fill="#3aa56c"><title>TSR · Velocity dilation · Done</title></rect>
-<rect x="936.3213325069834" y="350.4091132586037" width="19.68528256298987" height="16.94126796532919" rx="2" fill="#3aa56c"><title>TSR · Resolve history to output · Done</title></rect>
-<rect x="936.3213325069834" y="368.3503812239329" width="19.68528256298987" height="16.857820207350926" rx="2" fill="#d9961f"><title>TSR · CVars, tiers and defaults · In progress</title></rect>
-<rect x="936.3213325069834" y="382.20820143128384" width="9.842641281494934" height="3" fill="#fff" opacity=".85"/>
-<rect x="936.3213325069834" y="386.2082014312838" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#4a86d6"><title>TSR · Velocity, occluder and decimate dispatch · Not started</title></rect>
-<rect x="936.3213325069834" y="401.97982768917785" width="19.68528256298987" height="14.771626257894013" rx="2" fill="#d9961f"><title>TSR · Rejection and spatial anti-aliasing dispatch · In progress</title></rect>
-<rect x="936.3213325069834" y="413.75145394707187" width="11.579577978229334" height="3" fill="#fff" opacity=".85"/>
-<rect x="957.0066150699732" y="350.4091132586037" width="15.431859170259031" height="18.328904907615367" rx="2" fill="#3aa56c"><title>TSR · Pass gating and measure passes · Done</title></rect>
-<rect x="973.4384742402323" y="350.4091132586037" width="15.297903796588457" height="18.328904907615367" rx="2" fill="#3aa56c"><title>TSR · Update: reprojection fetch, field and lens distortion · Done</title></rect>
-<rect x="989.7363780368207" y="350.4091132586037" width="13.77974289498843" height="18.328904907615367" rx="2" fill="#4a86d6"><title>TSR · Closest-occluder scatter and parallax disocclusion test · Not started</title></rect>
-<rect x="957.0066150699732" y="369.7380181662191" width="15.03114052544629" height="15.258806289770405" rx="2" fill="#d9961f"><title>TSR · Update and resolve dispatch · In progress</title></rect>
-<rect x="957.0066150699732" y="381.9968244559895" width="7.515570262723145" height="3" fill="#fff" opacity=".85"/>
-<rect x="973.0377555954195" y="369.7380181662191" width="14.92497403190032" height="15.258806289770405" rx="2" fill="url(#gap)"><title>TSR · Output, history extraction and visualize dispatch · No PRD</title></rect>
-<rect x="988.9627296273198" y="369.7380181662191" width="14.55339130448931" height="15.258806289770405" rx="2" fill="#4a86d6"><title>TSR · Color spaces and back-buffer quantization error · Not started</title></rect>
-<rect x="957.0066150699732" y="385.9968244559895" width="12.535316887410886" height="15.770015173001354" rx="2" fill="url(#gap)"><title>TSR · Weight relaxation · No PRD</title></rect>
-<rect x="957.0066150699732" y="402.76683962899085" width="12.535316887410886" height="13.984614318081015" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser pass · Done</title></rect>
-<rect x="970.5419319573841" y="385.9968244559895" width="13.187621315719866" height="9.889039614758133" rx="2" fill="#4a86d6"><title>TSR · Update: input filter at predictor frequency · Not started</title></rect>
-<rect x="970.5419319573841" y="396.88586407074763" width="13.187621315719866" height="9.767374367665866" rx="2" fill="#3aa56c"><title>TSR · Update: validity clamp, quantize and history write · Done</title></rect>
-<rect x="970.5419319573841" y="407.6532384384135" width="13.187621315719866" height="9.09821550865837" rx="2" fill="#3aa56c"><title>TSR · Reprojection field encoding · Done</title></rect>
-<rect x="984.729553273104" y="385.9968244559895" width="9.232094919398946" height="11.736746993675922" rx="2" fill="url(#gap)"><title>TSR · Tiled network pass · No PRD</title></rect>
-<rect x="994.9616481925029" y="385.9968244559895" width="8.55447273930622" height="11.736746993675922" rx="2" fill="url(#gap)"><title>TSR · Thin geometry shared helpers · No PRD</title></rect>
-<rect x="984.729553273104" y="398.7335714496654" width="9.755542511727299" height="9.832971042826443" rx="2" fill="#3aa56c"><title>TSR · Update: history reprojection with Catmull-Rom fetch · Done</title></rect>
-<rect x="984.729553273104" y="409.56654249249186" width="9.755542511727299" height="7.1849114545800035" rx="2" fill="url(#gap)"><title>TSR · Wave size, 16-bit math and async compute · No PRD</title></rect>
-<rect x="995.4850957848313" y="398.7335714496654" width="8.031025146977868" height="7.027648893377602" rx="2" fill="url(#gap)"><title>TSR · Thin geometry coverage measure · No PRD</title></rect>
-<rect x="995.4850957848313" y="406.761220343043" width="8.031025146977868" height="5.594140162417318" rx="2" fill="#3aa56c"><title>TSR · Flickering luma measure · Done</title></rect>
-<rect x="995.4850957848313" y="413.35536050546034" width="8.031025146977868" height="3.3960934416115265" rx="2" fill="#3b403d"><title>TSR · Clear previous-frame scratch textures · Out of scope by rule</title></rect>
-<rect x="1013.5161209318092" y="66" width="176.48387906819084" height="356.75145394707187" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="1020.5161209318092" y="79" class="a">WORLD, ANIM, VFX · 57K</text>
-<rect x="1017.5161209318092" y="85" width="168.48387906819084" height="168.2240277968048" rx="4" fill="#232826"/>
-<text x="1021.5161209318092" y="96" class="s">Anim budget + AnimGraphRun…</text>
-<rect x="1018.5161209318092" y="98" width="165.48387906819084" height="153.2240277968048" rx="2" fill="#d9961f"><title>Anim budget + AnimGraphRuntime · Whole system (not split) · In progress</title></rect>
-<rect x="1018.5161209318092" y="248.2240277968048" width="87.60911244786574" height="3" fill="#fff" opacity=".85"/>
-<text x="1021.5161209318092" y="109" class="l">Whole system (not split)</text>
-<rect x="1017.5161209318092" y="255.2240277968048" width="120.3585227247479" height="163.52742615026708" rx="4" fill="#232826"/>
-<text x="1021.5161209318092" y="266.22402779680476" class="s">Texture + mesh str…</text>
-<rect x="1018.5161209318092" y="268.22402779680476" width="66.59183832086364" height="91.74793432784634" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Texture streaming manager · Not started</title></rect>
-<text x="1021.5161209318092" y="279.22402779680476" class="l">Texture st…</text>
-<rect x="1086.1079592526728" y="268.22402779680476" width="49.766684403884256" height="91.74793432784634" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Mip stream-in / stream-out · Not started</title></rect>
-<text x="1089.1079592526728" y="279.22402779680476" class="l">Mip str…</text>
-<rect x="1018.5161209318092" y="360.9719621246511" width="59.00023646489876" height="55.779491822420766" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Texture instance tracking · Not started</title></rect>
-<text x="1021.5161209318092" y="371.9719621246511" class="l">Texture …</text>
-<rect x="1078.516357396708" y="360.9719621246511" width="38.851819462747244" height="55.779491822420766" rx="2" fill="#d9961f"><title>Texture + mesh streaming · Mesh LOD streaming · In progress</title></rect>
-<rect x="1078.516357396708" y="413.75145394707187" width="9.712954865686811" height="3" fill="#fff" opacity=".85"/>
-<text x="1081.516357396708" y="371.9719621246511" class="l">Mesh …</text>
-<rect x="1118.3681768594552" y="360.9719621246511" width="17.506466797101893" height="55.779491822420766" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Build-time texel density · Not started</title></rect>
-<rect x="1139.874643656557" y="255.2240277968048" width="46.125356343442945" height="163.52742615026708" rx="4" fill="#232826"/>
-<text x="1143.874643656557" y="266.22402779680476" class="s">GPU s…</text>
-<rect x="1140.874643656557" y="268.22402779680476" width="43.125356343442945" height="148.5274261502671" rx="2" fill="#3aa56c"><title>GPU skinning · Whole system (not split) · Done</title></rect>
-<text x="1143.874643656557" y="279.22402779680476" class="l">Whole…</text>
-<rect x="805.7576551391769" y="426.75145394707187" width="205.4633095365059" height="283.24854605292813" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="812.7576551391769" y="439.75145394707187" class="a">SKY &amp; VOLUMES · 53K</text>
-<rect x="809.7576551391769" y="445.75145394707187" width="197.4633095365059" height="131.2401374833833" rx="4" fill="#232826"/>
-<text x="813.7576551391769" y="456.75145394707187" class="s">Heterogeneous volumes</text>
-<rect x="810.7576551391769" y="458.75145394707187" width="194.4633095365059" height="116.24013748338331" rx="2" fill="#4a86d6"><title>Heterogeneous volumes · Whole system (not split) · Not started</title></rect>
-<text x="813.7576551391769" y="469.75145394707187" class="l">Whole system (not split)</text>
-<rect x="809.7576551391769" y="578.9915914304552" width="79.88421348346822" height="127.00840856954483" rx="4" fill="#232826"/>
-<text x="813.7576551391769" y="589.9915914304552" class="s">Fog</text>
-<rect x="810.7576551391769" y="591.9915914304552" width="76.88421348346822" height="51.52206349927792" rx="2" fill="#4a86d6"><title>Fog · Volumetric fog (froxels) · Not started</title></rect>
-<text x="813.7576551391769" y="602.9915914304552" class="l">Volumetric f…</text>
-<rect x="810.7576551391769" y="644.5136549297331" width="31.789063716269993" height="59.48634507026691" rx="2" fill="#3aa56c"><title>Fog · Height fog · Done</title></rect>
-<text x="813.7576551391769" y="655.5136549297331" class="l">Hei…</text>
-<rect x="843.5467188554469" y="644.5136549297331" width="44.09514976719822" height="38.953781547920244" rx="2" fill="#4a86d6"><title>Fog · Local fog volumes · Not started</title></rect>
-<text x="846.5467188554469" y="655.5136549297331" class="l">Local …</text>
-<rect x="843.5467188554469" y="684.4674364776533" width="44.09514976719822" height="19.532563522346663" rx="2" fill="#4a86d6"><title>Fog · Fog composition · Not started</title></rect>
-<text x="846.5467188554469" y="695.4674364776533" class="l">Fog co…</text>
-<rect x="891.6418686226451" y="578.9915914304552" width="115.57909605303769" height="65.41848771309697" rx="4" fill="#232826"/>
-<text x="895.6418686226451" y="589.9915914304552" class="s">Sky atmosphere</text>
-<rect x="892.6418686226451" y="591.9915914304552" width="36.666609040601884" height="50.418487713096965" rx="2" fill="#d9961f"><title>Sky atmosphere · C++ orchestration (all stages) · In progress</title></rect>
-<rect x="892.6418686226451" y="639.4100791435521" width="6.11110150676698" height="3" fill="#fff" opacity=".85"/>
-<text x="895.6418686226451" y="602.9915914304552" class="l">C++ …</text>
-<rect x="930.308477663247" y="591.9915914304552" width="31.74988738038826" height="50.418487713096965" rx="2" fill="#d9961f"><title>Sky atmosphere · Shader kernels (all LUTs + render) · In progress</title></rect>
-<rect x="930.308477663247" y="639.4100791435521" width="5.2916478967313765" height="3" fill="#fff" opacity=".85"/>
-<text x="933.308477663247" y="602.9915914304552" class="l">Sha…</text>
-<rect x="963.0583650436353" y="591.9915914304552" width="42.162599632047545" height="23.489001513111702" rx="2" fill="#d9961f"><title>Sky atmosphere · Real-time sky light capture · In progress</title></rect>
-<rect x="963.0583650436353" y="612.4805929435669" width="7.02709993867459" height="3" fill="#fff" opacity=".85"/>
-<text x="966.0583650436353" y="602.9915914304552" class="l">Real-…</text>
-<rect x="963.0583650436353" y="616.4805929435669" width="20.581299816023716" height="12.464743099992688" rx="2" fill="#d9961f"><title>Sky atmosphere · Transmittance LUT · In progress</title></rect>
-<rect x="963.0583650436353" y="625.9453360435596" width="3.4302166360039523" height="3" fill="#fff" opacity=".85"/>
-<rect x="963.0583650436353" y="629.9453360435596" width="20.581299816023716" height="12.464743099992575" rx="2" fill="#d9961f"><title>Sky atmosphere · Multi-scattering LUT · In progress</title></rect>
-<rect x="963.0583650436353" y="639.4100791435521" width="3.4302166360039523" height="3" fill="#fff" opacity=".85"/>
-<rect x="984.639664859659" y="616.4805929435669" width="20.58129981602383" height="12.464743099992688" rx="2" fill="#d9961f"><title>Sky atmosphere · Sky-view LUT · In progress</title></rect>
-<rect x="984.639664859659" y="625.9453360435596" width="3.4302166360039714" height="3" fill="#fff" opacity=".85"/>
-<rect x="984.639664859659" y="629.9453360435596" width="20.58129981602383" height="12.464743099992575" rx="2" fill="#4a86d6"><title>Sky atmosphere · Aerial perspective volume · Not started</title></rect>
-<rect x="891.6418686226451" y="646.4100791435521" width="115.57909605303769" height="59.58992085644786" rx="4" fill="#232826"/>
-<text x="895.6418686226451" y="657.4100791435521" class="s">Volumetric clouds</text>
-<rect x="892.6418686226451" y="659.4100791435521" width="52.340727435583744" height="44.58992085644786" rx="2" fill="#d9961f"><title>Volumetric clouds · C++ orchestration · In progress</title></rect>
-<rect x="892.6418686226451" y="701" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="895.6418686226451" y="670.4100791435521" class="l">C++ orc…</text>
-<rect x="945.9825960582289" y="659.4100791435521" width="40.679692791794196" height="44.58992085644786" rx="2" fill="#d9961f"><title>Volumetric clouds · Cloud shaders · In progress</title></rect>
-<rect x="945.9825960582289" y="701" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="948.9825960582289" y="670.4100791435521" class="l">Cloud…</text>
-<rect x="987.6622888500231" y="659.4100791435521" width="17.558675825659748" height="14.196640285482658" rx="2" fill="#4a86d6"><title>Volumetric clouds · Cloud shadow map + overhead transmittance · Not started</title></rect>
-<rect x="987.6622888500231" y="674.6067194290348" width="17.558675825659748" height="14.196640285482545" rx="2" fill="#4a86d6"><title>Volumetric clouds · Temporal reconstruction · Not started</title></rect>
-<rect x="987.6622888500231" y="689.8033597145173" width="17.558675825659748" height="14.196640285482658" rx="2" fill="#4a86d6"><title>Volumetric clouds · Sky AO from clouds + cloud shadow on air and fog · Not started</title></rect>
-<rect x="1015.2209646756828" y="426.75145394707187" width="174.7790353243172" height="283.24854605292813" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
-<text x="1022.2209646756828" y="439.75145394707187" class="a">SHADOWS · 45K</text>
-<rect x="1019.2209646756828" y="445.75145394707187" width="166.7790353243172" height="139.05481463053997" rx="4" fill="#232826"/>
-<text x="1023.2209646756828" y="456.75145394707187" class="s">Virtual shadow maps</text>
-<rect x="1020.2209646756828" y="458.75145394707187" width="36.03857591940664" height="35.75798259783318" rx="2" fill="#d9961f"><title>Virtual shadow maps · Physical page allocation, LRU and eviction · In progress</title></rect>
-<rect x="1020.2209646756828" y="491.50943654490504" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="1023.2209646756828" y="469.75145394707187" class="l">Phys…</text>
-<rect x="1020.2209646756828" y="495.50943654490504" width="36.03857591940664" height="34.1131257009755" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Projection passes and shadow-mask composite · Done</title></rect>
-<text x="1023.2209646756828" y="506.50943654490504" class="l">Proj…</text>
-<rect x="1020.2209646756828" y="530.6225622458805" width="36.03857591940664" height="26.688424430437408" rx="2" fill="#d9961f"><title>Virtual shadow maps · Pixel page marking from receiver footprint · In progress</title></rect>
-<rect x="1020.2209646756828" y="554.310986676318" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="1023.2209646756828" y="541.6225622458805" class="l">Pixe…</text>
-<rect x="1020.2209646756828" y="558.310986676318" width="36.03857591940664" height="24.49528190129388" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Debug overlays and stats readback in the array code · Not started</title></rect>
-<text x="1023.2209646756828" y="569.310986676318" class="l">Debu…</text>
-<rect x="1057.2595405950894" y="458.75145394707187" width="26.559028081794622" height="33.26495780203351" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
-<text x="1060.2595405950894" y="469.75145394707187" class="l">Sh…</text>
-<rect x="1057.2595405950894" y="493.0164117491054" width="26.559028081794622" height="32.80440729394172" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow depth rendering into pages · In progress</title></rect>
-<rect x="1057.2595405950894" y="522.8208190430471" width="2" height="3" fill="#fff" opacity=".85"/>
-<text x="1060.2595405950894" y="504.0164117491054" class="l">Sh…</text>
-<rect x="1057.2595405950894" y="526.8208190430471" width="26.559028081794622" height="28.35241904905388" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Array setup, slot allocation and uniform buffers · Done</title></rect>
-<text x="1060.2595405950894" y="537.8208190430471" class="l">Ar…</text>
-<rect x="1057.2595405950894" y="556.173238092101" width="26.559028081794622" height="26.63303048551097" rx="2" fill="#d9961f"><title>Virtual shadow maps · CVars, scalability tiers and defaults · In progress</title></rect>
-<rect x="1057.2595405950894" y="579.806268577612" width="16.90119968841476" height="3" fill="#fff" opacity=".85"/>
-<text x="1060.2595405950894" y="567.173238092101" class="l">CV…</text>
-<rect x="1084.818568676884" y="458.75145394707187" width="26.58768496312132" height="23.629193533881846" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Instance invalidation: collectors, scene updater, payloads · Done</title></rect>
-<text x="1087.818568676884" y="469.75145394707187" class="l">In…</text>
-<rect x="1112.4062536400054" y="458.75145394707187" width="25.900569521947773" height="23.629193533881846" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow-map ray tracing (SMRT) ray loop · In progress</title></rect>
-<rect x="1112.4062536400054" y="479.3806474809537" width="18.95163623557154" height="3" fill="#fff" opacity=".85"/>
-<text x="1115.4062536400054" y="469.75145394707187" class="l">Sh…</text>
-<rect x="1139.3068231619534" y="458.75145394707187" width="22.568059632255654" height="23.629193533881846" rx="2" fill="#3b403d"><title>Virtual shadow maps · Page-management dispatcher and shader declarations · Out of scope by rule</title></rect>
-<text x="1142.3068231619534" y="469.75145394707187" class="l">Pa…</text>
-<rect x="1162.874882794209" y="458.75145394707187" width="21.125117205790957" height="23.629193533881846" rx="2" fill="#d9961f"><title>Virtual shadow maps · Statistics counters, print and CSV log · In progress</title></rect>
-<rect x="1162.874882794209" y="479.3806474809537" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="1084.818568676884" y="483.3806474809537" width="20.359437244362425" height="21.38249755308192" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Prefiltered distant shadows · No PRD</title></rect>
-<rect x="1106.1780059212465" y="483.3806474809537" width="20.283828616948767" height="21.38249755308192" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Page lookup, clipmap level selection and level blend · Done</title></rect>
-<rect x="1127.4618345381953" y="483.3806474809537" width="18.31800430419321" height="21.38249755308192" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Page table addressing and handles · Done</title></rect>
-<rect x="1146.7798388423887" y="483.3806474809537" width="18.204591363072723" height="21.38249755308192" rx="2" fill="#d9961f"><title>Virtual shadow maps · Hierarchical page flags and mip propagation · In progress</title></rect>
-<rect x="1146.7798388423887" y="501.76314503403563" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="1165.9844302054614" y="483.3806474809537" width="18.015569794538578" height="21.38249755308192" rx="2" fill="#d9961f"><title>Virtual shadow maps · Per-page draw command build and instance culling · In progress</title></rect>
-<rect x="1165.9844302054614" y="501.76314503403563" width="6.005189931512859" height="3" fill="#fff" opacity=".85"/>
-<rect x="1084.818568676884" y="505.76314503403563" width="19.415761383271274" height="19.350065671745085" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Level geometry, snapping, bounding volumes and view matrices · Done</title></rect>
-<rect x="1084.818568676884" y="526.1132107057807" width="19.415761383271274" height="18.604034750988603" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Froxel page marking · No PRD</title></rect>
-<rect x="1084.818568676884" y="545.7172454567693" width="19.415761383271274" height="18.231019290610334" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Receiver masks and instance-to-page overlap tests · Not started</title></rect>
-<rect x="1084.818568676884" y="564.9482647473797" width="19.415761383271274" height="17.858003830232178" rx="2" fill="#d9961f"><title>Virtual shadow maps · GPU-driven invalidation · In progress</title></rect>
-<rect x="1084.818568676884" y="579.8062685776118" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="1105.2343300601553" y="505.76314503403563" width="16.41248687282723" height="18.729457134926463" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Per-light cache entries and clip-level cache keys · Done</title></rect>
-<rect x="1105.2343300601553" y="525.4926021689621" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Alpha-masked depth in the page raster · In progress</title></rect>
-<rect x="1105.2343300601553" y="540.9304909718453" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
-<rect x="1105.2343300601553" y="544.9304909718453" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Wind and sway of casters near the camera · In progress</title></rect>
-<rect x="1105.2343300601553" y="560.3683797747285" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
-<rect x="1105.2343300601553" y="564.3683797747286" width="16.41248687282723" height="18.437888802883208" rx="2" fill="#d9961f"><title>Virtual shadow maps · Two-sided foliage receiver · In progress</title></rect>
-<rect x="1105.2343300601553" y="579.8062685776118" width="9.573950675815885" height="3" fill="#fff" opacity=".85"/>
-<rect x="1122.6468169329826" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow quality tiers · In progress</title></rect>
-<rect x="1122.6468169329826" y="518.0475735251314" width="12.590069135427939" height="3" fill="#fff" opacity=".85"/>
-<rect x="1143.431211288655" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Calibration scenes and judged parity · In progress</title></rect>
-<rect x="1143.431211288655" y="518.0475735251314" width="4.946098588918119" height="3" fill="#fff" opacity=".85"/>
-<rect x="1164.2156056443275" y="505.76314503403563" width="19.784394355672475" height="15.284428491095753" rx="2" fill="#d9961f"><title>Virtual shadow maps · Distance-field far shadows · In progress</title></rect>
-<rect x="1164.2156056443275" y="518.0475735251314" width="4.946098588918119" height="3" fill="#fff" opacity=".85"/>
-<rect x="1122.6468169329826" y="522.0475735251314" width="16.96199143064382" height="16.382882131476208" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Per-page depth pyramid (HZB) · Not started</title></rect>
-<rect x="1122.6468169329826" y="539.4304556566076" width="16.96199143064382" height="15.723368988276547" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Static and dynamic page merge, clear and initialize · Done</title></rect>
-<rect x="1122.6468169329826" y="556.1538246448841" width="16.96199143064382" height="12.89688408884956" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Page and cache visualization overlays · Not started</title></rect>
-<rect x="1122.6468169329826" y="570.0507087337337" width="16.96199143064382" height="12.755559843878132" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Local-light projection (cube face, footprint mip, spot and point) · Done</title></rect>
-<rect x="1140.6088083636264" y="522.0475735251314" width="15.631740262684389" height="13.143503620043361" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Projection visualization · Not started</title></rect>
-<rect x="1157.2405486263108" y="522.0475735251314" width="13.477989725070529" height="13.143503620043361" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Stats extraction, overflow messages and cache views · Not started</title></rect>
-<rect x="1171.7185383513815" y="522.0475735251314" width="12.28146164861846" height="13.143503620043361" rx="2" fill="#d9961f"><title>Virtual shadow maps · Page pool pressure and dynamic resolution throttle · In progress</title></rect>
-<rect x="1171.7185383513815" y="532.1910771451747" width="5.3731394712705765" height="3" fill="#fff" opacity=".85"/>
-<rect x="1140.6088083636264" y="536.1910771451747" width="14.073644512039664" height="11.237371056695224" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Shadow caster bounds debug draw · Not started</title></rect>
-<rect x="1155.682452875666" y="536.1910771451747" width="13.797063878791278" height="11.237371056695224" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Frame data extraction and persistent primitive indices · Done</title></rect>
-<rect x="1170.4795167544573" y="536.1910771451747" width="13.520483245542664" height="11.237371056695224" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Cache CVars (static threshold, page age, light age) · Done</title></rect>
-<rect x="1140.6088083636264" y="548.42844820187" width="12.68090604310646" height="11.431716600566688" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Directional projection and clip-level pick · Done</title></rect>
-<rect x="1140.6088083636264" y="560.8601648024367" width="12.68090604310646" height="11.24616859160301" rx="2" fill="#d9961f"><title>Virtual shadow maps · Clipmap CVars and tier bias · In progress</title></rect>
-<rect x="1140.6088083636264" y="569.1063333940397" width="8.069667481976838" height="3" fill="#fff" opacity=".85"/>
-<rect x="1140.6088083636264" y="573.1063333940396" width="12.68090604310646" height="9.69993518357228" rx="2" fill="url(#gap)"><title>Virtual shadow maps · One-pass projection and per-pixel light list · No PRD</title></rect>
-<rect x="1154.2897144067329" y="548.42844820187" width="10.465173288152982" height="11.398768823274054" rx="2" fill="#d9961f"><title>Virtual shadow maps · Normal bias, slope bias and geometric normal estimate · In progress</title></rect>
-<rect x="1154.2897144067329" y="556.827217025144" width="2" height="3" fill="#fff" opacity=".85"/>
-<rect x="1165.7548876948858" y="548.42844820187" width="8.622556152557081" height="11.398768823274054" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Subsurface and translucent receivers · No PRD</title></rect>
-<rect x="1175.377443847443" y="548.42844820187" width="8.622556152557081" height="11.398768823274054" rx="2" fill="#3b403d"><title>Virtual shadow maps · View compaction and explicit chunk view masks · Out of scope by rule</title></rect>
-<rect x="1154.2897144067329" y="560.827217025144" width="7.616554950628824" height="10.784129001265569" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
-<rect x="1154.2897144067329" y="572.6113460264096" width="7.616554950628824" height="10.19492255120224" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Lens, viewport and orthographic scaling of level choice · Not started</title></rect>
-<rect x="1162.9062693573617" y="560.827217025144" width="7.4327216193275945" height="9.034185844577564" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Physical pool resize and memory · No PRD</title></rect>
-<rect x="1171.3389909766893" y="560.827217025144" width="6.252140592621799" height="9.034185844577564" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Screen-space start ray (smart bias) · Not started</title></rect>
-<rect x="1178.591131569311" y="560.827217025144" width="5.408868430688926" height="9.034185844577564" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
-<rect x="1162.9062693573617" y="570.8614028697216" width="8.347347579577672" height="5.608218158573322" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Coarse page marking · Done</title></rect>
-<rect x="1162.9062693573617" y="577.4696210282949" width="8.347347579577672" height="5.336647549316922" rx="2" fill="#3b403d"><title>Virtual shadow maps · Mask bit helpers · Out of scope by rule</title></rect>
-<rect x="1172.2536169369394" y="570.8614028697216" width="5.511739173520027" height="5.107321257055901" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Prefiltered distant sampling · No PRD</title></rect>
-<rect x="1178.7653561104594" y="570.8614028697216" width="5.234643889540621" height="5.107321257055901" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Adaptive ray count early exit · Not started</title></rect>
-<rect x="1172.2536169369394" y="576.9687241267775" width="3.9500516749749295" height="5.8375444508343435" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Hair strand shadow rays · No PRD</title></rect>
-<rect x="1177.2036686119143" y="576.9687241267775" width="3.331295215603177" height="5.8375444508343435" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
-<rect x="1181.5349638275175" y="576.9687241267775" width="2.4650361724825416" height="5.8375444508343435" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Cache hooks · Done</title></rect>
-<rect x="1019.2209646756828" y="586.8062685776118" width="166.7790353243172" height="119.19373142238817" rx="4" fill="#232826"/>
-<text x="1023.2209646756828" y="597.8062685776118" class="s">Classic shadows (CSM, cont…</text>
-<rect x="1020.2209646756828" y="599.8062685776118" width="163.7790353243172" height="104.19373142238817" rx="2" fill="#3aa56c"><title>Classic shadows (CSM, contact) · Whole system (not split) · Done</title></rect>
-<text x="1023.2209646756828" y="610.8062685776118" class="l">Whole system (not split)</text>
+<rect x="15" y="225.24000239844565" width="50.53925217044829" height="52.60734455910455" rx="2" fill="#d9961f"><title>Lumen · Direct lighting accumulation, update budget and combine · In progress</title></rect>
+<rect x="15" y="274.8473469575502" width="33.69283478029886" height="3" fill="#fff" opacity=".85"/>
+<text x="18" y="236.24000239844565" class="l">Direct …</text>
+<rect x="15" y="278.8473469575502" width="50.53925217044829" height="50.967418994753984" rx="2" fill="#d9961f"><title>Lumen · Card capture and physical atlas · In progress</title></rect>
+<rect x="15" y="326.8147659523042" width="33.69283478029886" height="3" fill="#fff" opacity=".85"/>
+<text x="18" y="289.8473469575502" class="l">Card ca…</text>
+<rect x="66.5392521704483" y="98" width="49.70023170778464" height="50.16034557723481" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing common, materials and far field · Deferred</title></rect>
+<text x="69.5392521704483" y="109" class="l">Hardwar…</text>
+<rect x="66.5392521704483" y="149.1603455772348" width="49.70023170778464" height="44.8072174556487" rx="2" fill="#d9961f"><title>Lumen · Probe tracing and radiance cache handoff · In progress</title></rect>
+<rect x="66.5392521704483" y="190.9675630328835" width="23.542215019476934" height="3" fill="#fff" opacity=".85"/>
+<text x="69.5392521704483" y="160.1603455772348" class="l">Probe t…</text>
+<rect x="66.5392521704483" y="194.96756303288348" width="49.70023170778464" height="44.64051104355778" rx="2" fill="#3aa56c"><title>Lumen · Shared and glue · Done</title></rect>
+<text x="69.5392521704483" y="205.96756303288348" class="l">Shared …</text>
+<rect x="66.5392521704483" y="240.60807407644126" width="49.70023170778464" height="44.381189958082985" rx="2" fill="#d9961f"><title>Lumen · Reflection tracing · In progress</title></rect>
+<rect x="66.5392521704483" y="281.98926403452424" width="27.109217295155254" height="3" fill="#fff" opacity=".85"/>
+<text x="69.5392521704483" y="251.60807407644126" class="l">Reflect…</text>
+<rect x="66.5392521704483" y="285.98926403452424" width="49.70023170778464" height="43.825501917779945" rx="2" fill="#3aa56c"><title>Lumen · Radiosity · Done</title></rect>
+<text x="69.5392521704483" y="296.98926403452424" class="l">Radiosi…</text>
+<rect x="117.23948387823293" y="98" width="45.45411853272975" height="44.87013427162114" rx="2" fill="#3b403d"><title>Lumen · Stochastic direct lighting · Out of scope by rule</title></rect>
+<text x="120.23948387823293" y="109" class="l">Stocha…</text>
+<rect x="163.69360241096268" y="98" width="43.2839393505044" height="44.87013427162114" rx="2" fill="#d9961f"><title>Lumen · Lumen scene, reflection view and surface cache views · In progress</title></rect>
+<rect x="163.69360241096268" y="139.87013427162114" width="25.57687325257078" height="3" fill="#fff" opacity=".85"/>
+<text x="166.69360241096268" y="109" class="l">Lumen …</text>
+<rect x="207.9775417614671" y="98" width="43.017785299854125" height="44.87013427162114" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
+<rect x="207.9775417614671" y="139.87013427162114" width="36.87238739987496" height="3" fill="#fff" opacity=".85"/>
+<text x="210.9775417614671" y="109" class="l">Share…</text>
+<rect x="251.99532706132123" y="98" width="41.31849405339466" height="44.87013427162114" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
+<rect x="251.99532706132123" y="139.87013427162114" width="21.874496851797172" height="3" fill="#fff" opacity=".85"/>
+<text x="254.99532706132123" y="109" class="l">Share…</text>
+<rect x="294.3138211147159" y="98" width="39.619202806935164" height="44.87013427162114" rx="2" fill="#d9961f"><title>Lumen · Integrate, tile classification and upsample · In progress</title></rect>
+<rect x="294.3138211147159" y="139.87013427162114" width="29.714402105201373" height="3" fill="#fff" opacity=".85"/>
+<text x="297.3138211147159" y="109" class="l">Integ…</text>
+<rect x="117.23948387823293" y="143.87013427162114" width="43.257069061555626" height="40.20845343063411" rx="2" fill="url(#gap)"><title>Lumen · Surface cache residency, resolution and feedback · No PRD</title></rect>
+<text x="120.23948387823293" y="154.87013427162114" class="l">Surfac…</text>
+<rect x="117.23948387823293" y="185.07858770225525" width="43.257069061555626" height="37.68332162927189" rx="2" fill="#d9961f"><title>Lumen · Light culling into card tiles · In progress</title></rect>
+<rect x="117.23948387823293" y="219.76190933152714" width="28.83804604103708" height="3" fill="#fff" opacity=".85"/>
+<text x="120.23948387823293" y="196.07858770225525" class="l">Light …</text>
+<rect x="117.23948387823293" y="223.76190933152714" width="43.257069061555626" height="34.94599387821535" rx="2" fill="#6c7176"><title>Lumen · Card placement and mesh cards · Deferred</title></rect>
+<text x="120.23948387823293" y="234.76190933152714" class="l">Card p…</text>
+<rect x="117.23948387823293" y="259.7079032097424" width="43.257069061555626" height="34.648919548643335" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced visualize · Deferred</title></rect>
+<text x="120.23948387823293" y="270.7079032097424" class="l">Hardwa…</text>
+<rect x="117.23948387823293" y="295.35682275838576" width="43.257069061555626" height="34.457943193918425" rx="2" fill="#d9961f"><title>Lumen · Froxel volume trace and filter · In progress</title></rect>
+<rect x="117.23948387823293" y="326.8147659523042" width="23.594764942666703" height="3" fill="#fff" opacity=".85"/>
+<text x="120.23948387823293" y="306.35682275838576" class="l">Froxel…</text>
+<rect x="161.49655293978856" y="143.87013427162114" width="34.57613936055972" height="41.0510357605267" rx="2" fill="#d9961f"><title>Lumen · Card shadowing · In progress</title></rect>
+<rect x="161.49655293978856" y="181.92117003214784" width="23.05075957370648" height="3" fill="#fff" opacity=".85"/>
+<text x="164.49655293978856" y="154.87013427162114" class="l">Card…</text>
+<rect x="197.07269230034828" y="143.87013427162114" width="34.21881467143922" height="41.0510357605267" rx="2" fill="#3aa56c"><title>Lumen · Mesh SDF and heightfield culling · Done</title></rect>
+<text x="200.07269230034828" y="154.87013427162114" class="l">Mesh…</text>
+<rect x="232.29150697178753" y="143.87013427162114" width="33.995486740738926" height="41.0510357605267" rx="2" fill="#3aa56c"><title>Lumen · Probe spatial filter and irradiance conversion · Done</title></rect>
+<text x="235.29150697178753" y="154.87013427162114" class="l">Prob…</text>
+<rect x="267.28699371252645" y="143.87013427162114" width="33.59349646547838" height="41.0510357605267" rx="2" fill="url(#gap)"><title>Lumen · Surface cache compression and copy · No PRD</title></rect>
+<text x="270.28699371252645" y="154.87013427162114" class="l">Surf…</text>
+<rect x="301.88049017800483" y="143.87013427162114" width="32.05253374364622" height="41.0510357605267" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing · Deferred</title></rect>
+<text x="304.88049017800483" y="154.87013427162114" class="l">Har…</text>
+<rect x="161.49655293978856" y="185.92117003214784" width="34.63487863740349" height="36.15896148552574" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced reflections and hit lighting · Deferred</title></rect>
+<text x="164.49655293978856" y="196.92117003214784" class="l">Hard…</text>
+<rect x="161.49655293978856" y="223.08013151767358" width="34.63487863740349" height="35.92177662497983" rx="2" fill="#d9961f"><title>Lumen · Probe and pixel temporal accumulation · In progress</title></rect>
+<rect x="161.49655293978856" y="256.0019081426534" width="12.36959951335839" height="3" fill="#fff" opacity=".85"/>
+<text x="164.49655293978856" y="234.08013151767358" class="l">Prob…</text>
+<rect x="161.49655293978856" y="260.0019081426534" width="34.63487863740349" height="34.472313588310385" rx="2" fill="#6c7176"><title>Lumen · Ray traced translucency · Deferred</title></rect>
+<text x="164.49655293978856" y="271.0019081426534" class="l">Ray …</text>
+<rect x="161.49655293978856" y="295.47422173096373" width="34.63487863740349" height="34.340544221340394" rx="2" fill="#3aa56c"><title>Lumen · Short Range AO and bent normal · Done</title></rect>
+<text x="164.49655293978856" y="306.47422173096373" class="l">Shor…</text>
+<rect x="197.13143157719205" y="185.92117003214784" width="34.751435936731184" height="33.64743152523752" rx="2" fill="#d9961f"><title>Lumen · Tile classification and ray generation · In progress</title></rect>
+<rect x="197.13143157719205" y="216.56860155738536" width="18.955328692762464" height="3" fill="#fff" opacity=".85"/>
+<text x="200.13143157719205" y="196.92117003214784" class="l">Tile…</text>
+<rect x="232.88286751392323" y="185.92117003214784" width="33.531712951778246" height="33.64743152523752" rx="2" fill="#4a86d6"><title>Lumen · BRDF and lighting importance sampling · Not started</title></rect>
+<text x="235.88286751392323" y="196.92117003214784" class="l">BRDF…</text>
+<rect x="267.41458046570153" y="185.92117003214784" width="33.47750304133592" height="33.64743152523752" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
+<rect x="267.41458046570153" y="216.56860155738536" width="21.833154157392993" height="3" fill="#fff" opacity=".85"/>
+<text x="270.41458046570153" y="196.92117003214784" class="l">Shar…</text>
+<rect x="301.89208350703746" y="185.92117003214784" width="32.0409404146136" height="33.64743152523752" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing paths · Deferred</title></rect>
+<text x="304.89208350703746" y="196.92117003214784" class="l">Har…</text>
+<rect x="197.13143157719205" y="220.56860155738536" width="29.078347194676667" height="36.62294763406322" rx="2" fill="#4a86d6"><title>Lumen · Radiance cache, radiosity and card lighting views · Not started</title></rect>
+<text x="200.13143157719205" y="231.56860155738536" class="l">Rad…</text>
+<rect x="197.13143157719205" y="258.1915491914486" width="29.078347194676667" height="36.34194636542708" rx="2" fill="#d9961f"><title>Lumen · Surface cache sampling at a ray hit · In progress</title></rect>
+<rect x="197.13143157719205" y="291.53349555687566" width="19.38556479645111" height="3" fill="#fff" opacity=".85"/>
+<text x="200.13143157719205" y="269.1915491914486" class="l">Sur…</text>
+<rect x="197.13143157719205" y="295.5334955568756" width="29.078347194676667" height="34.28127039542858" rx="2" fill="#6c7176"><title>Lumen · Hardware ray traced card lighting · Deferred</title></rect>
+<text x="200.13143157719205" y="306.5334955568756" class="l">Har…</text>
+<rect x="227.2097787718687" y="220.56860155738536" width="27.158578699955484" height="34.18531705661019" rx="2" fill="#3aa56c"><title>Lumen · Probe tracing with BRDF-driven trace tiles · Done</title></rect>
+<text x="230.2097787718687" y="231.56860155738536" class="l">Pr…</text>
+<rect x="255.3683574718242" y="220.56860155738536" width="26.144336054838618" height="34.18531705661019" rx="2" fill="#3aa56c"><title>Lumen · Software ray tracing against distance fields · Done</title></rect>
+<text x="258.3683574718242" y="231.56860155738536" class="l">So…</text>
+<rect x="282.5126935266628" y="220.56860155738536" width="25.797358307824936" height="34.18531705661019" rx="2" fill="#d9961f"><title>Lumen · Final gather method and allow checks · In progress</title></rect>
+<rect x="282.5126935266628" y="251.75391861399555" width="21.927754561651195" height="3" fill="#fff" opacity=".85"/>
+<text x="285.5126935266628" y="231.56860155738536" class="l">Fi…</text>
+<rect x="309.3100518344877" y="220.56860155738536" width="24.622972087163305" height="34.18531705661019" rx="2" fill="#d9961f"><title>Lumen · Probe marking, allocation and indirection · In progress</title></rect>
+<rect x="309.3100518344877" y="251.75391861399555" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="312.3100518344877" y="231.56860155738536" class="l">Pr…</text>
+<rect x="227.2097787718687" y="255.75391861399555" width="28.689577321769235" height="24.58964411997124" rx="2" fill="#d9961f"><title>Lumen · Temporal denoiser · In progress</title></rect>
+<rect x="227.2097787718687" y="277.3435627339668" width="12.623414021578464" height="3" fill="#fff" opacity=".85"/>
+<text x="230.2097787718687" y="266.75391861399555" class="l">Tem…</text>
+<rect x="227.2097787718687" y="281.3435627339668" width="28.689577321769235" height="24.463119303556027" rx="2" fill="#d9961f"><title>Lumen · Probe gather and half-resolution interpolation · In progress</title></rect>
+<rect x="227.2097787718687" y="302.8066820375228" width="17.80732385489125" height="3" fill="#fff" opacity=".85"/>
+<text x="230.2097787718687" y="292.3435627339668" class="l">Pro…</text>
+<rect x="227.2097787718687" y="306.8066820375228" width="28.689577321769235" height="23.008083914781423" rx="2" fill="#d9961f"><title>Lumen · Spatial resolve · In progress</title></rect>
+<rect x="227.2097787718687" y="326.81476595230424" width="15.648860357328672" height="3" fill="#fff" opacity=".85"/>
+<text x="230.2097787718687" y="317.8066820375228" class="l">Spa…</text>
+<rect x="256.89935609363795" y="255.75391861399555" width="23.209579484881374" height="24.602149479733157" rx="2" fill="#3aa56c"><title>Lumen · Shared and glue · Done</title></rect>
+<text x="259.89935609363795" y="266.75391861399555" class="l">Sh…</text>
+<rect x="256.89935609363795" y="281.3560680937287" width="23.209579484881374" height="23.86511790380149" rx="2" fill="#4a86d6"><title>Lumen · Radiance storage, spatial filter, mips and irradiance · Not started</title></rect>
+<text x="259.89935609363795" y="292.3560680937287" class="l">Ra…</text>
+<rect x="256.89935609363795" y="306.2211859975302" width="23.209579484881374" height="23.593579954773986" rx="2" fill="#d9961f"><title>Lumen · Translucency radiance cache and glossy reflections on translucent surfaces · In progress</title></rect>
+<rect x="256.89935609363795" y="326.8147659523042" width="6.631308424251821" height="3" fill="#fff" opacity=".85"/>
+<text x="259.89935609363795" y="317.2211859975302" class="l">Tr…</text>
+<rect x="281.1089355785193" y="255.75391861399555" width="22.040486939866923" height="23.863251384725686" rx="2" fill="#4a86d6"><title>Lumen · Interpolation with parallax correction · Not started</title></rect>
+<text x="284.1089355785193" y="266.75391861399555" class="l">In…</text>
+<rect x="304.14942251838625" y="255.75391861399555" width="15.166112147972171" height="23.863251384725686" rx="2" fill="#d9961f"><title>Lumen · Uniform and adaptive probe placement · In progress</title></rect>
+<rect x="304.14942251838625" y="276.61716999872124" width="7.183947859565765" height="3" fill="#fff" opacity=".85"/>
+<rect x="320.3155346663584" y="255.75391861399555" width="13.617489255292583" height="23.863251384725686" rx="2" fill="#d9961f"><title>Lumen · Per-view history state · In progress</title></rect>
+<rect x="320.3155346663584" y="276.61716999872124" width="5.991695272328736" height="3" fill="#fff" opacity=".85"/>
+<rect x="281.1089355785193" y="280.61716999872124" width="18.512869010040447" height="16.711136443833652" rx="2" fill="#4a86d6"><title>Lumen · Visibility-weighted interpolation · Not started</title></rect>
+<rect x="281.1089355785193" y="298.3283064425549" width="18.512869010040447" height="15.267293798955961" rx="2" fill="#6c7176"><title>Lumen · Hardware ray tracing · Deferred</title></rect>
+<rect x="281.1089355785193" y="314.59560024151085" width="18.512869010040447" height="15.219165710793334" rx="2" fill="url(#gap)"><title>Lumen · Probe debug overlay · No PRD</title></rect>
+<rect x="300.62180458855977" y="280.61716999872124" width="16.722960537407744" height="16.380301761464125" rx="2" fill="url(#gap)"><title>Lumen · Hair strands · No PRD</title></rect>
+<rect x="318.3447651259675" y="280.61716999872124" width="15.588258795683487" height="16.380301761464125" rx="2" fill="#d9961f"><title>Lumen · Shared and glue · In progress</title></rect>
+<rect x="318.3447651259675" y="293.99747176018536" width="10.392172530455657" height="3" fill="#fff" opacity=".85"/>
+<rect x="300.62180458855977" y="297.99747176018536" width="14.681858377426181" height="16.426701842895227" rx="2" fill="url(#gap)"><title>Lumen · Bilateral filter · No PRD</title></rect>
+<rect x="300.62180458855977" y="315.4241736030806" width="14.681858377426181" height="14.390592349223596" rx="2" fill="#d9961f"><title>Lumen · Update priority and trace budget · In progress</title></rect>
+<rect x="300.62180458855977" y="326.8147659523042" width="7.772748552755037" height="3" fill="#fff" opacity=".85"/>
+<rect x="316.30366296598595" y="297.99747176018536" width="17.62936095566505" height="9.535813342784706" rx="2" fill="#4a86d6"><title>Lumen · Probe occlusion depth · Not started</title></rect>
+<rect x="316.30366296598595" y="308.53328510297007" width="17.62936095566505" height="9.18293921168663" rx="2" fill="#d9961f"><title>Lumen · Probe offset out of geometry · In progress</title></rect>
+<rect x="316.30366296598595" y="314.7162243146567" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="316.30366296598595" y="318.7162243146567" width="9.556637874876856" height="11.098541637647486" rx="2" fill="url(#gap)"><title>Lumen · Front layer translucency and water passes · No PRD</title></rect>
+<rect x="326.8603008408628" y="318.7162243146567" width="7.072723080788194" height="11.098541637647486" rx="2" fill="url(#gap)"><title>Lumen · Heightfields in the scene · No PRD</title></rect>
+<rect x="14" y="333.8147659523042" width="171.78862386722443" height="168.3688164679342" rx="4" fill="#232826"/>
+<text x="18" y="344.8147659523042" class="s">Substrate materials</text>
+<rect x="15" y="346.8147659523042" width="168.78862386722443" height="153.3688164679342" rx="2" fill="#4a86d6"><title>Substrate materials · Whole system (not split) · Not started</title></rect>
+<text x="18" y="357.8147659523042" class="l">Whole system (not split)</text>
+<rect x="187.78862386722443" y="333.8147659523042" width="148.14440005442663" height="168.3688164679342" rx="4" fill="#232826"/>
+<text x="191.78862386722443" y="344.8147659523042" class="s">Deferred shading + clus…</text>
+<rect x="188.78862386722443" y="346.8147659523042" width="145.14440005442663" height="153.3688164679342" rx="2" fill="#3aa56c"><title>Deferred shading + clustered lights · Whole system (not split) · Done</title></rect>
+<text x="191.78862386722443" y="357.8147659523042" class="l">Whole system (not split)</text>
+<rect x="14" y="504.1835824202384" width="102.97284724713622" height="201.8164175797616" rx="4" fill="#232826"/>
+<text x="18" y="515.1835824202384" class="s">Reflections</text>
+<rect x="15" y="517.1835824202384" width="99.97284724713622" height="79.16141010600063" rx="2" fill="#d9961f"><title>Reflections · Lumen reflections · In progress</title></rect>
+<rect x="15" y="593.344992526239" width="54.53064395298339" height="3" fill="#fff" opacity=".85"/>
+<text x="18" y="528.1835824202384" class="l">Lumen reflections</text>
+<rect x="15" y="597.344992526239" width="54.34765207755645" height="77.10072840841713" rx="2" fill="#4a86d6"><title>Reflections · Reflection captures (box, sphere, real-time) · Not started</title></rect>
+<text x="18" y="608.344992526239" class="l">Reflecti…</text>
+<rect x="70.34765207755645" y="597.344992526239" width="44.62519516957977" height="77.10072840841713" rx="2" fill="#3aa56c"><title>Reflections · Screen-space reflections · Done</title></rect>
+<text x="73.34765207755645" y="608.344992526239" class="l">Screen…</text>
+<rect x="15" y="675.4457209346562" width="99.97284724713622" height="28.55427906534385" rx="2" fill="#d9961f"><title>Reflections · Reflection environment apply · In progress</title></rect>
+<rect x="15" y="701" width="29.99185417414086" height="3" fill="#fff" opacity=".85"/>
+<text x="18" y="686.4457209346562" class="l">Reflection envir…</text>
+<rect x="118.97284724713622" y="504.1835824202384" width="182.7370540610284" height="107.9779131132509" rx="4" fill="#232826"/>
+<text x="122.97284724713622" y="515.1835824202384" class="s">MegaLights</text>
+<rect x="119.97284724713622" y="517.1835824202384" width="88.10744469962269" height="92.9779131132509" rx="2" fill="#4a86d6"><title>MegaLights · Shaders (not split) · Not started</title></rect>
+<text x="122.97284724713622" y="528.1835824202384" class="l">Shaders (not s…</text>
+<rect x="209.0802919467589" y="517.1835824202384" width="49.836602175489986" height="45.69226227686772" rx="2" fill="#4a86d6"><title>MegaLights · Core · Not started</title></rect>
+<text x="212.0802919467589" y="528.1835824202384" class="l">Core</text>
+<rect x="259.9168941222489" y="517.1835824202384" width="39.79300718591571" height="45.69226227686772" rx="2" fill="#4a86d6"><title>MegaLights · Ray tracing · Not started</title></rect>
+<text x="262.9168941222489" y="528.1835824202384" class="l">Ray t…</text>
+<rect x="209.0802919467589" y="563.8758446971061" width="28.429274536075013" height="46.285650836383184" rx="2" fill="#4a86d6"><title>MegaLights · Visualize · Not started</title></rect>
+<text x="212.0802919467589" y="574.8758446971061" class="l">Vis…</text>
+<rect x="238.50956648283392" y="563.8758446971061" width="25.069522192823456" height="46.285650836383184" rx="2" fill="#4a86d6"><title>MegaLights · Sampling + internals · Not started</title></rect>
+<text x="241.50956648283392" y="574.8758446971061" class="l">Sa…</text>
+<rect x="264.5790886756574" y="563.8758446971061" width="35.13081263250723" height="28.462416955737467" rx="2" fill="#4a86d6"><title>MegaLights · Resolve · Not started</title></rect>
+<text x="267.5790886756574" y="574.8758446971061" class="l">Reso…</text>
+<rect x="264.5790886756574" y="593.3382616528436" width="35.13081263250723" height="16.823233880645716" rx="2" fill="#4a86d6"><title>MegaLights · Denoising · Not started</title></rect>
+<rect x="118.97284724713622" y="614.1614955334893" width="182.7370540610284" height="91.8385044665107" rx="4" fill="#232826"/>
+<text x="122.97284724713622" y="625.1614955334893" class="s">Distance fields</text>
+<rect x="119.97284724713622" y="627.1614955334893" width="179.7370540610284" height="76.8385044665107" rx="2" fill="#4a86d6"><title>Distance fields · Whole system (not split) · Not started</title></rect>
+<text x="122.97284724713622" y="638.1614955334893" class="l">Whole system (not split)</text>
+<rect x="303.7099013081646" y="504.1835824202384" width="32.223122613486396" height="201.8164175797616" rx="4" fill="#232826"/>
+<text x="307.7099013081646" y="515.1835824202384" class="s">Amb…</text>
+<rect x="304.7099013081646" y="517.1835824202384" width="29.223122613486396" height="119.17623922061671" rx="2" fill="#d9961f"><title>Ambient occlusion · SSAO / GTAO · In progress</title></rect>
+<rect x="304.7099013081646" y="633.3598216408551" width="25.785108188370348" height="3" fill="#fff" opacity=".85"/>
+<text x="307.7099013081646" y="528.1835824202384" class="l">SSA…</text>
+<rect x="304.7099013081646" y="637.3598216408551" width="29.223122613486396" height="35.80260513472888" rx="2" fill="#2c322f"><title>Ambient occlusion · Rest of Ambient occlusion · Not split</title></rect>
+<text x="307.7099013081646" y="648.3598216408551" class="l">Res…</text>
+<rect x="304.7099013081646" y="674.162426775584" width="29.223122613486396" height="29.83757322441602" rx="2" fill="#d9961f"><title>Ambient occlusion · Distance-field AO · In progress</title></rect>
+<rect x="304.7099013081646" y="701" width="15.471064913022209" height="3" fill="#fff" opacity=".85"/>
+<text x="307.7099013081646" y="685.162426775584" class="l">Dis…</text>
+<rect x="343.933023921651" y="66" width="426.5303210193543" height="391.0426302243018" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="350.933023921651" y="79" class="a">GEOMETRY &amp; SCENE · 156K</text>
+<rect x="347.933023921651" y="85" width="199.08079338587055" height="368.0426302243018" rx="4" fill="#232826"/>
+<text x="351.933023921651" y="96" class="s">Nanite</text>
+<rect x="348.933023921651" y="98" width="70.25749502144953" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · Cluster acceleration structures and BLAS build · Deferred</title></rect>
+<text x="351.933023921651" y="109" class="l">Cluster acc…</text>
+<rect x="420.1905189431005" y="98" width="69.70478999898336" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · [builder] Page assignment and compression encode · Deferred</title></rect>
+<text x="423.1905189431005" y="109" class="l">[builder] …</text>
+<rect x="490.8953089420839" y="98" width="54.11850836543766" height="66.65783314873809" rx="2" fill="#6c7176"><title>Nanite · [runtime] Streaming manager · Deferred</title></rect>
+<text x="493.8953089420839" y="109" class="l">[runtime…</text>
+<rect x="348.933023921651" y="165.6578331487381" width="52.72981170951226" height="46.95295767374279" rx="2" fill="#3aa56c"><title>Nanite · [builder] Cluster build · Done</title></rect>
+<text x="351.933023921651" y="176.6578331487381" class="l">[builde…</text>
+<rect x="402.66283563116326" y="165.6578331487381" width="50.409837981851865" height="46.95295767374279" rx="2" fill="#4a86d6"><title>Nanite · Raster binning and programmable raster · Not started</title></rect>
+<text x="405.66283563116326" y="176.6578331487381" class="l">Raster …</text>
+<rect x="454.0726736130151" y="165.6578331487381" width="46.14030649985506" height="46.95295767374279" rx="2" fill="#6c7176"><title>Nanite · Compute material shading and GBuffer export · Deferred</title></rect>
+<text x="457.0726736130151" y="176.6578331487381" class="l">Comput…</text>
+<rect x="501.21298011287024" y="165.6578331487381" width="43.80083719465131" height="46.95295767374279" rx="2" fill="#4a86d6"><title>Nanite · Software rasterizer for small triangles · Not started</title></rect>
+<text x="504.21298011287024" y="176.6578331487381" class="l">Softwa…</text>
+<rect x="348.933023921651" y="213.61079082248088" width="44.47712785707813" height="46.075393407282974" rx="2" fill="#4a86d6"><title>Nanite · Visualize modes · Not started</title></rect>
+<text x="351.933023921651" y="224.61079082248088" class="l">Visual…</text>
+<rect x="394.41015177872913" y="213.61079082248088" width="41.87559783555969" height="46.075393407282974" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
+<text x="397.41015177872913" y="224.61079082248088" class="l">Share…</text>
+<rect x="437.2857496142889" y="213.61079082248088" width="36.9505639016927" height="46.075393407282974" rx="2" fill="#3aa56c"><title>Nanite · [builder] DAG build and error propagation · Done</title></rect>
+<text x="440.2857496142889" y="224.61079082248088" class="l">[bui…</text>
+<rect x="475.2363135159816" y="213.61079082248088" width="36.056908550789444" height="46.075393407282974" rx="2" fill="#3aa56c"><title>Nanite · Node and cluster hierarchy traversal · Done</title></rect>
+<text x="478.2363135159816" y="224.61079082248088" class="l">Node…</text>
+<rect x="512.293222066771" y="213.61079082248088" width="32.72059524075053" height="46.075393407282974" rx="2" fill="#d9961f"><title>Nanite · Instance culling and instance hierarchy · In progress</title></rect>
+<rect x="512.293222066771" y="256.68618422976385" width="15.397927172117894" height="3" fill="#fff" opacity=".85"/>
+<text x="515.293222066771" y="224.61079082248088" class="l">Inst…</text>
+<rect x="348.933023921651" y="260.68618422976385" width="35.90990069485008" height="38.86698160097984" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
+<text x="351.933023921651" y="271.68618422976385" class="l">Shar…</text>
+<rect x="348.933023921651" y="300.5531658307437" width="35.90990069485008" height="38.335084133622445" rx="2" fill="#3aa56c"><title>Nanite · Hardware raster path · Done</title></rect>
+<text x="351.933023921651" y="311.5531658307437" class="l">Hard…</text>
+<rect x="348.933023921651" y="339.8882499643661" width="35.90990069485008" height="36.56209257576438" rx="2" fill="#6c7176"><title>Nanite · Shade binning · Deferred</title></rect>
+<text x="351.933023921651" y="350.8882499643661" class="l">Shad…</text>
+<rect x="348.933023921651" y="377.45034254013046" width="35.90990069485008" height="36.384793419978564" rx="2" fill="#6c7176"><title>Nanite · Curve data and decode · Deferred</title></rect>
+<text x="351.933023921651" y="388.45034254013046" class="l">Curv…</text>
+<rect x="348.933023921651" y="414.835135960109" width="35.90990069485008" height="36.207494264192746" rx="2" fill="#d9961f"><title>Nanite · [builder] Displacement, skinning and ray tracing encode · In progress</title></rect>
+<rect x="348.933023921651" y="448.0426302243018" width="3.779989546826324" height="3" fill="#fff" opacity=".85"/>
+<text x="351.933023921651" y="425.835135960109" class="l">[bui…</text>
+<rect x="385.8429246165011" y="260.68618422976385" width="40.603566386434466" height="31.942375512983745" rx="2" fill="#4a86d6"><title>Nanite · Brick raster and trace · Not started</title></rect>
+<text x="388.8429246165011" y="271.68618422976385" class="l">Brick…</text>
+<rect x="427.44649100293555" y="260.68618422976385" width="39.9792291009627" height="31.942375512983745" rx="2" fill="#3aa56c"><title>Nanite · Vertex factory · Done</title></rect>
+<text x="430.44649100293555" y="271.68618422976385" class="l">Verte…</text>
+<rect x="468.42572010389824" y="260.68618422976385" width="38.67379659497635" height="31.942375512983745" rx="2" fill="#6c7176"><title>Nanite · Cluster data decode and position quantization · Deferred</title></rect>
+<text x="471.42572010389824" y="271.68618422976385" class="l">Clust…</text>
+<rect x="508.0995166988746" y="260.68618422976385" width="36.914300608646954" height="31.942375512983745" rx="2" fill="#4a86d6"><title>Nanite · Curve cluster raster · Not started</title></rect>
+<text x="511.0995166988746" y="271.68618422976385" class="l">Curv…</text>
+<rect x="385.8429246165011" y="293.6285597427476" width="34.07813957317069" height="34.099483651448" rx="2" fill="#6c7176"><title>Nanite · Stream-out of the cut for ray tracing · Deferred</title></rect>
+<text x="388.8429246165011" y="304.6285597427476" class="l">Stre…</text>
+<rect x="385.8429246165011" y="328.7280433941956" width="34.07813957317069" height="31.540979148381155" rx="2" fill="#3aa56c"><title>Nanite · Material tables per primitive · Done</title></rect>
+<text x="388.8429246165011" y="339.7280433941956" class="l">Mate…</text>
+<rect x="385.8429246165011" y="361.26902254257675" width="34.07813957317069" height="30.235075808274132" rx="2" fill="#4a86d6"><title>Nanite · [builder] Mesh cards for Lumen · Not started</title></rect>
+<text x="388.8429246165011" y="372.26902254257675" class="l">[bui…</text>
+<rect x="385.8429246165011" y="392.5040983508509" width="34.07813957317069" height="29.435543151065758" rx="2" fill="#6c7176"><title>Nanite · Depth export, material depth and composition · Deferred</title></rect>
+<text x="388.8429246165011" y="403.5040983508509" class="l">Dept…</text>
+<rect x="385.8429246165011" y="422.93964150191664" width="34.07813957317069" height="28.102988722385135" rx="2" fill="#6c7176"><title>Nanite · Two-pass occlusion with HZB · Deferred</title></rect>
+<text x="388.8429246165011" y="433.93964150191664" class="l">Two-…</text>
+<rect x="420.92106418967177" y="293.6285597427476" width="33.299625854894316" height="28.191176076848137" rx="2" fill="#3aa56c"><title>Nanite · Raster and shading bin registries · Done</title></rect>
+<text x="423.92106418967177" y="304.6285597427476" class="l">Rast…</text>
+<rect x="455.2206900445661" y="293.6285597427476" width="30.70553650452416" height="28.191176076848137" rx="2" fill="#6c7176"><title>Nanite · Attribute decode · Deferred</title></rect>
+<text x="458.2206900445661" y="304.6285597427476" class="l">Att…</text>
+<rect x="486.9262265490902" y="293.6285597427476" width="28.65588565978726" height="28.191176076848137" rx="2" fill="#3b403d"><title>Nanite · Editor hit proxies and selection · Out of scope by rule</title></rect>
+<text x="489.9262265490902" y="304.6285597427476" class="l">Edi…</text>
+<rect x="516.5821122088774" y="293.6285597427476" width="28.431705098644102" height="28.191176076848137" rx="2" fill="#3aa56c"><title>Nanite · [builder] Hierarchy encode · Done</title></rect>
+<text x="519.5821122088774" y="304.6285597427476" class="l">[bu…</text>
+<rect x="420.92106418967177" y="322.81973581959573" width="26.759256962676147" height="28.198649496222686" rx="2" fill="#d9961f"><title>Nanite · Tessellation pattern table · In progress</title></rect>
+<rect x="420.92106418967177" y="348.0183853158184" width="5.946501547261366" height="3" fill="#fff" opacity=".85"/>
+<text x="423.92106418967177" y="333.81973581959573" class="l">Te…</text>
+<rect x="448.6803211523479" y="322.81973581959573" width="24.35793715621628" height="28.198649496222686" rx="2" fill="#d9961f"><title>Nanite · Patch split and dice queues · In progress</title></rect>
+<rect x="448.6803211523479" y="348.0183853158184" width="5.412874923603618" height="3" fill="#fff" opacity=".85"/>
+<text x="451.6803211523479" y="333.81973581959573" class="l">Pa…</text>
+<rect x="474.0382583085642" y="322.81973581959573" width="23.877673194924284" height="28.198649496222686" rx="2" fill="#6c7176"><title>Nanite · Ray-triangle decode for ray tracing · Deferred</title></rect>
+<text x="477.0382583085642" y="333.81973581959573" class="l">Ra…</text>
+<rect x="498.91593150348854" y="322.81973581959573" width="22.85311007750147" height="28.198649496222686" rx="2" fill="#d9961f"><title>Nanite · Frustum, clip-plane, draw-distance and WPO-distance tests · In progress</title></rect>
+<rect x="498.91593150348854" y="348.0183853158184" width="11.426555038750735" height="3" fill="#fff" opacity=".85"/>
+<text x="501.91593150348854" y="333.81973581959573" class="l">Fr…</text>
+<rect x="522.76904158099" y="322.81973581959573" width="22.244775726531543" height="28.198649496222686" rx="2" fill="#4a86d6"><title>Nanite · Stats print · Not started</title></rect>
+<text x="525.76904158099" y="333.81973581959573" class="l">St…</text>
+<rect x="420.92106418967177" y="352.0183853158184" width="25.235457113105497" height="24.834548471197138" rx="2" fill="#3aa56c"><title>Nanite · [builder] Graph partitioner · Done</title></rect>
+<text x="423.92106418967177" y="363.0183853158184" class="l">[b…</text>
+<rect x="420.92106418967177" y="377.85293378701556" width="25.235457113105497" height="24.72764689131634" rx="2" fill="#6c7176"><title>Nanite · Page transcode · Deferred</title></rect>
+<text x="423.92106418967177" y="388.85293378701556" class="l">Pa…</text>
+<rect x="420.92106418967177" y="403.5805806783319" width="25.235457113105497" height="24.513843731554743" rx="2" fill="#4a86d6"><title>Nanite · Voxel brick trace in the rasterizer · Not started</title></rect>
+<text x="423.92106418967177" y="414.5805806783319" class="l">Vo…</text>
+<rect x="420.92106418967177" y="429.09442440988664" width="25.235457113105497" height="21.948205814415132" rx="2" fill="#d9961f"><title>Nanite · Vertex deformation · In progress</title></rect>
+<rect x="420.92106418967177" y="448.0426302243018" width="2.656363906642684" height="3" fill="#fff" opacity=".85"/>
+<text x="423.92106418967177" y="440.09442440988664" class="l">Ve…</text>
+<rect x="447.15652130277726" y="352.0183853158184" width="24.40083300121904" height="22.15017032579817" rx="2" fill="#3aa56c"><title>Nanite · Material visibility pre-pass · Done</title></rect>
+<text x="450.15652130277726" y="363.0183853158184" class="l">Ma…</text>
+<rect x="472.5573543039963" y="352.0183853158184" width="24.118152824734864" height="22.15017032579817" rx="2" fill="#4a86d6"><title>Nanite · Translucent bins and indirect draws · Not started</title></rect>
+<text x="475.5573543039963" y="363.0183853158184" class="l">Tr…</text>
+<rect x="497.67550712873117" y="352.0183853158184" width="23.754706883540962" height="22.15017032579817" rx="2" fill="#4a86d6"><title>Nanite · Curve segment raster in the rasterizer · Not started</title></rect>
+<text x="500.67550712873117" y="363.0183853158184" class="l">Cu…</text>
+<rect x="522.4302140122721" y="352.0183853158184" width="22.583603295249418" height="22.15017032579817" rx="2" fill="#4a86d6"><title>Nanite · Voxel renderer setup · Not started</title></rect>
+<text x="525.4302140122721" y="363.0183853158184" class="l">Vo…</text>
+<rect x="447.15652130277726" y="375.1685556416166" width="19.807581924482406" height="24.834361709552297" rx="2" fill="#d9961f"><title>Nanite · Tessellation patches in the rasterizer · In progress</title></rect>
+<rect x="447.15652130277726" y="397.0029173511689" width="4.401684872107201" height="3" fill="#fff" opacity=".85"/>
+<rect x="447.15652130277726" y="401.0029173511689" width="19.807581924482406" height="24.5647857612787" rx="2" fill="#3aa56c"><title>Nanite · Raster pipeline permutations and PSO precache · Done</title></rect>
+<rect x="447.15652130277726" y="426.5677031124476" width="19.807581924482406" height="24.474927111854186" rx="2" fill="#4a86d6"><title>Nanite · Translucent vertex factory · Not started</title></rect>
+<rect x="467.96410322725967" y="375.1685556416166" width="20.379151971502097" height="20.164420988634618" rx="2" fill="#6c7176"><title>Nanite · Brick tiling and scatter · Deferred</title></rect>
+<rect x="467.96410322725967" y="396.3329766302512" width="20.379151971502097" height="19.902052133403572" rx="2" fill="#3aa56c"><title>Nanite · Mesh pass draw lists · Done</title></rect>
+<rect x="467.96410322725967" y="417.2350287636548" width="20.379151971502097" height="16.709897728092983" rx="2" fill="#6c7176"><title>Nanite · Visibility buffer clear and raster context · Deferred</title></rect>
+<rect x="467.96410322725967" y="434.94492649174776" width="20.379151971502097" height="16.09770373255401" rx="2" fill="#4a86d6"><title>Nanite · Stats filter and print · Not started</title></rect>
+<rect x="489.34325519876177" y="375.1685556416166" width="18.53417102991341" height="16.4203911500677" rx="2" fill="#6c7176"><title>Nanite · [builder] Assemblies · Deferred</title></rect>
+<rect x="508.8774262286752" y="375.1685556416166" width="18.104848589695507" height="16.4203911500677" rx="2" fill="#d9961f"><title>Nanite · Edge factors and displacement fade · In progress</title></rect>
+<rect x="508.8774262286752" y="388.5889467916843" width="4.023299686599001" height="3" fill="#fff" opacity=".85"/>
+<rect x="527.9822748183707" y="375.1685556416166" width="17.031542489150866" height="16.4203911500677" rx="2" fill="#4a86d6"><title>Nanite · Debug view modes · Not started</title></rect>
+<rect x="489.34325519876177" y="392.5889467916843" width="18.870716163135057" height="14.572773906878695" rx="2" fill="#4a86d6"><title>Nanite · Shared and glue · Not started</title></rect>
+<rect x="509.2139713618968" y="392.5889467916843" width="17.970230536406916" height="14.572773906878695" rx="2" fill="#4a86d6"><title>Nanite · Packed views and multi-view passes · Not started</title></rect>
+<rect x="528.1842018983037" y="392.5889467916843" width="16.82961540921781" height="14.572773906878695" rx="2" fill="#4a86d6"><title>Nanite · Raster and cluster stats · Not started</title></rect>
+<rect x="489.34325519876177" y="408.161720698563" width="15.063760838347719" height="14.422335576022249" rx="2" fill="#4a86d6"><title>Nanite · Cube shadow emit · Not started</title></rect>
+<rect x="489.34325519876177" y="423.58405627458524" width="15.063760838347719" height="14.073150619583998" rx="2" fill="#6c7176"><title>Nanite · BLAS cache · Deferred</title></rect>
+<rect x="489.34325519876177" y="438.65720689416924" width="15.063760838347719" height="12.38542333013254" rx="2" fill="#4a86d6"><title>Nanite · [builder] Fallback mesh · Not started</title></rect>
+<rect x="505.4070160371095" y="408.161720698563" width="13.55235914072665" height="13.711385722427622" rx="2" fill="#4a86d6"><title>Nanite · Overflow feedback · Not started</title></rect>
+<rect x="519.9593751778361" y="408.161720698563" width="12.344958163985211" height="13.711385722427622" rx="2" fill="#4a86d6"><title>Nanite · Ownership visibility · Not started</title></rect>
+<rect x="533.3043333418213" y="408.161720698563" width="11.709483965700201" height="13.711385722427622" rx="2" fill="#6c7176"><title>Nanite · Auto voxel from depth · Deferred</title></rect>
+<rect x="505.4070160371095" y="422.8731064209906" width="10.826290188462565" height="14.177638401722902" rx="2" fill="#4a86d6"><title>Nanite · Shadow view emit and VSM feedback · Not started</title></rect>
+<rect x="505.4070160371095" y="438.0507448227135" width="10.826290188462565" height="12.991885401588263" rx="2" fill="#4a86d6"><title>Nanite · Skinning view data · Not started</title></rect>
+<rect x="517.233306225572" y="422.8731064209906" width="9.46564039343616" height="11.863175307473512" rx="2" fill="#d9961f"><title>Nanite · LOD error metric and per-view LOD scale · In progress</title></rect>
+<rect x="517.233306225572" y="431.7362817284641" width="4.45441900867584" height="3" fill="#fff" opacity=".85"/>
+<rect x="527.6989466190082" y="422.8731064209906" width="8.666181752270973" height="11.863175307473512" rx="2" fill="#6c7176"><title>Nanite · Async raster, shader bundles and work graphs · Deferred</title></rect>
+<rect x="537.3651283712792" y="422.8731064209906" width="7.648688936242365" height="11.863175307473512" rx="2" fill="#6c7176"><title>Nanite · Persistent-thread culling · Deferred</title></rect>
+<rect x="517.233306225572" y="435.7362817284641" width="11.670304679503715" height="7.3376352037540755" rx="2" fill="#3aa56c"><title>Nanite · Primitive filter and scatter updates · Done</title></rect>
+<rect x="517.233306225572" y="444.0739169322182" width="11.670304679503715" height="6.968713292083578" rx="2" fill="#4a86d6"><title>Nanite · [builder] Attribute-weighted simplification · Not started</title></rect>
+<rect x="529.9036109050758" y="435.7362817284641" width="7.59211008130444" height="8.57490214168405" rx="2" fill="#4a86d6"><title>Nanite · Directional clipmap shadow views and LOD bias · Not started</title></rect>
+<rect x="538.4957209863802" y="435.7362817284641" width="6.518096321141343" height="8.57490214168405" rx="2" fill="#6c7176"><title>Nanite · GPU streaming requests · Deferred</title></rect>
+<rect x="529.9036109050758" y="445.31118387014817" width="8.027270828956716" height="5.731446354153604" rx="2" fill="#4a86d6"><title>Nanite · Local-light shadow views · Not started</title></rect>
+<rect x="538.9308817340325" y="445.31118387014817" width="5.110767945755242" height="2.6716980113565114" rx="2" fill="#6c7176"><title>Nanite · Shadow raster time budget · Deferred</title></rect>
+<rect x="538.9308817340325" y="448.9828818815047" width="5.110767945755242" height="2.059748342797093" rx="2" fill="#4a86d6"><title>Nanite · Small-triangle depth raster into shadow pages · Not started</title></rect>
+<rect x="549.0138173075215" y="85" width="217.44952763348374" height="178.98261967338294" rx="4" fill="#232826"/>
+<text x="553.0138173075215" y="96" class="s">GPU scene + culling</text>
+<rect x="550.0138173075215" y="98" width="106.51384631140263" height="99.25930725725047" rx="2" fill="#3aa56c"><title>GPU scene + culling · Mesh draw commands · Done</title></rect>
+<text x="553.0138173075215" y="109" class="l">Mesh draw commands</text>
+<rect x="550.0138173075215" y="198.25930725725047" width="106.51384631140263" height="63.72331241613247" rx="2" fill="#3aa56c"><title>GPU scene + culling · CPU view visibility · Done</title></rect>
+<text x="553.0138173075215" y="209.25930725725047" class="l">CPU view visibili…</text>
+<rect x="657.5276636189242" y="98" width="54.43444138727091" height="86.30240737401527" rx="2" fill="#4a86d6"><title>GPU scene + culling · Hierarchical scene culling grid · Not started</title></rect>
+<text x="660.5276636189242" y="109" class="l">Hierarch…</text>
+<rect x="712.9621050061951" y="98" width="51.5012399348102" height="86.30240737401527" rx="2" fill="#3aa56c"><title>GPU scene + culling · Instance culling + draw compaction · Done</title></rect>
+<text x="715.9621050061951" y="109" class="l">Instanc…</text>
+<rect x="657.5276636189242" y="185.30240737401527" width="41.42996773478421" height="76.68021229936767" rx="2" fill="#3aa56c"><title>GPU scene + culling · GPU scene buffers · Done</title></rect>
+<text x="660.5276636189242" y="196.30240737401527" class="l">GPU s…</text>
+<rect x="699.9576313537084" y="185.30240737401527" width="64.5057135872969" height="44.79359525696549" rx="2" fill="#2c322f"><title>GPU scene + culling · Rest of GPU scene + culling · Not split</title></rect>
+<text x="702.9576313537084" y="196.30240737401527" class="l">Rest of G…</text>
+<rect x="699.9576313537084" y="231.09600263098076" width="64.5057135872969" height="30.88661704240218" rx="2" fill="#6c7176"><title>GPU scene + culling · Occlusion queries + HZB · Deferred</title></rect>
+<text x="702.9576313537084" y="242.09600263098076" class="l">Occlusion…</text>
+<rect x="549.0138173075215" y="265.98261967338294" width="153.5172402193075" height="108.98589321402608" rx="4" fill="#232826"/>
+<text x="553.0138173075215" y="276.98261967338294" class="s">Virtual texturing</text>
+<rect x="550.0138173075215" y="278.98261967338294" width="150.5172402193075" height="93.98589321402608" rx="2" fill="#6c7176"><title>Virtual texturing · Whole system (not split) · Deferred</title></rect>
+<text x="553.0138173075215" y="289.98261967338294" class="l">Whole system (not split)</text>
+<rect x="549.0138173075215" y="376.968512887409" width="153.5172402193075" height="76.07411733689275" rx="4" fill="#232826"/>
+<text x="553.0138173075215" y="387.968512887409" class="s">Mobile renderer</text>
+<rect x="550.0138173075215" y="389.968512887409" width="150.5172402193075" height="61.074117336892755" rx="2" fill="#3aa56c"><title>Mobile renderer · Whole system (not split) · Done</title></rect>
+<text x="553.0138173075215" y="400.968512887409" class="l">Whole system (not split)</text>
+<rect x="704.531057526829" y="265.98261967338294" width="61.932287414176244" height="136.70742278541923" rx="4" fill="#232826"/>
+<text x="708.531057526829" y="276.98261967338294" class="s">PSO prec…</text>
+<rect x="705.531057526829" y="278.98261967338294" width="58.932287414176244" height="121.70742278541923" rx="2" fill="#3aa56c"><title>PSO precache · Whole system (not split) · Done</title></rect>
+<text x="708.531057526829" y="289.98261967338294" class="l">Whole sy…</text>
+<rect x="704.531057526829" y="404.69004245880217" width="45.16218910516193" height="48.35258776549961" rx="4" fill="#232826"/>
+<text x="708.531057526829" y="415.69004245880217" class="s">Varia…</text>
+<rect x="705.531057526829" y="417.69004245880217" width="42.16218910516193" height="33.35258776549961" rx="2" fill="#6c7176"><title>Variable rate shading · Whole system (not split) · Deferred</title></rect>
+<text x="708.531057526829" y="428.69004245880217" class="l">Whole…</text>
+<rect x="751.693246631991" y="404.69004245880217" width="14.770098309014315" height="48.35258776549961" rx="4" fill="#232826"/>
+<rect x="752.693246631991" y="405.69004245880217" width="11.770098309014315" height="45.35258776549961" rx="2" fill="#3aa56c"><title>Dynamic resolution · Whole system (not split) · Done</title></rect>
+<rect x="343.933023921651" y="461.0426302243018" width="426.5303210193543" height="248.95736977569823" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="350.933023921651" y="474.0426302243018" class="a">FOUNDATION · 100K</text>
+<rect x="347.933023921651" y="480.0426302243018" width="225.2569433332838" height="225.95736977569823" rx="4" fill="#232826"/>
+<text x="351.933023921651" y="491.0426302243018" class="s">HW ray tracing + path tracer</text>
+<rect x="348.933023921651" y="493.0426302243018" width="222.2569433332838" height="210.95736977569823" rx="2" fill="#6c7176"><title>HW ray tracing + path tracer · Whole system (not split) · Deferred</title></rect>
+<text x="351.933023921651" y="504.0426302243018" class="l">Whole system (not split)</text>
+<rect x="575.1899672549348" y="480.0426302243018" width="191.2733776860705" height="225.95736977569823" rx="4" fill="#232826"/>
+<text x="579.1899672549348" y="491.0426302243018" class="s">Hair strands</text>
+<rect x="576.1899672549348" y="493.0426302243018" width="188.2733776860705" height="210.95736977569823" rx="2" fill="#4a86d6"><title>Hair strands · Whole system (not split) · Not started</title></rect>
+<text x="579.1899672549348" y="504.0426302243018" class="l">Whole system (not split)</text>
+<rect x="774.4633449410053" y="66" width="415.5366550589947" height="217.00996789592028" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="781.4633449410053" y="79" class="a">WORLD, ANIM, VFX · 85K</text>
+<rect x="778.4633449410053" y="85" width="138.06715719701253" height="194.00996789592028" rx="4" fill="#232826"/>
+<text x="782.4633449410053" y="96" class="s">Anim budget + AnimGra…</text>
+<rect x="779.4633449410053" y="98" width="135.06715719701253" height="179.00996789592028" rx="2" fill="#d9961f"><title>Anim budget + AnimGraphRuntime · Whole system (not split) · In progress</title></rect>
+<rect x="779.4633449410053" y="274.0099678959203" width="71.50614204547722" height="3" fill="#fff" opacity=".85"/>
+<text x="782.4633449410053" y="109" class="l">Whole system (not split)</text>
+<rect x="918.5305021380178" y="85" width="131.26689286498333" height="194.00996789592028" rx="4" fill="#232826"/>
+<text x="922.5305021380178" y="96" class="s">Chaos Cloth + groom …</text>
+<rect x="919.5305021380178" y="98" width="128.26689286498333" height="179.00996789592028" rx="2" fill="#4a86d6"><title>Chaos Cloth + groom physics · Whole system (not split) · Not started</title></rect>
+<text x="922.5305021380178" y="109" class="l">Whole system (not spl…</text>
+<rect x="1051.7973950030012" y="85" width="134.20260499699884" height="138.6789324724191" rx="4" fill="#232826"/>
+<text x="1055.7973950030012" y="96" class="s">Texture + mesh strea…</text>
+<rect x="1052.7973950030012" y="98" width="81.00180289273271" height="70.20127939828996" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Texture streaming manager · Not started</title></rect>
+<text x="1055.7973950030012" y="109" class="l">Texture strea…</text>
+<rect x="1052.7973950030012" y="169.20127939828996" width="81.00180289273271" height="52.47765307412914" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Mip stream-in / stream-out · Not started</title></rect>
+<text x="1055.7973950030012" y="180.20127939828996" class="l">Mip stream-in…</text>
+<rect x="1134.7991978957339" y="98" width="49.20080210426613" height="62.20428185753386" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Texture instance tracking · Not started</title></rect>
+<text x="1137.7991978957339" y="109" class="l">Texture…</text>
+<rect x="1134.7991978957339" y="161.20428185753386" width="49.20080210426613" height="40.97992838465868" rx="2" fill="#d9961f"><title>Texture + mesh streaming · Mesh LOD streaming · In progress</title></rect>
+<rect x="1134.7991978957339" y="199.18421024219253" width="12.300200526066533" height="3" fill="#fff" opacity=".85"/>
+<text x="1137.7991978957339" y="172.20428185753386" class="l">Mesh LO…</text>
+<rect x="1134.7991978957339" y="203.18421024219253" width="49.20080210426613" height="18.494722230226557" rx="2" fill="#4a86d6"><title>Texture + mesh streaming · Build-time texel density · Not started</title></rect>
+<text x="1137.7991978957339" y="214.18421024219253" class="l">Build-t…</text>
+<rect x="1051.7973950030012" y="225.6789324724191" width="134.20260499699884" height="53.33103542350119" rx="4" fill="#232826"/>
+<text x="1055.7973950030012" y="236.6789324724191" class="s">GPU skinning</text>
+<rect x="1052.7973950030012" y="238.6789324724191" width="131.20260499699884" height="38.33103542350119" rx="2" fill="#3aa56c"><title>GPU skinning · Whole system (not split) · Done</title></rect>
+<text x="1055.7973950030012" y="249.6789324724191" class="l">Whole system (not spli…</text>
+<rect x="774.4633449410053" y="287.0099678959203" width="228.71592040744713" height="305.3973330768212" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="781.4633449410053" y="300.0099678959203" class="a">POST &amp; TEMPORAL · 66K</text>
+<rect x="778.4633449410053" y="306.0099678959203" width="220.71592040744713" height="151.1347080539706" rx="4" fill="#232826"/>
+<text x="782.4633449410053" y="317.0099678959203" class="s">Post chain</text>
+<rect x="779.4633449410053" y="319.0099678959203" width="74.9398690512802" height="136.1347080539706" rx="2" fill="#4a86d6"><title>Post chain · Depth of field (diaphragm) · Not started</title></rect>
+<text x="782.4633449410053" y="330.0099678959203" class="l">Depth of fi…</text>
+<rect x="855.4032139922855" y="319.0099678959203" width="50.155220191416106" height="69.0669044274793" rx="2" fill="#3aa56c"><title>Post chain · Tone map + LUT combine · Done</title></rect>
+<text x="858.4032139922855" y="330.0099678959203" class="l">Tone ma…</text>
+<rect x="855.4032139922855" y="389.0768723233996" width="50.155220191416106" height="66.06780362649124" rx="2" fill="#d9961f"><title>Post chain · Motion blur · In progress</title></rect>
+<rect x="855.4032139922855" y="452.1446759498908" width="31.13082632570655" height="3" fill="#fff" opacity=".85"/>
+<text x="858.4032139922855" y="400.0768723233996" class="l">Motion …</text>
+<rect x="906.5584341837016" y="319.0099678959203" width="44.90811688270162" height="72.33785695392146" rx="2" fill="#3aa56c"><title>Post chain · TAA (legacy) · Done</title></rect>
+<text x="909.5584341837016" y="330.0099678959203" class="l">TAA (l…</text>
+<rect x="952.4665510664032" y="319.0099678959203" width="44.712714282049205" height="72.33785695392146" rx="2" fill="#3aa56c"><title>Post chain · Eye adaptation (histogram, basic) · Done</title></rect>
+<text x="955.4665510664032" y="330.0099678959203" class="l">Eye ad…</text>
+<rect x="906.5584341837016" y="392.34782484984174" width="39.485466785231665" height="62.79685110004914" rx="2" fill="#3aa56c"><title>Post chain · ACES transforms · Done</title></rect>
+<text x="909.5584341837016" y="403.34782484984174" class="l">ACES …</text>
+<rect x="947.0439009689333" y="392.34782484984174" width="50.13536437951916" height="33.78329607780455" rx="2" fill="#d9961f"><title>Post chain · Bloom (Gaussian + FFT) · In progress</title></rect>
+<rect x="947.0439009689333" y="423.1311209276463" width="23.13939894439346" height="3" fill="#fff" opacity=".85"/>
+<text x="950.0439009689333" y="403.34782484984174" class="l">Bloom (…</text>
+<rect x="947.0439009689333" y="427.1311209276463" width="32.15082429376787" height="28.01355502224459" rx="2" fill="#d9961f"><title>Post chain · Local exposure · In progress</title></rect>
+<rect x="947.0439009689333" y="452.1446759498909" width="19.955684044407644" height="3" fill="#fff" opacity=".85"/>
+<text x="950.0439009689333" y="438.1311209276463" class="l">Loc…</text>
+<rect x="980.1947252627011" y="427.1311209276463" width="16.98454008575129" height="28.01355502224459" rx="2" fill="#4a86d6"><title>Post chain · Lens flares · Not started</title></rect>
+<rect x="778.4633449410053" y="459.1446759498909" width="113.87449506624387" height="129.2626250228506" rx="4" fill="#232826"/>
+<text x="782.4633449410053" y="470.1446759498909" class="s">Denoisers</text>
+<rect x="779.4633449410053" y="472.1446759498909" width="110.87449506624387" height="114.26262502285061" rx="2" fill="#d9961f"><title>Denoisers · Whole system (not split) · In progress</title></rect>
+<rect x="779.4633449410053" y="583.4073009727415" width="55.43724753312193" height="3" fill="#fff" opacity=".85"/>
+<text x="782.4633449410053" y="483.1446759498909" class="l">Whole system (not …</text>
+<rect x="894.3378400072492" y="459.1446759498909" width="104.84142534120326" height="129.2626250228506" rx="4" fill="#232826"/>
+<text x="898.3378400072492" y="470.1446759498909" class="s">TSR</text>
+<rect x="895.3378400072492" y="472.1446759498909" width="37.28041483288757" height="23.508374440987495" rx="2" fill="url(#gap)"><title>TSR · Network weights and layer code · No PRD</title></rect>
+<text x="898.3378400072492" y="483.1446759498909" class="l">Netw…</text>
+<rect x="933.6182548401367" y="472.1446759498909" width="32.05735305085284" height="23.508374440987495" rx="2" fill="#3b403d"><title>TSR · Shader parameter structs and permutations · Out of scope by rule</title></rect>
+<text x="936.6182548401367" y="483.1446759498909" class="l">Sha…</text>
+<rect x="966.6756078909896" y="472.1446759498909" width="30.503657457462737" height="23.508374440987495" rx="2" fill="#d9961f"><title>TSR · Rejection pass: moire, measure, guide update, resurrection choice · In progress</title></rect>
+<rect x="966.6756078909896" y="492.6530503908784" width="12.709857273942808" height="3" fill="#fff" opacity=".85"/>
+<text x="969.6756078909896" y="483.1446759498909" class="l">Rej…</text>
+<rect x="895.3378400072492" y="496.6530503908784" width="21.98755818173595" height="22.9309266582855" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser kernels · Done</title></rect>
+<text x="898.3378400072492" y="507.6530503908784" class="l">Sp…</text>
+<rect x="895.3378400072492" y="520.5839770491639" width="21.98755818173595" height="21.732618106913264" rx="2" fill="url(#gap)"><title>TSR · Thin geometry detection pass · No PRD</title></rect>
+<text x="898.3378400072492" y="531.5839770491639" class="l">Th…</text>
+<rect x="895.3378400072492" y="543.3165951560771" width="21.98755818173595" height="21.697373737755242" rx="2" fill="#4a86d6"><title>TSR · Shading analysis library · Not started</title></rect>
+<text x="898.3378400072492" y="554.3165951560771" class="l">Sh…</text>
+<rect x="895.3378400072492" y="566.0139688938324" width="21.98755818173595" height="20.39333207890911" rx="2" fill="#d9961f"><title>TSR · Depth and velocity analysis (depth error, bilaterals, Jacobian, edge) · In progress</title></rect>
+<rect x="895.3378400072492" y="583.4073009727415" width="12.933857753962323" height="3" fill="#fff" opacity=".85"/>
+<text x="898.3378400072492" y="577.0139688938324" class="l">De…</text>
+<rect x="918.3253981889851" y="496.6530503908784" width="20.28720921141712" height="21.64544296240564" rx="2" fill="url(#gap)"><title>TSR · Visualization shader (16 views) · No PRD</title></rect>
+<rect x="939.6126074004022" y="496.6530503908784" width="19.392788656315588" height="21.64544296240564" rx="2" fill="#4a86d6"><title>TSR · Update: setup, quality levels and kernel tables · Not started</title></rect>
+<rect x="960.0053960567178" y="496.6530503908784" width="18.426814456805914" height="21.64544296240564" rx="2" fill="#4a86d6"><title>TSR · Decimate history for rejection · Not started</title></rect>
+<rect x="979.4322105135237" y="496.6530503908784" width="17.74705483492869" height="21.64544296240564" rx="2" fill="#3aa56c"><title>TSR · History setup: sizes, jitter, validity and reset · Done</title></rect>
+<rect x="918.3253981889851" y="519.298493353284" width="20.673431545441645" height="17.8775784016608" rx="2" fill="#3b403d"><title>TSR · Common types, packing and wave helpers · Out of scope by rule</title></rect>
+<rect x="918.3253981889851" y="538.1760717549448" width="20.673431545441645" height="16.008511233179547" rx="2" fill="#4a86d6"><title>TSR · Reconstruction kernels and neighbourhood offsets · Not started</title></rect>
+<rect x="918.3253981889851" y="555.1845829881244" width="20.673431545441645" height="15.148740335678212" rx="2" fill="#3aa56c"><title>TSR · Velocity dilation · Done</title></rect>
+<rect x="918.3253981889851" y="571.3333233238026" width="20.673431545441645" height="15.073977648938921" rx="2" fill="#3aa56c"><title>TSR · Resolve history to output · Done</title></rect>
+<rect x="939.9988297344267" y="519.298493353284" width="20.031441252367358" height="15.487595220085382" rx="2" fill="#d9961f"><title>TSR · CVars, tiers and defaults · In progress</title></rect>
+<rect x="939.9988297344267" y="531.7860885733694" width="10.015720626183679" height="3" fill="#fff" opacity=".85"/>
+<rect x="961.0302709867941" y="519.298493353284" width="17.5744971808291" height="15.487595220085382" rx="2" fill="#4a86d6"><title>TSR · Velocity, occluder and decimate dispatch · Not started</title></rect>
+<rect x="979.6047681676233" y="519.298493353284" width="17.5744971808291" height="15.487595220085382" rx="2" fill="#d9961f"><title>TSR · Rejection and spatial anti-aliasing dispatch · In progress</title></rect>
+<rect x="979.6047681676233" y="531.7860885733694" width="10.337939518134764" height="3" fill="#fff" opacity=".85"/>
+<rect x="939.9988297344267" y="535.7860885733694" width="15.699213243410668" height="16.853953160685137" rx="2" fill="#3aa56c"><title>TSR · Pass gating and measure passes · Done</title></rect>
+<rect x="939.9988297344267" y="553.6400417340545" width="15.699213243410668" height="16.70840462948388" rx="2" fill="#3aa56c"><title>TSR · Update: reprojection fetch, field and lens distortion · Done</title></rect>
+<rect x="939.9988297344267" y="571.3484463635383" width="15.699213243410668" height="15.058854609203195" rx="2" fill="#4a86d6"><title>TSR · Closest-occluder scatter and parallax disocclusion test · Not started</title></rect>
+<rect x="956.6980429778374" y="535.7860885733694" width="12.997015816676821" height="16.480508928277686" rx="2" fill="#d9961f"><title>TSR · Update and resolve dispatch · In progress</title></rect>
+<rect x="956.6980429778374" y="549.2665975016471" width="6.498507908338411" height="3" fill="#fff" opacity=".85"/>
+<rect x="970.6950587945142" y="535.7860885733694" width="12.904320347692192" height="16.480508928277686" rx="2" fill="url(#gap)"><title>TSR · Output, history extraction and visualize dispatch · No PRD</title></rect>
+<rect x="984.5993791422064" y="535.7860885733694" width="12.579886206245988" height="16.480508928277686" rx="2" fill="#4a86d6"><title>TSR · Color spaces and back-buffer quantization error · Not started</title></rect>
+<rect x="956.6980429778374" y="553.2665975016471" width="10.817876853870871" height="17.030130547987596" rx="2" fill="url(#gap)"><title>TSR · Weight relaxation · No PRD</title></rect>
+<rect x="956.6980429778374" y="571.2967280496347" width="10.817876853870871" height="15.110572923106815" rx="2" fill="#3aa56c"><title>TSR · Spatial anti-aliaser pass · Done</title></rect>
+<rect x="968.5159198317083" y="553.2665975016471" width="9.171913500952542" height="13.257157769529044" rx="2" fill="#4a86d6"><title>TSR · Update: input filter at predictor frequency · Not started</title></rect>
+<rect x="978.6878333326608" y="553.2665975016471" width="9.058260836137379" height="13.257157769529044" rx="2" fill="#3aa56c"><title>TSR · Update: validity clamp, quantize and history write · Done</title></rect>
+<rect x="988.7460941687982" y="553.2665975016471" width="8.43317117965421" height="13.257157769529044" rx="2" fill="#3aa56c"><title>TSR · Reprojection field encoding · Done</title></rect>
+<rect x="968.5159198317083" y="567.5237552711761" width="10.897935289683119" height="9.282244523754684" rx="2" fill="url(#gap)"><title>TSR · Tiled network pass · No PRD</title></rect>
+<rect x="968.5159198317083" y="577.8059997949308" width="10.897935289683119" height="8.601301177810683" rx="2" fill="url(#gap)"><title>TSR · Thin geometry shared helpers · No PRD</title></rect>
+<rect x="980.4138551213914" y="567.5237552711761" width="9.119537471110675" height="9.808257640529746" rx="2" fill="#3aa56c"><title>TSR · Update: history reprojection with Catmull-Rom fetch · Done</title></rect>
+<rect x="990.5333925925021" y="567.5237552711761" width="6.645872755950336" height="9.808257640529746" rx="2" fill="url(#gap)"><title>TSR · Wave size, 16-bit math and async compute · No PRD</title></rect>
+<rect x="980.4138551213914" y="578.3320129117059" width="6.498967131020777" height="8.075288061035621" rx="2" fill="url(#gap)"><title>TSR · Thin geometry coverage measure · No PRD</title></rect>
+<rect x="987.9128222524122" y="578.3320129117059" width="5.1598658576241405" height="8.075288061035621" rx="2" fill="#3aa56c"><title>TSR · Flickering luma measure · Done</title></rect>
+<rect x="994.0726881100363" y="578.3320129117059" width="3.1065772384160937" height="8.075288061035621" rx="2" fill="#3b403d"><title>TSR · Clear previous-frame scratch textures · Out of scope by rule</title></rect>
+<rect x="1007.1792653484524" y="287.0099678959203" width="182.82073465154758" height="305.3973330768212" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="1014.1792653484524" y="300.0099678959203" class="a">SKY &amp; VOLUMES · 53K</text>
+<rect x="1011.1792653484524" y="306.0099678959203" width="174.82073465154758" height="142.493231056524" rx="4" fill="#232826"/>
+<text x="1015.1792653484524" y="317.0099678959203" class="s">Heterogeneous volumes</text>
+<rect x="1012.1792653484524" y="319.0099678959203" width="171.82073465154758" height="127.493231056524" rx="2" fill="#4a86d6"><title>Heterogeneous volumes · Whole system (not split) · Not started</title></rect>
+<text x="1015.1792653484524" y="330.0099678959203" class="l">Whole system (not split)</text>
+<rect x="1011.1792653484524" y="450.5031989524443" width="70.58892283576142" height="137.90410202029722" rx="4" fill="#232826"/>
+<text x="1015.1792653484524" y="461.5031989524443" class="s">Fog</text>
+<rect x="1012.1792653484524" y="463.5031989524443" width="67.58892283576142" height="56.585972552885266" rx="2" fill="#4a86d6"><title>Fog · Volumetric fog (froxels) · Not started</title></rect>
+<text x="1015.1792653484524" y="474.5031989524443" class="l">Volumetric…</text>
+<rect x="1012.1792653484524" y="521.0891715053295" width="54.10798177613401" height="33.74972097554428" rx="2" fill="#3aa56c"><title>Fog · Height fog · Done</title></rect>
+<text x="1015.1792653484524" y="532.0891715053295" class="l">Height f…</text>
+<rect x="1012.1792653484524" y="555.8388924808738" width="54.10798177613401" height="30.56840849186767" rx="2" fill="#4a86d6"><title>Fog · Local fog volumes · Not started</title></rect>
+<text x="1015.1792653484524" y="566.8388924808738" class="l">Local fo…</text>
+<rect x="1067.2872471245864" y="521.0891715053295" width="12.480941059627412" height="65.31812946741195" rx="2" fill="#4a86d6"><title>Fog · Fog composition · Not started</title></rect>
+<rect x="1083.7681881842138" y="450.5031989524443" width="102.23181181578616" height="71.11246675818558" rx="4" fill="#232826"/>
+<text x="1087.7681881842138" y="461.5031989524443" class="s">Sky atmosphere</text>
+<rect x="1084.7681881842138" y="463.5031989524443" width="32.24020528683741" height="56.112466758185576" rx="2" fill="#d9961f"><title>Sky atmosphere · C++ orchestration (all stages) · In progress</title></rect>
+<rect x="1084.7681881842138" y="516.6156657106299" width="5.373367547806234" height="3" fill="#fff" opacity=".85"/>
+<text x="1087.7681881842138" y="474.5031989524443" class="l">C++…</text>
+<rect x="1118.0083934710512" y="463.5031989524443" width="27.90127376402438" height="56.112466758185576" rx="2" fill="#d9961f"><title>Sky atmosphere · Shader kernels (all LUTs + render) · In progress</title></rect>
+<rect x="1118.0083934710512" y="516.6156657106299" width="4.6502122940040636" height="3" fill="#fff" opacity=".85"/>
+<text x="1121.0083934710512" y="474.5031989524443" class="l">Sha…</text>
+<rect x="1146.9096672350756" y="463.5031989524443" width="37.09033276492437" height="26.20086387337483" rx="2" fill="#d9961f"><title>Sky atmosphere · Real-time sky light capture · In progress</title></rect>
+<rect x="1146.9096672350756" y="486.7040628258191" width="6.181722127487395" height="3" fill="#fff" opacity=".85"/>
+<text x="1149.9096672350756" y="474.5031989524443" class="l">Real…</text>
+<rect x="1146.9096672350756" y="490.7040628258191" width="18.045166382462185" height="13.955801442405402" rx="2" fill="#d9961f"><title>Sky atmosphere · Transmittance LUT · In progress</title></rect>
+<rect x="1146.9096672350756" y="501.6598642682245" width="3.007527730410364" height="3" fill="#fff" opacity=".85"/>
+<rect x="1146.9096672350756" y="505.6598642682245" width="18.045166382462185" height="13.955801442405345" rx="2" fill="#d9961f"><title>Sky atmosphere · Multi-scattering LUT · In progress</title></rect>
+<rect x="1146.9096672350756" y="516.6156657106299" width="3.007527730410364" height="3" fill="#fff" opacity=".85"/>
+<rect x="1165.9548336175378" y="490.7040628258191" width="18.045166382462185" height="13.955801442405402" rx="2" fill="#d9961f"><title>Sky atmosphere · Sky-view LUT · In progress</title></rect>
+<rect x="1165.9548336175378" y="501.6598642682245" width="3.007527730410364" height="3" fill="#fff" opacity=".85"/>
+<rect x="1165.9548336175378" y="505.6598642682245" width="18.045166382462185" height="13.955801442405345" rx="2" fill="#4a86d6"><title>Sky atmosphere · Aerial perspective volume · Not started</title></rect>
+<rect x="1083.7681881842138" y="523.6156657106299" width="102.23181181578616" height="64.79163526211164" rx="4" fill="#232826"/>
+<text x="1087.7681881842138" y="534.6156657106299" class="s">Volumetric clou…</text>
+<rect x="1084.7681881842138" y="536.6156657106299" width="46.072374585055286" height="49.79163526211164" rx="2" fill="#d9961f"><title>Volumetric clouds · C++ orchestration · In progress</title></rect>
+<rect x="1084.7681881842138" y="583.4073009727415" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="1087.7681881842138" y="547.6156657106299" class="l">C++ or…</text>
+<rect x="1131.8405627692691" y="536.6156657106299" width="35.78169020200767" height="49.79163526211164" rx="2" fill="#d9961f"><title>Volumetric clouds · Cloud shaders · In progress</title></rect>
+<rect x="1131.8405627692691" y="583.4073009727415" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="1134.8405627692691" y="547.6156657106299" class="l">Clou…</text>
+<rect x="1168.6222529712768" y="536.6156657106299" width="15.377747028723206" height="15.930545087370547" rx="2" fill="#4a86d6"><title>Volumetric clouds · Cloud shadow map + overhead transmittance · Not started</title></rect>
+<rect x="1168.6222529712768" y="553.5462107980004" width="15.377747028723206" height="15.930545087370547" rx="2" fill="#4a86d6"><title>Volumetric clouds · Temporal reconstruction · Not started</title></rect>
+<rect x="1168.6222529712768" y="570.476755885371" width="15.377747028723206" height="15.930545087370547" rx="2" fill="#4a86d6"><title>Volumetric clouds · Sky AO from clouds + cloud shadow on air and fog · Not started</title></rect>
+<rect x="774.4633449410053" y="596.4073009727415" width="415.5366550589947" height="113.5926990272585" rx="6" fill="#1a1e1c" stroke="#2c322f"/>
+<text x="781.4633449410053" y="609.4073009727415" class="a">SHADOWS · 45K</text>
+<rect x="778.4633449410053" y="615.4073009727415" width="218.27621442789268" height="90.5926990272585" rx="4" fill="#232826"/>
+<text x="782.4633449410053" y="626.4073009727415" class="s">Virtual shadow maps</text>
+<rect x="779.4633449410053" y="628.4073009727415" width="26.93926705498916" height="38.17280760802896" rx="2" fill="#d9961f"><title>Virtual shadow maps · Physical page allocation, LRU and eviction · In progress</title></rect>
+<rect x="779.4633449410053" y="663.5801085807705" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="782.4633449410053" y="639.4073009727415" class="l">Ph…</text>
+<rect x="779.4633449410053" y="667.5801085807705" width="26.93926705498916" height="36.41989141922954" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Projection passes and shadow-mask composite · Done</title></rect>
+<text x="782.4633449410053" y="678.5801085807705" class="l">Pr…</text>
+<rect x="807.4026119959944" y="628.4073009727415" width="29.585771054476368" height="25.95422509321645" rx="2" fill="#d9961f"><title>Virtual shadow maps · Pixel page marking from receiver footprint · In progress</title></rect>
+<rect x="807.4026119959944" y="651.361526065958" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="810.4026119959944" y="639.4073009727415" class="l">Pix…</text>
+<rect x="807.4026119959944" y="655.361526065958" width="29.585771054476368" height="23.819236967021084" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Debug overlays and stats readback in the array code · Not started</title></rect>
+<text x="810.4026119959944" y="666.361526065958" class="l">Deb…</text>
+<rect x="807.4026119959944" y="680.1807630329789" width="29.585771054476368" height="23.819236967021084" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
+<text x="810.4026119959944" y="691.1807630329789" class="l">Sha…</text>
+<rect x="837.9883830504708" y="628.4073009727415" width="25.260779619072764" height="27.51828259351089" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow depth rendering into pages · In progress</title></rect>
+<rect x="837.9883830504708" y="652.9255835662524" width="2" height="3" fill="#fff" opacity=".85"/>
+<text x="840.9883830504708" y="639.4073009727415" class="l">Sh…</text>
+<rect x="837.9883830504708" y="656.9255835662524" width="25.260779619072764" height="23.76246880962435" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Array setup, slot allocation and uniform buffers · Done</title></rect>
+<text x="840.9883830504708" y="667.9255835662524" class="l">Ar…</text>
+<rect x="837.9883830504708" y="681.6880523758766" width="25.260779619072764" height="22.311947624123377" rx="2" fill="#d9961f"><title>Virtual shadow maps · CVars, scalability tiers and defaults · In progress</title></rect>
+<rect x="837.9883830504708" y="701" width="16.075041575773575" height="3" fill="#fff" opacity=".85"/>
+<text x="840.9883830504708" y="692.6880523758766" class="l">CV…</text>
+<rect x="864.2491626695436" y="628.4073009727415" width="19.1773727746139" height="26.07039494669391" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Instance invalidation: collectors, scene updater, payloads · Done</title></rect>
+<rect x="864.2491626695436" y="655.4776959194354" width="19.1773727746139" height="25.396163441172234" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow-map ray tracing (SMRT) ray loop · In progress</title></rect>
+<rect x="864.2491626695436" y="677.8738593606076" width="14.032223981424805" height="3" fill="#fff" opacity=".85"/>
+<rect x="864.2491626695436" y="681.8738593606076" width="19.1773727746139" height="22.12614063939236" rx="2" fill="#3b403d"><title>Virtual shadow maps · Page-management dispatcher and shader declarations · Out of scope by rule</title></rect>
+<rect x="884.4265354441575" y="628.4073009727415" width="19.275062519561402" height="20.605649659901246" rx="2" fill="#d9961f"><title>Virtual shadow maps · Statistics counters, print and CSV log · In progress</title></rect>
+<rect x="884.4265354441575" y="646.0129506326427" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="884.4265354441575" y="650.0129506326427" width="19.275062519561402" height="17.95526717056555" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Prefiltered distant shadows · No PRD</title></rect>
+<rect x="884.4265354441575" y="668.9682178032082" width="19.275062519561402" height="17.88816887969631" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Page lookup, clipmap level selection and level blend · Done</title></rect>
+<rect x="884.4265354441575" y="687.8563866829045" width="19.275062519561402" height="16.143613317095515" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Page table addressing and handles · Done</title></rect>
+<rect x="904.7015979637189" y="628.4073009727415" width="16.53974966103101" height="18.700805623213796" rx="2" fill="#d9961f"><title>Virtual shadow maps · Hierarchical page flags and mip propagation · In progress</title></rect>
+<rect x="904.7015979637189" y="644.1081065959553" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="904.7015979637189" y="648.1081065959553" width="16.53974966103101" height="18.506900056056224" rx="2" fill="#d9961f"><title>Virtual shadow maps · Per-page draw command build and instance culling · In progress</title></rect>
+<rect x="904.7015979637189" y="663.6150066520115" width="5.513249887010336" height="3" fill="#fff" opacity=".85"/>
+<rect x="904.7015979637189" y="667.6150066520115" width="16.53974966103101" height="18.041526694877916" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Level geometry, snapping, bounding volumes and view matrices · Done</title></rect>
+<rect x="904.7015979637189" y="686.6565333468894" width="16.53974966103101" height="17.343466653110568" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Froxel page marking · No PRD</title></rect>
+<rect x="922.2413476247499" y="628.4073009727415" width="18.76995376770128" height="14.964524628083723" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Receiver masks and instance-to-page overlap tests · Not started</title></rect>
+<rect x="942.0113013924512" y="628.4073009727415" width="18.386484836862223" height="14.964524628083723" rx="2" fill="#d9961f"><title>Virtual shadow maps · GPU-driven invalidation · In progress</title></rect>
+<rect x="942.0113013924512" y="640.3718256008252" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="961.3977862293134" y="628.4073009727415" width="16.298709546738564" height="14.964524628083723" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Per-light cache entries and clip-level cache keys · Done</title></rect>
+<rect x="978.6964957760521" y="628.4073009727415" width="16.043063592845897" height="14.964524628083723" rx="2" fill="#d9961f"><title>Virtual shadow maps · Alpha-masked depth in the page raster · In progress</title></rect>
+<rect x="978.6964957760521" y="640.3718256008252" width="9.35845376249344" height="3" fill="#fff" opacity=".85"/>
+<rect x="922.2413476247499" y="644.3718256008252" width="16.95102103352724" height="14.157043599793724" rx="2" fill="#d9961f"><title>Virtual shadow maps · Wind and sway of casters near the camera · In progress</title></rect>
+<rect x="922.2413476247499" y="655.5288692006189" width="9.88809560289089" height="3" fill="#fff" opacity=".85"/>
+<rect x="922.2413476247499" y="659.5288692006189" width="16.95102103352724" height="14.157043599793724" rx="2" fill="#d9961f"><title>Virtual shadow maps · Two-sided foliage receiver · In progress</title></rect>
+<rect x="922.2413476247499" y="670.6859128004127" width="9.88809560289089" height="3" fill="#fff" opacity=".85"/>
+<rect x="922.2413476247499" y="674.6859128004126" width="16.95102103352724" height="14.157043599793724" rx="2" fill="#d9961f"><title>Virtual shadow maps · Shadow quality tiers · In progress</title></rect>
+<rect x="922.2413476247499" y="685.8429564002063" width="10.78701338497188" height="3" fill="#fff" opacity=".85"/>
+<rect x="922.2413476247499" y="689.8429564002063" width="16.95102103352724" height="14.157043599793724" rx="2" fill="#d9961f"><title>Virtual shadow maps · Calibration scenes and judged parity · In progress</title></rect>
+<rect x="922.2413476247499" y="701" width="4.23775525838181" height="3" fill="#fff" opacity=".85"/>
+<rect x="940.1923686582771" y="644.3718256008252" width="18.767683526911355" height="12.764101802599953" rx="2" fill="#d9961f"><title>Virtual shadow maps · Distance-field far shadows · In progress</title></rect>
+<rect x="940.1923686582771" y="654.1359274034252" width="4.691920881727839" height="3" fill="#fff" opacity=".85"/>
+<rect x="959.9600521851885" y="644.3718256008252" width="17.2356880535757" height="12.764101802599953" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Per-page depth pyramid (HZB) · Not started</title></rect>
+<rect x="978.1957402387642" y="644.3718256008252" width="16.543819130133784" height="12.764101802599953" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Static and dynamic page merge, clear and initialize · Done</title></rect>
+<rect x="940.1923686582771" y="658.1359274034252" width="11.55508752670164" height="14.982544989583289" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Page and cache visualization overlays · Not started</title></rect>
+<rect x="940.1923686582771" y="674.1184723930085" width="11.55508752670164" height="14.820010633757079" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Local-light projection (cube face, footprint mip, spot and point) · Done</title></rect>
+<rect x="940.1923686582771" y="689.9384830267655" width="11.55508752670164" height="14.061516973234461" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Projection visualization · Not started</title></rect>
+<rect x="952.7474561849788" y="658.1359274034252" width="10.6117064402996" height="13.176302851631021" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Stats extraction, overflow messages and cache views · Not started</title></rect>
+<rect x="964.3591626252784" y="658.1359274034252" width="9.652061279944292" height="13.176302851631021" rx="2" fill="#d9961f"><title>Virtual shadow maps · Page pool pressure and dynamic resolution throttle · In progress</title></rect>
+<rect x="964.3591626252784" y="668.3122302550562" width="4.2227768099756275" height="3" fill="#fff" opacity=".85"/>
+<rect x="975.0112239052227" y="658.1359274034252" width="9.460132247873162" height="13.176302851631021" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Shadow caster bounds debug draw · Not started</title></rect>
+<rect x="985.4713561530958" y="658.1359274034252" width="9.268203215802146" height="13.176302851631021" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Frame data extraction and persistent primitive indices · Done</title></rect>
+<rect x="952.7474561849788" y="672.3122302550562" width="11.67289004792201" height="10.271644739635803" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Cache CVars (static threshold, page age, light age) · Done</title></rect>
+<rect x="952.7474561849788" y="683.583874994692" width="11.67289004792201" height="9.788574250794227" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Directional projection and clip-level pick · Done</title></rect>
+<rect x="952.7474561849788" y="694.3724492454862" width="11.67289004792201" height="9.627550754513777" rx="2" fill="#d9961f"><title>Virtual shadow maps · Clipmap CVars and tier bias · In progress</title></rect>
+<rect x="952.7474561849788" y="701" width="7.428202757768552" height="3" fill="#fff" opacity=".85"/>
+<rect x="965.4203462329008" y="672.3122302550562" width="9.88220720441393" height="9.813661645204434" rx="2" fill="url(#gap)"><title>Virtual shadow maps · One-pass projection and per-pixel light list · No PRD</title></rect>
+<rect x="976.3025534373147" y="672.3122302550562" width="9.56769254532685" height="9.813661645204434" rx="2" fill="#d9961f"><title>Virtual shadow maps · Normal bias, slope bias and geometric normal estimate · In progress</title></rect>
+<rect x="976.3025534373147" y="679.1258919002606" width="2" height="3" fill="#fff" opacity=".85"/>
+<rect x="986.8702459826416" y="672.3122302550562" width="7.869313386256408" height="9.813661645204434" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Subsurface and translucent receivers · No PRD</title></rect>
+<rect x="965.4203462329008" y="683.1258919002606" width="7.116220131789987" height="10.817046904456902" rx="2" fill="#3b403d"><title>Virtual shadow maps · View compaction and explicit chunk view masks · Out of scope by rule</title></rect>
+<rect x="965.4203462329008" y="694.9429388047175" width="7.116220131789987" height="9.057061195282472" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
+<rect x="973.5365663646908" y="683.1258919002606" width="8.328988657229957" height="7.31216107790101" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Lens, viewport and orthographic scaling of level choice · Not started</title></rect>
+<rect x="973.5365663646908" y="691.4380529781616" width="8.328988657229957" height="6.291369366579829" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Physical pool resize and memory · No PRD</title></rect>
+<rect x="973.5365663646908" y="698.7294223447414" width="8.328988657229957" height="5.2705776552586485" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Screen-space start ray (smart bias) · Not started</title></rect>
+<rect x="982.8655550219207" y="683.1258919002606" width="5.566606244095738" height="6.8725654755101" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
+<rect x="989.4321612660165" y="683.1258919002606" width="5.307398102881507" height="6.8725654755101" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Coarse page marking · Done</title></rect>
+<rect x="982.8655550219207" y="690.9984573757707" width="6.702395763148729" height="5.181813158621935" rx="2" fill="#3b403d"><title>Virtual shadow maps · Mask bit helpers · Out of scope by rule</title></rect>
+<rect x="990.5679507850695" y="690.9984573757707" width="4.171608583828515" height="5.181813158621935" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Prefiltered distant sampling · No PRD</title></rect>
+<rect x="982.8655550219207" y="697.1802705343927" width="2.914393213607923" height="6.819729465607338" rx="2" fill="#4a86d6"><title>Virtual shadow maps · Adaptive ray count early exit · Not started</title></rect>
+<rect x="986.7799482355287" y="697.1802705343927" width="5.523988689346538" height="3.1705223816572925" rx="2" fill="url(#gap)"><title>Virtual shadow maps · Hair strand shadow rays · No PRD</title></rect>
+<rect x="986.7799482355287" y="701.35079291605" width="5.523988689346538" height="2.6492070839500457" rx="2" fill="#3b403d"><title>Virtual shadow maps · Shared and glue · Out of scope by rule</title></rect>
+<rect x="993.3039369248752" y="697.1802705343927" width="1.4356224440227834" height="6.819729465607338" rx="2" fill="#3aa56c"><title>Virtual shadow maps · Cache hooks · Done</title></rect>
+<rect x="998.739559368898" y="615.4073009727415" width="187.26044063110203" height="90.5926990272585" rx="4" fill="#232826"/>
+<text x="1002.739559368898" y="626.4073009727415" class="s">Classic shadows (CSM, contact)</text>
+<rect x="999.739559368898" y="628.4073009727415" width="184.26044063110203" height="75.5926990272585" rx="2" fill="#3aa56c"><title>Classic shadows (CSM, contact) · Whole system (not split) · Done</title></rect>
+<text x="1002.739559368898" y="639.4073009727415" class="l">Whole system (not split)</text>
 </svg>
