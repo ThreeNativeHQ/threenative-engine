@@ -32,7 +32,7 @@ function head() {
 }
 
 describe("HairStrands3D", () => {
-  it("measures rest lengths from the guides and resets, then dispatches one step per substep", () => {
+  it("measures rest lengths from the guides and resets, then dispatches one kernel for the whole step", () => {
     const { scene, bone, guides } = head();
     const hair = new HairStrands3D(guides, { pointsPerStrand: 8, bone });
     scene.add(hair);
@@ -42,11 +42,36 @@ describe("HairStrands3D", () => {
     expect(hair.debug()).toMatchObject({ substeps: 5, iterations: 5, windFromScene: true });
     const dispatched: unknown[] = [];
     hair.process(renderer(dispatched));
-    expect(dispatched).toEqual([hair.warmupNodes[1], ...Array(5).fill(hair.warmupNodes[0])]);
+    // PRD-913: the five substeps are inside the kernel, so a frame is one dispatch (plus the first frame's reset).
+    expect(dispatched).toEqual([hair.warmupNodes[1], hair.warmupNodes[0]]);
     dispatched.length = 0;
     hair.process(renderer(dispatched));
-    expect(dispatched).toHaveLength(5);
+    expect(dispatched).toEqual([hair.warmupNodes[0]]);
     expect(hair.debug().resets).toBe(1);
+  });
+
+  it("runs one thread per point, whole strands in a workgroup of at most 256 threads", () => {
+    const layout = (strands: number, points: number) => {
+      const { bone } = head();
+      const guides = new Float32Array(strands * points * 3);
+      for (let k = 0; k < strands * points; k++)
+        guides.set(
+          [(k % points) * 0.01, 1.8 - (k % points) * 0.04, Math.floor(k / points) * 0.01],
+          k * 3,
+        );
+      const hair = new HairStrands3D(guides, { pointsPerStrand: points, bone });
+      const kernel = hair.warmupNodes[0] as unknown as { count: number; workgroupSize: number[] };
+      return { debug: hair.debug(), count: kernel.count, size: kernel.workgroupSize };
+    };
+    // 16-point strands: 16 strands fill 256 threads; 40 strands need 3 groups, the last one part empty.
+    expect(layout(40, 16)).toMatchObject({
+      count: 768,
+      size: [256, 1, 1],
+      debug: { strandsPerGroup: 16, workgroupSize: 256 },
+    });
+    // 24-point strands: 10 strands is 240 threads, never a strand split across two groups.
+    expect(layout(10, 24)).toMatchObject({ count: 240, size: [240, 1, 1] });
+    expect(layout(2, 64)).toMatchObject({ count: 256, size: [256, 1, 1] });
   });
 
   it("restarts from the rest shape when the head jumps past Unreal's 50 cm teleport distance", () => {

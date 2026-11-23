@@ -27,7 +27,6 @@ import { type Matrix4, Object3D, Vector3, Vector4 } from "three";
 import {
   Fn,
   If,
-  Loop,
   abs,
   dot,
   float,
@@ -43,12 +42,19 @@ import {
   uniformArray,
   vec3,
   vec4,
+  workgroupArray,
+  workgroupBarrier,
 } from "three/tsl";
 import type { ComputeNode, Node, StorageBufferNode, UniformArrayNode } from "three/webgpu";
 import type { IComputeDriven } from "./compute-driven.js";
 import { GPUReadback, type IGPUReadbackSample } from "./gpu-readback.js";
 import type { IRendererLike } from "./renderer.js";
-import type { ISoftBodyCapsule } from "./softbody-skinned.js";
+import {
+  type ISoftBodyCapsule,
+  SINGLE_DISPATCH_MAX,
+  countLoop,
+  workgroupVec3,
+} from "./softbody-skinned.js";
 import { compactClothVec3Readback } from "./softbody.js";
 import { windAt } from "./wind-field.js";
 
@@ -126,7 +132,7 @@ function check(name: string, value: number, min: number, max = Number.POSITIVE_I
  * @situation hair cards follow the head
  * @situation simulate hair guide strands on the GPU
  * @situation braid or fringe of hair cards that swings
- * @constraint WebGPU compute; one invocation per guide, at most 8 colliders; world space at the scene root
+ * @constraint WebGPU compute; one thread per point with each strand in workgroup memory (at most 256 points per workgroup), the whole step in one dispatch, at most 8 colliders; world space at the scene root
  * @override substeps, iterations, airDrag, wind, globalStiffness, localStiffness, colliders, teleportDistance
  * @example
  * import { HairStrands3D, measureBodyCapsules } from "@threenative/core";
@@ -141,6 +147,10 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
   readonly positions: StorageBufferNode<"vec3">;
   readonly pointsPerStrand: number;
   readonly strandCount: number;
+  /** Whole strands per workgroup; one thread solves one point, so a group is `strandsPerGroup * pointsPerStrand` threads. */
+  readonly strandsPerGroup: number;
+  /** Threads per workgroup, at most 256. */
+  readonly workgroupSize: number;
   /** Rest segment lengths, strand-major; the last slot of each strand is 0. */
   readonly restLengths: Float32Array;
   /** Wind in m/s, read every step. Holds the scene's `WindField3D` sum unless `wind` was given. */
@@ -153,8 +163,6 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
   readonly #teleport: number;
   readonly #frames: { prev: Matrix4; now: Matrix4 };
   readonly #frameUniforms: { prev: { value: Matrix4 }; now: { value: Matrix4 } };
-  readonly #alpha: { value: number };
-  readonly #alphaPrev: { value: number };
   readonly #windUniform: { value: Vector3 };
   readonly #capsuleRows: UniformArrayNode<"vec4">;
   readonly #step: ComputeNode;
@@ -241,10 +249,6 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
     const framePrev = uniform(this.#frames.prev);
     const frameNow = uniform(this.#frames.now);
     this.#frameUniforms = { prev: framePrev, now: frameNow };
-    const alpha = uniform(1);
-    const alphaPrev = uniform(0);
-    this.#alpha = alpha;
-    this.#alphaPrev = alphaPrev;
     const windUniform = uniform(this.wind.clone());
     this.#windUniform = windUniform;
     // Collider rows: c * 4 + [prevA (radius in w), prevB, nowA, nowB].
@@ -257,151 +261,226 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
     const nodeMass = density * Math.PI * (strandThickness / 2) ** 2;
 
     // The rest point carried by the bone, blended across the step like the roots.
-    const target = (index: Node<"int">, at: Node<"float">): Node<"vec3"> => {
-      const r = vec4(restBuffer.element(index).xyz, 1);
-      return mix(framePrev.mul(r).xyz, frameNow.mul(r).xyz, at);
-    };
+    const target = (r: Node<"vec4">, at: Node<"float">): Node<"vec3"> =>
+      mix(framePrev.mul(r).xyz, frameNow.mul(r).xyz, at);
 
+    // One thread per point, a strand's points in workgroup memory, as Unreal's groom solver lays it out
+    // (UE 5.8.3: Engine/Plugins/Runtime/HairStrands/Shaders/Private/NiagaraDataInterfaceHairStrandsTemplate.ush:131,
+    // 177, 263-291: a node is a thread, its strand-local index is the group thread id modulo the strand size, and
+    // GroupMemoryBarrier separates the steps). A group holds whole strands, and the whole frame (every substep)
+    // is one dispatch. Constraints that touch neighbours run in colours (even then odd segments) or read then
+    // write behind a barrier; the root-to-tip projection is a chain, so each strand's root thread walks it.
+    const strandsPerGroup = Math.floor(SINGLE_DISPATCH_MAX / n);
+    const groupSize = strandsPerGroup * n;
+    this.strandsPerGroup = strandsPerGroup;
+    this.workgroupSize = groupSize;
+    const groups = Math.ceil(this.strandCount / strandsPerGroup);
+    const globalStep = globalK / iterations;
+    const localStep = localK / iterations;
     const step = Fn(() => {
-      const base = int(instanceIndex).mul(n).toVar();
-      // Verlet integration (upstream `verletIntegration` with no grid displacement); the root is
-      // not movable and follows the bone.
-      const lastOld = now.element(base).toVar();
-      const root = target(base, alpha);
-      prev.element(base).assign(target(base, alphaPrev));
-      now.element(base).assign(root);
-      Loop({ start: 1, end: n, type: "int" }, ({ i }) => {
-        const index = base.add(i);
-        const pPrev = prev.element(index);
-        const pNow = now.element(index).toVar();
-        const disp = pNow.sub(pPrev).toVar();
-        // Unreal air drag on a node of this segment's length.
-        const segment = lengthBuffer.element(index.sub(1));
-        const deltaV = disp.div(h).sub(windUniform).toVar();
-        const speed = length(deltaV);
-        const tangent = pNow.sub(lastOld).toVar();
-        const tangentLength = length(tangent);
-        const aligned = speed
-          .greaterThan(1e-6)
-          .select(abs(dot(tangent, deltaV)).div(max(tangentLength.mul(speed), EPSILON)), 0);
-        const diameter = mix(float(strandThickness), tangentLength, aligned);
-        const area = diameter.mul(strandThickness);
-        const coeff = float(3 * Math.PI * AIR_VISCOSITY * airDrag)
-          .mul(diameter)
-          .add(
-            float(0.5 * AIR_DENSITY * airDrag)
-              .mul(area)
-              .mul(speed),
-          );
-        const accel = vec3(gravity.x, gravity.y, gravity.z).sub(
-          deltaV.mul(coeff.div(segment.mul(nodeMass))),
-        );
-        lastOld.assign(pNow);
-        prev.element(index).assign(pNow);
-        now.element(index).assign(pNow.add(disp).add(accel.mul(h * h)));
+      const gid = int(instanceIndex);
+      // Per-thread values the loops reuse sit in registers: a bare expression node is re-evaluated at each use.
+      const live = gid.lessThan(pointCount).toVar();
+      const local = int(float(gid).mod(groupSize)).toVar();
+      const i = int(float(local).mod(n)).toVar();
+      const parity = float(i).mod(2);
+      const evenSegment = live
+        .and(i.lessThan(n - 1))
+        .and(parity.lessThan(0.5))
+        .toVar();
+      const oddSegment = live
+        .and(i.lessThan(n - 1))
+        .and(parity.greaterThan(0.5))
+        .toVar();
+      const hasParent = live.and(i.greaterThan(0)).toVar();
+      const hasShape = live.and(i.lessThanEqual(n - 4)).toVar();
+      const isRoot = i.equal(0).toVar();
+      const rootShare = isRoot.select(0, 1).toVar();
+      // Global shape: pull toward the rest shape, full over the extent, fading after it.
+      const pull = float(1)
+        .sub(
+          saturate(
+            float(i)
+              .div(n - 1)
+              .sub(extent)
+              .div(fade),
+          ),
+        )
+        .mul(globalStep)
+        .toVar();
+      // This point's share of the triangles a = i (first corner), i - 1 (middle) and i - 2 (last).
+      const second = i.greaterThanEqual(2).toVar();
+      const middleShare = i
+        .equal(1)
+        .select(-2, -4 / 3)
+        .toVar();
+      const lastShare = second.select(i.equal(2).select(1, 2 / 3), 0).toVar();
+      const lastCorner = second.select(local.sub(2), local).toVar();
+      const isTail = i.greaterThanEqual(n - 3).toVar();
+      const shared = workgroupVec3(groupSize);
+      const targets = workgroupVec3(groupSize);
+      const shape = workgroupVec3(groupSize);
+      const lengths = workgroupArray("float", groupSize) as unknown as StorageBufferNode<"float">;
+      const earlier = vec3(0).toVar();
+      // What a thread reads from storage is read once: the loops below touch registers and workgroup memory.
+      const rest = vec4(0, 0, 0, 1).toVar();
+      const segmentAfter = float(1).toVar();
+      const segmentBefore = float(1).toVar();
+      If(live, () => {
+        shared.element(local).assign(now.element(gid));
+        earlier.assign(prev.element(gid));
+        rest.assign(vec4(restBuffer.element(gid).xyz, 1));
+        segmentAfter.assign(lengthBuffer.element(gid));
+        If(i.greaterThan(0), () => {
+          segmentBefore.assign(lengthBuffer.element(gid.sub(1)));
+        });
       });
+      lengths.element(local).assign(segmentAfter);
+      workgroupBarrier();
+      countLoop("s", substeps, (s) => {
+        const at = float(s).add(1).div(substeps);
+        const atBefore = float(s).div(substeps);
+        // Verlet integration (upstream `verletIntegration` with no grid displacement); the root is not
+        // movable and follows the bone. A point reads its parent's old position before anyone moves.
+        const lastOld = vec3(0).toVar();
+        If(hasParent, () => {
+          lastOld.assign(shared.element(local.sub(1)));
+        });
+        workgroupBarrier();
+        If(live, () => {
+          targets.element(local).assign(target(rest, at));
+          If(isRoot, () => {
+            earlier.assign(target(rest, atBefore));
+            shared.element(local).assign(target(rest, at));
+          }).Else(() => {
+            const pNow = shared.element(local).toVar();
+            const disp = pNow.sub(earlier).toVar();
+            // Unreal air drag on a node of this segment's length.
+            const segment = segmentBefore;
+            const deltaV = disp.div(h).sub(windUniform).toVar();
+            const speed = length(deltaV);
+            const tangent = pNow.sub(lastOld).toVar();
+            const tangentLength = length(tangent);
+            const aligned = speed
+              .greaterThan(1e-6)
+              .select(abs(dot(tangent, deltaV)).div(max(tangentLength.mul(speed), EPSILON)), 0);
+            const diameter = mix(float(strandThickness), tangentLength, aligned);
+            const area = diameter.mul(strandThickness);
+            const coeff = float(3 * Math.PI * AIR_VISCOSITY * airDrag)
+              .mul(diameter)
+              .add(
+                float(0.5 * AIR_DENSITY * airDrag)
+                  .mul(area)
+                  .mul(speed),
+              );
+            const accel = vec3(gravity.x, gravity.y, gravity.z).sub(
+              deltaV.mul(coeff.div(segment.mul(nodeMass))),
+            );
+            earlier.assign(pNow);
+            shared.element(local).assign(pNow.add(disp).add(accel.mul(h * h)));
+          });
+        });
+        workgroupBarrier();
 
-      const globalStep = globalK / iterations;
-      const localStep = localK / iterations;
-      // Collision is a projection, as Unreal's groom static collision (UE 5.8.3: Engine/Plugins/Runtime/
-      // HairStrands/Shaders/Private/NiagaraStaticCollisionConstraint.ush:16-20 takes the full penetration
-      // when IsProjection): split over the iterations, a deep contact kept a third of its depth.
-      const collisionStep = collisionK;
-      Loop({ start: 0, end: iterations, type: "int" }, () => {
-        // Stretch/length constraint ([Bender15] 5.1).
-        Loop({ start: 0, end: n - 1, type: "int" }, ({ i }) => {
-          const a = base.add(i);
-          const p0 = now.element(a).toVar();
-          const p1 = now.element(a.add(1)).toVar();
-          const w0 = i.equal(0).select(0, 1);
-          const t = p1.sub(p0);
-          const correction = float(1).sub(lengthBuffer.element(a).div(max(length(t), EPSILON)));
-          const delta = t.mul(correction.mul(lengthK).div(float(w0).add(1 + EPSILON)));
-          now.element(a).assign(p0.add(delta.mul(w0)));
-          now.element(a.add(1)).assign(p1.sub(delta));
-        });
-        // Global shape: pull toward the rest shape, full over the extent, fading after it.
-        Loop({ start: 1, end: n, type: "int" }, ({ i }) => {
-          const x = float(i).div(n - 1);
-          const attenuation = float(1).sub(saturate(x.sub(extent).div(fade)));
-          const index = base.add(i);
-          const p = now.element(index);
-          now
-            .element(index)
-            .assign(p.add(target(index, alpha).sub(p).mul(attenuation.mul(globalStep))));
-        });
-        // Local shape: triangle bending toward the rest curvature.
-        Loop({ start: 0, end: n - 3, type: "int" }, ({ i }) => {
-          const a = base.add(i);
-          const r0 = target(a, alpha);
-          const r1 = target(a.add(1), alpha);
-          const r2 = target(a.add(2), alpha);
-          const h0 = length(r0.add(r1).add(r2).div(3).sub(r1));
-          const p0 = now.element(a).toVar();
-          const p1 = now.element(a.add(1)).toVar();
-          const p2 = now.element(a.add(2)).toVar();
-          const hVec = p1.sub(p0.add(p1).add(p2).div(3)).toVar();
-          const delta = hVec.mul(float(1).sub(h0.div(max(length(hVec), EPSILON)))).mul(localStep);
-          const m0 = restBuffer.element(a).w;
-          const wTotal = m0.add(2);
-          now.element(a).assign(p0.add(delta.mul(m0.div(wTotal).mul(2))));
-          now.element(a.add(1)).assign(p1.add(delta.mul(float(-4).div(wTotal))));
-          now.element(a.add(2)).assign(p2.add(delta.mul(float(2).div(wTotal))));
-        });
-        // The last points match the rest tangent.
-        Loop({ start: n - 3, end: n, type: "int" }, ({ i }) => {
-          const a = base.add(i);
-          const tangentRest = target(a, alpha).sub(target(a.sub(1), alpha));
-          const p = now.element(a);
-          now
-            .element(a)
-            .assign(p.add(now.element(a.sub(1)).add(tangentRest).sub(p).mul(localStep)));
-        });
-        // Collisions (upstream sphere, as capsules), root skipped.
-        if (colliders.length > 0)
-          Loop({ start: 1, end: n, type: "int" }, ({ i }) => {
-            const index = base.add(i);
-            const p = now.element(index).toVar();
+        countLoop("k", iterations, () => {
+          // Stretch/length constraint ([Bender15] 5.1), even segments then odd: a colour's segments share no
+          // point, so each applies its whole correction in place.
+          for (const colour of [evenSegment, oddSegment]) {
+            If(colour, () => {
+              const p0 = shared.element(local).toVar();
+              const p1 = shared.element(local.add(1)).toVar();
+              const t = p1.sub(p0);
+              const correction = float(1).sub(segmentAfter.div(max(length(t), EPSILON)));
+              const delta = t.mul(correction.mul(lengthK).div(rootShare.add(1 + EPSILON)));
+              shared.element(local).assign(p0.add(delta.mul(rootShare)));
+              shared.element(local.add(1)).assign(p1.sub(delta));
+            });
+            workgroupBarrier();
+          }
+          // Local shape (triangle bending toward the rest curvature) reads the triangle a = i, then the
+          // gather below applies each triangle's three corrections. The parent's position is read now for
+          // the tangent match, before any point moves.
+          const parent = vec3(0).toVar();
+          If(hasParent, () => {
+            parent.assign(shared.element(local.sub(1)));
+          });
+          shape.element(local).assign(vec3(0));
+          If(hasShape, () => {
+            const r0 = targets.element(local);
+            const r1 = targets.element(local.add(1));
+            const r2 = targets.element(local.add(2));
+            const h0 = length(r0.add(r1).add(r2).div(3).sub(r1));
+            const p0 = shared.element(local);
+            const p1 = shared.element(local.add(1));
+            const p2 = shared.element(local.add(2));
+            const hVec = p1.sub(p0.add(p1).add(p2).div(3)).toVar();
+            shape
+              .element(local)
+              .assign(hVec.mul(float(1).sub(h0.div(max(length(hVec), EPSILON)))).mul(localStep));
+          });
+          workgroupBarrier();
+          If(hasParent, () => {
+            const p = shared.element(local).toVar();
+            p.addAssign(targets.element(local).sub(p).mul(pull));
+            p.addAssign(shape.element(local).mul(2 / 3));
+            p.addAssign(shape.element(local.sub(1)).mul(middleShare));
+            p.addAssign(shape.element(lastCorner).mul(lastShare));
+            // The last points match the rest tangent.
+            If(isTail, () => {
+              const tangentRest = targets.element(local).sub(targets.element(local.sub(1)));
+              p.addAssign(parent.add(tangentRest).sub(p).mul(localStep));
+            });
+            // Collisions (upstream sphere, as capsules), root skipped. A projection, as Unreal's groom static
+            // collision (UE 5.8.3: Engine/Plugins/Runtime/HairStrands/Shaders/Private/
+            // NiagaraStaticCollisionConstraint.ush:16-20 takes the full penetration when IsProjection).
             for (let c = 0; c < colliders.length; c++) {
-              const aRow = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), alpha);
-              const b = mix(
-                capsuleRows.element(c * 4 + 1),
-                capsuleRows.element(c * 4 + 3),
-                alpha,
-              ).xyz;
+              const aRow = mix(capsuleRows.element(c * 4), capsuleRows.element(c * 4 + 2), at);
+              const b = mix(capsuleRows.element(c * 4 + 1), capsuleRows.element(c * 4 + 3), at).xyz;
               const ab = b.sub(aRow.xyz);
               const s = saturate(dot(p.sub(aRow.xyz), ab).div(max(dot(ab, ab), EPSILON)));
               const v = p.sub(aRow.xyz.add(ab.mul(s))).toVar();
               const inside = aRow.w.add(colliderThickness).sub(length(v));
               If(inside.greaterThan(0), () => {
-                p.addAssign(normalize(v).mul(inside.mul(collisionStep)));
+                p.addAssign(normalize(v).mul(inside.mul(collisionK)));
               });
             }
-            now.element(index).assign(p);
+            shared.element(local).assign(p);
           });
-      });
-      // Unreal's stretch projection after the solve (UE 5.8.3: Engine/Plugins/Runtime/HairStrands/
-      // Shaders/Private/NiagaraHookeSpringMaterial.ush:28-53,93-118): root to tip, only the child
-      // moves, so every segment leaves the substep at its rest length.
-      Loop({ start: 1, end: n, type: "int" }, ({ i }) => {
-        const index = base.add(i);
-        const parent = now.element(index.sub(1));
-        const edge = now.element(index).sub(parent);
-        now
-          .element(index)
-          .assign(
-            parent.add(
-              edge.mul(lengthBuffer.element(index.sub(1)).div(max(length(edge), EPSILON))),
-            ),
+          workgroupBarrier();
+        });
+        // Unreal's stretch projection after the solve (UE 5.8.3: Engine/Plugins/Runtime/HairStrands/
+        // Shaders/Private/NiagaraHookeSpringMaterial.ush:28-53,93-118): root to tip, only the child
+        // moves, so every segment leaves the substep at its rest length. The root's thread walks the chain.
+        If(live.and(isRoot), () => {
+          countLoop(
+            "j",
+            n - 1,
+            (j) => {
+              const index = local.add(j);
+              const parentPoint = shared.element(index);
+              const edge = shared.element(index.add(1)).sub(parentPoint);
+              shared
+                .element(index.add(1))
+                .assign(
+                  parentPoint.add(edge.mul(lengths.element(index).div(max(length(edge), EPSILON)))),
+                );
+            },
+            "int",
           );
+        });
+        workgroupBarrier();
       });
-    })().compute(this.strandCount);
+      If(live, () => {
+        now.element(gid).assign(shared.element(local));
+        prev.element(gid).assign(earlier);
+      });
+    })().compute(groups * groupSize, [groupSize]);
     step.setName("hair.strands.step");
     this.#step = step;
 
     const reset = Fn(() => {
       const index = int(instanceIndex);
-      const p = target(index, float(1));
+      const p = target(vec4(restBuffer.element(index).xyz, 1), float(1));
       prev.element(index).assign(p);
       now.element(index).assign(p);
     })().compute(pointCount);
@@ -458,6 +537,8 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
   debug(): Record<string, number | boolean> {
     return {
       strands: this.strandCount,
+      strandsPerGroup: this.strandsPerGroup,
+      workgroupSize: this.workgroupSize,
       pointsPerStrand: this.pointsPerStrand,
       substeps: this.#substeps,
       iterations: this.#iterations,
@@ -515,11 +596,7 @@ export class HairStrands3D extends Object3D implements IComputeDriven {
       this.#resets += 1;
       this.#started = true;
     }
-    for (let s = 0; s < this.#substeps; s++) {
-      this.#alphaPrev.value = s / this.#substeps;
-      this.#alpha.value = (s + 1) / this.#substeps;
-      renderer.compute(this.#step);
-    }
+    renderer.compute(this.#step);
     this.#steps += 1;
     this.#readback?.request(renderer);
   }

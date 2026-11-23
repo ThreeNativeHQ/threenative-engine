@@ -2228,7 +2228,7 @@
     {
       "aliases": [],
       "constraints": [
-        "WebGPU compute; one invocation per guide, at most 8 colliders; world space at the scene root"
+        "WebGPU compute; one thread per point with each strand in workgroup memory (at most 256 points per workgroup), the whole step in one dispatch, at most 8 colliders; world space at the scene root"
       ],
       "example": "import { HairStrands3D, measureBodyCapsules } from \"@threenative/core\";\nconst hair = new HairStrands3D(guidePositions, { pointsPerStrand: 16, bone: head, colliders });\nscene.add(hair);\nmaterial.positionNode = hair.positions.element(guidePointIndex);",
       "importPath": "@threenative/core",

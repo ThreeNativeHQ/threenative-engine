@@ -203,15 +203,20 @@ const MIN_BONE_SIZE = 0.2;
 /** @internal Up to this many body capsules (unrolled at constant indices). */
 export const MAX_BODY_CAPSULES = 16;
 /** A counted loop whose index has its own name, so nested loops keep every index in reach; three's types fix it to `i`. */
-const countLoop = (name: string, end: number, body: (index: Node<"uint">) => void): void =>
-  (Loop as unknown as (p: object, f: (inputs: Record<string, Node<"uint">>) => void) => void)(
-    { type: "uint", start: 0, end, name },
-    (inputs) => body(inputs[name] as Node<"uint">),
+export const countLoop = <T extends "uint" | "int" = "uint">(
+  name: string,
+  end: number,
+  body: (index: Node<T>) => void,
+  type?: T,
+): void =>
+  (Loop as unknown as (p: object, f: (inputs: Record<string, Node<T>>) => void) => void)(
+    { type: type ?? "uint", start: 0, end, name },
+    (inputs) => body(inputs[name] as Node<T>),
   );
 
-/** A workgroup-shared vec3 array of one thread's slot per particle; three's types omit its `element`. */
-const workgroupVec3 = (): StorageBufferNode<"vec3"> =>
-  workgroupArray("vec3", SINGLE_DISPATCH_MAX) as unknown as StorageBufferNode<"vec3">;
+/** A workgroup-shared vec3 array, one slot per thread; three's types omit its `element`. */
+export const workgroupVec3 = (count = SINGLE_DISPATCH_MAX): StorageBufferNode<"vec3"> =>
+  workgroupArray("vec3", count) as unknown as StorageBufferNode<"vec3">;
 
 /** One workgroup of this many threads solves the whole cloth in one dispatch; WebGPU's default invocation limit. */
 export const SINGLE_DISPATCH_MAX = 256;
