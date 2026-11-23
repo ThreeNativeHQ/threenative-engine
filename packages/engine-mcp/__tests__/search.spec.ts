@@ -692,6 +692,32 @@ describe("threenative-engine-mcp", () => {
     expect(results[0]?.symbol).toBe("SoftBody3D");
   });
 
+  // PRD-911: the brief never says "cloth". A cape is a cape, a skirt is a skirt, and both ride a
+  // skinned character; the row has to come first and carry the skinned example with it.
+  it.each(["character with a cape", "skirt on a skinned mesh"])(
+    "leads '%s' with SoftBody3D and its skinned example (PRD-911)",
+    (query) => {
+      const first = searchResults(query, workspaceManifest)[0];
+      expect(first?.symbol, query).toBe("SoftBody3D");
+      expect(first?.example, query).toContain("SkinnedMesh");
+    },
+  );
+
+  // PRD-912: a ponytail is the chain case; the row must come first for the words a brief uses.
+  it.each(["ponytail", "hair that moves"])(
+    "leads '%s' with SpringBoneChain3D (PRD-912)",
+    (query) => {
+      expect(searchResults(query, workspaceManifest)[0]?.symbol, query).toBe("SpringBoneChain3D");
+    },
+  );
+  // PRD-912: card or strand hair that follows the head is the GPU guide case.
+  it.each(["hair cards follow the head", "simulate hair guide strands on the GPU"])(
+    "leads '%s' with HairStrands3D (PRD-912)",
+    (query) => {
+      expect(searchResults(query, workspaceManifest)[0]?.symbol, query).toBe("HairStrands3D");
+    },
+  );
+
   it("ranks fluid simulation for ocean currents affecting a ship", () => {
     const results = searchResults(
       "ocean fluid dynamics and currents affect the ship",

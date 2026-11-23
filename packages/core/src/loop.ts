@@ -181,6 +181,7 @@ export class FixedStepLoop {
   #cancelFrame: (handle: number) => void;
   readonly #interpolation: PhysicsInterpolation | undefined;
   #accumulator = 0;
+  #timeScale = 1;
   #lastTime: number | undefined;
   #frameTime = 0;
   #frameHandle: number | undefined;
@@ -261,6 +262,25 @@ export class FixedStepLoop {
   /** Fraction of the next fixed step accumulated for this presented frame. */
   get alpha(): number {
     return Math.max(0, Math.min(1 - Number.EPSILON, this.#accumulator / this.step));
+  }
+
+  /** Simulation speed multiplier, after Godot's `Engine.time_scale`. Default 1. */
+  get timeScale(): number {
+    return this.#timeScale;
+  }
+  /**
+   * Slow the simulation down without changing its step: only the number of fixed updates per wall
+   * second changes, so every `dt` a game receives and the determinism a playtest relies on stay the
+   * same. Wall-clock work — UI, audio, animation mixers — keeps its own speed. `0` freezes the
+   * simulation and leaves rendering running.
+   */
+  set timeScale(value: number) {
+    if (!Number.isFinite(value) || value < 0) {
+      throw new Error(
+        `TN_TIME_SCALE_INVALID: timeScale must be a finite number of at least zero, received ${String(value)}.`,
+      );
+    }
+    this.#timeScale = value;
   }
 
   get running(): boolean {
@@ -427,8 +447,10 @@ export class FixedStepLoop {
     const elapsed = Math.max(0, (now - (this.#lastTime ?? now)) / 1000);
     this.#lastTime = Math.max(this.#lastTime ?? now, now);
     // An overloaded frame (the stress lab at load 4 drew at 12 fps) ran five whole game updates per
-    // frame to catch up, so the next frame was slower still; Unreal clamps instead.
-    this.#accumulator += Math.min(elapsed, this.maxPhysicsDeltaTime);
+    // frame to catch up, so the next frame was slower still; Unreal clamps instead. The clamp is
+    // wall time, so the time scale multiplies after it: a fast-forward spends more than a frame's
+    // clamped budget, and `maxSteps` is what still bounds one frame.
+    this.#accumulator += Math.min(elapsed, this.maxPhysicsDeltaTime) * this.#timeScale;
     let updates = 0;
     while (this.#accumulator + Number.EPSILON >= this.step && updates < this.maxSteps) {
       this.#interpolation?.beginTick();

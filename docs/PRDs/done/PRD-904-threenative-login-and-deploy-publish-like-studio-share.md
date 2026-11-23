@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-904 — `threenative login` and `threenative deploy`: publish from the terminal the way Studio's Publish button does
 
-**Status:** PARTIAL — phases 1 to 3 in progress
-**Priority:** P1 — AC-1 to AC-8 are open: a game built outside Studio has no command to sign in or put it online, so an agent stops at a local build.
+**Status:** DONE — phases 1 to 3 shipped
+**Priority:** P1 — done: a game built outside Studio signs in with `threenative login` and goes online with `threenative deploy`.
 **Complexity:** 7 (HIGH) — 6-10 files (+2), new module (+2), crosses the engine/site/Studio release boundaries (+2), external API: the threenative.com and Studio Workers (+1); risk: an account credential on disk.
 **Owner:** João
 **Depends on:** None
@@ -72,11 +72,11 @@ Risks: the packer is copied, and the copy can drift from Studio's. `ponytail:` t
 - [x] AC-5 [local]: `threenative deploy` runs `build:web`, packs `dist/` byte-for-byte like Studio's `packDirectory` on the same folder, uploads, writes `.threenative/share.json` once and prints the URL. proof: `pnpm exec vitest run packages/create-threenative/__tests__/deploy.spec.ts` — Evidence: `deploy.spec.ts` 5/5; in the AC-6 run the real `build:web` ran, and the engine and Studio `packDirectory` on the same 16 474 839-byte `dist/` gave the same sha256 `1645cccf…0462`.
 - [x] AC-6 [local]: A scaffolded starter, with the local `create-threenative` tarball, local site and Studio `wrangler dev`, runs `threenative login` (scripted Authorize) then `threenative deploy` twice. The share URL serves the game's `index.html` and stays the same across both deploys. The Studio games list shows the game with that link. proof: run log in the PR — Evidence: PR #712 comment. Starter scaffolded with the local `create-threenative-0.2.25.tgz`; two deploys printed the same `share-ac6-game-g226` link and kept `projectId 095e83ba…`; the link served `dist/index.html` (plus Studio's report link); Studio D1 lists `ac6-game` with that share id for `e2e@example.com`; logout revoked the token in site D1 and the next deploy exited 3. Rerun after the Sol review fixes (deploy key, device-only tokens, migration 0015): same results, `share.json` holds `projectId` and `deployKey`, the revoked token row shows `device=1 revoked=1`, and the config dir holds only `auth.json`.
 - [x] AC-8 [local]: On `/account/device/?code=…`, an unverified or terms-pending account completes verify and terms and returns to the same code, then Authorize succeeds. The page names `threenative login`. proof: site `e2e/worker/store-device.spec.ts` — Evidence: the two PRD-904 AC-8 cases pass (terms-pending accepts on `/signin/` and approves the same code; unverified lands on `/signin/` verify with the code in `next`).
-- [ ] AC-7 [shared]: After site, Studio and engine releases, a `pnpm sandbox` clean room runs `npx create-threenative` → `npx threenative login` → `npx threenative deploy` and opens the live share URL. proof: `pnpm sandbox` run log — Evidence: pending.
+- [x] AC-7 [shared]: After site, Studio and engine releases, a `pnpm sandbox` clean room runs `npx create-threenative` → `npx threenative login` → `npx threenative deploy` and opens the live share URL. proof: `pnpm sandbox` run log — Evidence: `pnpm sandbox` run 2026-11-22 from develop `142e8cbad` (0.3.21 tarballs: `pnpm sandbox --genre exploration --out <scratch>/ac7sb --name ac7-sandbox`, outside the repo, own `XDG_CONFIG_HOME`): `npx threenative login` exit 0 after the account approved the code on threenative.com, `auth.json` mode 0600; `npx threenative deploy` exit 0 printed `https://ac7-sandbox-17ra-share.threenative.com`, which answered HTTP 200 with `<title>ac7-sandbox</title>` and the built `assets/index-BrukeZp4.js`; a second deploy exit 0; `threenative logout` "Signed out." and no `auth.json` left; deploy after logout exit 3. Also run from the npm registry: published 0.3.21 cohort (`create-threenative` 0.2.26, `@threenative/core` 0.3.21, main `747f76758`). In an empty folder outside the repo with its own `XDG_CONFIG_HOME` (the registry install path, stricter than `pnpm sandbox` tarballs): `npx create-threenative@0.2.26 ac7-game` exit 0; `npx threenative login` printed the device code, the account approved it on threenative.com, "Signed in as …" exit 0, `auth.json` mode 0600; `npx threenative deploy` exit 0 printed `https://ac7-game-hqnv-share.threenative.com`, which answered HTTP 200 with the game's `index.html` (`<title>ac7-game</title>`, the built `assets/index-q_vXdl8M.js`). `threenative logout` printed "Signed out." and removed `auth.json`; a deploy after it exits 3. An earlier code left unapproved expired with "The code expired. Run threenative login again." exit 3 and saved no token.
 
 ## Blocked on
 
-- AC-7 needs the site and Studio routes deployed to production and an engine release — unblocked by João's go-ahead to deploy the site and Studio and ship the engine release.
+- None. Site #77 and Studio #209 are live in production, and the engine ships in 0.3.21.
 
 ## Integration Ledger
 
@@ -105,20 +105,20 @@ Fill the dispatcher and route `file:line` values when each phase lands.
 ## Execution Phases
 
 #### Phase 1: sign in and out
-**Status:** PARTIAL — phases 1 to 3 in progress
+**Status:** DONE — phases 1 to 3 shipped
 **Files:** `packages/create-threenative/src/commands.ts`, `src/threenative.ts` (dispatch), `src/account.ts` (new: device flow, token file, `THREENATIVE_TOKEN`), `AGENTS.md` CLI surface. Site: `worker/store.ts` (bearer self-revoke), `src/components/sections/AccountDevice.tsx` and `AccountVerify.tsx` (copy, keep `?code=` through verify and terms).
 - [x] `login`/`logout` work against a fake site — proof: `login.spec.ts` + `cli.spec.ts` lists the new commands — covers AC-1, AC-2. Result: `pnpm exec vitest run packages/create-threenative/__tests__/{login,deploy,cli,cli-bin}.spec.ts` 17/17 passed; `create-threenative` typecheck exit 0.
 - [x] The device page keeps the code through verify and terms — proof: site `e2e/worker/store-device.spec.ts` — covers AC-8. Result: site `playwright test --config=playwright.worker.config.ts e2e/worker/store-device.spec.ts` 4/4 passed (Node 24); `studio-signin.spec.ts` 4/4 still pass.
 
 #### Phase 2: Studio accepts a CLI publish
-**Status:** PARTIAL — phases 1 to 3 in progress
+**Status:** DONE — phases 1 to 3 shipped
 **Files:** site `worker/studio-auth.ts` (`tokenAccount`). Studio `hosting/cloudflare/src/routes/cli.ts` (new: `PUT /api/cli/share`), `src/index.ts` (route before the session gate).
 - [x] The token check passes its site tests — proof: site worker vitest — covers AC-3. Result: site `vitest run --config vitest.worker.config.ts` 229/229 passed (5 new `tokenAccount` cases, 2 new device cases); site typecheck and lint exit 0. Site branch `prd-904-cli-token`.
 - [x] The CLI share route passes its Studio tests — proof: Studio `hosting/cloudflare` vitest — covers AC-4. Result: `vitest run --config hosting/cloudflare/vitest.config.ts` 359/359 passed (9 new in `test/cli-share.spec.ts`); `tsc -p hosting/cloudflare` exit 0. Studio branch `prd-904-cli-share`.
 
 #### Phase 3: `threenative deploy` end to end
-**Status:** PARTIAL — phases 1 to 3 in progress
+**Status:** DONE — phases 1 to 3 shipped
 **Files:** `packages/create-threenative/src/deploy.ts` (new: build, pack, upload, link file), `src/threenative.ts`, `src/commands.ts`.
 - [x] Deploy unit behaviour — proof: `deploy.spec.ts` — covers AC-5. Result: 5/5 in `deploy.spec.ts` (byte layout, same link on redeploy, 401 exits 3, 422 exits 4, no `build:web` exits 2).
 - [x] Local end-to-end through both real Workers — proof: AC-6 run log — covers AC-6. Result: see AC-6 evidence; local site `scripts/e2e-wrangler.mjs` on 4180, Studio `wrangler dev` on 8788 with containers off and `routes` removed so share hosts are not rewritten.
-- [ ] Live clean-room deploy — proof: `pnpm sandbox` — covers AC-7.
+- [x] Live clean-room deploy — proof: `pnpm sandbox` — covers AC-7. Result: in the `pnpm sandbox` and in an npm-registry clean room, login, deploy, redeploy and logout pass against production (see AC-7).

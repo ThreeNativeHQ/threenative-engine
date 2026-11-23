@@ -85,7 +85,9 @@ function readable(name: string): string[] {
       !binding.methods.includes(key) &&
       // A node slot (`colorNode`, `castShadowPositionNode`) is no value field. It is a graph, set
       // through the TSL runtime, by the same rule as `browser-backend.ts`.
-      !(name.endsWith("NodeMaterial") && /^[a-z][A-Za-z]*Node$/u.test(key)),
+      !(name.endsWith("NodeMaterial") && /^[a-z][A-Za-z]*Node$/u.test(key)) &&
+      // three defines `id` with `Object.defineProperty(this, "id", { value })`: readable, hidden.
+      key !== "id",
   );
 }
 
@@ -182,7 +184,8 @@ describe("a native material's fields are enumerable", () => {
       spy.mockClear();
       new Standard();
       const second = spy.mock.calls.map((call) => call[2]);
-      expect(first).toHaveLength(readable("MeshStandardMaterial").length);
+      // Every field the engine reads is defined, the hidden `id` included.
+      expect(first).toHaveLength(readable("MeshStandardMaterial").length + 1);
       expect(second).toHaveLength(first.length);
       for (const [index, descriptor] of first.entries()) expect(second[index]).toBe(descriptor);
     } finally {
@@ -202,6 +205,23 @@ describe("a native material's fields are enumerable", () => {
     const glow = new Glow();
     expect(forIn(glow).sort()).toEqual(readable("MeshStandardMaterial").sort());
     expect(log).toContain("set emissiveIntensity");
+  });
+
+  it.each(MATERIALS)("%s: id stays readable and hidden from copy loops, as in three", (name) => {
+    const material = new (classesOf()[name] as Constructible)();
+    expect(Object.getOwnPropertyDescriptor(new ThreeStandardMaterial(), "id")?.enumerable).toBe(
+      false,
+    );
+    expect("id" in material).toBe(true);
+    expect(Object.keys(material)).not.toContain("id");
+    // A strict-mode copy loop over a source (upstream threejs-hair-shader's `toNodeMaterial`) writes every
+    // key it finds but `uuid` and `type`: an enumerable getter-only `id` threw "has only a getter" there.
+    const target = new (classesOf()[name] as Constructible)();
+    expect(() => {
+      for (const key in material)
+        if (key !== "uuid" && key !== "type")
+          (target as Record<string, unknown>)[key] = (material as Record<string, unknown>)[key];
+    }).not.toThrow();
   });
 
   it("lets a three-style copy loop copy one native material onto another", () => {

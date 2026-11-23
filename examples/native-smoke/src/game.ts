@@ -71,6 +71,8 @@ interface ISmokeState extends INetworkingState {
   networkProtocolErrors: number;
   networkReconnects: number;
   networkRemoteDistance: number;
+  /** `?timeScale`: fixed steps per wall second at `ctx.timeScale` 0.5 over the rate at 1 (PRD-907). */
+  stepRateRatio: number;
 }
 
 export interface ISmokeStatus {
@@ -278,6 +280,31 @@ runtimeCanvas.style.touchAction = "none";
 
 const networkingGame = createNetworkingGame<ISmokeState>(__TN_NETWORKING_CONFIG__);
 
+/**
+ * `?timeScale` (PRD-907): measures the loop's own fixed-step rate over 2 s windows: one to settle,
+ * one at scale 1, one at `ctx.timeScale = 0.5`, then publishes the ratio. Off without the flag.
+ */
+function timeScaleProbe(): ((ctx: ICtx<ISmokeState>) => void) | undefined {
+  if (!debugFlag("timeScale")) return undefined;
+  let window = 0;
+  let start = performance.now();
+  let steps = 0;
+  let oneRate = 0;
+  return (ctx) => {
+    steps += 1;
+    const elapsed = performance.now() - start;
+    if (elapsed < 2_000 || window > 2) return;
+    const rate = (steps * 1_000) / elapsed;
+    if (window === 1) {
+      oneRate = rate;
+      ctx.timeScale = 0.5;
+    } else if (window === 2) ctx.state.set({ stepRateRatio: rate / oneRate });
+    window += 1;
+    start = performance.now();
+    steps = 0;
+  };
+}
+
 class NativeSmoke extends Scene<ISmokeState> {
   #profileFirstFrameAt: number | undefined;
   #profileFrames = 0;
@@ -290,6 +317,7 @@ class NativeSmoke extends Scene<ISmokeState> {
     airborne: false,
     currentPointers: 0,
     debugProbe: debugFlag("probe"),
+    stepRateRatio: 0,
     frames: 0,
     preparedFrames: 0,
     preparationErrors: 0,
@@ -521,7 +549,9 @@ class NativeSmoke extends Scene<ISmokeState> {
       // would pass whether the press fell through or vanished.
       console.info(`TN_SMOKE_POINTER_DOWN:${pointerDowns}`);
     });
+    const measureTimeScale = timeScaleProbe();
     return (frameCtx: ICtx<ISmokeState>, dt: number) => {
+      measureTimeScale?.(frameCtx);
       // Start after the renderer has reached steady frames. Starting during enter() lets native
       // renderer compilation overlap the worker and proves startup latency instead of continuity.
       networkingGame.update(frameCtx.state);

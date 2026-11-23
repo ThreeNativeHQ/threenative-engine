@@ -7,6 +7,7 @@ interface IReadbackRendererControl {
   readonly renderer: IRendererLike;
   readonly calls: number;
   land(bytes: Float32Array): void;
+  landAt(index: number, bytes: Float32Array): void;
   reject(error: Error): void;
 }
 
@@ -60,6 +61,11 @@ function readbackRenderer(): IReadbackRendererControl {
     land(bytes) {
       const next = pending.shift();
       if (next === undefined) throw new Error("no readback in flight");
+      next.resolve(bytes.buffer as ArrayBuffer);
+    },
+    landAt(index, bytes) {
+      const [next] = pending.splice(index, 1);
+      if (next === undefined) throw new Error(`no readback in flight at ${index}`);
       next.resolve(bytes.buffer as ArrayBuffer);
     },
     reject(error) {
@@ -220,5 +226,67 @@ describe("GPUReadback", () => {
     await Promise.resolve();
     expect(survivors.data?.[0]).toBe(1024);
     expect(survivors.staleFrames).toBe(0);
+  });
+
+  it("should drop a second request while one copy is in flight by default", () => {
+    const control = readbackRenderer();
+    const readback = new GPUReadback({ attribute: attribute(), everyFrames: 1 });
+    readback.request(control.renderer);
+    readback.request(control.renderer);
+    expect(readback.stats.requests).toBe(1);
+    expect(control.calls).toBe(1);
+  });
+
+  it("should keep several copies in flight for a probe and take every landed sample in issue order", async () => {
+    const control = readbackRenderer();
+    const readback = new GPUReadback({ attribute: attribute(), everyFrames: 1, maxInFlight: 3 });
+    for (let frame = 0; frame < 4; frame += 1) readback.request(control.renderer);
+    // Three copies in flight, and the fourth request dropped at the cap rather than queued.
+    expect(control.calls).toBe(3);
+    expect(readback.stats.requests).toBe(3);
+    control.landAt(1, new Float32Array([2]));
+    await Promise.resolve();
+    control.landAt(0, new Float32Array([1]));
+    await Promise.resolve();
+    control.landAt(0, new Float32Array([3]));
+    await Promise.resolve();
+    const samples = readback.take();
+    expect(samples.map((sample) => sample.data[0])).toStrictEqual([1, 2, 3]);
+    // The take happens on frame 4, so each sample is 3, 2 and 1 frames old.
+    expect(samples.map((sample) => sample.staleFrames)).toStrictEqual([3, 2, 1]);
+    expect([...(readback.data ?? [])]).toStrictEqual([3]);
+    expect(readback.sample?.staleFrames).toBe(1);
+    expect(readback.take()).toStrictEqual([]);
+  });
+
+  it("should keep only the newest untaken samples when no probe drains them", async () => {
+    const control = readbackRenderer();
+    const readback = new GPUReadback({ attribute: attribute(), everyFrames: 1, maxInFlight: 2 });
+    for (let frame = 1; frame <= 5; frame += 1) {
+      readback.request(control.renderer);
+      control.land(new Float32Array([frame]));
+      await Promise.resolve();
+    }
+    // maxInFlight * 2 = 4 untaken samples: the frame-1 sample is dropped as the oldest.
+    expect(readback.take().map((sample) => sample.data[0])).toStrictEqual([2, 3, 4, 5]);
+  });
+
+  it("should drop untaken samples on dispose", async () => {
+    const control = readbackRenderer();
+    const readback = new GPUReadback({ attribute: attribute(), everyFrames: 1 });
+    readback.request(control.renderer);
+    control.land(new Float32Array([1]));
+    await Promise.resolve();
+    readback.dispose();
+    expect(readback.take()).toStrictEqual([]);
+  });
+
+  it("should reject a maxInFlight that is not a positive integer", () => {
+    expect(
+      () => new GPUReadback({ attribute: attribute(), everyFrames: 1, maxInFlight: 0 }),
+    ).toThrow("maxInFlight must be a positive integer");
+    expect(
+      () => new GPUReadback({ attribute: attribute(), everyFrames: 1, maxInFlight: 1.5 }),
+    ).toThrow("maxInFlight must be a positive integer");
   });
 });

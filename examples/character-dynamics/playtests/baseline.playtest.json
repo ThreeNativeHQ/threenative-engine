@@ -1,0 +1,100 @@
+{
+  "name": "character-dynamics-baseline",
+  "schemaVersion": 1,
+  "subject": "an animated mannequin wearing a cape runs the fixed motion script and reports cape behaviour per phase",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 85,
+      "release": true,
+      "screenshot": "settled"
+    },
+    {
+      "kind": "wait",
+      "label": "jog",
+      "waitTicks": 75,
+      "release": true,
+      "screenshot": "jog"
+    },
+    {
+      "kind": "wait",
+      "label": "jog-turn",
+      "waitTicks": 100,
+      "release": true,
+      "screenshot": "jog-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "sprint",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "sprint"
+    },
+    {
+      "kind": "wait",
+      "label": "hard-stop",
+      "waitTicks": 20,
+      "release": true,
+      "screenshot": "hard-stop"
+    },
+    {
+      "kind": "wait",
+      "label": "jump-apex",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "jump-apex"
+    },
+    {
+      "kind": "wait",
+      "label": "snap-turn",
+      "waitTicks": 40,
+      "release": true,
+      "screenshot": "snap-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "teleport",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "teleport"
+    },
+    {
+      "kind": "wait",
+      "label": "done",
+      "waitTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "complete",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "finite",
+        "equals": true,
+        "allowTrivial": "finite starts true and must stay true through all eight phases"
+      }
+    ]
+  }
+}

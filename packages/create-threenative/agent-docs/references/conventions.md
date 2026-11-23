@@ -143,6 +143,15 @@ Default: measure a clip before rewriting it. Override: `clipPoseError`; `clipTra
 
 `clipPoseError` scores a retargeted clip against its source per bone in degrees — whole quaternions relative to each rig's own bind pose, so the two rigs' bind conventions cancel and a limb rolled about its own axis is caught where a bone-direction check reads zero. `clipTrackBindings` names tracks that bind nothing (the `<bone>.undefined` failure that plays the bind pose instead of the animation), `clipBoneCoverage` names bones the clip does not drive and which therefore keep the previous clip's pose, and `boneContact` reports in metres whether a named bone reaches the prop it is supposed to be touching.
 
+<a id="skinned-cloth"></a>
+## Cape and skirt cloth
+
+Default: skinned cloth follows the skin where its mask is 1 and clears the body. Override: `bodyColliders`; `cloth`. Reports: TN_SOFTBODY_RESET.
+
+`bodyColliders: false` turns body collision off and an explicit capsule list replaces the measured one; `cloth` picks the mask source.
+
+Give `SoftBody3D` the cloth as a `SkinnedMesh` bound to the character's skeleton. The red vertex colour is the mask by default: 1 follows the skin, 0 simulates. The node measures one capsule per body bone from the character's other skinned meshes and shrinks each one until the cloth's rest pose clears it, so a cape that fits at rest starts at rest. It simulates in world space with Unreal Chaos Cloth's stock inertia (velocity scales 0.75), damping, tethers and aerodynamics. A teleport, a turn past 90° in one step, or `reset()` snaps the cloth to the body and logs `TN_SOFTBODY_RESET` with the cause. `debug()` reports `bodyCapsules` and `maskSource`.
+
 <a id="rough-diffuse"></a>
 ## Rough diffuse
 
@@ -274,6 +283,13 @@ Engine: The owned C++ engine is the default for a new game: the Wasm engine on w
 Default: refused `three` imports fail at their line. Override: `createEngineCatalogPlugin({ mode: "warn" })`. Reports: TN_ENGINE_CATALOG.
 
 Refused imports: `createEngineCatalogPlugin()` in `vite.config.ts` reads every `import { … } from "three"`, `"three/webgpu"` and `"three/tsl"` in game source. When the installed Wasm engine refuses a name, the dev overlay and `threenative build` fail at that import line with the code the page would throw at first use (`TN_NATIVE_UNCATALOGUED_<NAME>`, or the catalog entry's own diagnostic). Pick a bound class instead: `engine_search_capabilities` names it. `mode: "warn"` reports instead of failing and prints `TN_ENGINE_CATALOG: warn`. Under `engine: "threejs"` the check is off and prints `TN_ENGINE_CATALOG: off (engine threejs)`. Member and argument gaps of a `partial` entry stay runtime diagnostics.
+
+<a id="telemetry"></a>
+## Error telemetry
+
+Default: a `TN_*` warning, error or uncaught exception reports itself. Override: `defineGame({ telemetry: false })`; `TN_TELEMETRY=0`, `DO_NOT_TRACK=1`. Reports: TN_TELEMETRY.
+
+Telemetry: a game reports its own failure codes to ThreeNative so the team hears about a crash without a bug report. What leaves the machine is a `TN_*` code, a scrubbed message (URLs, emails, absolute paths and long numbers removed), the game's name, the engine version, the platform, the renderer engine, `prod`/`dev` and a per-session id — never a stack, a page URL or user data. A code sends once and a session sends at most 50. The one boot line names the opt-out that applied, `TN_TELEMETRY off (config)`. It is on by default everywhere, so do not remove it without the user asking: `defineGame({ telemetry: false })` is the game's own switch, `TN_TELEMETRY=0` (or `?tnTelemetry=0`, `__THREENATIVE_TELEMETRY__`) and `DO_NOT_TRACK=1` are the launch ones. A playtest runner's launch stays off (`TN_TELEMETRY off (playtest)`) unless it passes `tnTelemetry=1`.
 
 <a id="general"></a>
 ## Other portable contracts

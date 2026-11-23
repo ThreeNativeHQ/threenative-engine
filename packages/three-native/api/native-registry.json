@@ -5704,6 +5704,7 @@
         "alphaTest",
         "alphaToCoverage",
         "anisotropy",
+        "anisotropyRotation",
         "aoMapIntensity",
         "blendDst",
         "blendDstAlpha",
@@ -5764,6 +5765,8 @@
         "alphaTest",
         "alphaToCoverage",
         "anisotropy",
+        "anisotropyMap",
+        "anisotropyRotation",
         "aoMap",
         "aoMapIntensity",
         "blendDst",
@@ -5837,6 +5840,7 @@
         "visible"
       ],
       "members": [
+        "anisotropyMap",
         "aoMap",
         "bumpMap",
         "clearcoatMap",
@@ -5879,6 +5883,7 @@
         "alphaTestNode",
         "alphaToCoverage",
         "anisotropy",
+        "anisotropyRotation",
         "aoMapIntensity",
         "aoNode",
         "blendDst",
@@ -5958,6 +5963,8 @@
         "alphaTestNode",
         "alphaToCoverage",
         "anisotropy",
+        "anisotropyMap",
+        "anisotropyRotation",
         "aoMap",
         "aoMapIntensity",
         "aoNode",
@@ -6049,6 +6056,7 @@
         "visible"
       ],
       "members": [
+        "anisotropyMap",
         "aoMap",
         "bumpMap",
         "clearcoatMap",

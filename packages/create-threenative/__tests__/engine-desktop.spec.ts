@@ -304,6 +304,32 @@ describe("packageEngineDesktop", () => {
     );
   });
 
+  it("hands the engine bundler the game name and engine for telemetry (PRD-905)", async () => {
+    const root = await temp("threenative-engine-package-brand-");
+    const player = path.join(root, "player");
+    await writeFile(player, "#!/bin/sh\n");
+    let passed: Record<string, unknown> | undefined;
+    await packageEngineDesktop(
+      {
+        engine: "threenative",
+        entry: "src/game.ts",
+        gameName: "Midway",
+        output: path.join(root, "out"),
+        player,
+        project: root,
+      },
+      {
+        bundle: async (options: Record<string, unknown> & { outfile: string }) => {
+          passed = options;
+          await writeFile(options.outfile, "// game\n");
+        },
+        cook: async () => {},
+      },
+    );
+    // Without these a native `TN_*` event names no game, which is what every native build did.
+    expect(passed).toMatchObject({ engine: "threenative", gameName: "Midway" });
+  });
+
   it("fails closed without a player, and without a UI page when one was asked for", async () => {
     const root = await temp("threenative-engine-package-fail-");
     const output = path.join(root, "out");

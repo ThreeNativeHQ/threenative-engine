@@ -865,6 +865,10 @@ function stateResources<TState extends Record<string, unknown>, TPhysics>(
         // and looks healthy, and without this nothing observable says so.
         ["assetCache", assetCacheReport(ctx.assets)],
         ["assets", assetResolutions(ctx.assets)],
+        // The live mix, so a scenario can assert `silent` (every bus paused) rather than reading
+        // the game's own claim that it paused. `audioRuntimeSnapshot()` builds a fresh object per
+        // call, so an earlier sample is not mutated by a later one.
+        ["audio", audioRuntimeSnapshot()],
         ...(runtime?.frameCounts === undefined
           ? []
           : [["__threenativeFrameCounts", runtime.frameCounts()]]),

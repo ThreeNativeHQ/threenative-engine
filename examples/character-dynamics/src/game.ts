@@ -1,0 +1,1096 @@
+/// <reference types="vite/client" />
+/**
+ * Character-dynamics verification scene (PRD epic `docs/PRDs/done/character-dynamics/`, follow-up PRD-914).
+ *
+ * One animated mannequin wears a cape and runs a fixed motion script: idle, jog, turn, sprint,
+ * hard stop, jump, snap turn, teleport. The scene measures what a cape must do on a moving body
+ * (trail behind on motion, swing on a stop, stay out of the torso, keep its length, survive a
+ * teleport) and prints one `TN_CHARACTER_DYNAMICS:` line.
+ *
+ * `?arm=softbody` (the default today) is the incumbent `SoftBody3D`, given its best shot: it cannot
+ * be parented under a bone (reparenting fires `removed`, which detaches it), so its frame follows
+ * `spine_03` by hand every tick and its gravity is rotated into that frame. `?arm=cloth` is the skinned
+ * `SoftBody3D` cape, `?arm=hair` the `SpringBoneChain3D` ponytail and `?arm=strands` 64 `HairStrands3D`
+ * guides drawn as cards. `?cape=0` hides the cape so the hair reads from behind.
+ */
+import {
+  HairStrands3D,
+  type ICtx,
+  type ISoftBodyCapsule,
+  type ISpringBoneCapsule,
+  Scene,
+  SkeletalMesh3D,
+  SoftBody3D,
+  SpringBoneChain3D,
+  WindField3D,
+  defineGame,
+  measureBodyCapsules,
+} from "@threenative/core";
+import { playtest } from "@threenative/core/playtest";
+import {
+  AmbientLight,
+  type AnimationClip,
+  Bone,
+  BufferAttribute,
+  BufferGeometry,
+  CatmullRomCurve3,
+  Color,
+  DirectionalLight,
+  DoubleSide,
+  Group,
+  Matrix4,
+  Mesh,
+  MeshStandardMaterial,
+  type Object3D,
+  PlaneGeometry,
+  Quaternion,
+  Skeleton,
+  SkinnedMesh,
+  TubeGeometry,
+  Vector3,
+} from "three";
+import {
+  attribute,
+  cameraViewMatrix,
+  clamp,
+  length,
+  normalize,
+  texture,
+  uniform,
+  varying,
+  vec4,
+} from "three/tsl";
+import { MeshStandardNodeMaterial } from "three/webgpu";
+import { createHairCardMaterial } from "../../../packages/create-threenative/templates/starter/src/render/effects/hair.js";
+import { strandAtlas, strandTangents } from "./hair-atlas.js";
+import {
+  type IProbeCapsule,
+  centroid,
+  countInsideCapsules,
+  maxEdgeStretch,
+  maxSegmentStretch,
+  toFrame,
+  trailAngleDegrees,
+} from "./probe.js";
+
+type Glb = { animations: AnimationClip[]; scene: Object3D };
+
+const STEP = 1 / 60;
+const GRAVITY = 9.81;
+/** SoftBody3D's default `colliderThickness` (Chaos CollisionThickness, 1 cm). */
+const COLLIDER_THICKNESS = 0.01;
+
+interface IPhase {
+  readonly name: string;
+  readonly ticks: number;
+  readonly clip: string;
+  readonly speed: number;
+  readonly yawRate?: number;
+  readonly jumpSpeed?: number;
+  readonly snapYaw?: number;
+  readonly teleport?: number;
+}
+
+/** The fixed motion script. Speeds in m/s, yaw rate in rad/s. */
+const ACCELERATION = 8;
+const BRAKING = 12;
+const SCRIPT: readonly IPhase[] = [
+  { name: "settle", ticks: 90, clip: "Idle_Loop", speed: 0 },
+  { name: "jog", ticks: 90, clip: "Jog_Fwd_Loop", speed: 3.4 },
+  { name: "jogTurn", ticks: 120, clip: "Jog_Fwd_Loop", speed: 3.4, yawRate: 1.5 },
+  { name: "sprint", ticks: 90, clip: "Sprint_Loop", speed: 5.6 },
+  { name: "hardStop", ticks: 60, clip: "Idle_Loop", speed: 0 },
+  { name: "jump", ticks: 75, clip: "Jump_Loop", speed: 0, jumpSpeed: 4.2 },
+  { name: "snapTurn", ticks: 45, clip: "Idle_Loop", speed: 0, snapYaw: Math.PI },
+  { name: "teleport", ticks: 45, clip: "Idle_Loop", speed: 0, teleport: 8 },
+];
+/** After the script, the scene idles until every script step's readback has been measured. */
+const DRAIN: IPhase = {
+  name: "drain",
+  ticks: Number.POSITIVE_INFINITY,
+  clip: "Idle_Loop",
+  speed: 0,
+};
+const MAX_DRAIN_TICKS = 240;
+/** A pinned row further than this from its body-frame rest is a sample from another pose, in metres. */
+const POSE_MISMATCH = 0.05;
+
+interface IPhaseMetrics {
+  /** Largest hem-centroid move away from its settled spot, in the body (spine_03) frame, metres. */
+  hemOffset: number;
+  /** Largest angle between the pin-to-hem line and world down, degrees. */
+  hemTrail: number;
+  /** Largest spring stretch, as a fraction of rest length. */
+  maxStretch: number;
+  /** Largest number of cloth vertices inside the torso capsule in one sample. */
+  bodyPenetration: number;
+  /** Largest tip-bone move away from its end-of-settle spot, in the Head bone frame, metres. */
+  hairTipOffset: number;
+  /** Largest |segment length / rest length - 1| over the chain. */
+  hairStretch: number;
+  /** Largest number of simulated hair points inside the head, neck, back or shoulder capsules in one sample. */
+  hairInsideHead: number;
+  samples: number;
+  /** Hair samples measured in the phase: every tick on the CPU chain, every landed readback for strands. */
+  hairSamples: number;
+  hairSkipped: number;
+}
+
+interface IState extends Record<string, unknown> {
+  arm: string;
+  phase: string;
+  tick: number;
+  complete: boolean;
+  finite: boolean;
+  phases: Record<string, IPhaseMetrics>;
+}
+
+function arm(): string {
+  const value = new URLSearchParams(globalThis.location?.search ?? "").get("arm") ?? "softbody";
+  if (value !== "softbody" && value !== "cloth" && value !== "hair" && value !== "strands")
+    throw new Error(`CHARACTER_DYNAMICS_UNKNOWN_ARM arm=${value}`);
+  return value;
+}
+
+/** `?probe=0` turns the probe's GPU readback off for the run; the acceptance scenes probe every frame by default. */
+function probeReadbackEveryFrames(): number {
+  return new URLSearchParams(globalThis.location?.search ?? "").get("probe") === "0" ? 0 : 1;
+}
+
+/** `?strands=N` sets the strand guide count (default 64), so AC-4 can run the 2,000 guides it bounds. */
+function strandCountFromUrl(): number {
+  const raw = new URLSearchParams(globalThis.location?.search ?? "").get("strands");
+  if (raw === null) return 64;
+  const count = Number(raw);
+  if (!Number.isInteger(count) || count < 1 || count > 4000)
+    throw new Error(`CHARACTER_DYNAMICS_STRAND_COUNT strands=${raw}`);
+  return count;
+}
+
+function boneOf(root: Object3D, name: string): Bone {
+  const bone = root.getObjectByName(name) as Bone | undefined;
+  if (bone === undefined) throw new Error(`CHARACTER_DYNAMICS_BONE_MISSING ${name}`);
+  return bone;
+}
+
+class CharacterDynamics extends Scene<IState> {
+  static override readonly initialState: IState = {
+    arm: "softbody",
+    phase: "settle",
+    tick: 0,
+    complete: false,
+    finite: true,
+    phases: {},
+  };
+
+  #model: Glb | undefined;
+
+  override async load(ctx: ICtx<IState>): Promise<void> {
+    this.#model = await ctx.assets.model<Glb>("mannequin.glb");
+  }
+
+  override enter(ctx: ICtx<IState>) {
+    const model = this.#model;
+    if (model === undefined) throw new Error("CHARACTER_DYNAMICS_MODEL_NOT_LOADED");
+    const armName = arm();
+    ctx.scene.background = new Color(0x263346);
+    ctx.add(new AmbientLight(0xd5e3ff, 1.6));
+    const key = new DirectionalLight(0xffe4c4, 3);
+    key.position.set(3, 6, 4);
+    ctx.add(key);
+    const floor = new Mesh(
+      new PlaneGeometry(80, 80, 40, 40),
+      new MeshStandardMaterial({ color: 0x526474, roughness: 0.95 }),
+    );
+    floor.rotation.x = -Math.PI / 2;
+    ctx.add(floor);
+    // A grid of posts so motion reads in a still frame.
+    for (let x = -20; x <= 20; x += 4)
+      for (let z = -20; z <= 20; z += 4) {
+        const post = new Mesh(
+          new PlaneGeometry(0.08, 0.6),
+          new MeshStandardMaterial({ color: 0x8aa0b4, side: DoubleSide }),
+        );
+        post.position.set(x, 0.3, z);
+        ctx.add(post);
+      }
+
+    const player = new SkeletalMesh3D({
+      source: model.scene,
+      clips: model.animations,
+      strideSync: false,
+    });
+    const character = new Group();
+    character.add(player.root);
+    ctx.add(character);
+    player.play("Idle_Loop");
+    player.update(0, true);
+    character.updateMatrixWorld(true);
+
+    const spine = boneOf(player.root, "spine_03");
+    const pelvis = boneOf(player.root, "pelvis");
+    const head = boneOf(player.root, "Head");
+
+    // Facing is measured, not assumed: the foot-to-ball line points forward on any rig.
+    const facing = boneOf(player.root, "ball_l")
+      .getWorldPosition(new Vector3())
+      .sub(boneOf(player.root, "foot_l").getWorldPosition(new Vector3()))
+      .setY(0)
+      .normalize();
+    const bindYaw = Math.atan2(facing.x, facing.z);
+    const height = head.getWorldPosition(new Vector3()).y;
+
+    // The ponytail is the same rig in every arm: a 6-bone chain hanging off Head, one tapered
+    // shaft per bone. Only `?arm=hair` simulates it; every other arm is the rigid control.
+    const back = facing.clone().negate();
+    const hairBones: Bone[] = [];
+    const hairLocalPoints: Vector3[] = [];
+    const hairAnchor = head.getWorldPosition(new Vector3());
+    let hairParent: Bone = head;
+    for (let index = 0; index < 6; index++) {
+      // The root sits on the back of the skull (the Head bone is at the top of the neck); the chain
+      // falls back and down. Each bone steps 5 cm back: at the bind pose the tip hangs 20 cm clear of
+      // the upper back, so the run cycle does not push the 22 mm shafts through the skin.
+      const offset =
+        index === 0
+          ? back.clone().multiplyScalar(0.12).setY(0.15)
+          : back.clone().multiplyScalar(0.05).setY(-0.06);
+      hairAnchor.add(offset);
+      const bone = new Bone();
+      bone.name = `ponytail_${index + 1}`;
+      bone.position.copy(hairParent.worldToLocal(hairAnchor.clone()));
+      hairParent.add(bone);
+      bone.updateWorldMatrix(true, false);
+      hairBones.push(bone);
+      hairLocalPoints.push(bone.position.clone());
+      hairParent = bone;
+    }
+    // One tapered tube through the chain, skinned to its bones with weights blended across each
+    // joint, as a ponytail mesh is weighted: it bends smoothly instead of breaking at the joints.
+    const up = new Vector3(0, 1, 0);
+    const chain = hairBones.map((bone) => bone.getWorldPosition(new Vector3()));
+    const last = chain[chain.length - 1] as Vector3;
+    chain.push(
+      last
+        .clone()
+        .multiplyScalar(2)
+        .sub(chain[chain.length - 2] as Vector3),
+    );
+    const TUBE_SEGMENTS = 48;
+    const TUBE_SIDES = 8;
+    const hairCurve = new CatmullRomCurve3(chain);
+    const tube = new TubeGeometry(hairCurve, TUBE_SEGMENTS, 1, TUBE_SIDES, false);
+    const tubePosition = tube.getAttribute("position");
+    const skinIndex = new Uint16Array(tubePosition.count * 4);
+    const skinWeight = new Float32Array(tubePosition.count * 4);
+    const centre = new Vector3();
+    const vertex = new Vector3();
+    for (let v = 0; v < tubePosition.count; v++) {
+      const along = Math.floor(v / (TUBE_SIDES + 1)) / TUBE_SEGMENTS;
+      hairCurve.getPointAt(along, centre);
+      vertex.fromBufferAttribute(tubePosition, v).sub(centre);
+      vertex.multiplyScalar(0.022 - 0.014 * along).add(centre);
+      tubePosition.setXYZ(v, vertex.x, vertex.y, vertex.z);
+      // Bone k owns the span from its joint to the next; blend linearly between span centres.
+      const span = Math.max(0, along * hairBones.length - 0.5);
+      const first = Math.min(Math.floor(span), hairBones.length - 1);
+      const blend = first + 1 < hairBones.length ? span - first : 0;
+      skinIndex[v * 4] = first;
+      skinIndex[v * 4 + 1] = Math.min(first + 1, hairBones.length - 1);
+      skinWeight[v * 4] = 1 - blend;
+      skinWeight[v * 4 + 1] = blend;
+    }
+    tube.computeVertexNormals();
+    tube.setAttribute("skinIndex", new BufferAttribute(skinIndex, 4));
+    tube.setAttribute("skinWeight", new BufferAttribute(skinWeight, 4));
+    const ponytailTube = new SkinnedMesh(
+      tube,
+      new MeshStandardNodeMaterial({ color: 0x3a2416, roughness: 0.72 }),
+    );
+    ponytailTube.frustumCulled = false;
+    character.add(ponytailTube);
+    character.updateMatrixWorld(true);
+    ponytailTube.bind(new Skeleton(hairBones), new Matrix4());
+
+    const hairWorld: Vector3[] = hairBones.map(() => new Vector3());
+    const readHairWorld = (): void => {
+      for (let index = 0; index < hairBones.length; index++)
+        (hairWorld[index] as Vector3).setFromMatrixPosition((hairBones[index] as Bone).matrixWorld);
+    };
+    readHairWorld();
+    const hairRestLengths = hairWorld
+      .slice(1)
+      .map((point, index) => point.distanceTo(hairWorld[index] as Vector3));
+
+    const spineWorld = spine.getWorldPosition(new Vector3());
+    const capeWidth = 0.5;
+    const capeLength = 0.62 * height;
+    const geometry = new PlaneGeometry(capeWidth, capeLength, 10, 18);
+    geometry.translate(0, -capeLength / 2, 0);
+    const pinned: number[] = [];
+    const position = geometry.getAttribute("position");
+    for (let vertex = 0; vertex < position.count; vertex++)
+      if (Math.abs(position.getY(vertex)) < 1e-6) pinned.push(vertex);
+
+    // Bind offset of the cape frame in the spine bone frame, with the bone's scale removed.
+    const boneQ = new Quaternion();
+    const boneP = new Vector3();
+    const boneS = new Vector3();
+    spine.matrixWorld.decompose(boneP, boneQ, boneS);
+    const capeWorld = spineWorld
+      .clone()
+      .addScaledVector(facing, -0.09 * height)
+      .setY(spineWorld.y + 0.08 * height);
+    const offsetP = capeWorld.clone().sub(boneP).applyQuaternion(boneQ.clone().invert());
+    const offsetQ = boneQ.clone().invert();
+
+    const material = new MeshStandardNodeMaterial({
+      color: 0xb3262e,
+      roughness: 0.8,
+      side: DoubleSide,
+    });
+    const options = {
+      pinned,
+      stiffness: 4000,
+      damping: 2,
+      gravity: [0, -GRAVITY, 0] as [number, number, number],
+      wind: [0, 0, 0] as [number, number, number],
+      readbackEveryFrames: probeReadbackEveryFrames(),
+      readbackInFlight: 256,
+    };
+    // PlaneGeometry has no duplicate positions, so SoftBody3D's welded order is the vertex order.
+    const restLengths: number[] = [];
+    const springPairs: number[] = [];
+    {
+      const index = geometry.getIndex();
+      if (index === null) throw new Error("CHARACTER_DYNAMICS_CAPE_NOT_INDEXED");
+      const seen = new Set<string>();
+      for (let t = 0; t < index.count; t += 3)
+        for (const [p, q] of [
+          [0, 1],
+          [1, 2],
+          [2, 0],
+        ] as const) {
+          const i = index.getX(t + p);
+          const j = index.getX(t + q);
+          const key = i < j ? `${i}:${j}` : `${j}:${i}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          springPairs.push(i, j);
+          restLengths.push(
+            Math.hypot(
+              position.getX(i) - position.getX(j),
+              position.getY(i) - position.getY(j),
+              position.getZ(i) - position.getZ(j),
+            ),
+          );
+        }
+    }
+    const topology = {
+      positions: geometry.getAttribute("position").array as Float32Array,
+      springs: springPairs,
+      restLengths,
+    };
+    // `?arm=cloth`: the cape is a SkinnedMesh on the mannequin's skeleton, rigidly weighted to
+    // spine_03, with red vertex colour 1 on the top row (follows the skin) and 0 below (simulates).
+    // SoftBody3D measures body capsules from the mannequin's skin and simulates in world space.
+    const capeMatrix = new Matrix4();
+    const placeCape = (): void => {
+      spine.updateWorldMatrix(true, false);
+      spine.matrixWorld.decompose(boneP, boneQ, boneS);
+      capeMatrix.compose(
+        offsetP.clone().applyQuaternion(boneQ).add(boneP),
+        boneQ.clone().multiply(offsetQ),
+        new Vector3(1, 1, 1),
+      );
+    };
+    placeCape();
+    let cloth: SoftBody3D;
+    // ?wind=<m/s>: a WindField3D blowing from the front, read by the skinned cape every step.
+    const windSpeed = Number(
+      new URLSearchParams(globalThis.location?.search ?? "").get("wind") ?? 0,
+    );
+    if (windSpeed > 0)
+      ctx.add(
+        new WindField3D(
+          facing.clone().multiplyScalar(-windSpeed).toArray() as [number, number, number],
+        ),
+      );
+    let probeCapsules: ISoftBodyCapsule[] = [];
+    let skinnedCape: SkinnedMesh | undefined;
+    // The skinned cape exists in every arm: the cloth arm simulates it, and every arm's probe measures
+    // penetration against the body capsules the solver would measure from it.
+    {
+      const body = player.root.getObjectByProperty("isSkinnedMesh", true) as
+        | SkinnedMesh
+        | undefined;
+      if (body === undefined) throw new Error("CHARACTER_DYNAMICS_NO_SKINNED_BODY");
+      const spineIndex = body.skeleton.bones.indexOf(spine);
+      // Skinning reads bind-pose positions: take the world cape back through spine_03's current
+      // skinning matrix (boneWorld · boneInverse), then into the cape mesh's own frame.
+      character.updateMatrixWorld(true);
+      body.skeleton.update();
+      const spineSkin = new Matrix4().fromArray(body.skeleton.boneMatrices ?? [], spineIndex * 16);
+      const capeGeometry = geometry
+        .clone()
+        .applyMatrix4(capeMatrix)
+        .applyMatrix4(spineSkin.invert())
+        .applyMatrix4(character.matrixWorld.clone().invert());
+      const count = capeGeometry.getAttribute("position").count;
+      const skinIndex = new Uint16Array(count * 4);
+      const skinWeight = new Float32Array(count * 4);
+      const colour = new Float32Array(count * 3);
+      const pinnedSet = new Set(pinned);
+      for (let v = 0; v < count; v++) {
+        skinIndex[v * 4] = spineIndex;
+        skinWeight[v * 4] = 1;
+        colour[v * 3] = pinnedSet.has(v) ? 1 : 0;
+      }
+      capeGeometry.setAttribute("skinIndex", new BufferAttribute(skinIndex, 4));
+      capeGeometry.setAttribute("skinWeight", new BufferAttribute(skinWeight, 4));
+      capeGeometry.setAttribute("color", new BufferAttribute(colour, 3));
+      const capeSkin = new SkinnedMesh(capeGeometry, material);
+      character.add(capeSkin);
+      capeSkin.updateMatrixWorld(true);
+      capeSkin.bind(body.skeleton, capeSkin.matrixWorld);
+      const restWorld = geometry.clone().applyMatrix4(capeMatrix).getAttribute("position")
+        .array as Float32Array;
+      probeCapsules = measureBodyCapsules(capeSkin, 16, restWorld, COLLIDER_THICKNESS);
+      skinnedCape = capeSkin;
+    }
+    // The hair collides with capsules measured from the skin, by the same physics-asset rule as the
+    // cape's body capsules. The probe reads the same shapes.
+    const allCapsules = measureBodyCapsules(skinnedCape as SkinnedMesh);
+    console.info(
+      `TN_CHARACTER_DYNAMICS_BODY_CAPSULES:${JSON.stringify(allCapsules.map((c) => `${c.bone.name}:${c.radius.toFixed(3)}`))}`,
+    );
+    // The hair falls onto the head, neck, upper back and shoulders.
+    const hairBoneNames = new Set([
+      "Head",
+      "neck_01",
+      "spine_03",
+      "spine_02",
+      "upperarm_l",
+      "upperarm_r",
+    ]);
+    const hairCapsules = allCapsules.filter((capsule) => hairBoneNames.has(capsule.bone.name));
+    if (hairCapsules.length === 0) throw new Error("CHARACTER_DYNAMICS_NO_HEAD_CAPSULE");
+    const hairColliders: ISpringBoneCapsule[] = hairCapsules.map((capsule) => ({
+      a: new Vector3(),
+      b: new Vector3(),
+      radius: capsule.radius,
+    }));
+    const updateHairColliders = (): void => {
+      hairCapsules.forEach((capsule, index) => {
+        const collider = hairColliders[index] as ISpringBoneCapsule;
+        capsule.bone.updateWorldMatrix(true, false);
+        collider.a.copy(capsule.start ?? new Vector3()).applyMatrix4(capsule.bone.matrixWorld);
+        collider.b.copy(capsule.end).applyMatrix4(capsule.bone.matrixWorld);
+      });
+    };
+    updateHairColliders();
+    console.info(
+      `TN_CHARACTER_DYNAMICS_HAIR_COLLIDERS:${JSON.stringify(hairCapsules.map((c) => `${c.bone.name}:${c.radius.toFixed(3)}`))}`,
+    );
+    const ponytail =
+      armName === "hair"
+        ? new SpringBoneChain3D(hairBones[0] as Bone, {
+            // `?hairColliders=0` matches the Unreal chain arms, which have no body collider.
+            colliders:
+              new URLSearchParams(globalThis.location?.search ?? "").get("hairColliders") === "0"
+                ? []
+                : hairColliders,
+          })
+        : undefined;
+    // `?arm=strands`: 64 guides of 16 points on the GPU, each the ponytail curve resampled and spread
+    // across the back of the head; the rigid ponytail hides. Lines read the solver's buffer directly.
+    const STRAND_POINTS = 16;
+    const STRAND_COUNT = strandCountFromUrl();
+    const strandTuning = (): Record<string, number> => {
+      const query = new URLSearchParams(globalThis.location?.search ?? "");
+      const tuning: Record<string, number> = {};
+      for (const key of [
+        "airDrag",
+        "iterations",
+        "substeps",
+        "globalStiffness",
+        "localStiffness",
+      ]) {
+        const value = query.get(key);
+        if (value !== null) tuning[key] = Number(value);
+      }
+      return tuning;
+    };
+    let strands: HairStrands3D | undefined;
+    // The head's world frame for the cards' across vectors, refreshed every step.
+    const headFrame = uniform(head.matrixWorld.clone());
+    if (armName === "strands") {
+      ponytailTube.visible = false; // engine-override: the strands arm draws GPU hair cards in place of the tube
+      const curve = hairWorld.map((point) => point.clone());
+      const total = curve
+        .slice(1)
+        .reduce((sum, point, index) => sum + point.distanceTo(curve[index] as Vector3), 0);
+      const across = new Vector3().crossVectors(up, back).normalize();
+      const guides = new Float32Array(STRAND_COUNT * STRAND_POINTS * 3);
+      const point = new Vector3();
+      for (let g = 0; g < STRAND_COUNT; g++) {
+        const shift = across.clone().multiplyScalar(((g + 0.5) / STRAND_COUNT - 0.5) * 0.1);
+        for (let p = 0; p < STRAND_POINTS; p++) {
+          // Walk the polyline to arc length p / (n - 1) of the whole.
+          let left = (total * p) / (STRAND_POINTS - 1);
+          let k = 0;
+          for (; k < curve.length - 2; k++) {
+            const length = (curve[k + 1] as Vector3).distanceTo(curve[k] as Vector3);
+            if (left <= length) break;
+            left -= length;
+          }
+          const a = curve[k] as Vector3;
+          const b = curve[k + 1] as Vector3;
+          point.lerpVectors(a, b, Math.min(1, left / a.distanceTo(b))).add(shift);
+          point.toArray(guides, (g * STRAND_POINTS + p) * 3);
+        }
+      }
+      strands = ctx.add(
+        new HairStrands3D(guides, {
+          pointsPerStrand: STRAND_POINTS,
+          bone: head,
+          colliders: hairCapsules,
+          readbackEveryFrames: probeReadbackEveryFrames(),
+          readbackInFlight: 256,
+          // Named overrides from the URL, for tuning runs: ?airDrag=0&iterations=8
+          ...strandTuning(),
+        }),
+      );
+      // Three ribbon cards per guide, a groom's layers: two vertices per guide point, spread across the
+      // head's left-right axis and tapering to the tip. Each layer sits 4 mm further out from the head and
+      // reads the atlas at its own U offset, so the coverage of one layer fills the gaps of the next. The
+      // position node reads the solver's buffer, so nothing reads back.
+      const LAYERS = 3;
+      // Four card rows per solver segment, on a Catmull-Rom curve through the solver points: the
+      // anisotropy frame comes from screen derivatives, constant per triangle, so a straight-segment card
+      // shades in facets.
+      const SUBDIVISIONS = 4;
+      const ROWS = (STRAND_POINTS - 1) * SUBDIVISIONS + 1;
+      const vertices = LAYERS * STRAND_COUNT * ROWS * 2;
+      const cardStrand = new Float32Array(vertices);
+      const cardRow = new Float32Array(vertices);
+      const cardLayer = new Float32Array(vertices);
+      const cardAcross = new Float32Array(vertices * 3);
+      const cardUv = new Float32Array(vertices * 2);
+      const acrossHead = across.clone().transformDirection(head.matrixWorld.clone().invert());
+      const triangles: number[] = [];
+      for (let layer = 0; layer < LAYERS; layer++)
+        for (let g = 0; g < STRAND_COUNT; g++)
+          for (let r = 0; r < ROWS; r++) {
+            const v = ((layer * STRAND_COUNT + g) * ROWS + r) * 2;
+            const along = r / (ROWS - 1);
+            const half = 0.012 * (1 - 0.5 * along);
+            for (const side of [0, 1]) {
+              cardStrand[v + side] = g * STRAND_POINTS;
+              cardRow[v + side] = r / SUBDIVISIONS;
+              cardLayer[v + side] = layer;
+              cardUv.set([side + layer * 0.37, along], (v + side) * 2);
+              acrossHead
+                .clone()
+                .multiplyScalar(side === 0 ? -half : half)
+                .toArray(cardAcross, (v + side) * 3);
+            }
+            if (r + 1 < ROWS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+          }
+      const cardGeometry = new BufferGeometry();
+      cardGeometry.setAttribute("position", new BufferAttribute(new Float32Array(vertices * 3), 3));
+      cardGeometry.setAttribute("strand", new BufferAttribute(cardStrand, 1));
+      cardGeometry.setAttribute("row", new BufferAttribute(cardRow, 1));
+      cardGeometry.setAttribute("layer", new BufferAttribute(cardLayer, 1));
+      cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
+      cardGeometry.setAttribute("uv", new BufferAttribute(cardUv, 2));
+      cardGeometry.setIndex(triangles);
+      // PRD-909's card material from the starter template's generated `src/render/effects/hair.ts`, with a
+      // generated strand atlas; each pass reads the solver buffer in its position node.
+      const headCentre = headFrame.mul(vec4(0, 0, 0, 1)).xyz;
+      // Catmull-Rom through the four solver points around the row, clamped to the strand's ends.
+      const row = attribute("row", "float");
+      const segment = row.min(STRAND_POINTS - 2).floor();
+      const t = row.sub(segment);
+      const solverPositions = strands.positions;
+      const solverPoint = (offset: number) =>
+        solverPositions.element(
+          attribute("strand", "float")
+            .add(clamp(segment.add(offset), 0, STRAND_POINTS - 1))
+            .toUint(),
+        );
+      const p0 = solverPoint(-1);
+      const p1 = solverPoint(0);
+      const p2 = solverPoint(1);
+      const p3 = solverPoint(2);
+      const spline = p1
+        .mul(2)
+        .add(p2.sub(p0).mul(t))
+        .add(p0.mul(2).sub(p1.mul(5)).add(p2.mul(4)).sub(p3).mul(t.mul(t)))
+        .add(p3.sub(p0).add(p1.sub(p2).mul(3)).mul(t.mul(t).mul(t)))
+        .mul(0.5);
+      const cardBase = spline
+        // The head frame carries the rig's import scale: take its direction, keep the authored width.
+        .add(
+          normalize(headFrame.mul(vec4(attribute("across", "vec3"), 0)).xyz).mul(
+            length(attribute("across", "vec3")),
+          ),
+        );
+      const cardPosition = cardBase.add(
+        normalize(cardBase.sub(headCentre)).mul(attribute("layer", "float").mul(0.004)),
+      );
+      // Hair-card normals point out from the head, the usual card trick: the cards carry no normal
+      // attribute, and three's (0, 1, 0) fallback faces down on the back faces the camera sees.
+      const cardNormal = normalize(
+        cameraViewMatrix.mul(vec4(varying(normalize(cardPosition.sub(headCentre))), 0)).xyz,
+      );
+      const atlas = strandAtlas();
+      // `?hairMat=plain` is PRD-909 AC-1's control: a stock material cut by the same coverage.
+      const plain =
+        new URLSearchParams(globalThis.location?.search ?? "").get("hairMat") === "plain";
+      const passes = plain
+        ? {
+            inner: null,
+            blend: null,
+            outer: new MeshStandardNodeMaterial({
+              color: 0x3a2a1e,
+              roughness: 0.5,
+              side: DoubleSide,
+              alphaTest: 0.5,
+            }),
+          }
+        : createHairCardMaterial({
+            atlas,
+            tangent: strandTangents(),
+            // The tangent map already points along the strand (+V); upstream's -1.09 suits its own atlases.
+            anisotropyRotation: 0,
+            alphaToCoverage: true,
+          });
+      if (plain) passes.outer.opacityNode = texture(atlas).r;
+      [passes.inner, passes.outer, passes.blend].forEach((material, order) => {
+        if (material === null) return;
+        material.positionNode = cardPosition;
+        material.normalNode = cardNormal;
+        const cards = new Mesh(cardGeometry, material);
+        cards.frustumCulled = false;
+        cards.renderOrder = order;
+        ctx.add(cards);
+      });
+    }
+    if (armName === "cloth") {
+      const capeSkin = skinnedCape as SkinnedMesh;
+      // Named overrides from the URL, for tuning runs: ?substeps=10&colliders=0
+      const query = new URLSearchParams(globalThis.location?.search ?? "");
+      const tuning: Record<string, number> = {};
+      for (const key of [
+        "substeps",
+        "drag",
+        "iterations",
+        "lift",
+        "tetherSlack",
+        "damping",
+        "velocityScale",
+        "angularVelocityScale",
+        "bendStiffness",
+        "friction",
+      ]) {
+        const value = query.get(key);
+        if (value !== null) tuning[key] = Number(value);
+      }
+      cloth = ctx.add(
+        new SoftBody3D(capeSkin, {
+          cloth: "color.r",
+          readbackEveryFrames: probeReadbackEveryFrames(),
+          readbackInFlight: 256,
+          ...tuning,
+          ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),
+          // `?singleDispatch=0` runs the multi-dispatch Jacobi path, for a paired before/after.
+          ...(query.get("singleDispatch") === "0" ? { singleDispatch: false } : {}),
+        }),
+      );
+      console.info(`TN_CHARACTER_DYNAMICS_CLOTH:${JSON.stringify(cloth.debug())}`);
+    } else {
+      (skinnedCape as SkinnedMesh).visible = false; // engine-override: the softbody arm draws its own unskinned cape instead
+      cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
+      cloth.matrixAutoUpdate = false;
+    }
+    // `?cape=0` hides the cape in any arm, so the hair arms and their rigid control read the same back.
+    if (new URLSearchParams(globalThis.location?.search ?? "").get("cape") === "0")
+      cloth.visible = false; // engine-override: `?cape=0` removes the cape from the frame, it is not a warm-up
+    const unique = topology.positions.length / 3;
+    let minY = Number.POSITIVE_INFINITY;
+    for (let v = 0; v < unique; v++) minY = Math.min(minY, topology.positions[v * 3 + 1] as number);
+    const hem: number[] = [];
+    const top: number[] = [];
+    for (let v = 0; v < unique; v++) {
+      const y = topology.positions[v * 3 + 1] as number;
+      if (Math.abs(y - minY) < 1e-5) hem.push(v);
+      if (Math.abs(y) < 1e-5) top.push(v);
+    }
+    const free = Array.from({ length: unique }, (_, v) => v).filter((v) => !top.includes(v));
+
+    const followQ = new Quaternion();
+    const followP = new Vector3();
+    const gravityLocal = new Vector3();
+    const followBone = (): void => {
+      if (armName === "cloth") return;
+      spine.updateWorldMatrix(true, false);
+      spine.matrixWorld.decompose(boneP, boneQ, boneS);
+      followQ.copy(boneQ).multiply(offsetQ);
+      followP.copy(offsetP).applyQuaternion(boneQ).add(boneP);
+      cloth.matrix.compose(followP, followQ, new Vector3(1, 1, 1));
+      cloth.matrixWorld.copy(cloth.matrix);
+      gravityLocal.set(0, -GRAVITY, 0).applyQuaternion(followQ.clone().invert());
+      cloth.gravity.copy(gravityLocal);
+    };
+    followBone();
+
+    // Follow camera: rear three-quarter view so a trailing cape reads against the body. `?view=close`
+    // frames the back of the head for the hair-card judge (PRD-909 AC-1).
+    const view = new URLSearchParams(globalThis.location?.search ?? "").get("view");
+    const close = view === "close";
+    // `?view=ponytail` frames the head from behind, to the side and above, so the ponytail reads in
+    // profile against the floor
+    // (PRD-912 AC-5).
+    const ponytailView = view === "ponytail";
+    // The close view lights the hair as a look-dev rig does: the key comes from behind the character
+    // and to the camera's side, so the strands the camera sees are lit (the default key is in front).
+    if (close)
+      key.position.copy(new Vector3(2, 6, -4).applyAxisAngle(new Vector3(0, 1, 0), bindYaw));
+    const cameraOffset = (
+      close
+        ? new Vector3(0.45, 1.75, -0.75)
+        : ponytailView
+          ? new Vector3(1.1, 1.85, -0.8)
+          : new Vector3(2.4, 1.5, -3.4)
+    )
+      .multiplyScalar(height / 1.8)
+      .applyAxisAngle(new Vector3(0, 1, 0), bindYaw);
+    const look = new Vector3();
+    const placeCamera = (): void => {
+      const eye = cameraOffset
+        .clone()
+        .applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y)
+        .add(character.position);
+      ctx.camera.position.copy(eye);
+      look
+        .copy(character.position)
+        .setY(character.position.y + (close ? 0.88 : ponytailView ? 0.93 : 0.55) * height);
+      ctx.camera.lookAt(look);
+    };
+    placeCamera();
+
+    const phases: Record<string, IPhaseMetrics> = {};
+    let phaseIndex = 0;
+    let phaseTick = 0;
+    let vy = 0;
+    let finite = true;
+    let restHem: Vector3 | undefined;
+    let restTop: Vector3 | undefined;
+    let hairRestRoot: Vector3 | undefined;
+    let complete = false;
+    let tick = 0;
+    let scriptEndStep = Number.POSITIVE_INFINITY;
+    let lastMeasuredStep = -1;
+    let lastMeasuredHairStep = -1;
+    let drainTicks = 0;
+    const forward = new Vector3();
+    let speed = 0;
+    const world = new Vector3();
+
+    const enterPhase = (phase: IPhase): void => {
+      phases[phase.name] = {
+        hemOffset: 0,
+        hemTrail: 0,
+        maxStretch: 0,
+        bodyPenetration: 0,
+        hairTipOffset: 0,
+        hairStretch: 0,
+        hairInsideHead: 0,
+        samples: 0,
+        hairSamples: 0,
+        hairSkipped: 0,
+      };
+      if (phase.jumpSpeed !== undefined) {
+        vy = phase.jumpSpeed;
+        player.play("Jump_Start", { fade: 0.1, mode: "once" });
+      } else player.play(phase.clip, { fade: 0.2 });
+      if (phase.snapYaw !== undefined) character.rotation.y += phase.snapYaw;
+      if (phase.teleport !== undefined) character.position.x += phase.teleport;
+    };
+    enterPhase(SCRIPT[0] as IPhase);
+
+    // A readback sample is `staleFrames` steps old: measure it against the body pose of the step that
+    // produced it, or a running character reads as metres of hem offset that the cloth never had.
+    interface IPose {
+      readonly toBody: Matrix4;
+      readonly clothWorld: Matrix4;
+      readonly capsules: IProbeCapsule[];
+      readonly hairCapsules: IProbeCapsule[];
+      readonly toHead: Matrix4;
+      /** The phase whose step produced the sample: a stale sample counts toward that phase. */
+      readonly phase: string;
+    }
+    const poses = new Map<number, IPose>();
+    const capsulesNow = (capsules: readonly ISoftBodyCapsule[]): IProbeCapsule[] =>
+      capsules.map((capsule) => {
+        capsule.bone.updateWorldMatrix(true, false);
+        return {
+          a: (capsule.start ?? new Vector3()).clone().applyMatrix4(capsule.bone.matrixWorld),
+          b: capsule.end.clone().applyMatrix4(capsule.bone.matrixWorld),
+          radius: capsule.radius,
+        };
+      });
+    const bonePose = (): Pick<IPose, "capsules" | "hairCapsules" | "toHead"> => {
+      head.updateWorldMatrix(true, false);
+      return {
+        capsules: capsulesNow(probeCapsules),
+        hairCapsules: capsulesNow(hairCapsules),
+        toHead: head.matrixWorld.clone().invert(),
+      };
+    };
+    let steps = 0;
+    const recordPose = (phase: string): void => {
+      steps++;
+      poses.set(steps, {
+        phase,
+        toBody: capeMatrix.clone().invert(),
+        clothWorld: cloth.matrixWorld.clone(),
+        ...bonePose(),
+      });
+      poses.delete(steps - 120);
+    };
+    // Every landed readback is measured, not only the newest: under the stepped playtest clock a
+    // copy takes tens of steps to land, and a per-phase max over the newest sample alone missed most
+    // steps (and the 45-step teleport phase entirely).
+    const seriesRows: (string | number)[][] | undefined =
+      new URLSearchParams(globalThis.location?.search ?? "").get("series") === "1" ? [] : undefined;
+    const measure = (): void => {
+      for (const sample of cloth.takeSamples()) measureSample(sample);
+    };
+    const measureSample = (sample: { data: Float32Array; staleFrames: number }): void => {
+      // This step's process has not run yet: the sample is from step (steps - 1 - staleFrames).
+      const sampleStep = steps - 1 - sample.staleFrames;
+      lastMeasuredStep = Math.max(lastMeasuredStep, sampleStep);
+      const pose = poses.get(sampleStep);
+      if (pose === undefined) return;
+      const phaseName = pose.phase;
+      const metrics = phases[phaseName];
+      if (metrics === undefined) return;
+      const data = sample.data;
+      for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
+      // The cloth arm samples world positions; the probe measures the hem in the body frame.
+      const toBody = armName === "cloth" ? pose.toBody : undefined;
+      const hemC = centroid(data, hem);
+      const topC = centroid(data, top);
+      const hemWorld = hemC.clone().applyMatrix4(pose.clothWorld);
+      const topWorld = topC.clone().applyMatrix4(pose.clothWorld);
+      if (toBody !== undefined) {
+        // The pinned top row rides spine_03, so in the body frame it sits still. A sample whose top
+        // row is elsewhere is not from this pose: the teleport's CPU reset write can reach the buffer
+        // before a deferred copy lands, which read as 8 m of hem offset. Skip it; coverage counts it.
+        const topBody = topC.clone().applyMatrix4(toBody);
+        if (phaseName === "settle" && restTop === undefined) restTop = topBody.clone();
+        if (restTop !== undefined && topBody.distanceTo(restTop) > POSE_MISMATCH) return;
+        hemC.applyMatrix4(toBody);
+      }
+      if (phaseName === "settle") restHem = hemC.clone();
+      if (restHem !== undefined)
+        metrics.hemOffset = Math.max(metrics.hemOffset, hemC.distanceTo(restHem));
+      const trailNow = trailAngleDegrees(topWorld, hemWorld);
+      const stretchNow = maxEdgeStretch(data, topology.springs, topology.restLengths);
+      // `?series=1`: one row per measured step, [step, phase, trail, hem offset, stretch], for a per-frame A/B.
+      if (seriesRows !== undefined)
+        seriesRows.push([
+          sampleStep - 1,
+          phaseName,
+          Number(trailNow.toFixed(2)),
+          Number((restHem === undefined ? 0 : hemC.distanceTo(restHem)).toFixed(4)),
+          Number(stretchNow.toFixed(4)),
+        ]);
+      metrics.hemTrail = Math.max(metrics.hemTrail, trailNow);
+      metrics.maxStretch = Math.max(metrics.maxStretch, stretchNow);
+      // AC-2: free vertices (the pinned top row follows the skin) deeper than the collider thickness
+      // inside the body capsules the solver measures, at the pose that produced this sample.
+      const worldPositions = new Float32Array(free.length * 3);
+      free.forEach((v, k) =>
+        world
+          .fromArray(data, v * 3)
+          .applyMatrix4(pose.clothWorld)
+          .toArray(worldPositions, k * 3),
+      );
+      metrics.bodyPenetration = Math.max(
+        metrics.bodyPenetration,
+        countInsideCapsules(worldPositions, pose.capsules, COLLIDER_THICKNESS),
+      );
+      metrics.samples++;
+    };
+
+    // Hair is measured every tick, unlike the readback cloth: the tip offset uses the Head bone
+    // frame, so the head's own motion cancels and only the chain's lag shows.
+    const hairPositions = new Float32Array(hairBones.length * 3);
+    const headPosition = new Vector3();
+    const headOrientation = new Quaternion();
+    let hairRestTip: Vector3 | undefined;
+    const measureStrands = (hair: HairStrands3D): void => {
+      for (const sample of hair.takeSamples()) measureStrandSample(hair, sample);
+    };
+    const measureStrandSample = (
+      hair: HairStrands3D,
+      sample: { data: Float32Array; staleFrames: number },
+    ): void => {
+      const pose = poses.get(steps - 1 - sample.staleFrames);
+      lastMeasuredHairStep = Math.max(lastMeasuredHairStep, steps - 1 - sample.staleFrames);
+      if (pose === undefined) return;
+      const phaseName = pose.phase;
+      const metrics = phases[phaseName];
+      if (metrics === undefined) return;
+      const data = sample.data;
+      for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
+      const n = hair.pointsPerStrand;
+      // A root rides the head, so in the head frame it sits still. A sample whose root is elsewhere
+      // is not from this pose (as for the cape's pinned row): skip it; coverage counts it.
+      const rootLocal = new Vector3()
+        .fromArray(data, (STRAND_COUNT / 2) * n * 3)
+        .applyMatrix4(pose.toHead);
+      if (phaseName === "settle" && hairRestRoot === undefined) hairRestRoot = rootLocal.clone();
+      if (hairRestRoot !== undefined && rootLocal.distanceTo(hairRestRoot) > POSE_MISMATCH) {
+        metrics.hairSkipped = Math.max(metrics.hairSkipped, rootLocal.distanceTo(hairRestRoot));
+        return;
+      }
+      metrics.hairSamples++;
+      const tipLocal = new Vector3()
+        .fromArray(data, ((STRAND_COUNT / 2) * n + n - 1) * 3)
+        .applyMatrix4(pose.toHead);
+      if (phaseName === "settle") hairRestTip = tipLocal.clone();
+      if (hairRestTip !== undefined)
+        metrics.hairTipOffset = Math.max(metrics.hairTipOffset, tipLocal.distanceTo(hairRestTip));
+      let inside = 0;
+      for (let g = 0; g < hair.strandCount; g++) {
+        const strand = data.subarray(g * n * 3, (g + 1) * n * 3);
+        metrics.hairStretch = Math.max(
+          metrics.hairStretch,
+          maxSegmentStretch(strand, hair.restLengths.subarray(g * n, g * n + n - 1)),
+        );
+        // The root rides the head and is not simulated.
+        inside += countInsideCapsules(strand.subarray(3), pose.hairCapsules, 0.005);
+      }
+      metrics.hairInsideHead = Math.max(metrics.hairInsideHead, inside);
+    };
+    const measureHair = (metrics: IPhaseMetrics, phaseName: string): void => {
+      if (strands !== undefined) {
+        measureStrands(strands);
+        return;
+      }
+      readHairWorld();
+      head.getWorldPosition(headPosition);
+      head.getWorldQuaternion(headOrientation);
+      for (let index = 0; index < hairWorld.length; index++)
+        (hairWorld[index] as Vector3).toArray(hairPositions, index * 3);
+      const tipLocal = toFrame(
+        hairWorld[hairWorld.length - 1] as Vector3,
+        headPosition,
+        headOrientation,
+      );
+      if (phaseName === "settle") hairRestTip = tipLocal.clone();
+      if (hairRestTip !== undefined)
+        metrics.hairTipOffset = Math.max(metrics.hairTipOffset, tipLocal.distanceTo(hairRestTip));
+      metrics.hairStretch = Math.max(
+        metrics.hairStretch,
+        maxSegmentStretch(hairPositions, hairRestLengths),
+      );
+      metrics.hairInsideHead = Math.max(
+        metrics.hairInsideHead,
+        // The root bone rides the head and is not simulated: count only the chain below it.
+        countInsideCapsules(hairPositions.subarray(3), hairColliders, 0.005),
+      );
+      metrics.hairSamples++;
+    };
+
+    return (frameCtx: ICtx<IState>) => {
+      if (complete) return;
+      // The solvers read the bones when they process, after this tick; record that pose for the
+      // probes here, before this tick moves anything.
+      const solved = poses.get(steps);
+      if (solved !== undefined) poses.set(steps, { ...solved, ...bonePose() });
+      const phase = SCRIPT[phaseIndex] ?? DRAIN;
+      // Character root motion: the clips play in place, the script moves the body.
+      character.rotation.y += (phase.yawRate ?? 0) * STEP;
+      forward.copy(facing).applyAxisAngle(new Vector3(0, 1, 0), character.rotation.y);
+      // A runner reaches a new speed at about 8 m/s² and stops at about 12 m/s²; an instant velocity step
+      // is an impulse no body makes, and it swings any cape past horizontal.
+      const accel = phase.speed > speed ? ACCELERATION : BRAKING;
+      speed +=
+        Math.sign(phase.speed - speed) * Math.min(Math.abs(phase.speed - speed), accel * STEP);
+      character.position.addScaledVector(forward, speed * STEP);
+      if (phase.jumpSpeed !== undefined) {
+        if (phaseTick === 6) player.play("Jump_Loop", { fade: 0.1 });
+        if (phaseTick >= 6 && (vy > 0 || character.position.y > 0)) {
+          character.position.y = Math.max(0, character.position.y + vy * STEP);
+          vy -= GRAVITY * STEP;
+          if (character.position.y === 0 && vy < 0) {
+            vy = 0;
+            player.play("Jump_Land", { fade: 0.05, mode: "once" });
+          }
+        }
+      }
+      player.update(STEP);
+      character.updateMatrixWorld(true);
+      updateHairColliders();
+      headFrame.value.copy(head.matrixWorld);
+      ponytail?.step(STEP);
+      followBone();
+      placeCape();
+      placeCamera();
+      recordPose(phase.name);
+      measure();
+      const scriptMetrics = phases[phase.name];
+      if (scriptMetrics !== undefined) measureHair(scriptMetrics, phase.name);
+      // The drain still takes the strands' in-flight samples; each counts toward its own phase.
+      else if (strands !== undefined) measureStrands(strands);
+      if (phaseIndex >= SCRIPT.length) {
+        // Drain: the script is over, but its last steps' readbacks are still in flight. Keep idling
+        // until the last script step is measured, or fail closed past the cap with what landed.
+        drainTicks++;
+        const drained =
+          lastMeasuredStep >= scriptEndStep &&
+          (strands === undefined || lastMeasuredHairStep >= scriptEndStep);
+        if (drained || drainTicks >= MAX_DRAIN_TICKS) complete = true;
+      } else {
+        phaseTick++;
+        if (phaseTick >= phase.ticks) {
+          phaseIndex++;
+          phaseTick = 0;
+          if (phaseIndex >= SCRIPT.length) scriptEndStep = steps;
+          else enterPhase(SCRIPT[phaseIndex] as IPhase);
+        }
+      }
+      const state: IState = {
+        arm: armName,
+        phase: complete ? "done" : (SCRIPT[phaseIndex] ?? DRAIN).name,
+        tick: ++tick,
+        complete,
+        finite,
+        phases,
+      };
+      frameCtx.state.set(state);
+      if (complete) {
+        frameCtx.state.flush();
+        if (seriesRows !== undefined)
+          console.log(`TN_CHARACTER_DYNAMICS_SERIES:${JSON.stringify(seriesRows)}`);
+        console.log(
+          `TN_CHARACTER_DYNAMICS:${JSON.stringify({ arm: armName, finite, height, phases })}`,
+        );
+      }
+    };
+  }
+}
+
+export default defineGame<IState>({
+  camera: { projection: "perspective", fov: 50, near: 0.05, far: 120 },
+  plugins: [playtest()],
+  renderer: { preferWebGPU: true, projection: false },
+  scenes: { dynamics: CharacterDynamics },
+  start: "dynamics",
+  step: STEP,
+});

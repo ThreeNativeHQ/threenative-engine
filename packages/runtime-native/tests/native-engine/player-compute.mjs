@@ -10,7 +10,7 @@ assert(executable, "Usage: player-compute.mjs <tn-native-engine-player-v8>");
 
 const { verdict, output } = await runComputeGame(executable, `
 import { DoubleSide, Mesh, OrthographicCamera, PerspectiveCamera, PlaneGeometry, RenderTarget, Scene, HalfFloatType, RGBAFormat, UnsignedByteType } from "three";
-import { Fn, If, atomicAdd, atomicLoad, atomicStore, float, instanceIndex, instancedArray, uint, uniform, uvec2, vec2, texture, textureStore, storageTexture, vec3, vec4, vertexIndex } from "three/tsl";
+import { Fn, If, atomicAdd, atomicLoad, atomicStore, float, instanceIndex, instancedArray, int, textureBarrier, uint, uniform, uvec2, vec2, texture, textureStore, storageTexture, vec3, vec4, vertexIndex, workgroupArray, workgroupBarrier } from "three/tsl";
 import { MeshBasicNodeMaterial, QuadMesh, StorageTexture, WebGPURenderer } from "three/webgpu";
 
 const faults = [];
@@ -215,6 +215,36 @@ async function run() {
   const seen = Array.from(frame.slice(at, at + 4)), want = [encode(0.5), encode(0.25), 255, 255];
   if (!seen.every((value, i) => Math.abs(value - want[i]) <= 2)) faults.push("main frame got [" + seen + "] want about [" + want + "]");
 
+  // PRD-913: four workgroups each sum their own 64 values through workgroup memory and barriers; thread 0 of a group writes it.
+  const groupSums = instancedArray(4, "float");
+  renderer.compute(Fn(() => {
+    const local = int(float(instanceIndex).mod(64));
+    const partial = workgroupArray("float", 64);
+    partial.element(local).assign(float(instanceIndex).add(1));
+    workgroupBarrier();
+    for (let stride = 32; stride >= 1; stride /= 2) {
+      If(local.lessThan(stride), () => { partial.element(local).addAssign(partial.element(local.add(stride))); });
+      workgroupBarrier();
+    }
+    If(local.equal(0), () => { groupSums.element(int(float(instanceIndex).div(64).floor())).assign(partial.element(int(0))); });
+  })().compute(256));
+  same("workgroup sums", new Float32Array(await renderer.getArrayBufferAsync(groupSums.value)), [2080, 6176, 10272, 14368]);
+
+  // three's compute(count, [size]): the one-element array is the workgroup size, here 128, so two groups sum 1..128 and 129..256.
+  const wideSums = instancedArray(2, "float");
+  renderer.compute(Fn(() => {
+    const local = int(float(instanceIndex).mod(128));
+    const partial = workgroupArray("float", 128);
+    partial.element(local).assign(float(instanceIndex).add(1));
+    workgroupBarrier();
+    for (let stride = 64; stride >= 1; stride /= 2) {
+      If(local.lessThan(stride), () => { partial.element(local).addAssign(partial.element(local.add(stride))); });
+      workgroupBarrier();
+    }
+    If(local.equal(0), () => { wideSums.element(int(float(instanceIndex).div(128).floor())).assign(partial.element(int(0))); });
+  })().compute(256, [128]));
+  same("workgroup size by array", new Float32Array(await renderer.getArrayBufferAsync(wideSums.value)), [8256, 24640]);
+
   // What the engine cannot run refuses at the call, by name, and leaves the renderer running.
   const refused = (work) => { try { work(); return "ran"; } catch (error) { return String(error.message).split(":")[0]; } };
   same("refusals", [
@@ -223,6 +253,12 @@ async function run() {
     refused(() => Fn(() => {})().compute(0)),
     refused(() => renderer.compute(step, [4, 1, 1])),
   ].map((name) => name === "ran" ? 0 : 1), [1, 1, 1, 1]);
+  // A barrier needs whole workgroups, and textureBarrier has no engine mapping: both refuse by name.
+  const reason = (work) => { try { work(); return "ran"; } catch (error) { return String(error.message); } };
+  const sizeFault = reason(() => renderer.compute(Fn(() => { workgroupBarrier(); groupSums.element(instanceIndex).assign(1); })().compute(100)));
+  if (!sizeFault.includes("TN_COMPUTE_BARRIER_COUNT")) faults.push("barrier with a partial workgroup: " + sizeFault);
+  const textureFault = reason(() => Fn(() => { textureBarrier(); })());
+  if (!textureFault.includes("TN_TSL_BARRIER_UNSUPPORTED")) faults.push("textureBarrier: " + textureFault);
   await renderer.getArrayBufferAsync(filled.value, null, 2).then(() => faults.push("offset 2 resolved"), () => {});
   renderer.compute(step);
   same("after refusals", new Uint32Array(await renderer.getArrayBufferAsync(words.value)), [407, 408, 409]);

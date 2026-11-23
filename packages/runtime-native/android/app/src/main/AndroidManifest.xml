@@ -18,6 +18,8 @@
 
     <!-- Network permission for fetch() API -->
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- navigator.vibrate: SDL lists the system vibrator as a haptic device only with this. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
 
     <application
         android:allowBackup="true"

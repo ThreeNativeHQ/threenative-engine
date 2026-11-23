@@ -67,6 +67,29 @@ ExprId dGgx(Tsl& t, ExprId alpha, ExprId dotNH) {
     return p.mul(p.div(a2, t.pow2(denom)), t.f(1 / kPi));
 }
 
+// V_GGX_SmithCorrelated_Anisotropic( alphaT, alphaB, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL ), Filament's
+// anisotropic Smith visibility. three r187: src/nodes/functions/BSDF/V_GGX_SmithCorrelated_Anisotropic.js.
+ExprId vGgxSmithCorrelatedAnisotropic(Tsl& t, ExprId alphaT, ExprId alphaB, ExprId dotTV, ExprId dotBV,
+                                      ExprId dotTL, ExprId dotBL, ExprId dotNV, ExprId dotNL) {
+    Program& p = t.p;
+    const auto length3 = [&](ExprId a, ExprId b, ExprId c) {
+        return p.call("length", {p.construct(Type::vec(3), {a, b, c})});
+    };
+    const ExprId gv = p.mul(dotNL, length3(p.mul(alphaT, dotTV), p.mul(alphaB, dotBV), dotNV));
+    const ExprId gl = p.mul(dotNV, length3(p.mul(alphaT, dotTL), p.mul(alphaB, dotBL), dotNL));
+    return p.div(t.f(0.5f), p.call("max", {p.add(gv, gl), t.f(kEpsilon)}));
+}
+
+// D_GGX_Anisotropic( alphaT, alphaB, dotNH, dotTH, dotBH ), Filament's anisotropic GGX distribution.
+// three r187: src/nodes/functions/BSDF/D_GGX_Anisotropic.js.
+ExprId dGgxAnisotropic(Tsl& t, ExprId alphaT, ExprId alphaB, ExprId dotNH, ExprId dotTH, ExprId dotBH) {
+    Program& p = t.p;
+    const ExprId a2 = p.mul(alphaT, alphaB);
+    const ExprId v = p.construct(Type::vec(3), {p.mul(alphaB, dotTH), p.mul(alphaT, dotBH), p.mul(a2, dotNH)});
+    const ExprId w2 = p.div(a2, p.call("dot", {v, v}));
+    return p.mul(t.f(1 / kPi), p.mul(a2, t.pow2(w2)));
+}
+
 struct Surface {
     ExprId normal;   // normalView
     ExprId view;     // positionViewDirection
@@ -74,10 +97,16 @@ struct Surface {
     ExprId f0;       // specularColorBlended
     ExprId f90;
     uint32_t dfg;
+    // three's USE_ANISOTROPY (BRDF_GGX.js:29-46): the tangent alpha and the anisotropy frame, in view space.
+    // kInvalid alphaT keeps the isotropic GGX.
+    ExprId alphaT = kInvalid;
+    ExprId tangent = kInvalid;    // anisotropyT
+    ExprId bitangent = kInvalid;  // anisotropyB
 };
 
 // BRDF_GGX( lightDirection, f0, f90, roughness ). r187 BRDF_GGX.js:14 raises the roughness to 0.045
-// first: a punctual light needs a minimum roughness to show a highlight.
+// first: a punctual light needs a minimum roughness to show a highlight. With USE_ANISOTROPY the
+// visibility and the distribution read the anisotropy frame and alphaT clamped to the base alpha.
 ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
     Program& p = t.p;
     const ExprId alpha = t.pow2(p.call("max", {s.roughness, t.f(0.045f)}));  // UE4's roughness
@@ -87,6 +116,18 @@ ExprId brdfGgx(Tsl& t, const Surface& s, ExprId light) {
     const ExprId dotNH = t.saturate(t.dot(s.normal, half));
     const ExprId dotVH = t.saturate(t.dot(s.view, half));
     const ExprId F = fSchlick(t, s.f0, s.f90, dotVH);
+    if (s.alphaT != kInvalid) {
+        const ExprId dotTL = t.dot(s.tangent, light);
+        const ExprId dotTV = t.dot(s.tangent, s.view);
+        const ExprId dotTH = t.dot(s.tangent, half);
+        const ExprId dotBL = t.dot(s.bitangent, light);
+        const ExprId dotBV = t.dot(s.bitangent, s.view);
+        const ExprId dotBH = t.dot(s.bitangent, half);
+        const ExprId alphaT = p.call("max", {s.alphaT, alpha});
+        const ExprId V = vGgxSmithCorrelatedAnisotropic(t, alphaT, alpha, dotTV, dotBV, dotTL, dotBL, dotNV, dotNL);
+        const ExprId D = dGgxAnisotropic(t, alphaT, alpha, dotNH, dotTH, dotBH);
+        return p.mul(p.mul(F, V), D);
+    }
     return p.mul(p.mul(F, vGgxSmithCorrelated(t, alpha, dotNL, dotNV)), dGgx(t, alpha, dotNH));
 }
 
@@ -172,7 +213,6 @@ std::vector<std::string> unsupportedFeatures(const StandardMaterial& m) {
     check(m.sheen, "sheen");
     check(m.transmission, "transmission");
     check(m.iridescence, "iridescence");
-    check(m.anisotropy, "anisotropy");
     check(m.dispersion, "dispersion");
     return out;
 }
@@ -382,7 +422,8 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
         instanceColor = instanceColor == kInvalid ? vertexColor
             : v.mul(v.construct(Type::vec(4), {instanceColor, v.constant(1.0f)}), vertexColor);
     }
-    const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps) && !variant.background ? v.attribute("uv", Type::vec(2)) : kInvalid;
+    const ExprId uv = (variant.map || variant.normalMap || variant.pbrMaps || variant.anisotropy) && !variant.background
+                          ? v.attribute("uv", Type::vec(2)) : kInvalid;
     return {v.construct(Type::vec(4), {position, v.constant(1.0f)}), normal, instanceColor, uv};
 }
 
@@ -788,7 +829,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
     variant.nodes.forEachGraph(collect);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
-            (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps))) continue;
+            (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps || variant.anisotropy))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
@@ -1543,12 +1584,72 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         specularF90 = t.f(1);
     }
     const ExprId diffuseContribution = f.mul(diffuseColor, t.oneMinus(metalness));
+    // MeshPhysicalNodeMaterial.setupVariants with useAnisotropy (r187 :491-512): anisotropyV is
+    // materialAnisotropyVector — anisotropy * (cos rotation, sin rotation), a per-material uniform — or the
+    // anisotropyMap's two-channel direction rotated by it and scaled by the map's blue
+    // (MaterialNode.js:345-358). A zero vector keeps the (1, 0) axis; otherwise it is normalized and its
+    // length saturates. The tangent frame is Tangent.js/TangentUtils.js: the screen-space derivative frame
+    // around normalView, the one a normal map already uses on a geometry without tangents.
+    ExprId anisotropyAlphaT = kInvalid, anisotropyT = kInvalid, anisotropyB = kInvalid;
+    ExprId radianceNormal = n;
+    if (physical && variant.anisotropy) {
+        ExprId vector = f.uniform("anisotropyVector", Type::vec(2));
+        if (variant.reads(kAnisotropyMap)) {
+            const ExprId texel = pbrTexel(f, variant, kAnisotropyMap);
+            const ExprId direction = f.call("normalize", {f.sub(f.mul(f.swizzle(texel, "xy"), t.f(2)), t.f(1))});
+            const ExprId strength = f.mul(direction, f.swizzle(texel, "z"));
+            const ExprId x = f.swizzle(vector, "x"), y = f.swizzle(vector, "y");
+            vector = f.construct(Type::vec(2),
+                                 {f.sub(f.mul(x, f.swizzle(strength, "x")), f.mul(y, f.swizzle(strength, "y"))),
+                                  f.add(f.mul(y, f.swizzle(strength, "x")), f.mul(x, f.swizzle(strength, "y")))});
+        }
+        const ExprId magnitude = f.call("length", {vector});
+        const ExprId zero = f.equal(magnitude, t.f(0));
+        const ExprId divisor = f.select(zero, t.f(1), magnitude);
+        const ExprId axis = f.load(f.var(
+            Type::vec(2), f.select(zero, f.construct(Type::vec(2), {t.f(1), t.f(0)}),
+                                   f.div(vector, f.construct(Type::vec(2), {divisor, divisor})))));
+        const ExprId anisotropy =
+            f.load(f.var(Type::f32(), f.select(zero, t.f(0), f.call("min", {magnitude, t.f(1)}))));
+        const ExprId eye = f.varying("positionView", Type::vec(3));
+        const ExprId uv = f.varying("uv", Type::vec(2));
+        const ExprId q0 = f.call("dFdx", {eye}), q1 = f.call("dFdy", {eye});
+        const ExprId st0 = f.call("dFdx", {uv}), st1 = f.call("dFdy", {uv});
+        const ExprId q1perp = f.call("cross", {q1, n}), q0perp = f.call("cross", {n, q0});
+        const ExprId T = f.add(f.mul(q1perp, f.swizzle(st0, "x")), f.mul(q0perp, f.swizzle(st1, "x")));
+        const ExprId B = f.add(f.mul(q1perp, f.swizzle(st0, "y")), f.mul(q0perp, f.swizzle(st1, "y")));
+        const ExprId det = f.call("max", {f.call("dot", {T, T}), f.call("dot", {B, B})});
+        ExprId scale = f.select(f.equal(det, t.f(0)), t.f(0), f.call("inverseSqrt", {det}));
+        // negateOnBackSide (FrontFacingNode.js:98-108): BackSide negates, DoubleSide follows the face;
+        // flat shading skips the flip (Tangent.js:34-40).
+        if (!variant.flatShading) {
+            if (variant.backSide) scale = f.neg(scale);
+            else if (variant.doubleSide)
+                scale = f.mul(scale, f.select(f.builtin("frontFacing"), t.f(1), t.f(-1)));
+        }
+        const ExprId tangentFrame = f.load(f.var(Type::vec(3), f.mul(T, scale)));
+        const ExprId bitangentFrame = f.load(f.var(Type::vec(3), f.mul(B, scale)));
+        anisotropyT = f.load(f.var(Type::vec(3), f.add(f.mul(tangentFrame, f.swizzle(axis, "x")),
+                                                       f.mul(bitangentFrame, f.swizzle(axis, "y")))));
+        anisotropyB = f.load(f.var(Type::vec(3), f.sub(f.mul(bitangentFrame, f.swizzle(axis, "x")),
+                                                       f.mul(tangentFrame, f.swizzle(axis, "y")))));
+        // alphaT: roughness along the bitangent stays the material's, the tangent runs toward 1 with anisotropy.
+        anisotropyAlphaT = f.load(f.var(Type::f32(), f.call("mix", {t.pow2(roughness), t.f(1), t.pow2(anisotropy)})));
+        if (variant.environment) {
+            // The bent normal the indirect specular radiance samples through (AccessorsUtils.js:43-51).
+            const ExprId bent = f.call("normalize", {f.call(
+                "cross", {f.call("cross", {anisotropyB, positionViewDirection}), anisotropyB})});
+            const ExprId bend = t.pow2(t.pow2(t.oneMinus(f.mul(anisotropy, t.oneMinus(roughness)))));
+            radianceNormal = f.load(f.var(Type::vec(3), f.call("normalize", {f.call("mix", {bent, n, bend})})));
+        }
+    }
     // PhysicalLightingModel.start (r187 :591-607): the DFG texel at (roughness, dotNV) is sampled once and
     // shared by the direct compensation and by both indirect paths, and the dielectric multiscattering is
     // computed up front so the indirect diffuse layer can subtract it. specularColor is the PropertyNode
     // (0.04 for a standard material, the physical program's f0).
     const uint32_t dfg = f.texture2d("dfg");
-    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, dfg};
+    const Surface surface{n, positionViewDirection, roughness, specularColorBlended, specularF90, dfg,
+                          anisotropyAlphaT, anisotropyT, anisotropyB};
     const ExprId dfgTexel =
         f.load(f.var(Type::vec(2), dfgLut(t, surface, t.saturate(t.dot(n, positionViewDirection)))));
     // Energy of the single-scattering lobe in a white furnace (F0 = F90 = 1); the energy lost to multiple
@@ -1610,7 +1711,8 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
     const ExprId lightNormal = held(n), lightView = held(positionViewDirection), lightLambert = held(brdfLambert);
     const ExprId lightAlbedo = held(diffuseContribution), lightRoughness = held(roughness);
     const ExprId lightF0 = held(f0Dielectric), lightF90 = held(specularF90), lightWeight = held(multiScatteringCompensation);
-    const Surface lightSurface{lightNormal, lightView, lightRoughness, held(surface.f0), lightF90, dfg};
+    const Surface lightSurface{lightNormal, lightView, lightRoughness, held(surface.f0), lightF90, dfg,
+                               anisotropyAlphaT, anisotropyT, anisotropyB};
     const ExprId lightCoatNormal = held(clearcoatNormalView);
     const Surface lightCoat = coated ? Surface{lightCoatNormal, lightView, held(coat.roughness), coat.f0, coat.f90, coat.dfg} : coat;
     const VarId diffuseSum = branches ? f.var(Type::vec(3), directDiffuse) : VarId{};
@@ -1691,8 +1793,8 @@ static StandardPrograms buildStandardProgram(const StandardMaterial& material, b
         const ExprId iblIrradiance = variant.nodes.irradianceNode
             ? f.mul(slotValue(f, slots, variant.nodes.irradianceNode, Type::vec(3), kInvalid), t.f(kPi))
             : f.mul(f.mul(pmremSample(f, env, rotated(normalWorld), t.f(1), "envMap"), t.f(kPi)), envIntensity);
-        ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), n});
-        reflectVec = f.call("normalize", {f.call("mix", {reflectVec, n, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
+        ExprId reflectVec = f.call("reflect", {f.neg(positionViewDirection), radianceNormal});
+        reflectVec = f.call("normalize", {f.call("mix", {reflectVec, radianceNormal, f.mul(f.mul(t.pow2(roughness), roughness), roughness)})});
         reflectVec = transformDirection(f, f.uniform("cameraWorldMatrix", Type::mat(4, 4)), reflectVec);
         const ExprId radiance = f.mul(pmremSample(f, env, rotated(reflectVec), roughness, "envMap"), envIntensity);
         const ExprId single = f.call("mix", {dielectric.single, metallic.single, metalness});

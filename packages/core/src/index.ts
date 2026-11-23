@@ -320,7 +320,11 @@ export type { ISkyCaptureOptions } from "./render/sky-capture.js";
 export { ComputeDrivenRegistry } from "./compute-driven.js";
 export type { IComputeDriven } from "./compute-driven.js";
 export { SoftBody3D } from "./softbody.js";
+export { measureBodyCapsules } from "./softbody-skinned.js";
+export { HairStrands3D, type IHairStrands3DOptions } from "./hair-strands.js";
+export { WindField3D, windAt } from "./wind-field.js";
 export type { ISoftBody3DOptions, ISoftBodyCollision } from "./softbody.js";
+export type { ISkinnedSoftBody3DOptions, ISoftBodyCapsule } from "./softbody-skinned.js";
 /**
  * Pack a selected static scene into TSL storage nodes for an upstream BVH ray query.
  * @situation trace thousands of scene rays inside a TSL kernel
@@ -2127,6 +2131,11 @@ export type {
   IBoneLengthDeviationsOptions,
   IBoneLengthSnapshot,
 } from "./bone-lengths.js";
+export {
+  SpringBoneChain3D,
+  type ISpringBoneCapsule,
+  type ISpringBoneChain3DOptions,
+} from "./spring-bone-chain.js";
 export type {
   ContextMenuPolicy,
   IInputAction,

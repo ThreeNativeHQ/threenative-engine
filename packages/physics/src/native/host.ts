@@ -36,11 +36,11 @@ import {
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
-  readonly kind: "box" | "capsule" | "heightfield" | "sphere" | "trimesh";
+  readonly kind: "box" | "capsule" | "convexHull" | "heightfield" | "sphere" | "trimesh";
   readonly x: number;
   readonly y: number;
   readonly z: number;
-  /** Present for `trimesh` only: a flat xyz vertex buffer and a flat triangle-index buffer. */
+  /** `trimesh` and `convexHull`: a flat xyz vertex buffer; `trimesh` adds a flat triangle-index buffer. */
   readonly vertices?: Float32Array;
   readonly indices?: Uint32Array;
   /** Present for `heightfield` only: column-major samples, the grid and its full extent. */
@@ -316,6 +316,26 @@ function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor
       z: shape.z,
     };
   }
+  if (shape.kind === "convexHull") {
+    if (shape.vertices === undefined)
+      throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: convexHull requires vertices");
+    return {
+      collisionLayer: shape.collisionLayer,
+      collisionMask: shape.collisionMask,
+      kind: shape.kind,
+      sensor: shape.sensor,
+      vertices: shape.vertices,
+      x: shape.x,
+      y: shape.y,
+      z: shape.z,
+    };
+  }
+  return primitiveShape(shape);
+}
+
+/** A shape query's volume: a primitive, or a mesh-built hull or trimesh as the web backend allows. */
+function nativeQueryShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor {
+  if (shape.kind === "convexHull" || shape.kind === "trimesh") return nativeBodyShape(shape);
   return primitiveShape(shape);
 }
 
@@ -641,6 +661,8 @@ export function createNativePhysicsSimulation(
       if (raw.setBodyTransform === undefined)
         throw new Error("TN_NATIVE_PHYSICS_SET_TRANSFORM_MISSING: runtime ABI is too old");
       raw.setBodyTransform(id, position);
+      // The body moved now, not at the next step: the cached bulk transform read is stale.
+      bodyTransformsDirty = true;
     },
     // Keep the optional raw members: an older runtime must throw rather than accept a call and
     // drop the actuation, which would make the same game diverge by platform.
@@ -779,7 +801,7 @@ export function createNativePhysicsSimulation(
         maxResults: query.maxResults,
         position: query.position,
         rotation: query.rotation,
-        shape: primitiveShape(query.shape),
+        shape: nativeQueryShape(query.shape),
       });
       if (!Array.isArray(hits) || hits.length > query.maxResults)
         throw new Error("TN_NATIVE_PHYSICS_INVALID: malformed shape query result");

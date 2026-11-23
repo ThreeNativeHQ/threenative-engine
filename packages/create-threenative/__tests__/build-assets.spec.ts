@@ -5,9 +5,10 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { build } from "../src/build.js";
 
-const { calls, compiled } = vi.hoisted(() => ({
+const { calls, compiled, spawned } = vi.hoisted(() => ({
   calls: [] as string[],
   compiled: [] as Record<string, unknown>[],
+  spawned: [] as (readonly string[])[],
 }));
 
 vi.mock("@threenative/assets", () => ({
@@ -24,6 +25,7 @@ vi.mock("node:child_process", async (importOriginal) => {
   const spawn = ((command: string, args: readonly string[]) => {
     const script = path.basename(args[0] ?? command);
     calls.push(`spawn:${script}`);
+    spawned.push(args);
     const child = new EventEmitter();
     queueMicrotask(async () => {
       if (script === "bundle.mjs") {
@@ -53,6 +55,7 @@ vi.mock("node:child_process", async (importOriginal) => {
 afterEach(() => {
   calls.splice(0);
   compiled.splice(0);
+  spawned.splice(0);
 });
 
 async function writeProject(root: string, engine = "threejs"): Promise<void> {
@@ -136,5 +139,17 @@ describe("threenative build asset compilation", () => {
       `${path.basename(process.execPath)} exited with code 23.`,
     );
     expect(calls).toEqual(["compile", "spawn:bundle.mjs"]);
+  });
+
+  it("names the game and engine of a native bundle for telemetry (PRD-905)", async () => {
+    const root = await makeTempDir("threenative-build-assets-brand-");
+    await writeProject(root);
+    await writeRuntime(root);
+
+    await expect(build({ cwd: root, target: "desktop" })).rejects.toThrow(/exited with code 23/u);
+    // Native builds wrote neither global before, so every native event said `game: "unknown"`.
+    const args = spawned.find((argv) => path.basename(argv[0] ?? "") === "bundle.mjs") ?? [];
+    expect(args[args.indexOf("--game-name") + 1]).toBe("asset-order");
+    expect(args[args.indexOf("--engine-name") + 1]).toBe("threejs");
   });
 });

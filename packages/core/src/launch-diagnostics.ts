@@ -146,6 +146,7 @@ export function watchStartupStall(options: IStallWatchOptions): () => void {
 export function watchDeviceLoss(
   device: { lost?: Promise<{ reason?: string; message?: string }> } | undefined,
   destroyedByGame: () => boolean = () => false,
+  reloadOnGpuMemoryLoss = true,
 ): void {
   const lost = device?.lost;
   if (lost === undefined) return;
@@ -164,7 +165,76 @@ export function watchDeviceLoss(
       kind: "device-lost",
       message: `The GPU device was lost${named}: ${info?.message ?? "no reason given"}\n${cause}`,
     });
+    reloadAfterGpuMemoryLoss(info?.message ?? "", reloadOnGpuMemoryLoss);
   });
+}
+
+/**
+ * A message that names GPU memory running out. It is the one device fault a fresh page recovers
+ * from: other pages (a dev server's reload storm, a closed tab) held the memory, and they let go.
+ */
+export const GPU_MEMORY_EXHAUSTED =
+  /vkAllocateMemory|OUT_OF_DEVICE_MEMORY|out of (?:device )?memory/iu;
+
+/** Long enough for a closing page's GPU process to free its memory, short enough to read as one load. */
+export const GPU_MEMORY_SETTLE_MS = 400;
+
+const GPU_MEMORY_RELOAD_KEY = "threenative.gpuMemoryReload";
+
+/** A worker's route to its page: a worker has neither `location.reload` nor `sessionStorage`. */
+let routeReload: ((reason: string) => void) | undefined;
+
+/** Sends this realm's GPU-memory reload elsewhere (the worker game's page); `undefined` clears it. */
+export function routeGpuMemoryReload(route: ((reason: string) => void) | undefined): void {
+  routeReload = route;
+}
+
+/**
+ * Reloads the page once after the GPU ran out of memory, so the game comes back without the player
+ * pressing F5. `sessionStorage` remembers the reload for the tab, so a GPU that stays full cannot
+ * loop the page; a realm with no page, or storage that refuses the write, never reloads. Every
+ * outcome is reported as `TN_GPU_MEMORY_RELOAD`. `renderer.reloadOnGpuMemoryLoss: false` is the
+ * named override. Returns whether a reload was asked for.
+ */
+export function reloadAfterGpuMemoryLoss(reason: string, enabled = true): boolean {
+  if (!GPU_MEMORY_EXHAUSTED.test(reason)) return false;
+  if (!enabled) {
+    console.warn(
+      `TN_GPU_MEMORY_RELOAD: off (renderer.reloadOnGpuMemoryLoss: false); reload the page to recover. ${reason}`,
+    );
+    return false;
+  }
+  if (routeReload !== undefined) {
+    routeReload(reason);
+    return true;
+  }
+  return reloadPageOnce(reason);
+}
+
+/** The page half of {@link reloadAfterGpuMemoryLoss}: the guard, the report and the reload. */
+export function reloadPageOnce(reason: string): boolean {
+  const page = globalThis as {
+    location?: { reload?: () => void };
+    sessionStorage?: Pick<Storage, "getItem" | "setItem">;
+  };
+  const reload = page.location?.reload;
+  if (typeof reload !== "function" || page.sessionStorage === undefined) return false;
+  try {
+    if (page.sessionStorage.getItem(GPU_MEMORY_RELOAD_KEY) !== null) {
+      console.warn(
+        `TN_GPU_MEMORY_RELOAD: this tab already reloaded once for GPU memory, so it does not again; close other GPU-heavy tabs and reload. ${reason}`,
+      );
+      return false;
+    }
+    page.sessionStorage.setItem(GPU_MEMORY_RELOAD_KEY, String(Date.now()));
+  } catch {
+    return false; // No guard, no reload: an unguarded reload is a loop waiting to happen.
+  }
+  console.warn(
+    `TN_GPU_MEMORY_RELOAD: the GPU ran out of memory; reloading this page once in ${GPU_MEMORY_SETTLE_MS} ms. ${reason}`,
+  );
+  setTimeout(() => reload.call(page.location), GPU_MEMORY_SETTLE_MS);
+  return true;
 }
 
 /** Preserve the actual loader error for the shell and playtest console diagnostics. */

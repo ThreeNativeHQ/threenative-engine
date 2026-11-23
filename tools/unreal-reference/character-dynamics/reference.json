@@ -1,0 +1,4075 @@
+{
+  "prd": "PRD-910",
+  "scene": "examples/character-dynamics (?arm=cloth probe definitions)",
+  "unreal": "5.8.3-58210709+++UE5+Release-5.8",
+  "command": "pnpm exec tsx tools/unreal-reference/character-dynamics/reference.ts all",
+  "runs": 3,
+  "step": 0.016666666666666666,
+  "units": {
+    "hemOffset": "m",
+    "hemTrail": "deg",
+    "maxStretch": "fraction of rest length",
+    "bodyPenetration": "cape vertices",
+    "hairTipOffset": "m",
+    "hairStretch": "fraction of rest length",
+    "hairInsideHead": "hair bones"
+  },
+  "probe": {
+    "hem": "bottom row (11 vertices)",
+    "top": "pinned top row (11 vertices)",
+    "bodyFrame": "cape frame on spine_03 (game.ts capeMatrix)",
+    "bodyPenetration": "free cape vertices (rows 1-18) deeper than 0.01 m inside the posed physics-asset capsules the cloth collides with",
+    "height": 1.525629959827964,
+    "hairTip": "ponytail_6 in the Head bone frame; offset from its spot at the end of settle (game.ts measureHair)",
+    "hairStretch": "largest |segment / rest - 1| over ponytail_1..6, rest on the Idle_Loop t = 0 pose",
+    "hairInsideHead": "ponytail_2..6 inside the stock capsules of Head, spine_03, spine_02, upperarm_l, upperarm_r plus 0.005 m (game.ts also has neck_01; Unreal generates no neck_01 body)"
+  },
+  "map": {
+    "scale": 99.99998619461951,
+    "residualCm": 0.000024572280615581198,
+    "bones": 65
+  },
+  "cloth": {
+    "asset": "/Game/CharDyn/Cape/mannequin_cape/SkeletalMeshes/mannequin_cape.mannequin_cape:Cape",
+    "referenceBone": "spine_03",
+    "physicsAsset": "/Game/CharDyn/Body/body/SkeletalMeshes/body_PhysicsAsset.body_PhysicsAsset",
+    "particles": 209,
+    "configs": {
+      "ChaosClothConfig": {
+        "massMode": "Density",
+        "uniformMass": 0.0001500000071246177,
+        "totalMass": 0.5,
+        "density": 0.3499999940395355,
+        "minPerParticleMass": 0.00009999999747378752,
+        "edgeStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "bendingStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "bUseBendingElements": false,
+        "bucklingRatio": 0,
+        "bucklingStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "flatnessRatio": {
+          "low": 0,
+          "high": 1
+        },
+        "areaStiffnessWeighted": {
+          "low": 1,
+          "high": 1
+        },
+        "volumeStiffness": 0,
+        "tetherStiffness": {
+          "low": 1,
+          "high": 1
+        },
+        "tetherScale": {
+          "low": 1,
+          "high": 1
+        },
+        "bUseGeodesicDistance": true,
+        "shapeTargetStiffness": 0,
+        "collisionThickness": 1,
+        "frictionCoefficient": 0.800000011920929,
+        "bUseCCD": false,
+        "bUseSelfCollisions": false,
+        "selfCollisionThickness": 2,
+        "selfCollisionFriction": 0,
+        "bUseSelfIntersections": false,
+        "bUseSelfCollisionSpheres": false,
+        "selfCollisionSphereRadius": 0.5,
+        "selfCollisionSphereStiffness": 1,
+        "selfCollisionSphereRadiusCullMultiplier": 1,
+        "bUseLegacyBackstop": false,
+        "dampingCoefficient": 0.009999999776482582,
+        "localDampingCoefficient": 0,
+        "bUsePointBasedWindModel": false,
+        "drag": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bEnableOuterDrag": false,
+        "outerDrag": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "lift": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bEnableOuterLift": false,
+        "outerLift": {
+          "low": 0.03500000014901161,
+          "high": 1
+        },
+        "bUseGravityOverride": false,
+        "gravityScale": 1,
+        "gravity": {
+          "x": 0,
+          "y": 0,
+          "z": -980.6649780273438
+        },
+        "pressure": {
+          "low": 0,
+          "high": 1
+        },
+        "animDriveStiffness": {
+          "low": 0,
+          "high": 1
+        },
+        "animDriveDamping": {
+          "low": 0,
+          "high": 1
+        },
+        "velocityScaleSpace": "ReferenceBoneSpace",
+        "linearVelocityScale": {
+          "x": 0.75,
+          "y": 0.75,
+          "z": 0.75
+        },
+        "bEnableLinearVelocityClamping": false,
+        "maxLinearVelocity": {
+          "x": 1000,
+          "y": 1000,
+          "z": 1000
+        },
+        "bEnableLinearAccelerationClamping": false,
+        "maxLinearAcceleration": {
+          "x": 60000,
+          "y": 60000,
+          "z": 60000
+        },
+        "angularVelocityScale": 0.75,
+        "bEnableAngularVelocityClamping": false,
+        "maxAngularVelocity": 200,
+        "bEnableAngularAccelerationClamping": false,
+        "maxAngularAcceleration": 12000,
+        "fictitiousForcesModel": "FullScale",
+        "fictitiousAngularScale": 1,
+        "bUseTetrahedralConstraints": false,
+        "bUseThinShellVolumeConstraints": false,
+        "bUseContinuousCollisionDetection": false
+      },
+      "ChaosClothSharedSimConfig": {
+        "iterationCount": 1,
+        "maxIterationCount": 10,
+        "subdivisionCount": 1,
+        "bUseLocalSpaceSimulation": true,
+        "bUseXPBDConstraints": false
+      }
+    }
+  },
+  "restClearance": [
+    {
+      "bone": "pelvis",
+      "radiusCm": 15.017422676086426,
+      "restClearanceCm": 13.446183204650879,
+      "restVerticesInside": 7,
+      "radiusUsedCm": 12.446183204650879
+    },
+    {
+      "bone": "spine_02",
+      "radiusCm": 12.91012191772461,
+      "restClearanceCm": 13.200053215026855,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 12.200053215026855
+    },
+    {
+      "bone": "spine_03",
+      "radiusCm": 19.961496353149414,
+      "restClearanceCm": 13.788264274597168,
+      "restVerticesInside": 34,
+      "radiusUsedCm": 12.788264274597168
+    },
+    {
+      "bone": "Head",
+      "radiusCm": 12.271927833557129,
+      "restClearanceCm": 25.275766372680664,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 12.271927833557129
+    },
+    {
+      "bone": "upperarm_l",
+      "radiusCm": 7.513808727264404,
+      "restClearanceCm": 12.18412971496582,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 7.513808727264404
+    },
+    {
+      "bone": "hand_l",
+      "radiusCm": 8.855417251586914,
+      "restClearanceCm": 24.799165725708008,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 8.855417251586914
+    },
+    {
+      "bone": "upperarm_r",
+      "radiusCm": 7.513808727264404,
+      "restClearanceCm": 0.9835166335105896,
+      "restVerticesInside": 13,
+      "radiusUsedCm": 0
+    },
+    {
+      "bone": "hand_r",
+      "radiusCm": 8.855415344238281,
+      "restClearanceCm": 7.02508544921875,
+      "restVerticesInside": 3,
+      "radiusUsedCm": 6.02508544921875
+    },
+    {
+      "bone": "thigh_l",
+      "radiusCm": 9.325067520141602,
+      "restClearanceCm": 19.71331024169922,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 9.325067520141602
+    },
+    {
+      "bone": "calf_l",
+      "radiusCm": 8.304004669189453,
+      "restClearanceCm": 30.104808807373047,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 8.304004669189453
+    },
+    {
+      "bone": "foot_l",
+      "radiusCm": 7.127725124359131,
+      "restClearanceCm": 51.74045181274414,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 7.127725124359131
+    },
+    {
+      "bone": "thigh_r",
+      "radiusCm": 9.325067520141602,
+      "restClearanceCm": 9.441987991333008,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 8.441987991333008
+    },
+    {
+      "bone": "calf_r",
+      "radiusCm": 8.304402351379395,
+      "restClearanceCm": 3.3202741146087646,
+      "restVerticesInside": 4,
+      "radiusUsedCm": 2.3202741146087646
+    },
+    {
+      "bone": "foot_r",
+      "radiusCm": 7.1261796951293945,
+      "restClearanceCm": 39.806400299072266,
+      "restVerticesInside": 0,
+      "radiusUsedCm": 7.1261796951293945
+    }
+  ],
+  "overrides": {
+    "maxDistanceMask": "0 cm on the top row (11 pinned vertices), 1000 cm elsewhere: the painted mask the brief asks for (the factory creates it all 0)",
+    "collisionPhysicsAsset": "the body-only import's generated physics asset (see assets.bodyPhysicsAsset), not the caped mesh's",
+    "visibilityBasedAnimTickOption": "AlwaysTickPoseAndRefreshBones: nothing renders offscreen, so bones must refresh unrendered (harness, not a cloth parameter)",
+    "bWaitForParallelClothTask": "true: GetCurrentClothingData_GameThread requires it (harness, read-out only)",
+    "capsuleRestClearance": "every capsule radius = min(stock radius, distance to the nearest rest cape vertex - 1 cm) on the Idle_Loop t = 0 pose, dropped under 0.1 cm (game.ts: measureBodyCapsules(capeSkin, 16, restWorld, COLLIDER_THICKNESS)); applied in RunDrive, in memory, restored after the run"
+  },
+  "determinism": "3 separate simulations (a fresh world and fresh clothing actors per run, CharDynProbe RunDrive); Chaos Cloth at a fixed step is deterministic, so the run files are byte-identical and the spread is 0",
+  "differences": {
+    "crossfade": "the game's AnimationPlayer smoothstep crossfade is replayed by UCharDynAnimInstance; Unreal blends the poses with FAnimationRuntime::BlendPosesTogether (normalised quaternion blend) where three.js accumulates slerps, and samples the Interchange-resampled clips",
+    "readback": "Unreal reads the simulated positions every tick for the same tick's pose; the game reads a GPU readback every 2 frames and matches it to the pose of the step that produced it",
+    "gravity": "-9.80 m/s^2 in Unreal, -9.81 m/s^2 in the game"
+  },
+  "hair": {
+    "node": "FAnimNode_SpringBone, one per simulated bone (ponytail_2..6), parent first, each fed the previous node's pose, driven in UCharDynAnimInstance's proxy; ponytail_1 rides Head (SpringBoneChain3D's root)",
+    "defaults": "stock (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_SpringBone.cpp:16-38): SpringStiffness 50, SpringDamping 4, ErrorResetThresh 256 cm, bLimitDisplacement false, translate X/Y/Z on, rotate X/Y/Z off; fixed step 1/120 s (:62-63); no gravity, no collision",
+    "differences": "SpringBoneChain3D (game) keeps each segment at its rest length, rotates the bones toward the particles and pushes them out of the body capsules; the stock SpringBone translates the bone only, so segments stretch, and it has no collider. Its damping acts on the world velocity and OwnerVelocity is 0 for an actor's own component (AnimNode_SpringBone.cpp:139-157, 257-266), so each spring trails its target by damping * speed / stiffness (27 cm at 3.4 m/s) and the 5 springs add up. Teleport: SpringBone resets past 256 cm of error, SpringBoneChain3D past 1.5 m of root move or 1 m of error",
+    "start": "the springs are placed on the Idle_Loop t = 0 pose by a zero-length evaluation before tick 1 (InitAnim's zero tick, SkeletalMeshComponent.cpp:1213-1216; the game builds SpringBoneChain3D on that pose)"
+  },
+  "hairAnimDynamics": {
+    "prd": "PRD-912 AC-3",
+    "node": "FAnimNode_AnimDynamics, bChain true, BoundBone ponytail_1, ChainEnd ponytail_6: one rigid body per bone, each joined to its parent at the segment midpoint (InitPhysics, AnimNode_AnimDynamics.cpp:1110-1121); ponytail_1's body is nailed to its animated position (bLinearFullyLocked, :1272-1277), so it rides Head and ponytail_2..6 hang from it. Evaluated in UCharDynAnimInstance's proxy on the animated pose, beside the SpringBone chain; the output is recorded, not applied",
+    "defaults": "stock (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_AnimDynamics.cpp:190-246 and Public/BoneControllers/AnimNode_AnimDynamics.h:91-110, 241-248): one body definition copied to every chain bone (UpdateChainPhysicsBodyDefinitions, :831-866), BoxExtents 10 x 10 x 10 cm, LocalJointOffset 0, CollisionType CoM, linear X/Y/Z Limited 0..0 (locked), angular type Angular with limits 0..0 on X/Y/Z and twist axis X; GravityScale 1 (:195) with the project gravity -980 cm/s2 (PhysicsSettingsCore.cpp:29, AnimPhysicsSolver.cpp:875); linear and angular damping 0.7 (AnimPhysicsSolver.h:56-59), JointBiasFactor 0.3 (:53), mass 1 (AnimPhysicsSolver.cpp:159); NumSolverIterationsPreUpdate 4, PostUpdate 1 (:202-203); SimulationSpace Component (:205); ComponentLinearAccScale and ComponentLinearVelScale 0 (:238-239), SimSpaceAngularAlpha 0 (:183); no linear or angular spring (:219-220), no wind (:215), no planar or spherical limits (none listed; :208-209), so no collision; adaptive substepping off (p.AnimDynamicsAdaptiveSubstep 0, :26), so one step of the tick delta per tick, capped at MaxPhysicsDeltaTime 1/30 s (:691-701, PhysicsSettings.cpp:22)",
+    "arms": {
+      "stock": "every value stock",
+      "swing": "named override: AngularLimitsMin/Max -180/+180 on X/Y/Z, the editor's range end (AnimNode_AnimDynamics.h:170-174). ConstrainAngularRange adds no swing limit for a range of 360 degrees (AnimPhysicsSolver.cpp:733-757); twist stays locked (:759-760). The stock 0..0 range locks each body to its parent (:733-736), a rigid chain",
+      "swingWorld": "swing plus the named override SimulationSpace World. Stock Component space passes no component motion to the bodies (ComponentLinearAccScale/VelScale 0, SimSpaceAngularAlpha 0, :600-646), so locomotion and turns do not reach the chain; World space keeps the bodies in the world, as SpringBoneChain3D does. On the first teleport tick the arms get ResetDynamics(TeleportPhysics), what a SetActorLocation with ETeleportType::TeleportPhysics does to an AnimGraph (SkeletalMeshComponent.cpp:5350-5354, AnimInstance.cpp:696-700); the cloth keeps its own teleport guard"
+    },
+    "boxExtents": "stock 10 cm cube kept: with mass 1 per body it sets only the inertia, and it is the same order as the 7.8 cm segment; collision is off, so it touches nothing",
+    "start": "Initialize_AnyThread on the Idle_Loop t = 0 pose before tick 1 (ResetSprings), so InitPhysics places every body on its bone with no time debt (AnimNode_AnimDynamics.cpp:248-268, 1002-1196)",
+    "restLengths": "the SpringBone block's: segment lengths on the Idle_Loop t = 0 pose",
+    "arm": {
+      "stock": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.05731237750880047,
+            "min": 0.05731237750880047,
+            "max": 0.05731237750880047,
+            "runs": [0.05731237750880047, 0.05731237750880047, 0.05731237750880047]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.5419177132849954,
+            "min": 0.5419177132849954,
+            "max": 0.5419177132849954,
+            "runs": [0.5419177132849954, 0.5419177132849954, 0.5419177132849954]
+          },
+          "hairStretch": {
+            "mean": 0.23363216389616848,
+            "min": 0.23363216389616848,
+            "max": 0.23363216389616848,
+            "runs": [0.23363216389616848, 0.23363216389616848, 0.23363216389616848]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.6179246987171719,
+            "min": 0.6179246987171719,
+            "max": 0.6179246987171719,
+            "runs": [0.6179246987171719, 0.6179246987171719, 0.6179246987171719]
+          },
+          "hairStretch": {
+            "mean": 0.2241386250799764,
+            "min": 0.2241386250799764,
+            "max": 0.2241386250799764,
+            "runs": [0.2241386250799764, 0.2241386250799764, 0.2241386250799764]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.5422519529344041,
+            "min": 0.5422519529344041,
+            "max": 0.5422519529344041,
+            "runs": [0.5422519529344041, 0.5422519529344041, 0.5422519529344041]
+          },
+          "hairStretch": {
+            "mean": 0.24822170982544955,
+            "min": 0.24822170982544955,
+            "max": 0.24822170982544955,
+            "runs": [0.24822170982544955, 0.24822170982544955, 0.24822170982544955]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.45268063809581943,
+            "min": 0.4526806380958194,
+            "max": 0.4526806380958194,
+            "runs": [0.4526806380958194, 0.4526806380958194, 0.4526806380958194]
+          },
+          "hairStretch": {
+            "mean": 0.2027390805232887,
+            "min": 0.2027390805232887,
+            "max": 0.2027390805232887,
+            "runs": [0.2027390805232887, 0.2027390805232887, 0.2027390805232887]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.2783000013566279,
+            "min": 0.2783000013566279,
+            "max": 0.2783000013566279,
+            "runs": [0.2783000013566279, 0.2783000013566279, 0.2783000013566279]
+          },
+          "hairStretch": {
+            "mean": 0.24589932733563935,
+            "min": 0.24589932733563935,
+            "max": 0.24589932733563935,
+            "runs": [0.24589932733563935, 0.24589932733563935, 0.24589932733563935]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.8657652330012526,
+            "min": 0.8657652330012526,
+            "max": 0.8657652330012526,
+            "runs": [0.8657652330012526, 0.8657652330012526, 0.8657652330012526]
+          },
+          "hairStretch": {
+            "mean": 0.5009921862974214,
+            "min": 0.5009921862974214,
+            "max": 0.5009921862974214,
+            "runs": [0.5009921862974214, 0.5009921862974214, 0.5009921862974214]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.4635247812901518,
+            "min": 0.4635247812901518,
+            "max": 0.4635247812901518,
+            "runs": [0.4635247812901518, 0.4635247812901518, 0.4635247812901518]
+          },
+          "hairStretch": {
+            "mean": 0.07655504768188526,
+            "min": 0.07655504768188526,
+            "max": 0.07655504768188526,
+            "runs": [0.07655504768188526, 0.07655504768188526, 0.07655504768188526]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        }
+      },
+      "swing": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.2666526753157169,
+            "min": 0.2666526753157169,
+            "max": 0.2666526753157169,
+            "runs": [0.2666526753157169, 0.2666526753157169, 0.2666526753157169]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.6001234887668202,
+            "min": 0.6001234887668202,
+            "max": 0.6001234887668202,
+            "runs": [0.6001234887668202, 0.6001234887668202, 0.6001234887668202]
+          },
+          "hairStretch": {
+            "mean": 0.41013598209847024,
+            "min": 0.41013598209847024,
+            "max": 0.41013598209847024,
+            "runs": [0.41013598209847024, 0.41013598209847024, 0.41013598209847024]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.5804425448831252,
+            "min": 0.5804425448831252,
+            "max": 0.5804425448831252,
+            "runs": [0.5804425448831252, 0.5804425448831252, 0.5804425448831252]
+          },
+          "hairStretch": {
+            "mean": 0.4827322246053365,
+            "min": 0.4827322246053365,
+            "max": 0.4827322246053365,
+            "runs": [0.4827322246053365, 0.4827322246053365, 0.4827322246053365]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.4059751434738745,
+            "min": 0.4059751434738744,
+            "max": 0.4059751434738744,
+            "runs": [0.4059751434738744, 0.4059751434738744, 0.4059751434738744]
+          },
+          "hairStretch": {
+            "mean": 0.439990180832799,
+            "min": 0.43999018083279895,
+            "max": 0.43999018083279895,
+            "runs": [0.43999018083279895, 0.43999018083279895, 0.43999018083279895]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.5397118069289553,
+            "min": 0.5397118069289553,
+            "max": 0.5397118069289553,
+            "runs": [0.5397118069289553, 0.5397118069289553, 0.5397118069289553]
+          },
+          "hairStretch": {
+            "mean": 0.4852339581043166,
+            "min": 0.4852339581043166,
+            "max": 0.4852339581043166,
+            "runs": [0.4852339581043166, 0.4852339581043166, 0.4852339581043166]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.4493517782730441,
+            "min": 0.4493517782730442,
+            "max": 0.4493517782730442,
+            "runs": [0.4493517782730442, 0.4493517782730442, 0.4493517782730442]
+          },
+          "hairStretch": {
+            "mean": 0.770017663618396,
+            "min": 0.770017663618396,
+            "max": 0.770017663618396,
+            "runs": [0.770017663618396, 0.770017663618396, 0.770017663618396]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.8064863752010912,
+            "min": 0.8064863752010912,
+            "max": 0.8064863752010912,
+            "runs": [0.8064863752010912, 0.8064863752010912, 0.8064863752010912]
+          },
+          "hairStretch": {
+            "mean": 1.3201234909505155,
+            "min": 1.3201234909505155,
+            "max": 1.3201234909505155,
+            "runs": [1.3201234909505155, 1.3201234909505155, 1.3201234909505155]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.5713699421276216,
+            "min": 0.5713699421276216,
+            "max": 0.5713699421276216,
+            "runs": [0.5713699421276216, 0.5713699421276216, 0.5713699421276216]
+          },
+          "hairStretch": {
+            "mean": 0.8866618077724545,
+            "min": 0.8866618077724545,
+            "max": 0.8866618077724545,
+            "runs": [0.8866618077724545, 0.8866618077724545, 0.8866618077724545]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        }
+      },
+      "swingWorld": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.2666526753157169,
+            "min": 0.2666526753157169,
+            "max": 0.2666526753157169,
+            "runs": [0.2666526753157169, 0.2666526753157169, 0.2666526753157169]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.4264678188053965,
+            "min": 0.4264678188053965,
+            "max": 0.4264678188053965,
+            "runs": [0.4264678188053965, 0.4264678188053965, 0.4264678188053965]
+          },
+          "hairStretch": {
+            "mean": 0.8802524053880454,
+            "min": 0.8802524053880454,
+            "max": 0.8802524053880454,
+            "runs": [0.8802524053880454, 0.8802524053880454, 0.8802524053880454]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.6020652871210552,
+            "min": 0.6020652871210552,
+            "max": 0.6020652871210552,
+            "runs": [0.6020652871210552, 0.6020652871210552, 0.6020652871210552]
+          },
+          "hairStretch": {
+            "mean": 0.7777442503007294,
+            "min": 0.7777442503007294,
+            "max": 0.7777442503007294,
+            "runs": [0.7777442503007294, 0.7777442503007294, 0.7777442503007294]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.5951697596352327,
+            "min": 0.5951697596352327,
+            "max": 0.5951697596352327,
+            "runs": [0.5951697596352327, 0.5951697596352327, 0.5951697596352327]
+          },
+          "hairStretch": {
+            "mean": 0.8534209211704266,
+            "min": 0.8534209211704266,
+            "max": 0.8534209211704266,
+            "runs": [0.8534209211704266, 0.8534209211704266, 0.8534209211704266]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.7109626290843606,
+            "min": 0.7109626290843606,
+            "max": 0.7109626290843606,
+            "runs": [0.7109626290843606, 0.7109626290843606, 0.7109626290843606]
+          },
+          "hairStretch": {
+            "mean": 0.8721493400175682,
+            "min": 0.8721493400175682,
+            "max": 0.8721493400175682,
+            "runs": [0.8721493400175682, 0.8721493400175682, 0.8721493400175682]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.7145646518840642,
+            "min": 0.7145646518840642,
+            "max": 0.7145646518840642,
+            "runs": [0.7145646518840642, 0.7145646518840642, 0.7145646518840642]
+          },
+          "hairStretch": {
+            "mean": 1.130952660758957,
+            "min": 1.130952660758957,
+            "max": 1.130952660758957,
+            "runs": [1.130952660758957, 1.130952660758957, 1.130952660758957]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.7956497020794849,
+            "min": 0.7956497020794849,
+            "max": 0.7956497020794849,
+            "runs": [0.7956497020794849, 0.7956497020794849, 0.7956497020794849]
+          },
+          "hairStretch": {
+            "mean": 2.70619318559713,
+            "min": 2.70619318559713,
+            "max": 2.70619318559713,
+            "runs": [2.70619318559713, 2.70619318559713, 2.70619318559713]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.570599587393135,
+            "min": 0.570599587393135,
+            "max": 0.570599587393135,
+            "runs": [0.570599587393135, 0.570599587393135, 0.570599587393135]
+          },
+          "hairStretch": {
+            "mean": 0.7735719223232276,
+            "min": 0.7735719223232276,
+            "max": 0.7735719223232276,
+            "runs": [0.7735719223232276, 0.7735719223232276, 0.7735719223232276]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        }
+      }
+    }
+  },
+  "phases": {
+    "settle": {
+      "ticks": 90,
+      "hemOffset": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hemTrail": {
+        "mean": 2.5036724734675477,
+        "min": 2.5036724734675477,
+        "max": 2.5036724734675477,
+        "runs": [2.5036724734675477, 2.5036724734675477, 2.5036724734675477]
+      },
+      "maxStretch": {
+        "mean": 0.11652192738540057,
+        "min": 0.11652192738540057,
+        "max": 0.11652192738540057,
+        "runs": [0.11652192738540057, 0.11652192738540057, 0.11652192738540057]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairStretch": {
+        "mean": 0.5990681693180273,
+        "min": 0.5990681693180273,
+        "max": 0.5990681693180273,
+        "runs": [0.5990681693180273, 0.5990681693180273, 0.5990681693180273]
+      },
+      "hairInsideHead": {
+        "mean": 1,
+        "min": 1,
+        "max": 1,
+        "runs": [1, 1, 1]
+      }
+    },
+    "jog": {
+      "ticks": 90,
+      "hemOffset": {
+        "mean": 1.0480949778458193,
+        "min": 1.0480949778458193,
+        "max": 1.0480949778458193,
+        "runs": [1.0480949778458193, 1.0480949778458193, 1.0480949778458193]
+      },
+      "hemTrail": {
+        "mean": 93.19360976813071,
+        "min": 93.19360976813071,
+        "max": 93.19360976813071,
+        "runs": [93.19360976813071, 93.19360976813071, 93.19360976813071]
+      },
+      "maxStretch": {
+        "mean": 0.6681603140418915,
+        "min": 0.6681603140418915,
+        "max": 0.6681603140418915,
+        "runs": [0.6681603140418915, 0.6681603140418915, 0.6681603140418915]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 2.2722301517802754,
+        "min": 2.2722301517802754,
+        "max": 2.2722301517802754,
+        "runs": [2.2722301517802754, 2.2722301517802754, 2.2722301517802754]
+      },
+      "hairStretch": {
+        "mean": 11.13394211774109,
+        "min": 11.13394211774109,
+        "max": 11.13394211774109,
+        "runs": [11.13394211774109, 11.13394211774109, 11.13394211774109]
+      },
+      "hairInsideHead": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      }
+    },
+    "jogTurn": {
+      "ticks": 120,
+      "hemOffset": {
+        "mean": 0.9874714111576846,
+        "min": 0.9874714111576846,
+        "max": 0.9874714111576846,
+        "runs": [0.9874714111576846, 0.9874714111576846, 0.9874714111576846]
+      },
+      "hemTrail": {
+        "mean": 88.40022847961934,
+        "min": 88.40022847961934,
+        "max": 88.40022847961934,
+        "runs": [88.40022847961934, 88.40022847961934, 88.40022847961934]
+      },
+      "maxStretch": {
+        "mean": 1.1701637876565605,
+        "min": 1.1701637876565605,
+        "max": 1.1701637876565605,
+        "runs": [1.1701637876565605, 1.1701637876565605, 1.1701637876565605]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 2.0037348202474785,
+        "min": 2.0037348202474785,
+        "max": 2.0037348202474785,
+        "runs": [2.0037348202474785, 2.0037348202474785, 2.0037348202474785]
+      },
+      "hairStretch": {
+        "mean": 11.86608307663293,
+        "min": 11.86608307663293,
+        "max": 11.86608307663293,
+        "runs": [11.86608307663293, 11.86608307663293, 11.86608307663293]
+      },
+      "hairInsideHead": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      }
+    },
+    "sprint": {
+      "ticks": 90,
+      "hemOffset": {
+        "mean": 1.2639201508199651,
+        "min": 1.2639201508199651,
+        "max": 1.2639201508199651,
+        "runs": [1.2639201508199651, 1.2639201508199651, 1.2639201508199651]
+      },
+      "hemTrail": {
+        "mean": 124.44382795372616,
+        "min": 124.44382795372616,
+        "max": 124.44382795372616,
+        "runs": [124.44382795372616, 124.44382795372616, 124.44382795372616]
+      },
+      "maxStretch": {
+        "mean": 1.2501613862975396,
+        "min": 1.2501613862975396,
+        "max": 1.2501613862975396,
+        "runs": [1.2501613862975396, 1.2501613862975396, 1.2501613862975396]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 2.917559573322181,
+        "min": 2.917559573322181,
+        "max": 2.917559573322181,
+        "runs": [2.917559573322181, 2.917559573322181, 2.917559573322181]
+      },
+      "hairStretch": {
+        "mean": 12.181498806087086,
+        "min": 12.181498806087086,
+        "max": 12.181498806087086,
+        "runs": [12.181498806087086, 12.181498806087086, 12.181498806087086]
+      },
+      "hairInsideHead": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      }
+    },
+    "hardStop": {
+      "ticks": 60,
+      "hemOffset": {
+        "mean": 0.41694229569013674,
+        "min": 0.41694229569013674,
+        "max": 0.41694229569013674,
+        "runs": [0.41694229569013674, 0.41694229569013674, 0.41694229569013674]
+      },
+      "hemTrail": {
+        "mean": 30.93946941476983,
+        "min": 30.93946941476983,
+        "max": 30.93946941476983,
+        "runs": [30.93946941476983, 30.93946941476983, 30.93946941476983]
+      },
+      "maxStretch": {
+        "mean": 0.8458748239358777,
+        "min": 0.8458748239358778,
+        "max": 0.8458748239358778,
+        "runs": [0.8458748239358778, 0.8458748239358778, 0.8458748239358778]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 1.9048226571763467,
+        "min": 1.9048226571763467,
+        "max": 1.9048226571763467,
+        "runs": [1.9048226571763467, 1.9048226571763467, 1.9048226571763467]
+      },
+      "hairStretch": {
+        "mean": 14.459952920754178,
+        "min": 14.459952920754178,
+        "max": 14.459952920754178,
+        "runs": [14.459952920754178, 14.459952920754178, 14.459952920754178]
+      },
+      "hairInsideHead": {
+        "mean": 3,
+        "min": 3,
+        "max": 3,
+        "runs": [3, 3, 3]
+      }
+    },
+    "jump": {
+      "ticks": 75,
+      "hemOffset": {
+        "mean": 0.5721381431176131,
+        "min": 0.5721381431176131,
+        "max": 0.5721381431176131,
+        "runs": [0.5721381431176131, 0.5721381431176131, 0.5721381431176131]
+      },
+      "hemTrail": {
+        "mean": 51.56706321306796,
+        "min": 51.56706321306796,
+        "max": 51.56706321306796,
+        "runs": [51.56706321306796, 51.56706321306796, 51.56706321306796]
+      },
+      "maxStretch": {
+        "mean": 0.5759053228581144,
+        "min": 0.5759053228581144,
+        "max": 0.5759053228581144,
+        "runs": [0.5759053228581144, 0.5759053228581144, 0.5759053228581144]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 3.2806716432466225,
+        "min": 3.2806716432466225,
+        "max": 3.2806716432466225,
+        "runs": [3.2806716432466225, 3.2806716432466225, 3.2806716432466225]
+      },
+      "hairStretch": {
+        "mean": 17.401795369011957,
+        "min": 17.401795369011957,
+        "max": 17.401795369011957,
+        "runs": [17.401795369011957, 17.401795369011957, 17.401795369011957]
+      },
+      "hairInsideHead": {
+        "mean": 1,
+        "min": 1,
+        "max": 1,
+        "runs": [1, 1, 1]
+      }
+    },
+    "snapTurn": {
+      "ticks": 45,
+      "hemOffset": {
+        "mean": 1.8277513204961624,
+        "min": 1.8277513204961624,
+        "max": 1.8277513204961624,
+        "runs": [1.8277513204961624, 1.8277513204961624, 1.8277513204961624]
+      },
+      "hemTrail": {
+        "mean": 176.29052952649124,
+        "min": 176.29052952649124,
+        "max": 176.29052952649124,
+        "runs": [176.29052952649124, 176.29052952649124, 176.29052952649124]
+      },
+      "maxStretch": {
+        "mean": 3.222494898075741,
+        "min": 3.222494898075741,
+        "max": 3.222494898075741,
+        "runs": [3.222494898075741, 3.222494898075741, 3.222494898075741]
+      },
+      "bodyPenetration": {
+        "mean": 1,
+        "min": 1,
+        "max": 1,
+        "runs": [1, 1, 1]
+      },
+      "hairTipOffset": {
+        "mean": 3.675893135812831,
+        "min": 3.675893135812831,
+        "max": 3.675893135812831,
+        "runs": [3.675893135812831, 3.675893135812831, 3.675893135812831]
+      },
+      "hairStretch": {
+        "mean": 29.602426141172426,
+        "min": 29.602426141172426,
+        "max": 29.602426141172426,
+        "runs": [29.602426141172426, 29.602426141172426, 29.602426141172426]
+      },
+      "hairInsideHead": {
+        "mean": 2,
+        "min": 2,
+        "max": 2,
+        "runs": [2, 2, 2]
+      }
+    },
+    "teleport": {
+      "ticks": 45,
+      "hemOffset": {
+        "mean": 0.01558702898321116,
+        "min": 0.015587028983211158,
+        "max": 0.015587028983211158,
+        "runs": [0.015587028983211158, 0.015587028983211158, 0.015587028983211158]
+      },
+      "hemTrail": {
+        "mean": 2.788011201270559,
+        "min": 2.788011201270559,
+        "max": 2.788011201270559,
+        "runs": [2.788011201270559, 2.788011201270559, 2.788011201270559]
+      },
+      "maxStretch": {
+        "mean": 0.08372433990668426,
+        "min": 0.08372433990668426,
+        "max": 0.08372433990668426,
+        "runs": [0.08372433990668426, 0.08372433990668426, 0.08372433990668426]
+      },
+      "bodyPenetration": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      },
+      "hairTipOffset": {
+        "mean": 0.057337264344842785,
+        "min": 0.05733726434484278,
+        "max": 0.05733726434484278,
+        "runs": [0.05733726434484278, 0.05733726434484278, 0.05733726434484278]
+      },
+      "hairStretch": {
+        "mean": 0.18017986174221745,
+        "min": 0.18017986174221745,
+        "max": 0.18017986174221745,
+        "runs": [0.18017986174221745, 0.18017986174221745, 0.18017986174221745]
+      },
+      "hairInsideHead": {
+        "mean": 0,
+        "min": 0,
+        "max": 0,
+        "runs": [0, 0, 0]
+      }
+    }
+  },
+  "hairSpringBoneRotate": {
+    "prd": "PRD-912 AC-3",
+    "node": "FAnimNode_SpringBone, one per simulated bone (ponytail_2..6), parent first, as the stock chain above, with named option overrides per arm. Each arm runs on its own copy of the animated pose beside the stock chain; its output is recorded, not applied, so the cape and the stock chain do not change",
+    "why": "SpringBoneChain3D keeps every segment at its rest length and turns the bones. The stock translate-only chain stretches to metres. These are the stock options that bear on that: rotation (bRotateX/Y/Z) and the displacement limit (bLimitDisplacement, MaxDisplacement)",
+    "notAnOption": "translation off: with bTranslateX/Y/Z all false the node returns before it computes anything (AnimNode_SpringBone.cpp:102-105), so rotation alone moves nothing",
+    "arms": {
+      "rotate": "bRotateX/Y/Z true, everything else stock. The bone turns by the angle between parent-to-target and parent-to-spring (:206-221), and the next bone's target hangs off the turned bone",
+      "limitHalf": "bLimitDisplacement true, MaxDisplacement 3.9 cm (half the 7.81 cm rest segment): the bone stays within 3.9 cm of its target (:177-187), the only stock bound on the stretch",
+      "limitFull": "bLimitDisplacement true, MaxDisplacement 7.8 cm (one rest segment)",
+      "rotateLimitHalf": "rotate plus limitHalf",
+      "rotateLimitFull": "rotate plus limitFull"
+    },
+    "restLengths": "the SpringBone block's: segment lengths on the Idle_Loop t = 0 pose",
+    "arm": {
+      "rotate": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 3.2249312668680084,
+            "min": 3.2249312668680084,
+            "max": 3.2249312668680084,
+            "runs": [3.2249312668680084, 3.2249312668680084, 3.2249312668680084]
+          },
+          "hairInsideHead": {
+            "mean": 2,
+            "min": 2,
+            "max": 2,
+            "runs": [2, 2, 2]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 2.466885041639825,
+            "min": 2.466885041639825,
+            "max": 2.466885041639825,
+            "runs": [2.466885041639825, 2.466885041639825, 2.466885041639825]
+          },
+          "hairStretch": {
+            "mean": 12.541107491967699,
+            "min": 12.541107491967699,
+            "max": 12.541107491967699,
+            "runs": [12.541107491967699, 12.541107491967699, 12.541107491967699]
+          },
+          "hairInsideHead": {
+            "mean": 3,
+            "min": 3,
+            "max": 3,
+            "runs": [3, 3, 3]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 1.95755037202109,
+            "min": 1.9575503720210903,
+            "max": 1.9575503720210903,
+            "runs": [1.9575503720210903, 1.9575503720210903, 1.9575503720210903]
+          },
+          "hairStretch": {
+            "mean": 11.204913244785677,
+            "min": 11.204913244785677,
+            "max": 11.204913244785677,
+            "runs": [11.204913244785677, 11.204913244785677, 11.204913244785677]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 2.9144262190049965,
+            "min": 2.914426219004997,
+            "max": 2.914426219004997,
+            "runs": [2.914426219004997, 2.914426219004997, 2.914426219004997]
+          },
+          "hairStretch": {
+            "mean": 12.003683513529417,
+            "min": 12.003683513529417,
+            "max": 12.003683513529417,
+            "runs": [12.003683513529417, 12.003683513529417, 12.003683513529417]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 1.9170600624276568,
+            "min": 1.9170600624276568,
+            "max": 1.9170600624276568,
+            "runs": [1.9170600624276568, 1.9170600624276568, 1.9170600624276568]
+          },
+          "hairStretch": {
+            "mean": 14.567782881595656,
+            "min": 14.567782881595658,
+            "max": 14.567782881595658,
+            "runs": [14.567782881595658, 14.567782881595658, 14.567782881595658]
+          },
+          "hairInsideHead": {
+            "mean": 3,
+            "min": 3,
+            "max": 3,
+            "runs": [3, 3, 3]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 3.280613312163178,
+            "min": 3.280613312163178,
+            "max": 3.280613312163178,
+            "runs": [3.280613312163178, 3.280613312163178, 3.280613312163178]
+          },
+          "hairStretch": {
+            "mean": 17.493327341341587,
+            "min": 17.493327341341587,
+            "max": 17.493327341341587,
+            "runs": [17.493327341341587, 17.493327341341587, 17.493327341341587]
+          },
+          "hairInsideHead": {
+            "mean": 1,
+            "min": 1,
+            "max": 1,
+            "runs": [1, 1, 1]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 3.7890292744516763,
+            "min": 3.789029274451676,
+            "max": 3.789029274451676,
+            "runs": [3.789029274451676, 3.789029274451676, 3.789029274451676]
+          },
+          "hairStretch": {
+            "mean": 30.01682968630728,
+            "min": 30.016829686307283,
+            "max": 30.016829686307283,
+            "runs": [30.016829686307283, 30.016829686307283, 30.016829686307283]
+          },
+          "hairInsideHead": {
+            "mean": 2,
+            "min": 2,
+            "max": 2,
+            "runs": [2, 2, 2]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.08773898854287472,
+            "min": 0.08773898854287474,
+            "max": 0.08773898854287474,
+            "runs": [0.08773898854287474, 0.08773898854287474, 0.08773898854287474]
+          },
+          "hairStretch": {
+            "mean": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "runs": [0.18023290792434243, 0.18023290792434243, 0.18023290792434243]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        }
+      },
+      "limitHalf": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.4350000909000806,
+            "min": 0.4350000909000806,
+            "max": 0.4350000909000806,
+            "runs": [0.4350000909000806, 0.4350000909000806, 0.4350000909000806]
+          },
+          "hairInsideHead": {
+            "mean": 1,
+            "min": 1,
+            "max": 1,
+            "runs": [1, 1, 1]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.198152419847292,
+            "min": 0.198152419847292,
+            "max": 0.198152419847292,
+            "runs": [0.198152419847292, 0.198152419847292, 0.198152419847292]
+          },
+          "hairStretch": {
+            "mean": 0.493980293523244,
+            "min": 0.493980293523244,
+            "max": 0.493980293523244,
+            "runs": [0.493980293523244, 0.493980293523244, 0.493980293523244]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.1971143716216399,
+            "min": 0.1971143716216399,
+            "max": 0.1971143716216399,
+            "runs": [0.1971143716216399, 0.1971143716216399, 0.1971143716216399]
+          },
+          "hairStretch": {
+            "mean": 0.48380672618193293,
+            "min": 0.4838067261819329,
+            "max": 0.4838067261819329,
+            "runs": [0.4838067261819329, 0.4838067261819329, 0.4838067261819329]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.1757580786905962,
+            "min": 0.17575807869059618,
+            "max": 0.17575807869059618,
+            "runs": [0.17575807869059618, 0.17575807869059618, 0.17575807869059618]
+          },
+          "hairStretch": {
+            "mean": 0.4981850692786376,
+            "min": 0.4981850692786376,
+            "max": 0.4981850692786376,
+            "runs": [0.4981850692786376, 0.4981850692786376, 0.4981850692786376]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.2077598433765755,
+            "min": 0.2077598433765755,
+            "max": 0.2077598433765755,
+            "runs": [0.2077598433765755, 0.2077598433765755, 0.2077598433765755]
+          },
+          "hairStretch": {
+            "mean": 0.49723734305609585,
+            "min": 0.4972373430560958,
+            "max": 0.4972373430560958,
+            "runs": [0.4972373430560958, 0.4972373430560958, 0.4972373430560958]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.2632290967191371,
+            "min": 0.2632290967191371,
+            "max": 0.2632290967191371,
+            "runs": [0.2632290967191371, 0.2632290967191371, 0.2632290967191371]
+          },
+          "hairStretch": {
+            "mean": 0.4944561978830375,
+            "min": 0.4944561978830375,
+            "max": 0.4944561978830375,
+            "runs": [0.4944561978830375, 0.4944561978830375, 0.4944561978830375]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.28112389699310336,
+            "min": 0.28112389699310336,
+            "max": 0.28112389699310336,
+            "runs": [0.28112389699310336, 0.28112389699310336, 0.28112389699310336]
+          },
+          "hairStretch": {
+            "mean": 0.49782461219418295,
+            "min": 0.49782461219418295,
+            "max": 0.49782461219418295,
+            "runs": [0.49782461219418295, 0.49782461219418295, 0.49782461219418295]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.09483902478984198,
+            "min": 0.09483902478984198,
+            "max": 0.09483902478984198,
+            "runs": [0.09483902478984198, 0.09483902478984198, 0.09483902478984198]
+          },
+          "hairStretch": {
+            "mean": 0.18017986174221745,
+            "min": 0.18017986174221745,
+            "max": 0.18017986174221745,
+            "runs": [0.18017986174221745, 0.18017986174221745, 0.18017986174221745]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        }
+      },
+      "limitFull": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.5990671738476541,
+            "min": 0.5990671738476541,
+            "max": 0.5990671738476541,
+            "runs": [0.5990671738476541, 0.5990671738476541, 0.5990671738476541]
+          },
+          "hairInsideHead": {
+            "mean": 1,
+            "min": 1,
+            "max": 1,
+            "runs": [1, 1, 1]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.3288910753792621,
+            "min": 0.3288910753792621,
+            "max": 0.3288910753792621,
+            "runs": [0.3288910753792621, 0.3288910753792621, 0.3288910753792621]
+          },
+          "hairStretch": {
+            "mean": 0.9217357792773005,
+            "min": 0.9217357792773005,
+            "max": 0.9217357792773005,
+            "runs": [0.9217357792773005, 0.9217357792773005, 0.9217357792773005]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.3507892309020157,
+            "min": 0.3507892309020157,
+            "max": 0.3507892309020157,
+            "runs": [0.3507892309020157, 0.3507892309020157, 0.3507892309020157]
+          },
+          "hairStretch": {
+            "mean": 0.9465577331474148,
+            "min": 0.9465577331474149,
+            "max": 0.9465577331474149,
+            "runs": [0.9465577331474149, 0.9465577331474149, 0.9465577331474149]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.35086721387552416,
+            "min": 0.35086721387552416,
+            "max": 0.35086721387552416,
+            "runs": [0.35086721387552416, 0.35086721387552416, 0.35086721387552416]
+          },
+          "hairStretch": {
+            "mean": 0.8982290317441116,
+            "min": 0.8982290317441117,
+            "max": 0.8982290317441117,
+            "runs": [0.8982290317441117, 0.8982290317441117, 0.8982290317441117]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.37363286940358126,
+            "min": 0.37363286940358126,
+            "max": 0.37363286940358126,
+            "runs": [0.37363286940358126, 0.37363286940358126, 0.37363286940358126]
+          },
+          "hairStretch": {
+            "mean": 0.8748623982124024,
+            "min": 0.8748623982124024,
+            "max": 0.8748623982124024,
+            "runs": [0.8748623982124024, 0.8748623982124024, 0.8748623982124024]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.43781895044711333,
+            "min": 0.4378189504471134,
+            "max": 0.4378189504471134,
+            "runs": [0.4378189504471134, 0.4378189504471134, 0.4378189504471134]
+          },
+          "hairStretch": {
+            "mean": 0.9928113814178943,
+            "min": 0.9928113814178943,
+            "max": 0.9928113814178943,
+            "runs": [0.9928113814178943, 0.9928113814178943, 0.9928113814178943]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.38753116067429677,
+            "min": 0.38753116067429677,
+            "max": 0.38753116067429677,
+            "runs": [0.38753116067429677, 0.38753116067429677, 0.38753116067429677]
+          },
+          "hairStretch": {
+            "mean": 0.9645805110068736,
+            "min": 0.9645805110068737,
+            "max": 0.9645805110068737,
+            "runs": [0.9645805110068737, 0.9645805110068737, 0.9645805110068737]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.05733729177888602,
+            "min": 0.05733729177888602,
+            "max": 0.05733729177888602,
+            "runs": [0.05733729177888602, 0.05733729177888602, 0.05733729177888602]
+          },
+          "hairStretch": {
+            "mean": 0.18017986174221745,
+            "min": 0.18017986174221745,
+            "max": 0.18017986174221745,
+            "runs": [0.18017986174221745, 0.18017986174221745, 0.18017986174221745]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        }
+      },
+      "rotateLimitHalf": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.49821731994905316,
+            "min": 0.49821731994905316,
+            "max": 0.49821731994905316,
+            "runs": [0.49821731994905316, 0.49821731994905316, 0.49821731994905316]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.27212366795968257,
+            "min": 0.27212366795968257,
+            "max": 0.27212366795968257,
+            "runs": [0.27212366795968257, 0.27212366795968257, 0.27212366795968257]
+          },
+          "hairStretch": {
+            "mean": 0.498956981273832,
+            "min": 0.49895698127383203,
+            "max": 0.49895698127383203,
+            "runs": [0.49895698127383203, 0.49895698127383203, 0.49895698127383203]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.19423522121608242,
+            "min": 0.19423522121608244,
+            "max": 0.19423522121608244,
+            "runs": [0.19423522121608244, 0.19423522121608244, 0.19423522121608244]
+          },
+          "hairStretch": {
+            "mean": 0.4831204017166606,
+            "min": 0.4831204017166606,
+            "max": 0.4831204017166606,
+            "runs": [0.4831204017166606, 0.4831204017166606, 0.4831204017166606]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.19679151465060882,
+            "min": 0.1967915146506088,
+            "max": 0.1967915146506088,
+            "runs": [0.1967915146506088, 0.1967915146506088, 0.1967915146506088]
+          },
+          "hairStretch": {
+            "mean": 0.4988671462561733,
+            "min": 0.49886714625617323,
+            "max": 0.49886714625617323,
+            "runs": [0.49886714625617323, 0.49886714625617323, 0.49886714625617323]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.22927229253284706,
+            "min": 0.22927229253284706,
+            "max": 0.22927229253284706,
+            "runs": [0.22927229253284706, 0.22927229253284706, 0.22927229253284706]
+          },
+          "hairStretch": {
+            "mean": 0.4966349948201321,
+            "min": 0.4966349948201322,
+            "max": 0.4966349948201322,
+            "runs": [0.4966349948201322, 0.4966349948201322, 0.4966349948201322]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.26763514545091877,
+            "min": 0.26763514545091877,
+            "max": 0.26763514545091877,
+            "runs": [0.26763514545091877, 0.26763514545091877, 0.26763514545091877]
+          },
+          "hairStretch": {
+            "mean": 0.4955504683745531,
+            "min": 0.4955504683745531,
+            "max": 0.4955504683745531,
+            "runs": [0.4955504683745531, 0.4955504683745531, 0.4955504683745531]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.2890803472162808,
+            "min": 0.2890803472162808,
+            "max": 0.2890803472162808,
+            "runs": [0.2890803472162808, 0.2890803472162808, 0.2890803472162808]
+          },
+          "hairStretch": {
+            "mean": 0.4973590269273718,
+            "min": 0.4973590269273718,
+            "max": 0.4973590269273718,
+            "runs": [0.4973590269273718, 0.4973590269273718, 0.4973590269273718]
+          },
+          "hairInsideHead": {
+            "mean": 4,
+            "min": 4,
+            "max": 4,
+            "runs": [4, 4, 4]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.12221120006275481,
+            "min": 0.12221120006275481,
+            "max": 0.12221120006275481,
+            "runs": [0.12221120006275481, 0.12221120006275481, 0.12221120006275481]
+          },
+          "hairStretch": {
+            "mean": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "runs": [0.18023290792434243, 0.18023290792434243, 0.18023290792434243]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        }
+      },
+      "rotateLimitFull": {
+        "settle": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          },
+          "hairStretch": {
+            "mean": 0.9741717544496566,
+            "min": 0.9741717544496566,
+            "max": 0.9741717544496566,
+            "runs": [0.9741717544496566, 0.9741717544496566, 0.9741717544496566]
+          },
+          "hairInsideHead": {
+            "mean": 3,
+            "min": 3,
+            "max": 3,
+            "runs": [3, 3, 3]
+          }
+        },
+        "jog": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.6223349078369285,
+            "min": 0.6223349078369285,
+            "max": 0.6223349078369285,
+            "runs": [0.6223349078369285, 0.6223349078369285, 0.6223349078369285]
+          },
+          "hairStretch": {
+            "mean": 0.9966260322323895,
+            "min": 0.9966260322323894,
+            "max": 0.9966260322323894,
+            "runs": [0.9966260322323894, 0.9966260322323894, 0.9966260322323894]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "ticks": 120,
+          "hairTipOffset": {
+            "mean": 0.620640043528897,
+            "min": 0.620640043528897,
+            "max": 0.620640043528897,
+            "runs": [0.620640043528897, 0.620640043528897, 0.620640043528897]
+          },
+          "hairStretch": {
+            "mean": 0.9060605878424818,
+            "min": 0.9060605878424817,
+            "max": 0.9060605878424817,
+            "runs": [0.9060605878424817, 0.9060605878424817, 0.9060605878424817]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "sprint": {
+          "ticks": 90,
+          "hairTipOffset": {
+            "mean": 0.5191863898462588,
+            "min": 0.5191863898462588,
+            "max": 0.5191863898462588,
+            "runs": [0.5191863898462588, 0.5191863898462588, 0.5191863898462588]
+          },
+          "hairStretch": {
+            "mean": 0.9004545909112998,
+            "min": 0.9004545909112998,
+            "max": 0.9004545909112998,
+            "runs": [0.9004545909112998, 0.9004545909112998, 0.9004545909112998]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "ticks": 60,
+          "hairTipOffset": {
+            "mean": 0.7014058161477307,
+            "min": 0.7014058161477307,
+            "max": 0.7014058161477307,
+            "runs": [0.7014058161477307, 0.7014058161477307, 0.7014058161477307]
+          },
+          "hairStretch": {
+            "mean": 0.873073249544824,
+            "min": 0.8730732495448239,
+            "max": 0.8730732495448239,
+            "runs": [0.8730732495448239, 0.8730732495448239, 0.8730732495448239]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "jump": {
+          "ticks": 75,
+          "hairTipOffset": {
+            "mean": 0.7450640354407323,
+            "min": 0.7450640354407323,
+            "max": 0.7450640354407323,
+            "runs": [0.7450640354407323, 0.7450640354407323, 0.7450640354407323]
+          },
+          "hairStretch": {
+            "mean": 0.992546507224097,
+            "min": 0.9925465072240971,
+            "max": 0.9925465072240971,
+            "runs": [0.9925465072240971, 0.9925465072240971, 0.9925465072240971]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.6870804039883748,
+            "min": 0.6870804039883749,
+            "max": 0.6870804039883749,
+            "runs": [0.6870804039883749, 0.6870804039883749, 0.6870804039883749]
+          },
+          "hairStretch": {
+            "mean": 0.9649952173934824,
+            "min": 0.9649952173934824,
+            "max": 0.9649952173934824,
+            "runs": [0.9649952173934824, 0.9649952173934824, 0.9649952173934824]
+          },
+          "hairInsideHead": {
+            "mean": 5,
+            "min": 5,
+            "max": 5,
+            "runs": [5, 5, 5]
+          }
+        },
+        "teleport": {
+          "ticks": 45,
+          "hairTipOffset": {
+            "mean": 0.36935489808976746,
+            "min": 0.36935489808976746,
+            "max": 0.36935489808976746,
+            "runs": [0.36935489808976746, 0.36935489808976746, 0.36935489808976746]
+          },
+          "hairStretch": {
+            "mean": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "runs": [0.18023290792434243, 0.18023290792434243, 0.18023290792434243]
+          },
+          "hairInsideHead": {
+            "mean": 0,
+            "min": 0,
+            "max": 0,
+            "runs": [0, 0, 0]
+          }
+        }
+      }
+    }
+  },
+  "perturbation": {
+    "prd": "PRD-911 AC-3 / PRD-912 AC-3",
+    "why": "Chaos Cloth, FAnimNode_SpringBone and FAnimNode_AnimDynamics are deterministic, so the 3-run spread of the blocks above is 0. A float-level change in the start state is what moves a chaotic system, so this block is the honest spread: the metric over the unperturbed run and 3 perturbed runs",
+    "rule": "run k (k = 1, 2, 3) starts every free cloth particle (all but the pinned top row, grid row 0) k * 0.0001 cm along its own fixed unit vector, FRandomStream(1000 + particle index).VRand(), by editing the cloth asset's physical-mesh vertices in memory before the clothing actors are made. It also starts ponytail_2..6 k * 0.0001 cm along FRandomStream(90000 + chain index 1..5).VRand() in component space, by moving them in the evaluation that places the chains, so the SpringBone chain, every SpringBone arm and every AnimDynamics arm start off their bones by the same amount. Nothing else changes: same script, same step, same rest lengths (the unperturbed run's)",
+    "offsetsCm": [0.0001, 0.0002, 0.0003],
+    "runs": "[unperturbed, perturbed 1, perturbed 2, perturbed 3]; the unperturbed values equal the 3 identical runs of the blocks above",
+    "command": "pnpm exec tsx tools/unreal-reference/character-dynamics/reference.ts perturb (TN_UE_PERTURB=1,2,3), then metrics",
+    "cape": {
+      "settle": {
+        "hemOffset": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        },
+        "hemTrail": {
+          "unperturbed": 2.5036724734675477,
+          "min": 2.503665038904074,
+          "max": 2.503696123606122,
+          "spread": 0.00003108470204793434,
+          "runs": [2.5036724734675477, 2.5036817568375436, 2.503665038904074, 2.503696123606122]
+        },
+        "maxStretch": {
+          "unperturbed": 0.11652192738540057,
+          "min": 0.11645104254506378,
+          "max": 0.11652192738540057,
+          "spread": 0.00007088484033679343,
+          "runs": [0.11652192738540057, 0.116500723067408, 0.11647250670039, 0.11645104254506378]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "jog": {
+        "hemOffset": {
+          "unperturbed": 1.0480949778458193,
+          "min": 1.0480949778458193,
+          "max": 1.0481288567861708,
+          "spread": 0.00003387894035156158,
+          "runs": [1.0480949778458193, 1.0481263594035783, 1.0481266588818974, 1.0481288567861708]
+        },
+        "hemTrail": {
+          "unperturbed": 93.19360976813071,
+          "min": 93.19271687795815,
+          "max": 93.19360976813071,
+          "spread": 0.0008928901725653304,
+          "runs": [93.19360976813071, 93.19271687795815, 93.19284400656771, 93.19294118298453]
+        },
+        "maxStretch": {
+          "unperturbed": 0.6681603140418915,
+          "min": 0.6681603140418915,
+          "max": 0.6701486107080872,
+          "spread": 0.00198829666619571,
+          "runs": [0.6681603140418915, 0.6700398709956887, 0.6701486107080872, 0.6701124192051102]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "jogTurn": {
+        "hemOffset": {
+          "unperturbed": 0.9874714111576846,
+          "min": 0.9868225261448595,
+          "max": 0.9874714111576846,
+          "spread": 0.0006488850128250068,
+          "runs": [0.9874714111576846, 0.9868278356931923, 0.9868225261448595, 0.9868410862996492]
+        },
+        "hemTrail": {
+          "unperturbed": 88.40022847961934,
+          "min": 88.37605206323482,
+          "max": 88.40022847961934,
+          "spread": 0.024176416384520394,
+          "runs": [88.40022847961934, 88.37605206323482, 88.39139874028794, 88.39230953426637]
+        },
+        "maxStretch": {
+          "unperturbed": 1.1701637876565605,
+          "min": 1.1701637876565605,
+          "max": 1.1760810160352673,
+          "spread": 0.005917228378706785,
+          "runs": [1.1701637876565605, 1.1712598850095293, 1.1753357433630907, 1.1760810160352673]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "sprint": {
+        "hemOffset": {
+          "unperturbed": 1.2639201508199651,
+          "min": 1.2636739081903263,
+          "max": 1.264799035383861,
+          "spread": 0.0011251271935346363,
+          "runs": [1.2639201508199651, 1.264799035383861, 1.2646765730719252, 1.2636739081903263]
+        },
+        "hemTrail": {
+          "unperturbed": 124.44382795372616,
+          "min": 124.44382795372616,
+          "max": 124.50336770929471,
+          "spread": 0.059539755568550845,
+          "runs": [124.44382795372616, 124.49243526504694, 124.50336770929471, 124.44693713722211]
+        },
+        "maxStretch": {
+          "unperturbed": 1.2501613862975396,
+          "min": 1.2481067305510045,
+          "max": 1.269091009527453,
+          "spread": 0.0209842789764485,
+          "runs": [1.2501613862975396, 1.2688918176030786, 1.269091009527453, 1.2481067305510045]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "hardStop": {
+        "hemOffset": {
+          "unperturbed": 0.41694229569013674,
+          "min": 0.41694229569013674,
+          "max": 0.4258194797340375,
+          "spread": 0.008877184043900754,
+          "runs": [0.41694229569013674, 0.41953931723099147, 0.4251390088875832, 0.4258194797340375]
+        },
+        "hemTrail": {
+          "unperturbed": 30.93946941476983,
+          "min": 30.93946941476983,
+          "max": 31.201073555555798,
+          "spread": 0.26160414078596617,
+          "runs": [30.93946941476983, 30.97017169116823, 31.201073555555798, 31.155064484956245]
+        },
+        "maxStretch": {
+          "unperturbed": 0.8458748239358778,
+          "min": 0.8452761371080593,
+          "max": 0.8543434167651061,
+          "spread": 0.00906727965704679,
+          "runs": [0.8458748239358778, 0.8452761371080593, 0.8535103151033485, 0.8543434167651061]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "jump": {
+        "hemOffset": {
+          "unperturbed": 0.5721381431176131,
+          "min": 0.5721381431176131,
+          "max": 0.619886744847737,
+          "spread": 0.04774860173012385,
+          "runs": [0.5721381431176131, 0.5834991426174222, 0.6149652543474946, 0.619886744847737]
+        },
+        "hemTrail": {
+          "unperturbed": 51.56706321306796,
+          "min": 51.56706321306796,
+          "max": 55.65727347404083,
+          "spread": 4.090210260972867,
+          "runs": [51.56706321306796, 52.21899774609263, 55.24156965368966, 55.65727347404083]
+        },
+        "maxStretch": {
+          "unperturbed": 0.5759053228581144,
+          "min": 0.5704743370347056,
+          "max": 0.6603002308618096,
+          "spread": 0.08982589382710393,
+          "runs": [0.5759053228581144, 0.5704743370347056, 0.6603002308618096, 0.6265342032120689]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "snapTurn": {
+        "hemOffset": {
+          "unperturbed": 1.8277513204961624,
+          "min": 1.8277513204961624,
+          "max": 1.8362440838061993,
+          "spread": 0.0084927633100369,
+          "runs": [1.8277513204961624, 1.8292518415071415, 1.8362440838061993, 1.8358594908719104]
+        },
+        "hemTrail": {
+          "unperturbed": 176.29052952649124,
+          "min": 176.29052952649124,
+          "max": 176.8328116684145,
+          "spread": 0.5422821419232662,
+          "runs": [176.29052952649124, 176.50508154754033, 176.8328116684145, 176.4927417590628]
+        },
+        "maxStretch": {
+          "unperturbed": 3.222494898075741,
+          "min": 3.21327285849771,
+          "max": 3.6841600643669885,
+          "spread": 0.47088720586927835,
+          "runs": [3.222494898075741, 3.21327285849771, 3.6841600643669885, 3.417367370122582]
+        },
+        "bodyPenetration": {
+          "unperturbed": 1,
+          "min": 1,
+          "max": 3,
+          "spread": 2,
+          "runs": [1, 1, 3, 2]
+        }
+      },
+      "teleport": {
+        "hemOffset": {
+          "unperturbed": 0.015587028983211158,
+          "min": 0.015585896722946352,
+          "max": 0.015587373885125705,
+          "spread": 0.0000014771621793530088,
+          "runs": [
+            0.015587028983211158, 0.015587094530942128, 0.015587373885125705, 0.015585896722946352
+          ]
+        },
+        "hemTrail": {
+          "unperturbed": 2.788011201270559,
+          "min": 2.788011201270559,
+          "max": 2.7880460250211097,
+          "spread": 0.00003482375055074982,
+          "runs": [2.788011201270559, 2.788026437882763, 2.78803277968123, 2.7880460250211097]
+        },
+        "maxStretch": {
+          "unperturbed": 0.08372433990668426,
+          "min": 0.08366586442284096,
+          "max": 0.08372433990668426,
+          "spread": 0.000058475483843301035,
+          "runs": [
+            0.08372433990668426, 0.08368588008447686, 0.08368624188172946, 0.08366586442284096
+          ]
+        },
+        "bodyPenetration": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      }
+    },
+    "springBone": {
+      "settle": {
+        "hairTipOffset": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        },
+        "hairStretch": {
+          "unperturbed": 0.5990681693180273,
+          "min": 0.5990681693180273,
+          "max": 0.5990960514297652,
+          "spread": 0.000027882111737875803,
+          "runs": [0.5990681693180273, 0.5990779842486786, 0.5990865202811657, 0.5990960514297652]
+        },
+        "hairInsideHead": {
+          "unperturbed": 1,
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "runs": [1, 1, 1, 1]
+        }
+      },
+      "jog": {
+        "hairTipOffset": {
+          "unperturbed": 2.2722301517802754,
+          "min": 2.2722301517802754,
+          "max": 2.2722308600713492,
+          "spread": 7.082910737921111e-7,
+          "runs": [2.2722301517802754, 2.272230378224444, 2.2722306046687506, 2.2722308600713492]
+        },
+        "hairStretch": {
+          "unperturbed": 11.13394211774109,
+          "min": 11.13394211774109,
+          "max": 11.133968549970186,
+          "spread": 0.000026432229095263438,
+          "runs": [11.13394211774109, 11.133951226653663, 11.133959441052326, 11.133968549970186]
+        },
+        "hairInsideHead": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "jogTurn": {
+        "hairTipOffset": {
+          "unperturbed": 2.0037348202474785,
+          "min": 2.003731449012234,
+          "max": 2.0037348202474785,
+          "spread": 0.0000033712352442982763,
+          "runs": [2.0037348202474785, 2.0037336921738955, 2.003732552040169, 2.003731449012234]
+        },
+        "hairStretch": {
+          "unperturbed": 11.86608307663293,
+          "min": 11.866078596840289,
+          "max": 11.866084055306919,
+          "spread": 0.000005458466629804093,
+          "runs": [11.86608307663293, 11.866083590510137, 11.866084055306919, 11.866078596840289]
+        },
+        "hairInsideHead": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "sprint": {
+        "hairTipOffset": {
+          "unperturbed": 2.917559573322181,
+          "min": 2.9175550677336672,
+          "max": 2.917559573322181,
+          "spread": 0.000004505588513836756,
+          "runs": [2.917559573322181, 2.917558061826559, 2.91755655033144, 2.9175550677336672]
+        },
+        "hairStretch": {
+          "unperturbed": 12.181498806087086,
+          "min": 12.181498666006577,
+          "max": 12.181498806087086,
+          "spread": 1.400805089701862e-7,
+          "runs": [12.181498806087086, 12.181498806087086, 12.181498806087086, 12.181498666006577]
+        },
+        "hairInsideHead": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      },
+      "hardStop": {
+        "hairTipOffset": {
+          "unperturbed": 1.9048226571763467,
+          "min": 1.9048226571763467,
+          "max": 1.9048268035733245,
+          "spread": 0.000004146396977766642,
+          "runs": [1.9048226571763467, 1.9048240490745263, 1.904825440973658, 1.9048268035733245]
+        },
+        "hairStretch": {
+          "unperturbed": 14.459952920754178,
+          "min": 14.459952920754178,
+          "max": 14.459952920754178,
+          "spread": 0,
+          "runs": [14.459952920754178, 14.459952920754178, 14.459952920754178, 14.459952920754178]
+        },
+        "hairInsideHead": {
+          "unperturbed": 3,
+          "min": 3,
+          "max": 3,
+          "spread": 0,
+          "runs": [3, 3, 3, 3]
+        }
+      },
+      "jump": {
+        "hairTipOffset": {
+          "unperturbed": 3.2806716432466225,
+          "min": 3.2806699936313373,
+          "max": 3.2806716432466225,
+          "spread": 0.0000016496152852596424,
+          "runs": [3.2806716432466225, 3.2806710875447296, 3.280670531843884, 3.2806699936313373]
+        },
+        "hairStretch": {
+          "unperturbed": 17.401795369011957,
+          "min": 17.401795369011957,
+          "max": 17.401795369011957,
+          "spread": 0,
+          "runs": [17.401795369011957, 17.401795369011957, 17.401795369011957, 17.401795369011957]
+        },
+        "hairInsideHead": {
+          "unperturbed": 1,
+          "min": 1,
+          "max": 1,
+          "spread": 0,
+          "runs": [1, 1, 1, 1]
+        }
+      },
+      "snapTurn": {
+        "hairTipOffset": {
+          "unperturbed": 3.675893135812831,
+          "min": 3.6758911831050542,
+          "max": 3.675893135812831,
+          "spread": 0.000001952707776808893,
+          "runs": [3.675893135812831, 3.675892483660587, 3.6758918315092486, 3.6758911831050542]
+        },
+        "hairStretch": {
+          "unperturbed": 29.602426141172426,
+          "min": 29.602426141172426,
+          "max": 29.602426141172426,
+          "spread": 0,
+          "runs": [29.602426141172426, 29.602426141172426, 29.602426141172426, 29.602426141172426]
+        },
+        "hairInsideHead": {
+          "unperturbed": 2,
+          "min": 2,
+          "max": 2,
+          "spread": 0,
+          "runs": [2, 2, 2, 2]
+        }
+      },
+      "teleport": {
+        "hairTipOffset": {
+          "unperturbed": 0.05733726434484278,
+          "min": 0.05733404465921073,
+          "max": 0.05733726434484278,
+          "spread": 0.0000032196856320498846,
+          "runs": [
+            0.05733726434484278, 0.05733618192694894, 0.05733509955404166, 0.05733404465921073
+          ]
+        },
+        "hairStretch": {
+          "unperturbed": 0.18017986174221745,
+          "min": 0.18017986174221745,
+          "max": 0.18017986174221745,
+          "spread": 0,
+          "runs": [
+            0.18017986174221745, 0.18017986174221745, 0.18017986174221745, 0.18017986174221745
+          ]
+        },
+        "hairInsideHead": {
+          "unperturbed": 0,
+          "min": 0,
+          "max": 0,
+          "spread": 0,
+          "runs": [0, 0, 0, 0]
+        }
+      }
+    },
+    "animDynamics": {
+      "stock": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.05731237750880047,
+            "min": 0.057301845244873695,
+            "max": 0.05731237750880047,
+            "spread": 0.000010532263926776864,
+            "runs": [
+              0.05731237750880047, 0.05730885055715085, 0.057305275215923324, 0.057301845244873695
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.5419177132849954,
+            "min": 0.54191744022072,
+            "max": 0.5419177132849954,
+            "spread": 2.7306427541340383e-7,
+            "runs": [0.5419177132849954, 0.541917643794735, 0.5419175095307363, 0.54191744022072]
+          },
+          "hairStretch": {
+            "unperturbed": 0.23363216389616848,
+            "min": 0.23361869014137704,
+            "max": 0.23363216389616848,
+            "spread": 0.000013473754791437642,
+            "runs": [
+              0.23363216389616848, 0.23362724474395602, 0.23362348591769466, 0.23361869014137704
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.6179246987171719,
+            "min": 0.617924255643871,
+            "max": 0.6179246987171719,
+            "spread": 4.430733009375132e-7,
+            "runs": [0.6179246987171719, 0.6179245876691986, 0.6179243668027464, 0.617924255643871]
+          },
+          "hairStretch": {
+            "unperturbed": 0.2241386250799764,
+            "min": 0.2241283632149409,
+            "max": 0.2241386250799764,
+            "spread": 0.000010261865035499085,
+            "runs": [
+              0.2241386250799764, 0.22413609895518816, 0.22413130280857807, 0.2241283632149409
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.5422519529344041,
+            "min": 0.5422516804697527,
+            "max": 0.5422519799513302,
+            "spread": 2.9948157753700855e-7,
+            "runs": [0.5422519529344041, 0.5422519799513302, 0.5422516930025231, 0.5422516804697527]
+          },
+          "hairStretch": {
+            "unperturbed": 0.24822170982544955,
+            "min": 0.2482134735194257,
+            "max": 0.24822170982544955,
+            "spread": 0.000008236306023867712,
+            "runs": [
+              0.24822170982544955, 0.2482134735194257, 0.24821383544508047, 0.24821386401663137
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.4526806380958194,
+            "min": 0.4526806380958194,
+            "max": 0.45268219496051726,
+            "spread": 0.0000015568646978825207,
+            "runs": [
+              0.4526806380958194, 0.45268121473090844, 0.45268179135309694, 0.45268219496051726
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.2027390805232887,
+            "min": 0.2027390805232887,
+            "max": 0.20277983006800393,
+            "spread": 0.00004074954471522396,
+            "runs": [
+              0.2027390805232887, 0.20275412332779852, 0.2027669595513648, 0.20277983006800393
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.2783000013566279,
+            "min": 0.278299480736248,
+            "max": 0.2783000013566279,
+            "spread": 5.206203799179576e-7,
+            "runs": [0.2783000013566279, 0.27829979783235875, 0.2782995942090216, 0.278299480736248]
+          },
+          "hairStretch": {
+            "unperturbed": 0.24589932733563935,
+            "min": 0.24588469383689504,
+            "max": 0.24589932733563935,
+            "spread": 0.000014633498744309748,
+            "runs": [
+              0.24589932733563935, 0.2458946701091016, 0.2458908120904768, 0.24588469383689504
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.8657652330012526,
+            "min": 0.8657652330012526,
+            "max": 0.8657690797874102,
+            "spread": 0.000003846786157613025,
+            "runs": [0.8657652330012526, 0.8657664616033626, 0.8657677707015823, 0.8657690797874102]
+          },
+          "hairStretch": {
+            "unperturbed": 0.5009921862974214,
+            "min": 0.5009796324607136,
+            "max": 0.5009921862974214,
+            "spread": 0.00001255383670772936,
+            "runs": [0.5009921862974214, 0.5009896545165662, 0.5009846434069838, 0.5009796324607136]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.4635247812901518,
+            "min": 0.4635247812901518,
+            "max": 0.46353160474197014,
+            "spread": 0.000006823451818349646,
+            "runs": [
+              0.4635247812901518, 0.4635272747027757, 0.4635292788793142, 0.46353160474197014
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.07655504768188526,
+            "min": 0.07655504768188526,
+            "max": 0.07659235275395115,
+            "spread": 0.00003730507206589628,
+            "runs": [
+              0.07655504768188526, 0.07656875616695147, 0.0765804040999789, 0.07659235275395115
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        }
+      },
+      "swing": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.2666526753157169,
+            "min": 0.2651146069553153,
+            "max": 0.2666526753157169,
+            "spread": 0.001538068360401601,
+            "runs": [
+              0.2666526753157169, 0.2661421128543092, 0.26562844317126055, 0.2651146069553153
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.6001234887668202,
+            "min": 0.5553633681308188,
+            "max": 0.676034326418392,
+            "spread": 0.12067095828757324,
+            "runs": [0.6001234887668202, 0.5553633681308188, 0.676034326418392, 0.5943654639637698]
+          },
+          "hairStretch": {
+            "unperturbed": 0.41013598209847024,
+            "min": 0.41013598209847024,
+            "max": 0.8681578511663355,
+            "spread": 0.45802186906786524,
+            "runs": [0.41013598209847024, 0.677348555597573, 0.6620950747963168, 0.8681578511663355]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.5804425448831252,
+            "min": 0.5804425448831252,
+            "max": 0.6562472291020135,
+            "spread": 0.07580468421888831,
+            "runs": [0.5804425448831252, 0.5846339566464335, 0.6562472291020135, 0.6443428796516304]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4827322246053365,
+            "min": 0.3421994400600169,
+            "max": 0.6975031282144392,
+            "spread": 0.35530368815442226,
+            "runs": [0.4827322246053365, 0.6975031282144392, 0.3421994400600169, 0.6604693000150915]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.4059751434738744,
+            "min": 0.38496805699214504,
+            "max": 0.47110547525727264,
+            "spread": 0.08613741826512761,
+            "runs": [
+              0.4059751434738744, 0.47110547525727264, 0.38496805699214504, 0.4394092644493405
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.43999018083279895,
+            "min": 0.43999018083279895,
+            "max": 0.9905760262302825,
+            "spread": 0.5505858453974836,
+            "runs": [
+              0.43999018083279895, 0.9905760262302825, 0.6037647592954198, 0.7443475453809183
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.5397118069289553,
+            "min": 0.49309302423775,
+            "max": 0.5721905636354064,
+            "spread": 0.07909753939765646,
+            "runs": [0.5397118069289553, 0.4991616261756228, 0.5721905636354064, 0.49309302423775]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4852339581043166,
+            "min": 0.297847278711443,
+            "max": 0.8968545404896391,
+            "spread": 0.5990072617781961,
+            "runs": [0.4852339581043166, 0.8968545404896391, 0.297847278711443, 0.652687023896694]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.4493517782730442,
+            "min": 0.3976074254165856,
+            "max": 0.4833871946380173,
+            "spread": 0.08577976922143171,
+            "runs": [
+              0.4493517782730442, 0.42597080159918127, 0.4833871946380173, 0.3976074254165856
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.770017663618396,
+            "min": 0.5527058960652254,
+            "max": 0.8890975600247012,
+            "spread": 0.33639166395947584,
+            "runs": [0.770017663618396, 0.8890975600247012, 0.7791666542777936, 0.5527058960652254]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.8064863752010912,
+            "min": 0.8064863752010912,
+            "max": 0.8299150901296501,
+            "spread": 0.023428714928558914,
+            "runs": [0.8064863752010912, 0.817442022165982, 0.8299150901296501, 0.8091619736390155]
+          },
+          "hairStretch": {
+            "unperturbed": 1.3201234909505155,
+            "min": 0.73063891788601,
+            "max": 1.3201234909505155,
+            "spread": 0.5894845730645055,
+            "runs": [1.3201234909505155, 0.73063891788601, 1.2403926665232539, 0.9396733162504594]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.5713699421276216,
+            "min": 0.564906232026105,
+            "max": 0.5748205424315473,
+            "spread": 0.009914310405442328,
+            "runs": [0.5713699421276216, 0.5730373871906785, 0.564906232026105, 0.5748205424315473]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8866618077724545,
+            "min": 0.32333843117082917,
+            "max": 0.9128473372676401,
+            "spread": 0.589508906096811,
+            "runs": [
+              0.8866618077724545, 0.6587839296826923, 0.32333843117082917, 0.9128473372676401
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [5, 4, 5, 5]
+          }
+        }
+      },
+      "swingWorld": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.2666526753157169,
+            "min": 0.2651146069553153,
+            "max": 0.2666526753157169,
+            "spread": 0.001538068360401601,
+            "runs": [
+              0.2666526753157169, 0.2661421128543092, 0.26562844317126055, 0.2651146069553153
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.4264678188053965,
+            "min": 0.4264678188053965,
+            "max": 0.564766822910772,
+            "spread": 0.13829900410537543,
+            "runs": [0.4264678188053965, 0.5316337174326502, 0.564766822910772, 0.48714088539144157]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8802524053880454,
+            "min": 0.8802524053880454,
+            "max": 0.9286326497546242,
+            "spread": 0.04838024436657884,
+            "runs": [0.8802524053880454, 0.8847546800889583, 0.8853395202615582, 0.9286326497546242]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.6020652871210552,
+            "min": 0.5125073162874697,
+            "max": 0.6620438191380363,
+            "spread": 0.14953650285056663,
+            "runs": [0.6020652871210552, 0.5125073162874697, 0.6620438191380363, 0.5843193310751366]
+          },
+          "hairStretch": {
+            "unperturbed": 0.7777442503007294,
+            "min": 0.6267419787487737,
+            "max": 0.9792188919328332,
+            "spread": 0.3524769131840595,
+            "runs": [0.7777442503007294, 0.9792188919328332, 0.7647264743562314, 0.6267419787487737]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.5951697596352327,
+            "min": 0.4104091990720082,
+            "max": 0.5951697596352327,
+            "spread": 0.18476056056322449,
+            "runs": [
+              0.5951697596352327, 0.4104091990720082, 0.46535924269723977, 0.4996201732621785
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8534209211704266,
+            "min": 0.822729794207476,
+            "max": 0.8665107068141203,
+            "spread": 0.043780912606644296,
+            "runs": [0.8534209211704266, 0.8335742325334715, 0.8665107068141203, 0.822729794207476]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.7109626290843606,
+            "min": 0.7109626290843606,
+            "max": 0.8253958442158718,
+            "spread": 0.11443321513151117,
+            "runs": [0.7109626290843606, 0.8253958442158718, 0.7810298053251025, 0.8224784969669445]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8721493400175682,
+            "min": 0.8226391414034226,
+            "max": 0.8721493400175682,
+            "spread": 0.04951019861414552,
+            "runs": [0.8721493400175682, 0.8305155085353968, 0.8226391414034226, 0.8680315498099119]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.7145646518840642,
+            "min": 0.6937118343434978,
+            "max": 0.7182320649405737,
+            "spread": 0.024520230597075865,
+            "runs": [0.7145646518840642, 0.6937118343434978, 0.694897111499797, 0.7182320649405737]
+          },
+          "hairStretch": {
+            "unperturbed": 1.130952660758957,
+            "min": 0.7529613951440314,
+            "max": 1.3294090931172176,
+            "spread": 0.5764476979731862,
+            "runs": [1.130952660758957, 0.7529613951440314, 0.9060466810900558, 1.3294090931172176]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.7956497020794849,
+            "min": 0.7585957350730561,
+            "max": 0.8754728365590341,
+            "spread": 0.11687710148597796,
+            "runs": [0.7956497020794849, 0.7585957350730561, 0.8485062340904076, 0.8754728365590341]
+          },
+          "hairStretch": {
+            "unperturbed": 2.70619318559713,
+            "min": 2.362663793730533,
+            "max": 3.051096091316312,
+            "spread": 0.6884322975857793,
+            "runs": [2.70619318559713, 2.7610269466662993, 3.051096091316312, 2.362663793730533]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [5, 4, 5, 5]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.570599587393135,
+            "min": 0.31454664677899424,
+            "max": 0.7130304814275212,
+            "spread": 0.398483834648527,
+            "runs": [0.570599587393135, 0.31454664677899424, 0.618271258821879, 0.7130304814275212]
+          },
+          "hairStretch": {
+            "unperturbed": 0.7735719223232276,
+            "min": 0.35613845771005626,
+            "max": 0.85758697670712,
+            "spread": 0.5014485189970638,
+            "runs": [0.7735719223232276, 0.35613845771005626, 0.6735005222334054, 0.85758697670712]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        }
+      }
+    },
+    "springBoneRotate": {
+      "rotate": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 3.2249312668680084,
+            "min": 3.2249312668680084,
+            "max": 3.2254567392584477,
+            "spread": 0.0005254723904393188,
+            "runs": [3.2249312668680084, 3.225105988210112, 3.22528144272139, 3.2254567392584477]
+          },
+          "hairInsideHead": {
+            "unperturbed": 2,
+            "min": 2,
+            "max": 2,
+            "spread": 0,
+            "runs": [2, 2, 2, 2]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 2.466885041639825,
+            "min": 2.4668816867095757,
+            "max": 2.466885041639825,
+            "spread": 0.0000033549302491664434,
+            "runs": [2.466885041639825, 2.46688389373807, 2.4668827753017846, 2.4668816867095757]
+          },
+          "hairStretch": {
+            "unperturbed": 12.541107491967699,
+            "min": 12.541107491967699,
+            "max": 12.5413418298469,
+            "spread": 0.00023433787920090765,
+            "runs": [12.541107491967699, 12.541184523075943, 12.541262994917032, 12.5413418298469]
+          },
+          "hairInsideHead": {
+            "unperturbed": 3,
+            "min": 3,
+            "max": 3,
+            "spread": 0,
+            "runs": [3, 3, 3, 3]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 1.9575503720210903,
+            "min": 1.957531042205881,
+            "max": 1.9575503720210903,
+            "spread": 0.000019329815209356838,
+            "runs": [1.9575503720210903, 1.9575439803247852, 1.9575374083763977, 1.957531042205881]
+          },
+          "hairStretch": {
+            "unperturbed": 11.204913244785677,
+            "min": 11.204901896407454,
+            "max": 11.204913244785677,
+            "spread": 0.000011348378222919564,
+            "runs": [11.204913244785677, 11.204907526540698, 11.204902202675616, 11.204901896407454]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 2.914426219004997,
+            "min": 2.914400581103836,
+            "max": 2.914426219004997,
+            "spread": 0.000025637901161168486,
+            "runs": [2.914426219004997, 2.9144176914861535, 2.914409192704565, 2.914400581103836]
+          },
+          "hairStretch": {
+            "unperturbed": 12.003683513529417,
+            "min": 12.003680324846442,
+            "max": 12.003683513529417,
+            "spread": 0.000003188682974553103,
+            "runs": [12.003683513529417, 12.003680508734842, 12.003680324846442, 12.003680508734842]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 1.9170600624276568,
+            "min": 1.9170600624276568,
+            "max": 1.9170919186405189,
+            "spread": 0.000031856212862058086,
+            "runs": [1.9170600624276568, 1.9170706461214357, 1.9170812008484917, 1.9170919186405189]
+          },
+          "hairStretch": {
+            "unperturbed": 14.567782881595658,
+            "min": 14.567782881595658,
+            "max": 14.567782881595658,
+            "spread": 0,
+            "runs": [14.567782881595658, 14.567782881595658, 14.567782881595658, 14.567782881595658]
+          },
+          "hairInsideHead": {
+            "unperturbed": 3,
+            "min": 3,
+            "max": 3,
+            "spread": 0,
+            "runs": [3, 3, 3, 3]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 3.280613312163178,
+            "min": 3.2805718091966494,
+            "max": 3.280613312163178,
+            "spread": 0.00004150296652882801,
+            "runs": [3.280613312163178, 3.2805994658778705, 3.2805856375198923, 3.2805718091966494]
+          },
+          "hairStretch": {
+            "unperturbed": 17.493327341341587,
+            "min": 17.493327341341587,
+            "max": 17.493327341341587,
+            "spread": 0,
+            "runs": [17.493327341341587, 17.493327341341587, 17.493327341341587, 17.493327341341587]
+          },
+          "hairInsideHead": {
+            "unperturbed": 1,
+            "min": 1,
+            "max": 1,
+            "spread": 0,
+            "runs": [1, 1, 1, 1]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 3.789029274451676,
+            "min": 3.789029274451676,
+            "max": 3.789049443399214,
+            "spread": 0.000020168947538312665,
+            "runs": [3.789029274451676, 3.789035995102799, 3.789042719216935, 3.789049443399214]
+          },
+          "hairStretch": {
+            "unperturbed": 30.016829686307283,
+            "min": 30.016829686307283,
+            "max": 30.016829686307283,
+            "spread": 0,
+            "runs": [30.016829686307283, 30.016829686307283, 30.016829686307283, 30.016829686307283]
+          },
+          "hairInsideHead": {
+            "unperturbed": 2,
+            "min": 2,
+            "max": 2,
+            "spread": 0,
+            "runs": [2, 2, 2, 2]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.08773898854287474,
+            "min": 0.08773898854287474,
+            "max": 0.08774503777111227,
+            "spread": 0.000006049228237534066,
+            "runs": [
+              0.08773898854287474, 0.08774099172574695, 0.08774301298732337, 0.08774503777111227
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "spread": 0,
+            "runs": [
+              0.18023290792434243, 0.18023290792434243, 0.18023290792434243, 0.18023290792434243
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        }
+      },
+      "limitHalf": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4350000909000806,
+            "min": 0.4349383160654783,
+            "max": 0.4350000909000806,
+            "spread": 0.00006177483460234612,
+            "runs": [0.4350000909000806, 0.4349791162828982, 0.4349592910970228, 0.4349383160654783]
+          },
+          "hairInsideHead": {
+            "unperturbed": 1,
+            "min": 1,
+            "max": 1,
+            "spread": 0,
+            "runs": [1, 1, 1, 1]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.198152419847292,
+            "min": 0.198152419847292,
+            "max": 0.20690325925422495,
+            "spread": 0.008750839406932942,
+            "runs": [
+              0.198152419847292, 0.20022299627900977, 0.20321619907862423, 0.20690325925422495
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.493980293523244,
+            "min": 0.4939710065820828,
+            "max": 0.49855015369359557,
+            "spread": 0.004579147111512749,
+            "runs": [
+              0.493980293523244, 0.49397470243905695, 0.4939710065820828, 0.49855015369359557
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.1971143716216399,
+            "min": 0.1685937745988971,
+            "max": 0.22376271513898774,
+            "spread": 0.05516894054009064,
+            "runs": [
+              0.1971143716216399, 0.1685937745988971, 0.17786677951470609, 0.22376271513898774
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4838067261819329,
+            "min": 0.4838067261819329,
+            "max": 0.4968745028371355,
+            "spread": 0.013067776655202645,
+            "runs": [0.4838067261819329, 0.4958764617404354, 0.4935704132616112, 0.4968745028371355]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.17575807869059618,
+            "min": 0.16828042484508712,
+            "max": 0.21519120207692943,
+            "spread": 0.04691077723184231,
+            "runs": [
+              0.17575807869059618, 0.1837795091905828, 0.21519120207692943, 0.16828042484508712
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4981850692786376,
+            "min": 0.49508733326427457,
+            "max": 0.4981850692786376,
+            "spread": 0.0030977360143630284,
+            "runs": [0.4981850692786376, 0.495672731647845, 0.4963316153670281, 0.49508733326427457]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.2077598433765755,
+            "min": 0.20619105848382868,
+            "max": 0.24690740613420298,
+            "spread": 0.040716347650374296,
+            "runs": [
+              0.2077598433765755, 0.21978046912700555, 0.24690740613420298, 0.20619105848382868
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4972373430560958,
+            "min": 0.46554567533804003,
+            "max": 0.4972373430560958,
+            "spread": 0.03169166771805576,
+            "runs": [
+              0.4972373430560958, 0.46554567533804003, 0.49519792731135215, 0.48056689870567637
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [4, 5, 4, 4]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.2632290967191371,
+            "min": 0.23784626166928677,
+            "max": 0.2632290967191371,
+            "spread": 0.02538283504985031,
+            "runs": [
+              0.2632290967191371, 0.2458371840055885, 0.2536805038634855, 0.23784626166928677
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4944561978830375,
+            "min": 0.4882043051861469,
+            "max": 0.4944561978830375,
+            "spread": 0.006251892696890637,
+            "runs": [0.4944561978830375, 0.4882043051861469, 0.4915008153321172, 0.4909226302870129]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.28112389699310336,
+            "min": 0.2620485994943595,
+            "max": 0.28112389699310336,
+            "spread": 0.01907529749874387,
+            "runs": [
+              0.28112389699310336, 0.2658153026072986, 0.2620485994943595, 0.28023470875455575
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.49782461219418295,
+            "min": 0.4973524332448265,
+            "max": 0.4990421761704842,
+            "spread": 0.0016897429256577112,
+            "runs": [
+              0.49782461219418295, 0.4974514572816908, 0.4990421761704842, 0.4973524332448265
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.09483902478984198,
+            "min": 0.09483902478984198,
+            "max": 0.09499007829536535,
+            "spread": 0.00015105350552337138,
+            "runs": [
+              0.09483902478984198, 0.0948893655901894, 0.0949397353932279, 0.09499007829536535
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.18017986174221745,
+            "min": 0.18017986174221745,
+            "max": 0.18017986174221745,
+            "spread": 0,
+            "runs": [
+              0.18017986174221745, 0.18017986174221745, 0.18017986174221745, 0.18017986174221745
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        }
+      },
+      "limitFull": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.5990671738476541,
+            "min": 0.5990671738476541,
+            "max": 0.599097046860309,
+            "spread": 0.00002987301265489073,
+            "runs": [0.5990671738476541, 0.5990767034509552, 0.5990865202811657, 0.599097046860309]
+          },
+          "hairInsideHead": {
+            "unperturbed": 1,
+            "min": 1,
+            "max": 1,
+            "spread": 0,
+            "runs": [1, 1, 1, 1]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.3288910753792621,
+            "min": 0.3288910753792621,
+            "max": 0.3381292491279599,
+            "spread": 0.009238173748697787,
+            "runs": [
+              0.3288910753792621, 0.3381292491279599, 0.3295214184457043, 0.32895111708397284
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9217357792773005,
+            "min": 0.9217357792773005,
+            "max": 0.9592762332660741,
+            "spread": 0.03754045398877359,
+            "runs": [0.9217357792773005, 0.9592762332660741, 0.9225842329882578, 0.9229748151815259]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.3507892309020157,
+            "min": 0.3498598011703752,
+            "max": 0.3666211157697566,
+            "spread": 0.016761314599381405,
+            "runs": [
+              0.3507892309020157, 0.3498598011703752, 0.36307176992926493, 0.3666211157697566
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9465577331474149,
+            "min": 0.8538149380495281,
+            "max": 0.9497121239986726,
+            "spread": 0.09589718594914443,
+            "runs": [0.9465577331474149, 0.9272188813534386, 0.9497121239986726, 0.8538149380495281]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.35086721387552416,
+            "min": 0.3379364761693174,
+            "max": 0.36280733391269704,
+            "spread": 0.02487085774337966,
+            "runs": [
+              0.35086721387552416, 0.3379364761693174, 0.36280733391269704, 0.3568239596960427
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8982290317441117,
+            "min": 0.8535148928369446,
+            "max": 0.9668286234669992,
+            "spread": 0.11331373063005457,
+            "runs": [0.8982290317441117, 0.8535148928369446, 0.9276080634404393, 0.9668286234669992]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.37363286940358126,
+            "min": 0.37129622108958305,
+            "max": 0.3976323395444473,
+            "spread": 0.026336118454864277,
+            "runs": [
+              0.37363286940358126, 0.37129622108958305, 0.3976323395444473, 0.38397610770162816
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8748623982124024,
+            "min": 0.8748623982124024,
+            "max": 0.9959929846590154,
+            "spread": 0.12113058644661301,
+            "runs": [0.8748623982124024, 0.9577207817336607, 0.9959929846590154, 0.8874056994325279]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.4378189504471134,
+            "min": 0.4211376816022339,
+            "max": 0.4378189504471134,
+            "spread": 0.01668126884487947,
+            "runs": [0.4378189504471134, 0.426583063695367, 0.4282361063446526, 0.4211376816022339]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9928113814178943,
+            "min": 0.9604184418809423,
+            "max": 0.9970149984198984,
+            "spread": 0.036596556538956104,
+            "runs": [0.9928113814178943, 0.9604184418809423, 0.9970149984198984, 0.9949859952467346]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.38753116067429677,
+            "min": 0.38753116067429677,
+            "max": 0.4094255286832658,
+            "spread": 0.021894368008969045,
+            "runs": [0.38753116067429677, 0.4094255286832658, 0.402591538044843, 0.3899532127405906]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9645805110068737,
+            "min": 0.9598254543031846,
+            "max": 0.9712899872338003,
+            "spread": 0.011464532930615778,
+            "runs": [0.9645805110068737, 0.9598254543031846, 0.9712899872338003, 0.9686075251028259]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [4, 5, 5, 5]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.05733729177888602,
+            "min": 0.05733406586125558,
+            "max": 0.05733729177888602,
+            "spread": 0.0000032259176304394455,
+            "runs": [
+              0.05733729177888602, 0.057336209360673594, 0.05733512698744769, 0.05733406586125558
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.18017986174221745,
+            "min": 0.18017986174221745,
+            "max": 0.18017986174221745,
+            "spread": 0,
+            "runs": [
+              0.18017986174221745, 0.18017986174221745, 0.18017986174221745, 0.18017986174221745
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        }
+      },
+      "rotateLimitHalf": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.49821731994905316,
+            "min": 0.49821186216160784,
+            "max": 0.49821731994905316,
+            "spread": 0.000005457787445317663,
+            "runs": [
+              0.49821731994905316, 0.49821547229704555, 0.49821516609395444, 0.49821186216160784
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.27212366795968257,
+            "min": 0.2634525680306231,
+            "max": 0.27212366795968257,
+            "spread": 0.008671099929059456,
+            "runs": [
+              0.27212366795968257, 0.2677534313311983, 0.2634525680306231, 0.26813726686627976
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.49895698127383203,
+            "min": 0.49495243380193266,
+            "max": 0.49895698127383203,
+            "spread": 0.004004547471899378,
+            "runs": [
+              0.49895698127383203, 0.49495243380193266, 0.4952214528070521, 0.49893868664511964
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.19423522121608244,
+            "min": 0.17121483517654132,
+            "max": 0.23620352197588446,
+            "spread": 0.06498868679934314,
+            "runs": [
+              0.19423522121608244, 0.17121483517654132, 0.20441611651881553, 0.23620352197588446
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4831204017166606,
+            "min": 0.4831204017166606,
+            "max": 0.49791107061480333,
+            "spread": 0.014790668898142734,
+            "runs": [
+              0.4831204017166606, 0.4975340825507254, 0.49791107061480333, 0.48901864195859446
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.1967915146506088,
+            "min": 0.19423722867980125,
+            "max": 0.20025535205249204,
+            "spread": 0.006018123372690781,
+            "runs": [
+              0.1967915146506088, 0.20025535205249204, 0.1959187509377255, 0.19423722867980125
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.49886714625617323,
+            "min": 0.4944783676206479,
+            "max": 0.49886714625617323,
+            "spread": 0.004388778635525337,
+            "runs": [0.49886714625617323, 0.4944783676206479, 0.4968628604708829, 0.497509042278815]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.22927229253284706,
+            "min": 0.22927229253284706,
+            "max": 0.24557454731982395,
+            "spread": 0.01630225478697689,
+            "runs": [
+              0.22927229253284706, 0.2387864674558126, 0.24557454731982395, 0.23489071428027533
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4966349948201322,
+            "min": 0.49629290357415534,
+            "max": 0.49840336577406974,
+            "spread": 0.002110462199914398,
+            "runs": [
+              0.4966349948201322, 0.49629290357415534, 0.498173199928292, 0.49840336577406974
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [4, 5, 4, 4]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.26763514545091877,
+            "min": 0.2622517328838338,
+            "max": 0.2878242953952072,
+            "spread": 0.02557256251137341,
+            "runs": [
+              0.26763514545091877, 0.2622517328838338, 0.2757520425771658, 0.2878242953952072
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4955504683745531,
+            "min": 0.4898228993670348,
+            "max": 0.4955504683745531,
+            "spread": 0.005727569007518252,
+            "runs": [
+              0.4955504683745531, 0.4898228993670348, 0.48998493091081863, 0.4907126308967089
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.2890803472162808,
+            "min": 0.2890803472162808,
+            "max": 0.3010151733668407,
+            "spread": 0.011934826150559907,
+            "runs": [0.2890803472162808, 0.29321596098259883, 0.297856467616611, 0.3010151733668407]
+          },
+          "hairStretch": {
+            "unperturbed": 0.4973590269273718,
+            "min": 0.4973524332448265,
+            "max": 0.49904885292664014,
+            "spread": 0.0016964196818136656,
+            "runs": [
+              0.4973590269273718, 0.49871685296701485, 0.49904885292664014, 0.4973524332448265
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 4,
+            "min": 4,
+            "max": 4,
+            "spread": 0,
+            "runs": [4, 4, 4, 4]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.12221120006275481,
+            "min": 0.12221120006275481,
+            "max": 0.13386980612205368,
+            "spread": 0.011658606059298873,
+            "runs": [
+              0.12221120006275481, 0.12685439247588176, 0.12261725168960423, 0.13386980612205368
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "spread": 0,
+            "runs": [
+              0.18023290792434243, 0.18023290792434243, 0.18023290792434243, 0.18023290792434243
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        }
+      },
+      "rotateLimitFull": {
+        "settle": {
+          "hairTipOffset": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9741717544496566,
+            "min": 0.9741717544496566,
+            "max": 0.9747997009997886,
+            "spread": 0.0006279465501319859,
+            "runs": [0.9741717544496566, 0.9743750270746296, 0.9745806059776472, 0.9747997009997886]
+          },
+          "hairInsideHead": {
+            "unperturbed": 3,
+            "min": 3,
+            "max": 3,
+            "spread": 0,
+            "runs": [3, 3, 3, 3]
+          }
+        },
+        "jog": {
+          "hairTipOffset": {
+            "unperturbed": 0.6223349078369285,
+            "min": 0.6223349078369285,
+            "max": 0.630205932247693,
+            "spread": 0.007871024410764482,
+            "runs": [0.6223349078369285, 0.630205932247693, 0.6240188866593523, 0.6280515994392507]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9966260322323894,
+            "min": 0.9918377592637935,
+            "max": 0.9966260322323894,
+            "spread": 0.0047882729685959635,
+            "runs": [0.9966260322323894, 0.9918377592637935, 0.9955037575614529, 0.9924882967300632]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jogTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.620640043528897,
+            "min": 0.5506957309243986,
+            "max": 0.620640043528897,
+            "spread": 0.0699443126044984,
+            "runs": [0.620640043528897, 0.5872408529307389, 0.5506957309243986, 0.6186793038229453]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9060605878424817,
+            "min": 0.814760482657281,
+            "max": 0.9564219376117071,
+            "spread": 0.14166145495442617,
+            "runs": [0.9060605878424817, 0.9564219376117071, 0.9036641102841505, 0.814760482657281]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "sprint": {
+          "hairTipOffset": {
+            "unperturbed": 0.5191863898462588,
+            "min": 0.5191863898462588,
+            "max": 0.5561725802221461,
+            "spread": 0.03698619037588735,
+            "runs": [0.5191863898462588, 0.5561725802221461, 0.5347801169100357, 0.5386399663361443]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9004545909112998,
+            "min": 0.76610130728973,
+            "max": 0.9513443885752659,
+            "spread": 0.1852430812855359,
+            "runs": [0.9004545909112998, 0.9513443885752659, 0.8707210566669685, 0.76610130728973]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "hardStop": {
+          "hairTipOffset": {
+            "unperturbed": 0.7014058161477307,
+            "min": 0.666007507380088,
+            "max": 0.7014058161477307,
+            "spread": 0.03539830876764272,
+            "runs": [0.7014058161477307, 0.666007507380088, 0.6849273205381787, 0.6670368944576996]
+          },
+          "hairStretch": {
+            "unperturbed": 0.8730732495448239,
+            "min": 0.8237738370190373,
+            "max": 0.9526891947665954,
+            "spread": 0.12891535774755813,
+            "runs": [0.8730732495448239, 0.8528119341751319, 0.8237738370190373, 0.9526891947665954]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "jump": {
+          "hairTipOffset": {
+            "unperturbed": 0.7450640354407323,
+            "min": 0.6776133107705005,
+            "max": 0.7450640354407323,
+            "spread": 0.06745072467023183,
+            "runs": [0.7450640354407323, 0.696142148298174, 0.6776133107705005, 0.7441753941724369]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9925465072240971,
+            "min": 0.975287456799685,
+            "max": 0.998283190978676,
+            "spread": 0.022995734178991034,
+            "runs": [0.9925465072240971, 0.9951193630723822, 0.975287456799685, 0.998283190978676]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 5,
+            "max": 5,
+            "spread": 0,
+            "runs": [5, 5, 5, 5]
+          }
+        },
+        "snapTurn": {
+          "hairTipOffset": {
+            "unperturbed": 0.6870804039883749,
+            "min": 0.6597100465472141,
+            "max": 0.6957454229868411,
+            "spread": 0.036035376439626954,
+            "runs": [0.6870804039883749, 0.6957454229868411, 0.6597100465472141, 0.6914444113276725]
+          },
+          "hairStretch": {
+            "unperturbed": 0.9649952173934824,
+            "min": 0.9619294461611967,
+            "max": 0.9767939300852686,
+            "spread": 0.014864483924071914,
+            "runs": [0.9649952173934824, 0.9619294461611967, 0.9767939300852686, 0.9641032907639504]
+          },
+          "hairInsideHead": {
+            "unperturbed": 5,
+            "min": 4,
+            "max": 5,
+            "spread": 1,
+            "runs": [5, 5, 4, 5]
+          }
+        },
+        "teleport": {
+          "hairTipOffset": {
+            "unperturbed": 0.36935489808976746,
+            "min": 0.3645688160208787,
+            "max": 0.36954921430144766,
+            "spread": 0.004980398280568954,
+            "runs": [
+              0.36935489808976746, 0.36954921430144766, 0.3645688160208787, 0.36951437245495544
+            ]
+          },
+          "hairStretch": {
+            "unperturbed": 0.18023290792434243,
+            "min": 0.18023290792434243,
+            "max": 0.18023290792434243,
+            "spread": 0,
+            "runs": [
+              0.18023290792434243, 0.18023290792434243, 0.18023290792434243, 0.18023290792434243
+            ]
+          },
+          "hairInsideHead": {
+            "unperturbed": 0,
+            "min": 0,
+            "max": 0,
+            "spread": 0,
+            "runs": [0, 0, 0, 0]
+          }
+        }
+      }
+    }
+  }
+}

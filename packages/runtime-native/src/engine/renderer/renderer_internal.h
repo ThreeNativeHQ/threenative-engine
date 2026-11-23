@@ -252,9 +252,9 @@ constexpr const char* kSlotNames[] = {
     "roughnessMapUvTransform", "metalnessMapUvTransform", "aoMapUvTransform", "emissiveMapUvTransform",
     "bumpMapUvTransform", "specularColorMapUvTransform",
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
-    "clearcoatNormalMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
+    "clearcoatNormalMapUvTransform", "anisotropyMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",

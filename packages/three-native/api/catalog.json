@@ -29694,6 +29694,24 @@
           "status": {
             "kind": "supported"
           }
+        },
+        {
+          "name": "anisotropyRotation",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "anisotropyMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
         }
       ],
       "methods": []
@@ -31583,6 +31601,24 @@
         },
         {
           "name": "specularIntensityMap",
+          "type": "Texture | null",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "anisotropyRotation",
+          "type": "number",
+          "mutable": true,
+          "lifetime": "owned",
+          "status": {
+            "kind": "supported"
+          }
+        },
+        {
+          "name": "anisotropyMap",
           "type": "Texture | null",
           "mutable": true,
           "lifetime": "owned",

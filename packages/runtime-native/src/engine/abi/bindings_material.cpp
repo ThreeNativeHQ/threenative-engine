@@ -317,6 +317,7 @@ void registerTypeFields(ClassBinding& b, MaterialType type) {
     materialNumber(b, "transmission", &Material::transmission);
     materialNumber(b, "iridescence", &Material::iridescence);
     materialNumber(b, "anisotropy", &Material::anisotropy);
+    materialNumber(b, "anisotropyRotation", &Material::anisotropyRotation);
     materialNumber(b, "dispersion", &Material::dispersion);
 }
 

@@ -218,8 +218,7 @@ void unsupported() {
         float StandardMaterial::*field;
     };
     const Case cases[] = {{"sheen", &StandardMaterial::sheen},             {"transmission", &StandardMaterial::transmission},
-                          {"iridescence", &StandardMaterial::iridescence}, {"anisotropy", &StandardMaterial::anisotropy},
-                          {"dispersion", &StandardMaterial::dispersion}};
+                          {"iridescence", &StandardMaterial::iridescence}, {"dispersion", &StandardMaterial::dispersion}};
     for (const Case& c : cases) {
         StandardMaterial m;
         m.*c.field = 0.5f;
@@ -240,6 +239,20 @@ void unsupported() {
     const StandardPrograms coatedPrograms = buildPhysical(coated, coatedVariant);
     CHECK(coatedPrograms.diagnostics.empty());
     CHECK(coatedPrograms.fragment.exprCount() > buildPhysical(coated).fragment.exprCount());
+    // Anisotropy is ported too: the physical program builds the anisotropic GGX (the material-anisotropy row).
+    StandardMaterial anisotropic;
+    anisotropic.anisotropy = 1;
+    VertexVariant anisotropicVariant;
+    anisotropicVariant.anisotropy = true;
+    const StandardPrograms anisotropicPrograms = buildPhysical(anisotropic, anisotropicVariant);
+    CHECK(anisotropicPrograms.diagnostics.empty());
+    CHECK(anisotropicPrograms.fragment.exprCount() > buildPhysical(anisotropic).fragment.exprCount());
+    VertexVariant anisotropyMapVariant;
+    anisotropyMapVariant.anisotropy = true;
+    anisotropyMapVariant.pbrMaps = static_cast<uint16_t>(1u << kAnisotropyMap);
+    const StandardPrograms anisotropyMapPrograms = buildPhysical(anisotropic, anisotropyMapVariant);
+    CHECK(anisotropyMapPrograms.diagnostics.empty());
+    CHECK(anisotropyMapPrograms.fragment.exprCount() > anisotropicPrograms.fragment.exprCount());
 }
 
 // The post surface pass reads metalness and roughness at offsets 0 and 4 of every standard fragment block,

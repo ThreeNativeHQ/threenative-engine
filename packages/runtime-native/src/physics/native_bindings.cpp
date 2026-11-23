@@ -236,6 +236,20 @@ bool parseTrimeshBuffers(js::Engine *engine, js::JSValueHandle shape,
   return true;
 }
 
+// A convex hull's point cloud: only `vertices`, read like a trimesh's for the same synchronous call.
+bool parseHullPoints(js::Engine *engine, js::JSValueHandle shape, TrimeshBuffers &points) {
+  const auto vertices = engine->getProperty(shape, "vertices");
+  if (!isTypedArray(engine, vertices, "Float32Array"))
+    return false;
+  size_t vertexBytes = 0;
+  void *vertexData = engine->getArrayBufferData(vertices, &vertexBytes);
+  if (vertexData == nullptr)
+    return false;
+  points.vertices = static_cast<const float *>(vertexData);
+  points.vertex_floats = static_cast<uint32_t>(vertexBytes / sizeof(float));
+  return true;
+}
+
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
                       TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh,
                       HeightfieldBuffers &heightfield) {
@@ -274,6 +288,11 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
   else if (shapeName == "trimesh") {
     options.shape_type = 3;
     if (!parseTrimeshBuffers(engine, shape, trimesh))
+      return false;
+  } else if (shapeName == "convexHull") {
+    // Shape type 5 never crosses the C ABI either: it selects tn_physics_add_convex_hull_body.
+    options.shape_type = 5;
+    if (!parseHullPoints(engine, shape, trimesh))
       return false;
   } else if (shapeName == "heightfield") {
     // Shape type 4 never crosses the C ABI: it selects tn_physics_add_heightfield_body.
@@ -378,7 +397,7 @@ bool parseRayQuery(js::Engine *engine, js::JSValueHandle value,
 }
 
 bool parseShapeQuery(js::Engine *engine, js::JSValueHandle value,
-                     TnPhysicsShapeQueryOptions &query) {
+                     TnPhysicsShapeQueryOptions &query, TrimeshBuffers &mesh) {
   if (!engine->isObject(value))
     return false;
   query = {0, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f,
@@ -396,7 +415,16 @@ bool parseShapeQuery(js::Engine *engine, js::JSValueHandle value,
     query.shape_type = 1;
   else if (shapeName == "capsule")
     query.shape_type = 2;
-  else
+  else if (shapeName == "trimesh") {
+    // Mesh-built query volumes, as the web backend allows: tn_physics_intersect_mesh_shape.
+    query.shape_type = 3;
+    if (!parseTrimeshBuffers(engine, shape, mesh))
+      return false;
+  } else if (shapeName == "convexHull") {
+    query.shape_type = 5;
+    if (!parseHullPoints(engine, shape, mesh))
+      return false;
+  } else
     return false;
   return readFiniteNumber(engine, shape, "x", query.shape_x) &&
          readFiniteNumber(engine, shape, "y", query.shape_y) &&
@@ -648,6 +676,10 @@ js::JSValueHandle makeSimulationObject(
                           owner->simulation, &options, trimesh.vertices,
                           trimesh.vertex_floats, trimesh.indices,
                           trimesh.index_count)
+                : options.shape_type == 5
+                    ? tn_physics_add_convex_hull_body(owner->simulation, &options,
+                                                      trimesh.vertices,
+                                                      trimesh.vertex_floats)
                 : options.shape_type == 4
                     ? tn_physics_add_heightfield_body(
                           owner->simulation, &options, heightfield.heights,
@@ -1227,11 +1259,20 @@ js::JSValueHandle makeSimulationObject(
             if (args.empty())
               return fail(engine, "intersectShape requires query options");
             TnPhysicsShapeQueryOptions query{};
-            if (!parseShapeQuery(engine, args[0], query))
+            TrimeshBuffers mesh{};
+            if (!parseShapeQuery(engine, args[0], query, mesh))
               return fail(engine, "intersectShape query options are invalid");
             std::vector<TnPhysicsQueryHit> hits(query.max_results);
-            const int32_t count = tn_physics_intersect_shape(
-                owner->simulation, &query, hits.data(), hits.size());
+            const bool trimesh = query.shape_type == 3;
+            const int32_t count =
+                query.shape_type == 3 || query.shape_type == 5
+                    ? tn_physics_intersect_mesh_shape(
+                          owner->simulation, &query, mesh.vertices,
+                          mesh.vertex_floats, trimesh ? mesh.indices : nullptr,
+                          trimesh ? mesh.index_count : 0, hits.data(),
+                          hits.size())
+                    : tn_physics_intersect_shape(owner->simulation, &query,
+                                                 hits.data(), hits.size());
             if (count < 0)
               return fail(engine, "intersectShape query was rejected");
             auto result = engine->newArray(static_cast<size_t>(count));

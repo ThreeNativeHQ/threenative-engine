@@ -331,6 +331,7 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             // discard that ends its own block, so TSL's unconditional `Discard()` is emitted inside one.
             case Kind::Discard: out += indent + "if (true) { discard; }\n"; break;
             case Kind::Return: out += indent + "return;\n"; break;
+            case Kind::Barrier: out += indent + (s.a == uint32_t(BarrierScope::Workgroup) ? "workgroupBarrier();\n" : "storageBarrier();\n"); break;
             case Kind::Break: out += indent + "break;\n"; break;
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
@@ -406,6 +407,10 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     }
     for (uint32_t i = 0; i < program.storage_.size(); ++i) {
         const auto& storage = program.storage_[i];
+        if (storage.workgroupCount != 0) {
+            out += "var<workgroup> s_" + storage.name + ": array<" + e.type(storage.element) + ", " + std::to_string(storage.workgroupCount) + ">;\n";
+            continue;
+        }
         out += "@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) + ") var<storage, " +
                (written.count(i) || storage.atomic ? "read_write" : "read") + "> s_" + storage.name + ": array<" +
                (storage.atomic ? "atomic<" + e.type(storage.element) + ">" : e.type(storage.element)) + ">;\n";

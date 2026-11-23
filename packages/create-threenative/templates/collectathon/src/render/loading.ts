@@ -43,6 +43,7 @@ interface ILoadingHost {
   };
   readonly renderer: { compileAsync(scene: Scene, camera: Camera): Promise<void> };
   readonly scene: Scene;
+  readonly sceneLoad: { readonly progress: number };
   readonly startup: {
     readonly progress: number;
     readonly warmup?: { readonly status: "complete" | "incomplete" | "unavailable" };
@@ -306,8 +307,8 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     layer.opaque = false;
   };
 
-  void (async () => {
-    await host.startup.whenReady();
+  let startupReady = false;
+  void host.startup.whenReady().then(() => {
     if (done) return;
     // Prewarm the world's shaders, but do not wait for them here. `whenReady()` already means the
     // world is safe to show, and compiling a lit, post-processed scene takes far longer than the
@@ -320,13 +321,21 @@ export function createLoadingScreen(host: ILoadingHost): ILoadingController {
     } catch {
       // A renderer without compileAsync is not a reason to keep the world hidden.
     }
-    finish();
-  })();
+    startupReady = true;
+    // A launch is entered by the time it is ready; lifting here, not on the next scene tick, keeps
+    // the hand-off frames a paused or stepped clock renders from showing the cover.
+    if (host.sceneLoad.progress >= 1) finish();
+  });
 
   return {
     finish,
     update(): void {
-      if (!done) updateProgress(host.startup.progress);
+      if (done) return;
+      updateProgress(host.sceneLoad.progress);
+      // The launch spends `whenReady()` once: on a level change it resolved long ago, so readiness
+      // alone would lift the cover on the next frame and leave the next level's own assets
+      // uncovered. `sceneLoad` is spent by the same change and reaches 1 only once it entered.
+      if (startupReady && host.sceneLoad.progress >= 1) finish();
     },
   };
 }

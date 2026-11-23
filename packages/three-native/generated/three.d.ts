@@ -3634,6 +3634,8 @@ clearcoatMap: Texture | null;
 clearcoatNormalMap: Texture | null;
 clearcoatNormalScale: Vector2;
 clearcoatRoughnessMap: Texture | null;
+anisotropyRotation: number;
+anisotropyMap: Texture | null;
 }
 
 /** Catalog supported: three/Ray. */
@@ -3885,6 +3887,8 @@ clearcoatRoughnessMap: Texture | null;
 specularColor: Color;
 specularColorMap: Texture | null;
 specularIntensityMap: Texture | null;
+anisotropyRotation: number;
+anisotropyMap: Texture | null;
 }
 
 /** Catalog partial (graph-authoring-only, constructor-not-bound): three/webgpu/MRTNode. */

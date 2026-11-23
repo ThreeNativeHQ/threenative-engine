@@ -1483,6 +1483,7 @@ async function bundleNative(
   target: NativeBuildTarget,
   nativeBackend: boolean,
   decoders: { ktx2: boolean; meshopt: boolean; draco: boolean },
+  brand: { readonly engine: string; readonly name: string },
 ): Promise<string> {
   const output = path.join(cwd, ".threenative", "build", "game.js");
   await run(
@@ -1497,6 +1498,12 @@ async function bundleNative(
       target,
       "--output",
       output,
+      // PRD-905: what error telemetry calls this game and the engine drawing it, as the web build
+      // writes both into its page; without them a native event says "unknown".
+      "--game-name",
+      brand.name,
+      "--engine-name",
+      brand.engine,
       ...(nativeBackend ? ["--native-backend"] : []),
       // Only a mobile bundle reads it: desktop already chooses stubs through `--native-backend`.
       ...(target === "android"
@@ -1755,6 +1762,12 @@ async function buildEngineDesktop(
       "--player",
       staged,
       ...(ui === undefined ? [] : ["--ui", ui]),
+      // The game's name and the engine drawing it, so a `TN_*` event reported from this bundle names
+      // the game rather than "unknown" (PRD-905), as the web build's index.html carries them.
+      "--game-name",
+      config.app.name,
+      "--engine-name",
+      config.engine,
       "--width",
       String(config.window.width),
       "--height",
@@ -1854,6 +1867,7 @@ async function buildNative(
       target,
       !capabilities.webAssembly,
       capabilities.decoders,
+      { engine: config.engine, name: config.app.name },
     );
     await assertNativeBundleCompatible(bundle, target, capabilities);
     // The compiled root the project configured, which `compileAssets` above baked into — not the

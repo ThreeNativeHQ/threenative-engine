@@ -1,0 +1,228 @@
+{
+  "name": "character-dynamics-acceptance-hair",
+  "schemaVersion": 1,
+  "subject": "the ponytail bounds of PRD-912: segment stretch at most 5% and no simulated bone inside the head or neck capsule in every phase; red on ?arm=softbody, green on ?arm=hair",
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "artifacts": {
+    "screenshots": true,
+    "console": true
+  },
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settled",
+      "waitTicks": 85,
+      "release": true,
+      "screenshot": "settled"
+    },
+    {
+      "kind": "wait",
+      "label": "jog",
+      "waitTicks": 75,
+      "release": true,
+      "screenshot": "jog"
+    },
+    {
+      "kind": "wait",
+      "label": "jog-turn",
+      "waitTicks": 100,
+      "release": true,
+      "screenshot": "jog-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "sprint",
+      "waitTicks": 120,
+      "release": true,
+      "screenshot": "sprint"
+    },
+    {
+      "kind": "wait",
+      "label": "hard-stop",
+      "waitTicks": 20,
+      "release": true,
+      "screenshot": "hard-stop"
+    },
+    {
+      "kind": "wait",
+      "label": "jump-apex",
+      "waitTicks": 90,
+      "release": true,
+      "screenshot": "jump-apex"
+    },
+    {
+      "kind": "wait",
+      "label": "snap-turn",
+      "waitTicks": 12,
+      "release": true,
+      "screenshot": "snap-turn"
+    },
+    {
+      "kind": "wait",
+      "label": "snap-turn-settle",
+      "waitTicks": 28,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "teleport",
+      "waitTicks": 45,
+      "release": true,
+      "screenshot": "teleport"
+    },
+    {
+      "kind": "wait",
+      "label": "done",
+      "waitTicks": 300,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "GameState",
+        "path": "complete",
+        "equals": true,
+        "changed": true
+      },
+      {
+        "id": "GameState",
+        "path": "finite",
+        "equals": true,
+        "allowTrivial": "finite starts true and must stay true through all eight phases"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.hairStretch",
+        "lte": 0.05,
+        "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.hairSamples",
+        "gte": 90
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.hairSamples",
+        "gte": 67
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.hairSamples",
+        "gte": 45
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.hairSamples",
+        "gte": 56
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.hairSamples",
+        "gte": 33
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.hairSamples",
+        "gte": 33
+      },
+      {
+        "id": "GameState",
+        "path": "phases.settle.hairInsideHead",
+        "lte": 0,
+        "allowTrivial": "the settle phase is measured from the first tick, so its bound already holds when the scenario starts"
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jog.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jogTurn.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.sprint.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.hardStop.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.jump.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.snapTurn.hairInsideHead",
+        "lte": 0
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.hairStretch",
+        "lte": 0.05
+      },
+      {
+        "id": "GameState",
+        "path": "phases.teleport.hairInsideHead",
+        "lte": 0
+      }
+    ]
+  }
+}

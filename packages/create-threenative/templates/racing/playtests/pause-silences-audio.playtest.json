@@ -1,0 +1,81 @@
+{
+  "name": "racing-pause-silences-audio",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "sounding",
+      "waitTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "click",
+      "label": "paused",
+      "at": {
+        "element": {
+          "selector": "[data-testid=pause-toggle]"
+        }
+      },
+      "waitTicks": 30
+    },
+    {
+      "kind": "wait",
+      "label": "held",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "elapsed",
+        "gte": 0.1
+      },
+      {
+        "id": "audio",
+        "path": "silent",
+        "atSteps": [
+          {
+            "label": "sounding",
+            "equals": false
+          },
+          {
+            "label": "paused",
+            "equals": true
+          },
+          {
+            "label": "held",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "paused",
+        "atSteps": [
+          {
+            "label": "sounding",
+            "equals": false
+          },
+          {
+            "label": "held",
+            "equals": true
+          }
+        ]
+      }
+    ]
+  }
+}

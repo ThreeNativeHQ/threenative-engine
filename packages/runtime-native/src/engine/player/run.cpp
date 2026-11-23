@@ -447,12 +447,23 @@ bool SDLCALL lifecycleWatch(void* data, SDL_Event* event) {
 }
 #endif
 
-/** Quits on a close request; the runner ends a run with SIGTERM, not with a window message. */
+/** Quits on a close request or the code a game asked for; a runner ends a run with SIGTERM, not a window message. */
 bool pumpEvents(Window& window, const Game& game) {
+    // A game's `process.exit(code)` ends the loop on the next pump; step() reads the same hook for the code.
+    if (game.exitCode && game.exitCode() >= 0) return false;
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED)
             return false;
+        // A window the person minimized or hid is the page visibility a game saves on (PRD-906).
+        if (event.type == SDL_EVENT_WINDOW_MINIMIZED || event.type == SDL_EVENT_WINDOW_HIDDEN) {
+            if (game.visibility) game.visibility(true);
+            continue;
+        }
+        if (event.type == SDL_EVENT_WINDOW_RESTORED || event.type == SDL_EVENT_WINDOW_SHOWN) {
+            if (game.visibility) game.visibility(false);
+            continue;
+        }
         // The mouse reaches an attached UI first, as on the legacy host (PRD-554), in window-normalized
         // coordinates; what the UI declines is the game's.
         const bool mouse = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
@@ -1607,7 +1618,11 @@ int Session::initialize() {
 }
 
 int Session::step() {
-    if (!pumpEvents(window, game)) return 0;
+    if (!pumpEvents(window, game)) {
+        // A close request exits 0; a game's process.exit(code) is the run's code (run() negates it back).
+        const int requested = game.exitCode ? game.exitCode() : -1;
+        return requested > 0 ? -requested : 0;
+    }
     placement.sweepIfDue();
 
 #if defined(__ANDROID__)

@@ -296,6 +296,19 @@ fn heightfield_shape(
     ))
 }
 
+/// Validate and copy a flat xyz point buffer from C: at least four finite points.
+fn copy_points(vertices: *const f32, vertex_floats: u32) -> Option<Vec<Point3<Real>>> {
+    let count = vertex_floats as usize;
+    if vertices.is_null() || count < 12 || count % 3 != 0 {
+        return None;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some(floats.chunks_exact(3).map(|v| Point3::new(v[0], v[1], v[2])).collect())
+}
+
 /// Validate and copy a flat xyz vertex buffer and a flat triangle-index buffer from C.
 fn copy_trimesh(
     vertices: *const f32,
@@ -410,6 +423,15 @@ impl Simulation {
             indices,
             TriMeshFlags::FIX_INTERNAL_EDGES,
         ) else {
+            return false;
+        };
+        self.insert_body(options, collider)
+    }
+
+    /// The convex hull of a point cloud: a closed solid a dynamic body can tumble on, unlike a
+    /// trimesh. Rapier answers `None` for a cloud it cannot hull, so that fails closed too.
+    fn add_convex_hull_body(&mut self, options: TnPhysicsBodyOptions, points: &[Point3<Real>]) -> bool {
+        let Some(collider) = ColliderBuilder::convex_hull(points) else {
             return false;
         };
         self.insert_body(options, collider)
@@ -571,11 +593,12 @@ impl Simulation {
         ]
         .into_iter()
         .all(f32::is_finite)
-            || options.offset <= 0.0
+            // Zero lengths are what Rapier JS (the web backend before 0.3.21) accepts; negative ones are not lengths.
+            || options.offset < 0.0
             || options.max_slope_climb_angle < 0.0
             || (options.autostep_enabled
-                && (options.autostep_max_height <= 0.0 || options.autostep_min_width <= 0.0))
-            || (options.snap_to_ground_enabled && options.snap_to_ground <= 0.0)
+                && (options.autostep_max_height < 0.0 || options.autostep_min_width < 0.0))
+            || (options.snap_to_ground_enabled && options.snap_to_ground < 0.0)
             || !self
                 .entries
                 .get(&options.id)
@@ -1569,7 +1592,20 @@ impl Simulation {
             return None;
         }
         let shape = Self::query_shape(&options)?;
-        let pose = Self::query_pose(&options)?;
+        self.intersect_shape_with(&options, shape)
+    }
+
+    /// The shape query's body, for any query shape: the primitives above or a mesh-built one.
+    fn intersect_shape_with(
+        &mut self,
+        options: &TnPhysicsShapeQueryOptions,
+        shape: SharedShape,
+    ) -> Option<Vec<TnPhysicsQueryHit>> {
+        self.refresh_query_pipeline();
+        if options.max_results == 0 {
+            return None;
+        }
+        let pose = Self::query_pose(options)?;
         let predicate = |handle: ColliderHandle, collider: &Collider| {
             self.entry_for(handle, collider).is_some()
                 && !collider.is_sensor()
@@ -1730,6 +1766,24 @@ pub extern "C" fn tn_physics_add_trimesh_body(
         return false;
     };
     simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
+}
+
+/// Add a body whose collider is the convex hull of `vertices`, a flat `x, y, z` float array copied
+/// here. Fewer than four points, a non-finite value, or a cloud Rapier cannot hull is refused.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_add_convex_hull_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    vertices: *const f32,
+    vertex_floats: u32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    let Some(points) = copy_points(vertices, vertex_floats) else {
+        return false;
+    };
+    simulation.add_convex_hull_body(unsafe { ptr::read(options) }, &points)
 }
 
 /// Add a fixed body whose collider is a heightfield. `heights` holds `rows * columns` samples in
@@ -2207,6 +2261,49 @@ pub extern "C" fn tn_physics_intersect_shape(
     hits.len() as i32
 }
 
+/// A shape query whose volume is built from a mesh, as the web backend allows: the convex hull of
+/// `vertices` when `indices` is null and `index_count` is 0, else the triangle mesh they index.
+/// The query's `shape_type` and sizes are ignored; its pose, mask and limit apply.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_intersect_mesh_shape(
+    simulation: *mut Simulation,
+    query: *const TnPhysicsShapeQueryOptions,
+    vertices: *const f32,
+    vertex_floats: u32,
+    indices: *const u32,
+    index_count: u32,
+    output: *mut TnPhysicsQueryHit,
+    output_capacity: usize,
+) -> i32 {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, query.is_null()) else {
+        return -1;
+    };
+    let query = unsafe { ptr::read(query) };
+    if query.max_results == 0 || output_capacity < query.max_results as usize {
+        return -1;
+    }
+    let shape = if indices.is_null() && index_count == 0 {
+        copy_points(vertices, vertex_floats).and_then(|points| SharedShape::convex_hull(&points))
+    } else {
+        copy_trimesh(vertices, vertex_floats, indices, index_count).and_then(|(points, triangles)| {
+            SharedShape::trimesh_with_flags(points, triangles, TriMeshFlags::FIX_INTERNAL_EDGES).ok()
+        })
+    };
+    let Some(shape) = shape else {
+        return -1;
+    };
+    let Some(hits) = simulation.intersect_shape_with(&query, shape) else {
+        return -1;
+    };
+    if hits.len() > output_capacity || (hits.len() > 0 && output.is_null()) {
+        return -1;
+    }
+    for (index, hit) in hits.iter().enumerate() {
+        unsafe { ptr::write(output.add(index), *hit) };
+    }
+    hits.len() as i32
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn tn_physics_intersect_point(
     simulation: *mut Simulation,
@@ -2512,6 +2609,160 @@ mod tests {
             good.as_ptr(),
             3,
         ));
+    }
+
+    /// A unit cube's eight corners plus its centre: an interior point the hull must drop.
+    const CUBE_CLOUD: [f32; 27] = [
+        -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5,
+        -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.0, 0.0, 0.0,
+    ];
+
+    #[test]
+    fn a_dynamic_convex_hull_body_falls_and_rests_on_the_floor() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut floor = fixed_box(0, 0.0, -0.5, 1);
+        floor.shape_x = 10.0;
+        floor.shape_z = 10.0;
+        assert!(simulation.add_body(floor));
+        let mut hull = fixed_box(1, 0.0, 3.0, 1);
+        hull.body_type = 0;
+        hull.shape_type = 5;
+        assert!(tn_physics_add_convex_hull_body(
+            &mut simulation,
+            &hull,
+            CUBE_CLOUD.as_ptr(),
+            CUBE_CLOUD.len() as u32,
+        ));
+        for _ in 0..240 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        let y = simulation.bodies[simulation.entries[&1].body].translation().y;
+        // The floor's top is y = 0 and the cube's half height is 0.5.
+        assert!((y - 0.5).abs() < 0.05, "convex hull rests at y = {y}, not 0.5");
+        let mass = simulation.bodies[simulation.entries[&1].body].mass();
+        assert!((mass - 1.0).abs() < 1e-3, "unit cube hull mass was {mass}, not 1");
+    }
+
+    #[test]
+    fn the_convex_hull_ffi_rejects_too_few_or_non_finite_points() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 5;
+        // Three points are a triangle, not a solid.
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, CUBE_CLOUD.as_ptr(), 9));
+        let mut nan = CUBE_CLOUD;
+        nan[4] = f32::NAN;
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, nan.as_ptr(), 27));
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, ptr::null(), 27));
+        assert!(tn_physics_add_convex_hull_body(&mut simulation, &options, CUBE_CLOUD.as_ptr(), 27));
+    }
+
+    #[test]
+    fn a_character_takes_the_zero_lengths_rapier_js_takes_and_refuses_negative_ones() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut character = fixed_box(1, 0.0, 1.0, 1);
+        character.body_type = 3;
+        assert!(simulation.add_body(character));
+        let zero = || TnPhysicsCharacterOptions {
+            id: 1,
+            offset: 0.0,
+            max_slope_climb_angle: 0.0,
+            autostep_enabled: true,
+            autostep_max_height: 0.0,
+            autostep_min_width: 0.0,
+            autostep_include_dynamic_bodies: false,
+            snap_to_ground_enabled: true,
+            snap_to_ground: 0.0,
+            one_way_layers: 0,
+            pushes_dynamic_bodies: false,
+        };
+        // The web backend (Rapier JS) builds a controller from these; 0.3.21 refused them.
+        assert!(simulation.configure_character(zero()));
+        assert!(!simulation.configure_character(TnPhysicsCharacterOptions { offset: -0.01, ..zero() }));
+        assert!(!simulation.configure_character(TnPhysicsCharacterOptions { snap_to_ground: -0.1, ..zero() }));
+        assert!(!simulation.configure_character(TnPhysicsCharacterOptions {
+            autostep_max_height: -0.1,
+            ..zero()
+        }));
+    }
+
+    #[test]
+    fn a_mesh_built_query_finds_the_bodies_inside_its_hull_or_triangles() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        assert!(simulation.add_body(fixed_box(7, 0.0, 0.0, 1)));
+        assert!(simulation.add_body(fixed_box(8, 5.0, 0.0, 1)));
+        let query = |x: f32| TnPhysicsShapeQueryOptions {
+            shape_type: 5,
+            shape_x: 0.0,
+            shape_y: 0.0,
+            shape_z: 0.0,
+            position_x: x,
+            position_y: 0.0,
+            position_z: 0.0,
+            rotation_x: 0.0,
+            rotation_y: 0.0,
+            rotation_z: 0.0,
+            rotation_w: 1.0,
+            collision_mask: u32::from(u16::MAX),
+            max_results: 4,
+        };
+        let mut hits = [TnPhysicsQueryHit { body_id: 0, position_x: 0.0, position_y: 0.0, position_z: 0.0 }; 4];
+        let hull = |x: f32, hits: &mut [TnPhysicsQueryHit; 4], simulation: &mut Simulation| {
+            tn_physics_intersect_mesh_shape(
+                simulation,
+                &query(x),
+                CUBE_CLOUD.as_ptr(),
+                27,
+                ptr::null(),
+                0,
+                hits.as_mut_ptr(),
+                4,
+            )
+        };
+        assert_eq!(hull(0.0, &mut hits, &mut simulation), 1);
+        assert_eq!(hits[0].body_id, 7);
+        assert_eq!(hull(5.0, &mut hits, &mut simulation), 1);
+        assert_eq!(hits[0].body_id, 8);
+        assert_eq!(hull(2.5, &mut hits, &mut simulation), 0);
+        // A single triangle through the first box, as a trimesh query.
+        let triangle = [-1.0f32, 0.0, -1.0, 1.0, 0.0, -1.0, 0.0, 0.0, 1.0];
+        let count = tn_physics_intersect_mesh_shape(
+            &mut simulation,
+            &query(0.0),
+            triangle.as_ptr(),
+            9,
+            [0u32, 1, 2].as_ptr(),
+            3,
+            hits.as_mut_ptr(),
+            4,
+        );
+        assert_eq!(count, 1);
+        assert_eq!(hits[0].body_id, 7);
+        // Three points cannot hull.
+        assert_eq!(
+            tn_physics_intersect_mesh_shape(&mut simulation, &query(0.0), triangle.as_ptr(), 9, ptr::null(), 0, hits.as_mut_ptr(), 4),
+            -1
+        );
     }
 
     #[test]

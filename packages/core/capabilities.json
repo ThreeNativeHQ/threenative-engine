@@ -2226,6 +2226,29 @@
       "symbol": "GroundSnap"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "WebGPU compute; one thread per point with each strand in workgroup memory (at most 256 points per workgroup), the whole step in one dispatch, at most 8 colliders; world space at the scene root"
+      ],
+      "example": "import { HairStrands3D, measureBodyCapsules } from \"@threenative/core\";\nconst hair = new HairStrands3D(guidePositions, { pointsPerStrand: 16, bone: head, colliders });\nscene.add(hair);\nmaterial.positionNode = hair.positions.element(guidePointIndex);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "substeps, iterations, airDrag, wind, globalStiffness, localStiffness, colliders, teleportDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class HairStrands3D extends Object3D implements IComputeDriven { … }",
+      "situations": [
+        "long hair follows the head",
+        "hair cards follow the head",
+        "simulate hair guide strands on the GPU",
+        "braid or fringe of hair cards on a character"
+      ],
+      "summary": "Simulate hair guide strands on the GPU: hair cards or strands that swing with the head, hang under gravity, keep their styled shape near the root and stay out of the head and body. The kernel is frostbitten-hair-webgpu's guide solver (MIT): Verlet, then the length, global-shape, local-shape and collision constraints per iteration. Defaults are Unreal's groom solver (5 substeps, 5 iterations, air drag 0.1) and frostbitten's stiffnesses. Roots and the rest shape ride on `bone`. Positions stay on the GPU: cards or ribbons read {@link positions} in their position node. Add it to the scene root; it simulates in world space.",
+      "supersedes": [],
+      "symbol": "HairStrands3D"
+    },
+    {
       "aliases": ["gamepad", "controller", "joypad", "xbox", "8bitdo", "steam deck"],
       "constraints": [
         "`buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it",
@@ -2688,6 +2711,23 @@
       "summary": "Walk the scene graph's world matrices each frame without recursing into a hidden subtree. On by default as `renderer.matrixWorld: \"visible\"`. three's `updateMatrixWorld` recurses into every child whatever its `visible` flag, so a hidden LOD body, a merged stand-in and a parked model cost a world-matrix multiply each while nothing under them can draw. This pass mirrors three exactly for every visible node and defers a hidden node's subtree until the frame it shows again. A class that overrides `updateMatrixWorld` (`SkinnedMesh`, `Camera`) runs its own, and a hidden node that holds bones is walked, so no skeleton or view matrix goes stale.",
       "supersedes": [],
       "symbol": "MatrixWorldPass"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const capsules = measureBodyCapsules(capeSkinnedMesh); // [{ bone, start, end, radius }, ...]",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function measureBodyCapsules( source: SkinnedMesh, maxCapsules = MAX_BODY_CAPSULES, clearOf: ArrayLike<number> = [], clearance = 0, ): ISoftBodyCapsule[] { … }",
+      "situations": [
+        "measure the body capsules a cape or skirt collides with",
+        "check whether cloth is inside a skinned character's body"
+      ],
+      "summary": "Measure body capsules from every other SkinnedMesh on the same skeleton: one per bone that carries at least 24 skin vertices, longest-weighted first. Each radius stops `clearance` short of every point in `clearOf` (the cloth's rest world positions). The skinned `SoftBody3D` calls it with its own rest pose and collision thickness, so a probe that calls it the same way reads the solver's capsules.",
+      "supersedes": [],
+      "symbol": "measureBodyCapsules"
     },
     {
       "aliases": [],
@@ -3760,14 +3800,22 @@
       "constraints": [
         "the mesh must use one Three.js node material and contain complete triangles",
         "pinned, stiffness, damping, gravity, and wind are required game-owned inputs",
-        "Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost"
+        "Pixel 8 steady upper bound for the shipped 45-vertex pennant with readback every two frames: whole-starter update p95 4.66 ms, render p95 3.56 ms, and GPU timer 0.05 ms across three 300-frame final-rung windows at 552x248 with 4x MSAA; these whole-scene numbers are not isolated solver cost",
+        "a skinned source simulates in world space: add the SoftBody3D to the scene root",
+        "a skinned source needs an indexed geometry, at least one vertex with mask 1, and pins weighted to at most 8 bones"
       ],
-      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });",
+      "example": "const flag = new SoftBody3D(flagMesh, { pinned: topEdge, stiffness: 35, damping: 1.8, gravity: [0, -9.81, 0], wind: [1.5, 0, 0.4] });\nconst cape = ctx.add(new SoftBody3D(capeSkinnedMesh, { cloth: \"color.r\" }));",
       "importPath": "@threenative/core",
       "kind": "class",
       "overrides": [
         "timeStep follows the engine 1/60-second convention unless the game overrides it",
-        "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it"
+        "readbackEveryFrames enables an explicitly stale CPU position sample; zero disables it",
+        "readbackInFlight keeps up to N copies in flight so a probe sees every step; default 1",
+        "cloth picks the mask (a color channel or one number per vertex); default \"color.r\", else leaf-bone vertices simulate",
+        "bodyColliders \"auto\" (default) measures capsules from the skin; pass capsules to replace them or false to turn them off",
+        "velocityScale and angularVelocityScale (Unreal 0.75), teleportDistance (3 m × height / 1.8 m), teleportRotation (π/2), substeps (6)",
+        "extremeDeformationEdgeRatio resets the cloth when an edge stretches past this ratio (off, as in Unreal); needs readbackEveryFrames",
+        "stretchStiffness (1), bendStiffness (0.25), damping (≈0.603 /s, Chaos 0.01 per 60 Hz step), drag and lift (0.035, Chaos per-triangle), fluidDensity (1.225), density (0.35 kg/m²), tetherSlack (0), colliderThickness (0.01 m), friction (0.8), tethers (true), hideSource (true)"
       ],
       "package": "@threenative/core",
       "signature": "export class SoftBody3D extends Mesh<BufferGeometry, NodeMaterial> implements IComputeDriven { … }",
@@ -3775,9 +3823,15 @@
         "make a flag, cape, or curtain move as cloth",
         "simulate a deforming surface while keeping one edge pinned",
         "simulate cloth sails blowing in the wind",
-        "make cloth sails billow in wind on a ship"
+        "make cloth sails billow in wind on a ship",
+        "put a cape on a character",
+        "cape on a character that trails when it runs",
+        "make a skirt, coat tails or a tabard move on an animated character",
+        "cloth on a skinned mesh",
+        "cloth sticks to the body or passes through the legs",
+        "cloth stretches too much on a running character"
       ],
-      "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default.",
+      "summary": "Simulate an ordinary game-authored triangle mesh as cloth on the existing fixed-step GPU lane. The mesh supplies every visible choice. This class welds exporter duplicates, owns spring and position buffers, and replaces only the cloned material's position node. It adds no material, colour, texture, wind, stiffness, damping, or pinning default. Given a `SkinnedMesh`, it is cloth on a character: the vertex mask (1 follows the skin, 0 simulates) pins the cloth to the animated body on the GPU, and the solver runs in world space with Unreal Chaos Cloth's guards: stretch and bend constraints, long-range tethers to the pins, body capsules measured from the character's skin, 75% of the reference bone's motion felt as inertia, and a teleport that carries the cloth with no velocity (`TN_SOFTBODY_RESET`).",
       "supersedes": [],
       "symbol": "SoftBody3D"
     },
@@ -3979,6 +4033,27 @@
       "summary": "Simulate a spectral ocean — cascaded wave spectra inverse-transformed on the GPU each frame.",
       "supersedes": [],
       "symbol": "SpectralOcean"
+    },
+    {
+      "aliases": [],
+      "constraints": ["CPU, fixed step, at most 32 bones per chain"],
+      "example": "import { SpringBoneChain3D } from \"@threenative/core\";\nconst root = character.getObjectByName(\"ponytail_01\") as Bone;\nconst ponytail = new SpringBoneChain3D(root, { stiffness: 50, damping: 4 });\nponytail.step(1 / 60); // once per fixed step, in the scene's update(ctx, dt): ponytail.step(dt)",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "stiffness, damping, gravityScale, colliders, teleportDistance, errorResetDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class SpringBoneChain3D { … }",
+      "situations": [
+        "make a ponytail or braid swing with the head",
+        "make a tail or ears bounce on a character",
+        "jiggle bones on a character",
+        "hair, a ponytail or a braid that moves with the head"
+      ],
+      "summary": "Simulate a chain of bones for a ponytail, braid, tail, ears or a dangling prop. Unreal's `AnimNode_SpringBone` algorithm and defaults (UE 5.8.3: Engine/Source/Runtime/AnimGraphRuntime/Private/BoneControllers/AnimNode_SpringBone.cpp:16-20): stiffness 50, damping 4, a 1/120 s fixed step and an error-reset threshold. The root bone is the anchor and follows its animated parent; the first-child path below it is simulated. Call {@link step} once per fixed step, after the animation mixer poses the root's parent. The simulator owns every chain bone's rotation, the root's included (its position follows the parent); keep them out of animation clips.",
+      "supersedes": [],
+      "symbol": "SpringBoneChain3D"
     },
     {
       "aliases": [],
@@ -4425,6 +4500,36 @@
       "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped",
       "supersedes": [],
       "symbol": "WaveField"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const wind = windAt(scene, new Vector3()); // sum of the WindField3D velocities under the scene",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function windAt(root: Object3D | null, out: Vector3): Vector3 { … }",
+      "situations": ["read the scene's wind for hair, grass or particles"],
+      "summary": "Sum of the velocities of every `WindField3D` directly under `root` (the scene), into `out`.",
+      "supersedes": [],
+      "symbol": "windAt"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const wind = ctx.add(new WindField3D([4, 0, 0])); wind.velocity.set(6, 0, 1);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "velocity; a SoftBody3D `wind` option replaces the scene's fields for that cloth"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class WindField3D extends Object3D { … }",
+      "situations": ["make a cape or flag blow in the wind", "wind that blows cloth and hair"],
+      "summary": "A uniform wind, Unreal's WindDirectionalSource in its simplest form: one world velocity in metres per second. A skinned `SoftBody3D` at the same scene root reads the sum of every `WindField3D` there each step, unless its own `wind` option overrides it. `windAt` gives any other system (spring bones, grass) the same value.",
+      "supersedes": [],
+      "symbol": "WindField3D"
     },
     {
       "aliases": [],
@@ -8488,7 +8593,7 @@
         "roadWidth and markings apply to straight and curve; roadLength applies to straight; bendAngle, bendRadius and bendSide apply to curve; roadSurface applies to socketed road modules",
         "bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export",
         "only bake road tiles (`straight`, `curve`, `cross`, `tee`, `alley`, `grid`, `pit`, `cul-de-sac`) when assembling the drivable carriageway from kit tiles; when a level builds its own spline or terrain road, bake scenery modules instead (`detail: 1, dressing: false` keeps draw counts low)",
-        "`emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; `opaqueGlass: true` converts transmissive architectural glass to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass"
+        "`emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; glass ships opaque reflective PBR by default (`opaqueGlass: true`), because the default native engine refuses a transmissive mesh by name (`TN_MATERIAL_UNSUPPORTED transmission`) and three pays a full-scene transmission pass; `opaqueGlass: false` keeps the kit's transmissive glass under its own file name"
       ],
       "example": "await bakeCity({ module: \"office\", detail: 1, dressing: false, out: \"assets/city\" });\nawait bakeCity({ module: \"civic-ad\", detail: 1, text: \"GRAND PRIX\", emissiveSigns: true, out: \"assets/city\" });\n// Modular-road layout built from kit tiles:\nawait bakeCity({ module: \"cross\", out: \"assets/city\" });",
       "importPath": "@threenative/procedural-environment",
@@ -11368,6 +11473,28 @@
       "aliases": []
     },
     {
+      "symbol": "game.pause",
+      "package": "@threenative/core",
+      "importPath": "src/game.ts",
+      "kind": "function",
+      "signature": "game.pause(options?: { readonly audio?: boolean }): void; game.resume(): void",
+      "summary": "Pauses the game loop and every playing audio bus with it; resume() lifts exactly that pause. pause({ audio: false }) keeps the sound playing and reports TN_PAUSE_AUDIO_KEPT once.",
+      "situations": [
+        "pause menu",
+        "pause the game and mute the sound",
+        "stop the music when the game is paused",
+        "keep menu music playing while paused"
+      ],
+      "aliases": [],
+      "example": "onIntent: (intent) => (intent === \"pause\" ? game.pause() : game.resume())",
+      "constraints": [
+        "A bus the game had already paused itself stays paused after resume().",
+        "A bus built after pause() is not paused by it."
+      ],
+      "overrides": ["pause({ audio: false }) keeps audio; TN_PAUSE_AUDIO_KEPT reports it once"],
+      "supersedes": []
+    },
+    {
       "symbol": "renderer.matrixWorld",
       "package": "@threenative/core",
       "importPath": "src/game.ts",
@@ -11461,6 +11588,74 @@
       ],
       "supersedes": [],
       "aliases": []
+    },
+    {
+      "symbol": "ctx.input.startJoyVibration",
+      "package": "@threenative/core",
+      "importPath": "src/input.ts",
+      "kind": "function",
+      "signature": "ctx.input.startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean",
+      "summary": "Rumbles a gamepad through Gamepad.vibrationActuator.playEffect(\"dual-rumble\"), after Godot's Input.start_joy_vibration. The native host shims it with SDL_RumbleGamepad. Magnitudes are 0 to 1.",
+      "situations": [
+        "controller rumble",
+        "gamepad vibration when the player crashes or fires",
+        "force feedback on a joypad",
+        "rumble the pad"
+      ],
+      "aliases": [],
+      "example": "ctx.input.startJoyVibration(0.4, 0.8, 250);",
+      "constraints": [
+        "A pad or host with no actuator prints TN_HAPTICS_UNSUPPORTED once and returns false.",
+        "A worker game reads no live gamepads, so it reports unsupported."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "ctx.input.vibrateHandheld",
+      "package": "@threenative/core",
+      "importPath": "src/input.ts",
+      "kind": "function",
+      "signature": "ctx.input.vibrateHandheld(durationMs: number): boolean",
+      "summary": "Vibrates the phone for durationMs through navigator.vibrate, which the native host shims with SDL haptics (the Android system vibrator). Returns whether the platform took the request.",
+      "situations": [
+        "vibrate the phone",
+        "haptic feedback on hit",
+        "shake the device when the player takes damage",
+        "mobile vibration"
+      ],
+      "aliases": [],
+      "example": "if (ctx.input.vibrateHandheld(80)) hud.flashHit();",
+      "constraints": [
+        "A runtime with no API or no motor prints TN_HAPTICS_UNSUPPORTED once and returns false.",
+        "A negative or non-finite duration throws TN_HAPTICS_INVALID.",
+        "iOS is not proven yet."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "InputMap.setBinding",
+      "package": "@threenative/core",
+      "importPath": "src/input.ts",
+      "kind": "function",
+      "signature": "ctx.input.setBinding(action: string, binding: IInputAction): void; ctx.input.bindings(): InputBindings",
+      "summary": "Replaces one declared action's binding at runtime, after Godot's InputMap action_erase_events + action_add_event; bindings() returns a JSON-safe copy a game can save and feed back.",
+      "situations": [
+        "rebind keys",
+        "remap controls in an options menu",
+        "let the player change key bindings",
+        "save and restore custom controls"
+      ],
+      "aliases": [],
+      "example": "ctx.input.setBinding(\"jump\", { keys: [\"KeyK\"] });\nlocalStorage.setItem(\"keys\", JSON.stringify(ctx.input.bindings()));",
+      "constraints": [
+        "A malformed binding throws TN_BINDING_INVALID, the same check the constructor runs.",
+        "An action not declared in defineGame({ input }) throws TN_BINDING_UNKNOWN.",
+        "The game owns where bindings are saved, for example localStorage."
+      ],
+      "overrides": [],
+      "supersedes": []
     },
     {
       "symbol": "createStormLightning",
@@ -11610,6 +11805,51 @@
       "supersedes": []
     },
     {
+      "symbol": "ctx.quit",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.quit(): void",
+      "summary": "Quits the app with status 0, after Godot's get_tree().quit(). A web page cannot end its own process, so there the call prints TN_QUIT_UNSUPPORTED once and does nothing.",
+      "situations": [
+        "quit button in a pause menu",
+        "exit the game from its own UI",
+        "close the app",
+        "end the process from game code"
+      ],
+      "aliases": [],
+      "example": "onQuit = () => ctx.quit();",
+      "constraints": [
+        "Native host only: the web reports TN_QUIT_UNSUPPORTED once and returns.",
+        "Hide or disable a Quit button on the web rather than offer one that does nothing."
+      ],
+      "overrides": ["TN_QUIT_UNSUPPORTED reports the web, where quit cannot work"],
+      "supersedes": []
+    },
+    {
+      "symbol": "ctx.sceneLoad.progress",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.sceneLoad.progress: number",
+      "summary": "How far the scene change in flight has loaded, 0 to 1, for a loading bar between levels: 0 when goto() starts, the share of the asset requests that load makes, and 1 once the new scene's enter() has run. During boot it equals ctx.startup.progress.",
+      "situations": [
+        "loading screen between levels",
+        "progress bar during a level change",
+        "show load progress on restart",
+        "loading bar after goto"
+      ],
+      "aliases": [],
+      "example": "const width = `${Math.round(ctx.sceneLoad.progress * 100)}%`; // the kits' render/loading.ts reads this",
+      "constraints": [
+        "Never decreases within one load; the next goto() resets it to 0.",
+        "Counts only the requests that load makes: a request already in flight when goto() started is not in it.",
+        "ctx.startup.progress stays at 1 after the first launch, so a bar between levels reads this instead."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
       "symbol": "ctx.startup.progress",
       "package": "@threenative/core",
       "importPath": "src/scene.ts",
@@ -11629,6 +11869,55 @@
         "Never decreases, even when the loader is asked for more work mid-boot.",
         "Reaches 1 only after the first world render has been presented, not when the last byte arrived.",
         "A loading view the engine drew for you already reads it; this is for a cover the game draws itself."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "ctx.timeScale",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "ctx.timeScale: number",
+      "summary": "Simulation speed, after Godot's Engine.time_scale: 0.5 runs half the fixed ticks per wall second with the same step, 0 freezes the simulation while rendering continues. Default 1.",
+      "situations": [
+        "slow motion",
+        "bullet time",
+        "freeze frame on impact",
+        "hitstop",
+        "speed up or slow down the game",
+        "fast forward the simulation"
+      ],
+      "aliases": [],
+      "example": "ctx.timeScale = 0.2; // slow motion\nctx.after(0.1, () => (ctx.timeScale = 1));",
+      "constraints": [
+        "The fixed step and every dt a game receives stay the same; only the tick count changes, so determinism holds.",
+        "UI, audio and other wall-clock work keep their own speed.",
+        "A value that is not a finite number of at least 0 throws TN_TIME_SCALE_INVALID."
+      ],
+      "overrides": [],
+      "supersedes": []
+    },
+    {
+      "symbol": "Scene.applicationPaused",
+      "package": "@threenative/core",
+      "importPath": "src/scene.ts",
+      "kind": "function",
+      "signature": "applicationPaused(ctx): void; applicationResumed(ctx): void // optional Scene methods",
+      "summary": "Scene hooks for the app leaving and returning to the foreground, after Godot's NOTIFICATION_APPLICATION_PAUSED/RESUMED. Core calls them from `visibilitychange` on the web and on the native host, and forwards them into a worker game.",
+      "situations": [
+        "app goes to background",
+        "save the game when the phone sends the app to the background",
+        "pause or resume when the user switches apps",
+        "detect the app being minimised or brought back",
+        "mobile app lifecycle events"
+      ],
+      "aliases": [],
+      "example": "override applicationPaused(ctx) { localStorage.setItem(\"save\", JSON.stringify(ctx.state.getState())); }",
+      "constraints": [
+        "Fires once per real transition, for the scene active at that moment.",
+        "The paused hook gets one JavaScript turn before the host parks the loop; a localStorage write there is flushed to disk before the app is backgrounded.",
+        "The web, the legacy host (Android, desktop) and the owned desktop engine player all dispatch it; iOS is not proven yet."
       ],
       "overrides": [],
       "supersedes": []
@@ -11921,7 +12210,7 @@
   ],
   "notOwned": [
     {
-      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state), and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
+      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "save-load",
       "situations": [
         "persist a player's progress between sessions",

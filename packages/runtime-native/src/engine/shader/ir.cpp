@@ -561,12 +561,37 @@ uint32_t Program::storageBuffer(std::string_view name, Type element, bool atomic
     for (uint32_t i = 0; i < storage_.size(); ++i) {
         const Storage& storage = storage_[i];
         if (storage.name != name) continue;
-        if (storage.element != element || storage.atomic != atomic)
-            fail("storageBuffer " + std::string(name), "conflicting element type or atomic access", where);
+        if (storage.element != element || storage.atomic != atomic || storage.workgroupCount != 0)
+            fail("storageBuffer " + std::string(name), "conflicting element type, atomic access or workgroup memory", where);
         return i;
     }
     storage_.push_back(Storage{std::string(name), element, atomic});
     return static_cast<uint32_t>(storage_.size() - 1);
+}
+
+uint32_t Program::workgroupArray(std::string_view name, Type element, uint32_t count, Where where) {
+    const std::string node = "workgroupArray " + std::string(name);
+    if (stage_ != Stage::Compute) fail(node, "workgroup memory belongs to a compute stage", where);
+    else if (count == 0 || element.scalar == Type::Scalar::Void) fail(node, "needs an element type and a count above zero", where);
+    for (uint32_t i = 0; i < storage_.size(); ++i) {
+        const Storage& storage = storage_[i];
+        if (storage.name != name) continue;
+        if (storage.element != element || storage.workgroupCount != count)
+            fail(node, "conflicting element type or count, or a storage buffer of that name", where);
+        return i;
+    }
+    Storage array{std::string(name), element};
+    array.workgroupCount = count;
+    storage_.push_back(std::move(array));
+    return static_cast<uint32_t>(storage_.size() - 1);
+}
+
+void Program::barrier(BarrierScope scope, Where where) {
+    if (stage_ != Stage::Compute) {
+        fail(scope == BarrierScope::Workgroup ? "workgroupBarrier" : "storageBarrier", "a barrier belongs to a compute stage", where);
+        return;
+    }
+    emit(Stmt{StmtKind::Barrier, static_cast<uint32_t>(scope)});
 }
 
 ExprId Program::loadStorage(uint32_t buffer, ExprId index, Where where) {
@@ -1015,6 +1040,7 @@ void Program::dumpBlock(uint32_t block, int depth, std::string& out, std::vector
                 break;
             case StmtKind::Discard: out += indent + "discard\n"; break;
             case StmtKind::Return: out += indent + "return\n"; break;
+            case StmtKind::Barrier: out += indent + (s.a == uint32_t(BarrierScope::Workgroup) ? "workgroupBarrier\n" : "storageBarrier\n"); break;
             case StmtKind::Output:
                 out += indent + "output " + names_[outputs_[s.a].name] + " = " + describe(s.b, numbering) + "\n";
                 break;
@@ -1126,6 +1152,7 @@ void Program::pruneDeadStatements() {
             case StmtKind::Loop: s.a = remap[s.a]; break;
             case StmtKind::Discard:
             case StmtKind::Return:
+            case StmtKind::Barrier:
             case StmtKind::Break:
             case StmtKind::Continue: break;
             }
@@ -1181,6 +1208,7 @@ void Program::pruneDeadStatements() {
             case StmtKind::Store:
             case StmtKind::TextureStore: on = true; mark(mark, s.b); mark(mark, s.c); break;
             case StmtKind::Discard:
+            case StmtKind::Barrier:
             case StmtKind::Return: on = true; break;
             case StmtKind::Break:
             case StmtKind::Continue: on = loopLive; break;

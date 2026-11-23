@@ -16,7 +16,7 @@ interface IGltf {
     extensions?: Record<string, unknown>;
     extras?: Record<string, unknown>;
     name: string;
-    pbrMetallicRoughness?: { baseColorTexture?: unknown };
+    pbrMetallicRoughness?: { baseColorFactor?: number[]; baseColorTexture?: unknown };
   }[];
   nodes: { extras?: Record<string, unknown> }[];
   textures?: unknown[];
@@ -219,7 +219,7 @@ describe("bakeCity bakes the Apex City Kit headless", () => {
     expect(office.triangles).toBe(8862);
   }, 30_000);
 
-  it("supports opt-in emissiveSigns and opaqueGlass while keeping default stock filenames unchanged", async () => {
+  it("supports opt-in emissiveSigns and the opaqueGlass: false override while keeping default stock filenames unchanged", async () => {
     const out = await makeTempDir("city-optin-");
     const [plainAd] = await bakeCity({
       module: "civic-ad",
@@ -248,25 +248,33 @@ describe("bakeCity bakes the Apex City Kit headless", () => {
     expect(litSign?.emissiveTexture).toBeDefined();
     expect(litSign?.emissiveFactor).toEqual([1, 1, 1]);
 
+    // The default native engine refuses a transmissive mesh by name (TN_MATERIAL_UNSUPPORTED
+    // transmission), so the stock bake ships opaque glass; `opaqueGlass: false` keeps the
+    // transmissive glass under its own file name.
     const [stockOffice] = await bakeCity({ module: "office", detail: 1, dressing: false, out });
-    const [opaqueOffice] = await bakeCity({
+    const [glassOffice] = await bakeCity({
       module: "office",
       detail: 1,
       dressing: false,
-      opaqueGlass: true,
+      opaqueGlass: false,
       out,
     });
-    if (!stockOffice || !opaqueOffice) throw new Error("Expected both office GLBs");
-    expect(opaqueOffice.path).not.toBe(stockOffice.path);
-    const stockTransmission =
-      parseGlb(await readFile(stockOffice.path)).materials?.filter(
+    if (!stockOffice || !glassOffice) throw new Error("Expected both office GLBs");
+    expect(glassOffice.path).not.toBe(stockOffice.path);
+    const transmissive = async (file: string) =>
+      parseGlb(await readFile(file)).materials?.filter(
         (m) => m.extensions?.KHR_materials_transmission !== undefined,
       ) ?? [];
-    const opaqueTransmission =
-      parseGlb(await readFile(opaqueOffice.path)).materials?.filter(
-        (m) => m.extensions?.KHR_materials_transmission !== undefined,
-      ) ?? [];
-    expect(stockTransmission.length).toBeGreaterThan(0);
-    expect(opaqueTransmission).toHaveLength(0);
+    expect(await transmissive(stockOffice.path)).toHaveLength(0);
+    expect((await transmissive(glassOffice.path)).length).toBeGreaterThan(0);
+    // Opaque glass keeps only what three's transmission mix leaves over a dark interior,
+    // colour × (1 − transmission): the near-white lobby glass reads as dark glass, not a white wall.
+    const lobby = (file: Buffer) =>
+      parseGlb(file).materials?.find((m) => m.name === "Clear laminated lobby glass")
+        ?.pbrMetallicRoughness?.baseColorFactor ?? [1, 1, 1, 1];
+    const clear = lobby(await readFile(glassOffice.path));
+    const opaque = lobby(await readFile(stockOffice.path));
+    for (const channel of [0, 1, 2])
+      expect(opaque[channel]).toBeCloseTo((clear[channel] ?? 1) * (1 - 0.96), 4);
   }, 60_000);
 });

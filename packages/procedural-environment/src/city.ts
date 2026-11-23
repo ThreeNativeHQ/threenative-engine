@@ -51,7 +51,7 @@ export interface IBakeCityOptions {
   readonly markings?: boolean;
   /** Light canvas-drawn sign materials (`extras.sign`) with an emissive map for night scenes. Default false. */
   readonly emissiveSigns?: boolean;
-  /** Convert transmissive architectural glass (`transmission > 0`) to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass. Default false. */
+  /** Convert transmissive glass (`transmission > 0`) to opaque reflective PBR glass. Default true: the default native engine refuses a transmissive mesh by name (`TN_MATERIAL_UNSUPPORTED transmission`) and three pays a full-scene transmission pass; `false` keeps the kit's transmissive glass. */
   readonly opaqueGlass?: boolean;
 }
 
@@ -69,7 +69,7 @@ export const cityRoadDefaults = {
 
 export const cityBakeDefaults = {
   emissiveSigns: false,
-  opaqueGlass: false,
+  opaqueGlass: true,
 } satisfies Partial<IBakeCityOptions>;
 
 export const cityRoadEdgeModules = [
@@ -444,6 +444,14 @@ function applyMaterialOptions(material: IVmMaterial, bake: CityBakeSettings): vo
     }
   }
   if (bake.opaqueGlass && typeof material.transmission === "number" && material.transmission > 0) {
+    // three shades glass as mix(diffuse, transmitted, transmission); over a dark interior that is
+    // colour × (1 − transmission), so clear glass reads as dark reflective glass, not a white panel.
+    const kept = 1 - Math.min(1, material.transmission);
+    if (material.color) {
+      material.color.r *= kept;
+      material.color.g *= kept;
+      material.color.b *= kept;
+    }
     material.transmission = 0;
     if (typeof material.thickness === "number") material.thickness = 0;
   }

@@ -58,7 +58,11 @@ struct StandardMaterial {
     float sheen = 0;
     float transmission = 0;
     float iridescence = 0;
+    // MeshPhysicalMaterial's anisotropic GGX (three's useAnisotropy: anisotropy > 0): the vector is
+    // anisotropy * (cos rotation, sin rotation), uniform anisotropyVector, and the anisotropyMap
+    // (kAnisotropyMap) replaces its direction and strength when bound.
     float anisotropy = 0;
+    float anisotropyRotation = 0;
     float dispersion = 0;
 };
 
@@ -71,10 +75,12 @@ struct StandardMaterial {
 /** The scalar and emissive maps MeshStandardMaterial reads besides map and normalMap, as bits of
  *  VertexVariant::pbrMaps. Each is sampled at `<name>UvTransform * vec3(uv, 1)` from texture `<name>`. */
 enum PbrMap : uint8_t { kRoughnessMap, kMetalnessMap, kAoMap, kEmissiveMap, kBumpMap, kSpecularColorMap,
-                        kSpecularIntensityMap, kClearcoatMap, kClearcoatRoughnessMap, kClearcoatNormalMap, kPbrMapCount };
+                        kSpecularIntensityMap, kClearcoatMap, kClearcoatRoughnessMap, kClearcoatNormalMap,
+                        kAnisotropyMap, kPbrMapCount };
 inline constexpr const char* kPbrMapNames[kPbrMapCount] = {"roughnessMap", "metalnessMap", "aoMap", "emissiveMap",
                                                            "bumpMap", "specularColorMap", "specularIntensityMap",
-                                                           "clearcoatMap", "clearcoatRoughnessMap", "clearcoatNormalMap"};
+                                                           "clearcoatMap", "clearcoatRoughnessMap", "clearcoatNormalMap",
+                                                           "anisotropyMap"};
 /** MeshStandardMaterial's PbrMaps; the ones after it are MeshPhysicalMaterial's own. */
 inline constexpr int kStandardPbrMapCount = kSpecularColorMap;
 
@@ -159,8 +165,9 @@ struct VertexVariant {
     /**
      * MeshStandardMaterial's roughnessMap (.g), metalnessMap (.b), aoMap (.r, aoMapIntensity) and
      * emissiveMap (.rgb), and MeshPhysicalMaterial's specularColorMap (.rgb), specularIntensityMap
-     * (.a), clearcoatMap (.r), clearcoatRoughnessMap (.r) and tangent-space clearcoatNormalMap, one bit
-     * per PbrMap; read only by the standard and physical programs.
+     * (.a), clearcoatMap (.r), clearcoatRoughnessMap (.r), tangent-space clearcoatNormalMap and
+     * anisotropyMap (.rg direction, .b strength), one bit per PbrMap; read only by the standard and
+     * physical programs.
      */
     uint16_t pbrMaps = 0;
     [[nodiscard]] bool reads(PbrMap map) const { return (pbrMaps >> map) & 1u; }
@@ -180,6 +187,12 @@ struct VertexVariant {
      * `clearcoat`, `clearcoatRoughness` and, with a clearcoatNormalMap, `clearcoatNormalScale`.
      */
     bool clearcoat = false;
+    /**
+     * MeshPhysicalMaterial's anisotropic GGX (three's useAnisotropy: anisotropy > 0): the direct
+     * specular and the environment radiance read `anisotropyVector` and, with an anisotropyMap, its
+     * texel; the vertex stage passes `uv` through for the tangent frame.
+     */
+    bool anisotropy = false;
     /** The position output is @invariant: this frame draws a normal pass that shares the vertex stage, or TRAA's velocity pass depth-Equal against it. */
     bool invariantPosition = false;
     MaterialNodes nodes;
@@ -189,7 +202,7 @@ struct VertexVariant {
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaToCoverage ? "a2c|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
                std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
-               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (invariantPosition ? "i" : "") +
+               (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (anisotropy ? "aniso|" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
 };
@@ -265,9 +278,10 @@ StandardPrograms buildStandard(const StandardMaterial& material, const VertexVar
  * F0/F90 — specularColorBlended = mix(min(pow2((ior-1)/(ior+1)) * specularColor, vec3(1)) *
  * specularIntensity, diffuseColor.rgb, metalness), specularF90 = mix(specularIntensity, 1, metalness)
  * — instead of the standard's fixed 0.04 / 1. VertexVariant::clearcoat adds PhysicalLightingModel's
- * clearcoat layer (uniforms clearcoat, clearcoatRoughness, clearcoatNormalScale). Another physical
- * feature in use (sheen, …) is still refused by name. Same uniforms as buildStandard plus ior,
- * specularIntensity, specularColor.
+ * clearcoat layer (uniforms clearcoat, clearcoatRoughness, clearcoatNormalScale), and
+ * VertexVariant::anisotropy its anisotropic GGX (uniform anisotropyVector, the anisotropyMap when
+ * read). Another physical feature in use (sheen, …) is still refused by name. Same uniforms as
+ * buildStandard plus ior, specularIntensity, specularColor.
  */
 StandardPrograms buildPhysical(const StandardMaterial& material, const VertexVariant& variant = {},
                                const LightLayout& lights = {});
