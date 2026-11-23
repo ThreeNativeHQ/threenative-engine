@@ -704,6 +704,8 @@ class CharacterDynamics extends Scene<IState> {
           readbackInFlight: 256,
           ...tuning,
           ...(query.get("colliders") === "0" ? { bodyColliders: false as const } : {}),
+          // `?singleDispatch=0` runs the multi-dispatch Jacobi path, for a paired before/after.
+          ...(query.get("singleDispatch") === "0" ? { singleDispatch: false } : {}),
         }),
       );
       console.info(`TN_CHARACTER_DYNAMICS_CLOTH:${JSON.stringify(cloth.debug())}`);
