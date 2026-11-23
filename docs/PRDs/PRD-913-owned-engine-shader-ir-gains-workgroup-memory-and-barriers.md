@@ -45,7 +45,7 @@ Each fix needs the same two features: memory shared by a workgroup, and a barrie
 
 - [ ] AC-1: PRD-911 AC-1 and AC-5 pass on the owned engine: stretch ≤ 10% in every phase, cape GPU ≤ 0.35 ms, CPU submission ≤ 0.1 ms. proof: `acceptance-cloth.playtest.json` and `perf.playtest.json --live-clock` with a locked GPU clock.
 - [ ] AC-2: PRD-912 AC-4 passes: 2,000 guides of 16 points ≤ 0.15 ms GPU. proof: `perf.playtest.json --live-clock` on `?arm=strands&probe=0&strands=2000&cape=0` with a locked GPU clock.
-- [ ] AC-3: The workgroup reduction conformance case gives the same result on web and desktop. proof: `pnpm parity`.
+- [x] AC-3: The workgroup reduction conformance case gives the same result on web and desktop. proof: `pnpm parity`. Done 2026-11-23 on `aff806786`, owned engine: `pnpm parity --target web --engine threenative --only-tests workgroup-reduction` pass 1, fail 0 (Wasm engine in Chromium against upstream three); `pnpm parity --target desktop --engine threenative --only-tests workgroup-reduction --reference <that web capture>` pass 1, fail 0, pixelMismatchRatio 0, perceptualDeltaE 0, no GPU validation errors, V8 player on the RTX 2080. The scene throws unless the GPU sum is exactly 2080. Exit 2 on both is the 161 rows `--only-tests` reports blocked.
 
 ## Blocked on
 
