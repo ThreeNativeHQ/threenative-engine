@@ -2471,6 +2471,19 @@
       },
       "desktopGate": false,
       "required": false
+    },
+    {
+      "id": "hair-cards",
+      "title": "hair cards: the starter template's coverage-masked card material draws the HairStrands3D solver's 60-step hair on every host",
+      "category": "webgpu-tsl",
+      "status": "implemented",
+      "scene": "conformance/scenes/shared/hair-cards.js",
+      "tolerance": {
+        "pixelMismatchRatio": 0.01,
+        "perceptualDeltaE": 3.0
+      },
+      "desktopGate": false,
+      "required": false
     }
   ],
   "generatedPlaytestProofs": [
