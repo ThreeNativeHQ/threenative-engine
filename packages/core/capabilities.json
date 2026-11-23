@@ -2226,6 +2226,29 @@
       "symbol": "GroundSnap"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "WebGPU compute; one invocation per guide, at most 8 colliders; world space at the scene root"
+      ],
+      "example": "import { HairStrands3D, measureBodyCapsules } from \"@threenative/core\";\nconst hair = new HairStrands3D(guidePositions, { pointsPerStrand: 16, bone: head, colliders });\nscene.add(hair);\nmaterial.positionNode = hair.positions.element(guidePointIndex);",
+      "importPath": "@threenative/core",
+      "kind": "class",
+      "overrides": [
+        "substeps, iterations, airDrag, wind, globalStiffness, localStiffness, colliders, teleportDistance"
+      ],
+      "package": "@threenative/core",
+      "signature": "export class HairStrands3D extends Object3D implements IComputeDriven { … }",
+      "situations": [
+        "long hair moves with the head",
+        "hair cards follow the head",
+        "simulate hair guide strands on the GPU",
+        "braid or fringe of hair cards that swings"
+      ],
+      "summary": "Simulate hair guide strands on the GPU: hair cards or strands that swing with the head, hang under gravity, keep their styled shape near the root and stay out of the head and body. The kernel is frostbitten-hair-webgpu's guide solver (MIT): Verlet, then the length, global-shape, local-shape and collision constraints per iteration. Defaults are Unreal's groom solver (5 substeps, 5 iterations, air drag 0.1) and frostbitten's stiffnesses. Roots and the rest shape ride on `bone`. Positions stay on the GPU: cards or ribbons read {@link positions} in their position node. Add it to the scene root; it simulates in world space.",
+      "supersedes": [],
+      "symbol": "HairStrands3D"
+    },
+    {
       "aliases": ["gamepad", "controller", "joypad", "xbox", "8bitdo", "steam deck"],
       "constraints": [
         "`buttons` is the gamepad and `mouseButtons` the mouse; `up`/`down`/`left`/`right` are the directions of `vector(name)`, not the keys that press it",

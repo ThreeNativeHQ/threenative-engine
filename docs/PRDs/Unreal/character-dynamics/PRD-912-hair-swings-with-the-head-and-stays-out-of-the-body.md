@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-912 — Hair swings with the head and stays out of the body
 
-**Status:** IN PROGRESS (2026-11-23) — `SpringBoneChain3D` ships with Unreal SpringBone defaults (stiffness 50, damping 4, 1/120 s step) and 7 unit tests. The scene has a 6-bone ponytail in every arm; `?arm=hair` simulates it against a head sphere and a neck capsule. Measured, owned engine, 1 run: tip offset 0.05–0.57 m (rigid control ≈ 1e-7 m), segment stretch ≤ 7e-6, 0–2 bones inside the probe shapes (the nape root bone, not a simulated segment). The colliders are placed by hand, not auto-measured, so the Phase 1 collider box stays open.
+**Status:** IN PROGRESS (2026-11-23) — Tier 1: `SpringBoneChain3D` passes AC-1 and AC-2 on `?arm=hair` (tip swing 0.30–0.59 m). Tier 2: `HairStrands3D` (frostbitten kernel in TSL, Unreal groom defaults and its stretch projection) passes the same bounds on `?arm=strands` with 64 guides drawn as ribbon cards; its tip swings only 1–3 cm, because the global-shape constraint holds most of the strand. AC-3 (Unreal swing), AC-4 (cost), AC-5 (judge) and desktop parity are open.
 **Priority:** P2 — No hair moves today. A character request with a ponytail or long hair gets a rigid mesh.
 **Complexity:** 7 (HIGH) — spring bone chain (+1), GPU guide strands transliterated from WGSL (+2), card skinning to guides (+2), shared colliders and wind (+1), native proof (+1)
 **Owner:** João
@@ -39,13 +39,13 @@ Unreal moves hair in two tiers. The cheap tier is a bone chain: `AnimNode_Spring
 
 #### Phase 2: Guide strands on the GPU
 
-- [ ] The frostbitten solver is transliterated to TSL, with its MIT header and a notice line. A unit spec checks length and shape constraints on one strand. proof: `pnpm exec vitest run packages/core/__tests__/hair-strands.spec.ts`
-- [ ] Hair cards follow their guides through the position node, with no readback. proof: AC-2 and AC-4.
+- [ ] The frostbitten solver is transliterated to TSL, with its MIT header and a notice line. A unit spec checks length and shape constraints on one strand. proof: `pnpm exec vitest run packages/core/__tests__/hair-strands.spec.ts` — 2026-11-23, open on the unit half: `packages/core/src/hair-strands.ts` (`HairStrands3D`) carries the kernel with its MIT header, and `THIRD_PARTY_NOTICES.md` has the entry. `hair-strands.spec.ts` (4/4) covers rest lengths, one reset then one dispatch per substep, the 50 cm teleport reset, the WindField3D read and the fail-closed inputs. It cannot run the kernel: vitest has no GPU, so the length and shape behaviour is proved on the GPU instead — `acceptance-hair.playtest.json` on `?arm=strands` exits 0 in 3 runs before the 2026-11-23 rig move and 1 after it, `hairStretch` 0 and `hairInsideHead` 0 in all eight phases. Port decisions: Unreal groom defaults (5 substeps, 5 iterations, air drag 0.1 with its drag formula, 0.01 cm thickness, 1 g/cm³); frostbitten stiffnesses; capsules replace the sphere and SDF; the grid is dropped, and with it `friction`, which only mixes toward the grid's mean velocity. Unreal's root-to-tip stretch projection ends each substep (`NiagaraHookeSpringMaterial.ush:28-53,93-118`): without it, stretch reached 5.9–7.9% at 5 iterations and 5.5% at frostbitten's own 7.
+- [ ] Hair cards follow their guides through the position node, with no readback. proof: AC-2 and AC-4. — 2026-11-23, AC-2 half met: the strands arm's ribbon cards read `HairStrands3D.positions` in their position node (readback is only the probe's, `readbackEveryFrames: 2`, off by default); `hairStretch` 0 in every phase. AC-4 (GPU cost of 2,000 guides) is not measured yet.
 
 #### Phase 3: Every engine, every agent
 
 - [ ] The desktop host runs the hair arm with conformance parity. proof: `pnpm parity --target desktop --only-tests hair-guides`
-- [x] A cold `engine_search_capabilities` for "ponytail" and "hair that moves" returns these rows first. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 2026-11-23: `search.spec.ts` "leads 'ponytail' / 'hair that moves' with SpringBoneChain3D", 2/2 pass with a clean `TMPDIR`. `HairStrands3D` does not exist yet; its rows join this test when it lands.
+- [x] A cold `engine_search_capabilities` for "ponytail" and "hair that moves" returns these rows first. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — 2026-11-23: `search.spec.ts` "leads 'ponytail' / 'hair that moves' with SpringBoneChain3D", 2/2 pass with a clean `TMPDIR`. `HairStrands3D` rows joined it on 2026-11-23: "hair cards follow the head" and "simulate hair guide strands on the GPU" lead with it (4/4).
 
 ## Blocked on
 

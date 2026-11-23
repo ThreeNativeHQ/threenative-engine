@@ -710,6 +710,13 @@ describe("threenative-engine-mcp", () => {
       expect(searchResults(query, workspaceManifest)[0]?.symbol, query).toBe("SpringBoneChain3D");
     },
   );
+  // PRD-912: card or strand hair that follows the head is the GPU guide case.
+  it.each(["hair cards follow the head", "simulate hair guide strands on the GPU"])(
+    "leads '%s' with HairStrands3D (PRD-912)",
+    (query) => {
+      expect(searchResults(query, workspaceManifest)[0]?.symbol, query).toBe("HairStrands3D");
+    },
+  );
 
   it("ranks fluid simulation for ocean currents affecting a ship", () => {
     const results = searchResults(

@@ -9,9 +9,12 @@
  *
  * `?arm=softbody` (the default today) is the incumbent `SoftBody3D`, given its best shot: it cannot
  * be parented under a bone (reparenting fires `removed`, which detaches it), so its frame follows
- * `spine_03` by hand every tick and its gravity is rotated into that frame.
+ * `spine_03` by hand every tick and its gravity is rotated into that frame. `?arm=cloth` is the skinned
+ * `SoftBody3D` cape, `?arm=hair` the `SpringBoneChain3D` ponytail and `?arm=strands` 64 `HairStrands3D`
+ * guides drawn as cards. `?cape=0` hides the cape so the hair reads from behind.
  */
 import {
+  HairStrands3D,
   type ICtx,
   type ISoftBodyCapsule,
   type ISpringBoneCapsule,
@@ -29,6 +32,7 @@ import {
   type AnimationClip,
   Bone,
   BufferAttribute,
+  BufferGeometry,
   Color,
   CylinderGeometry,
   DirectionalLight,
@@ -43,6 +47,7 @@ import {
   SkinnedMesh,
   Vector3,
 } from "three";
+import { attribute, length, normalize, uniform, vec4 } from "three/tsl";
 import { MeshStandardNodeMaterial } from "three/webgpu";
 import {
   type IProbeCapsule,
@@ -99,7 +104,7 @@ interface IPhaseMetrics {
   hairTipOffset: number;
   /** Largest |segment length / rest length - 1| over the chain. */
   hairStretch: number;
-  /** Largest number of ponytail bones inside the head sphere or neck capsule in one tick. */
+  /** Largest number of simulated hair points inside the head, neck, back or shoulder capsules in one sample. */
   hairInsideHead: number;
   samples: number;
 }
@@ -115,7 +120,7 @@ interface IState extends Record<string, unknown> {
 
 function arm(): string {
   const value = new URLSearchParams(globalThis.location?.search ?? "").get("arm") ?? "softbody";
-  if (value !== "softbody" && value !== "cloth" && value !== "hair")
+  if (value !== "softbody" && value !== "cloth" && value !== "hair" && value !== "strands")
     throw new Error(`CHARACTER_DYNAMICS_UNKNOWN_ARM arm=${value}`);
   return value;
 }
@@ -182,7 +187,6 @@ class CharacterDynamics extends Scene<IState> {
 
     const spine = boneOf(player.root, "spine_03");
     const pelvis = boneOf(player.root, "pelvis");
-    const neck = boneOf(player.root, "neck_01");
     const head = boneOf(player.root, "Head");
 
     // Facing is measured, not assumed: the foot-to-ball line points forward on any rig.
@@ -202,10 +206,12 @@ class CharacterDynamics extends Scene<IState> {
     const hairAnchor = head.getWorldPosition(new Vector3());
     let hairParent: Bone = head;
     for (let index = 0; index < 6; index++) {
+      // The root sits on the back of the skull (the Head bone is at the top of the neck); the chain
+      // falls back and down, clear of the neck and the upper back.
       const offset =
         index === 0
-          ? back.clone().multiplyScalar(0.1).setY(0.05)
-          : back.clone().multiplyScalar(0.015).setY(-0.06);
+          ? back.clone().multiplyScalar(0.12).setY(0.15)
+          : back.clone().multiplyScalar(0.03).setY(-0.06);
       hairAnchor.add(offset);
       const bone = new Bone();
       bone.name = `ponytail_${index + 1}`;
@@ -379,12 +385,15 @@ class CharacterDynamics extends Scene<IState> {
       probeCapsules = measureBodyCapsules(capeSkin, 16, restWorld, COLLIDER_THICKNESS);
       skinnedCape = capeSkin;
     }
-    // The ponytail collides with the head and neck capsules measured from the skin, by the same
-    // physics-asset rule as the cape's body capsules. The probe reads the same shapes.
-    const headBones = new Set<Object3D>([head, neck]);
-    const hairCapsules = measureBodyCapsules(skinnedCape as SkinnedMesh).filter((capsule) =>
-      headBones.has(capsule.bone),
+    // The hair collides with capsules measured from the skin, by the same physics-asset rule as the
+    // cape's body capsules (the head merges into `neck_01`). The probe reads the same shapes.
+    const allCapsules = measureBodyCapsules(skinnedCape as SkinnedMesh);
+    console.info(
+      `TN_CHARACTER_DYNAMICS_BODY_CAPSULES:${JSON.stringify(allCapsules.map((c) => `${c.bone.name}:${c.radius.toFixed(3)}`))}`,
     );
+    // The hair falls onto the head, neck, upper back and shoulders.
+    const hairBoneNames = new Set(["neck_01", "spine_03", "spine_02", "upperarm_l", "upperarm_r"]);
+    const hairCapsules = allCapsules.filter((capsule) => hairBoneNames.has(capsule.bone.name));
     if (hairCapsules.length === 0) throw new Error("CHARACTER_DYNAMICS_NO_HEAD_CAPSULE");
     const hairColliders: ISpringBoneCapsule[] = hairCapsules.map((capsule) => ({
       a: new Vector3(),
@@ -407,6 +416,108 @@ class CharacterDynamics extends Scene<IState> {
       armName === "hair"
         ? new SpringBoneChain3D(hairBones[0] as Bone, { colliders: hairColliders })
         : undefined;
+    // `?arm=strands`: 64 guides of 16 points on the GPU, each the ponytail curve resampled and spread
+    // across the back of the head; the rigid ponytail hides. Lines read the solver's buffer directly.
+    const STRAND_POINTS = 16;
+    const STRAND_COUNT = 64;
+    const strandTuning = (): Record<string, number> => {
+      const query = new URLSearchParams(globalThis.location?.search ?? "");
+      const tuning: Record<string, number> = {};
+      for (const key of [
+        "airDrag",
+        "iterations",
+        "substeps",
+        "globalStiffness",
+        "localStiffness",
+      ]) {
+        const value = query.get(key);
+        if (value !== null) tuning[key] = Number(value);
+      }
+      return tuning;
+    };
+    let strands: HairStrands3D | undefined;
+    // The head's world frame for the cards' across vectors, refreshed every step.
+    const headFrame = uniform(head.matrixWorld.clone());
+    if (armName === "strands") {
+      (hairBones[0] as Bone).visible = false;
+      const curve = hairWorld.map((point) => point.clone());
+      const total = curve
+        .slice(1)
+        .reduce((sum, point, index) => sum + point.distanceTo(curve[index] as Vector3), 0);
+      const across = new Vector3().crossVectors(up, back).normalize();
+      const guides = new Float32Array(STRAND_COUNT * STRAND_POINTS * 3);
+      const point = new Vector3();
+      for (let g = 0; g < STRAND_COUNT; g++) {
+        const shift = across.clone().multiplyScalar(((g + 0.5) / STRAND_COUNT - 0.5) * 0.1);
+        for (let p = 0; p < STRAND_POINTS; p++) {
+          // Walk the polyline to arc length p / (n - 1) of the whole.
+          let left = (total * p) / (STRAND_POINTS - 1);
+          let k = 0;
+          for (; k < curve.length - 2; k++) {
+            const length = (curve[k + 1] as Vector3).distanceTo(curve[k] as Vector3);
+            if (left <= length) break;
+            left -= length;
+          }
+          const a = curve[k] as Vector3;
+          const b = curve[k + 1] as Vector3;
+          point.lerpVectors(a, b, Math.min(1, left / a.distanceTo(b))).add(shift);
+          point.toArray(guides, (g * STRAND_POINTS + p) * 3);
+        }
+      }
+      strands = ctx.add(
+        new HairStrands3D(guides, {
+          pointsPerStrand: STRAND_POINTS,
+          bone: head,
+          colliders: hairCapsules,
+          readbackEveryFrames: 2,
+          // Named overrides from the URL, for tuning runs: ?airDrag=0&iterations=8
+          ...strandTuning(),
+        }),
+      );
+      // One ribbon card per guide: two vertices per guide point, spread across the head's left-right
+      // axis and tapering to the tip. The position node reads the solver's buffer, so nothing reads back.
+      const cardPoint = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2);
+      const cardAcross = new Float32Array(STRAND_COUNT * STRAND_POINTS * 2 * 3);
+      const acrossHead = across.clone().transformDirection(head.matrixWorld.clone().invert());
+      const triangles: number[] = [];
+      for (let g = 0; g < STRAND_COUNT; g++)
+        for (let p = 0; p < STRAND_POINTS; p++) {
+          const v = (g * STRAND_POINTS + p) * 2;
+          const half = 0.004 * (1 - (0.7 * p) / (STRAND_POINTS - 1));
+          for (const side of [0, 1]) {
+            cardPoint[v + side] = g * STRAND_POINTS + p;
+            acrossHead
+              .clone()
+              .multiplyScalar(side === 0 ? -half : half)
+              .toArray(cardAcross, (v + side) * 3);
+          }
+          if (p + 1 < STRAND_POINTS) triangles.push(v, v + 1, v + 2, v + 1, v + 3, v + 2);
+        }
+      const cardGeometry = new BufferGeometry();
+      cardGeometry.setAttribute(
+        "position",
+        new BufferAttribute(new Float32Array(cardPoint.length * 3), 3),
+      );
+      cardGeometry.setAttribute("guidePoint", new BufferAttribute(cardPoint, 1));
+      cardGeometry.setAttribute("across", new BufferAttribute(cardAcross, 3));
+      cardGeometry.setIndex(triangles);
+      const cardMaterial = new MeshStandardNodeMaterial({
+        color: 0x3a2416,
+        roughness: 0.72,
+        side: DoubleSide,
+      });
+      cardMaterial.positionNode = strands.positions
+        .element(attribute("guidePoint", "float").toUint())
+        // The head frame carries the rig's import scale: take its direction, keep the authored width.
+        .add(
+          normalize(headFrame.mul(vec4(attribute("across", "vec3"), 0)).xyz).mul(
+            length(attribute("across", "vec3")),
+          ),
+        );
+      const cards = new Mesh(cardGeometry, cardMaterial);
+      cards.frustumCulled = false;
+      ctx.add(cards);
+    }
     if (armName === "cloth") {
       const capeSkin = skinnedCape as SkinnedMesh;
       // Named overrides from the URL, for tuning runs: ?substeps=10&colliders=0
@@ -441,6 +552,9 @@ class CharacterDynamics extends Scene<IState> {
       cloth = ctx.add(new SoftBody3D(new Mesh(geometry, material), options));
       cloth.matrixAutoUpdate = false;
     }
+    // `?cape=0` hides the cape in any arm, so the hair arms and their rigid control read the same back.
+    if (new URLSearchParams(globalThis.location?.search ?? "").get("cape") === "0")
+      cloth.visible = false;
     const unique = topology.positions.length / 3;
     let minY = Number.POSITIVE_INFINITY;
     for (let v = 0; v < unique; v++) minY = Math.min(minY, topology.positions[v * 3 + 1] as number);
@@ -523,22 +637,34 @@ class CharacterDynamics extends Scene<IState> {
       readonly toBody: Matrix4;
       readonly clothWorld: Matrix4;
       readonly capsules: IProbeCapsule[];
+      readonly hairCapsules: IProbeCapsule[];
+      readonly toHead: Matrix4;
     }
     const poses = new Map<number, IPose>();
+    const capsulesNow = (capsules: readonly ISoftBodyCapsule[]): IProbeCapsule[] =>
+      capsules.map((capsule) => {
+        capsule.bone.updateWorldMatrix(true, false);
+        return {
+          a: (capsule.start ?? new Vector3()).clone().applyMatrix4(capsule.bone.matrixWorld),
+          b: capsule.end.clone().applyMatrix4(capsule.bone.matrixWorld),
+          radius: capsule.radius,
+        };
+      });
+    const bonePose = (): Pick<IPose, "capsules" | "hairCapsules" | "toHead"> => {
+      head.updateWorldMatrix(true, false);
+      return {
+        capsules: capsulesNow(probeCapsules),
+        hairCapsules: capsulesNow(hairCapsules),
+        toHead: head.matrixWorld.clone().invert(),
+      };
+    };
     let steps = 0;
     const recordPose = (): void => {
       steps++;
       poses.set(steps, {
         toBody: capeMatrix.clone().invert(),
         clothWorld: cloth.matrixWorld.clone(),
-        capsules: probeCapsules.map((capsule) => {
-          capsule.bone.updateWorldMatrix(true, false);
-          return {
-            a: (capsule.start ?? new Vector3()).clone().applyMatrix4(capsule.bone.matrixWorld),
-            b: capsule.end.clone().applyMatrix4(capsule.bone.matrixWorld),
-            radius: capsule.radius,
-          };
-        }),
+        ...bonePose(),
       });
       poses.delete(steps - 120);
     };
@@ -587,7 +713,41 @@ class CharacterDynamics extends Scene<IState> {
     const headPosition = new Vector3();
     const headOrientation = new Quaternion();
     let hairRestTip: Vector3 | undefined;
+    const measureStrands = (
+      metrics: IPhaseMetrics,
+      phaseName: string,
+      hair: HairStrands3D,
+    ): void => {
+      const sample = hair.sample;
+      if (sample === undefined) return;
+      const pose = poses.get(steps - 1 - sample.staleFrames);
+      if (pose === undefined) return;
+      const data = sample.data;
+      for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
+      const n = hair.pointsPerStrand;
+      const tipLocal = new Vector3()
+        .fromArray(data, ((STRAND_COUNT / 2) * n + n - 1) * 3)
+        .applyMatrix4(pose.toHead);
+      if (phaseName === "settle") hairRestTip = tipLocal.clone();
+      if (hairRestTip !== undefined)
+        metrics.hairTipOffset = Math.max(metrics.hairTipOffset, tipLocal.distanceTo(hairRestTip));
+      let inside = 0;
+      for (let g = 0; g < hair.strandCount; g++) {
+        const strand = data.subarray(g * n * 3, (g + 1) * n * 3);
+        metrics.hairStretch = Math.max(
+          metrics.hairStretch,
+          maxSegmentStretch(strand, hair.restLengths.subarray(g * n, g * n + n - 1)),
+        );
+        // The root rides the head and is not simulated.
+        inside += countInsideCapsules(strand.subarray(3), pose.hairCapsules, 0.005);
+      }
+      metrics.hairInsideHead = Math.max(metrics.hairInsideHead, inside);
+    };
     const measureHair = (metrics: IPhaseMetrics, phaseName: string): void => {
+      if (strands !== undefined) {
+        measureStrands(metrics, phaseName, strands);
+        return;
+      }
       readHairWorld();
       head.getWorldPosition(headPosition);
       head.getWorldQuaternion(headOrientation);
@@ -614,6 +774,10 @@ class CharacterDynamics extends Scene<IState> {
 
     return (frameCtx: ICtx<IState>) => {
       if (complete) return;
+      // The solvers read the bones when they process, after this tick; record that pose for the
+      // probes here, before this tick moves anything.
+      const solved = poses.get(steps);
+      if (solved !== undefined) poses.set(steps, { ...solved, ...bonePose() });
       const phase = SCRIPT[phaseIndex] as IPhase;
       // Character root motion: the clips play in place, the script moves the body.
       character.rotation.y += (phase.yawRate ?? 0) * STEP;
@@ -638,6 +802,7 @@ class CharacterDynamics extends Scene<IState> {
       player.update(STEP);
       character.updateMatrixWorld(true);
       updateHairColliders();
+      headFrame.value.copy(head.matrixWorld);
       ponytail?.step(STEP);
       followBone();
       placeCape();
