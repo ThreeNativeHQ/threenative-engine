@@ -296,6 +296,19 @@ fn heightfield_shape(
     ))
 }
 
+/// Validate and copy a flat xyz point buffer from C: at least four finite points.
+fn copy_points(vertices: *const f32, vertex_floats: u32) -> Option<Vec<Point3<Real>>> {
+    let count = vertex_floats as usize;
+    if vertices.is_null() || count < 12 || count % 3 != 0 {
+        return None;
+    }
+    let floats = unsafe { std::slice::from_raw_parts(vertices, count) };
+    if !floats.iter().all(|value| value.is_finite()) {
+        return None;
+    }
+    Some(floats.chunks_exact(3).map(|v| Point3::new(v[0], v[1], v[2])).collect())
+}
+
 /// Validate and copy a flat xyz vertex buffer and a flat triangle-index buffer from C.
 fn copy_trimesh(
     vertices: *const f32,
@@ -410,6 +423,15 @@ impl Simulation {
             indices,
             TriMeshFlags::FIX_INTERNAL_EDGES,
         ) else {
+            return false;
+        };
+        self.insert_body(options, collider)
+    }
+
+    /// The convex hull of a point cloud: a closed solid a dynamic body can tumble on, unlike a
+    /// trimesh. Rapier answers `None` for a cloud it cannot hull, so that fails closed too.
+    fn add_convex_hull_body(&mut self, options: TnPhysicsBodyOptions, points: &[Point3<Real>]) -> bool {
+        let Some(collider) = ColliderBuilder::convex_hull(points) else {
             return false;
         };
         self.insert_body(options, collider)
@@ -1732,6 +1754,24 @@ pub extern "C" fn tn_physics_add_trimesh_body(
     simulation.add_trimesh_body(unsafe { ptr::read(options) }, points, triangles)
 }
 
+/// Add a body whose collider is the convex hull of `vertices`, a flat `x, y, z` float array copied
+/// here. Fewer than four points, a non-finite value, or a cloud Rapier cannot hull is refused.
+#[unsafe(no_mangle)]
+pub extern "C" fn tn_physics_add_convex_hull_body(
+    simulation: *mut Simulation,
+    options: *const TnPhysicsBodyOptions,
+    vertices: *const f32,
+    vertex_floats: u32,
+) -> bool {
+    let (Some(simulation), false) = (unsafe { simulation.as_mut() }, options.is_null()) else {
+        return false;
+    };
+    let Some(points) = copy_points(vertices, vertex_floats) else {
+        return false;
+    };
+    simulation.add_convex_hull_body(unsafe { ptr::read(options) }, &points)
+}
+
 /// Add a fixed body whose collider is a heightfield. `heights` holds `rows * columns` samples in
 /// column-major order; it is copied during the call.
 #[unsafe(no_mangle)]
@@ -2512,6 +2552,62 @@ mod tests {
             good.as_ptr(),
             3,
         ));
+    }
+
+    /// A unit cube's eight corners plus its centre: an interior point the hull must drop.
+    const CUBE_CLOUD: [f32; 27] = [
+        -0.5, -0.5, -0.5, 0.5, -0.5, -0.5, 0.5, 0.5, -0.5, -0.5, 0.5, -0.5, -0.5, -0.5, 0.5, 0.5,
+        -0.5, 0.5, 0.5, 0.5, 0.5, -0.5, 0.5, 0.5, 0.0, 0.0, 0.0,
+    ];
+
+    #[test]
+    fn a_dynamic_convex_hull_body_falls_and_rests_on_the_floor() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: -9.81,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut floor = fixed_box(0, 0.0, -0.5, 1);
+        floor.shape_x = 10.0;
+        floor.shape_z = 10.0;
+        assert!(simulation.add_body(floor));
+        let mut hull = fixed_box(1, 0.0, 3.0, 1);
+        hull.body_type = 0;
+        hull.shape_type = 5;
+        assert!(tn_physics_add_convex_hull_body(
+            &mut simulation,
+            &hull,
+            CUBE_CLOUD.as_ptr(),
+            CUBE_CLOUD.len() as u32,
+        ));
+        for _ in 0..240 {
+            assert!(simulation.step(1.0 / 60.0, &[]));
+        }
+        let y = simulation.bodies[simulation.entries[&1].body].translation().y;
+        // The floor's top is y = 0 and the cube's half height is 0.5.
+        assert!((y - 0.5).abs() < 0.05, "convex hull rests at y = {y}, not 0.5");
+        let mass = simulation.bodies[simulation.entries[&1].body].mass();
+        assert!((mass - 1.0).abs() < 1e-3, "unit cube hull mass was {mass}, not 1");
+    }
+
+    #[test]
+    fn the_convex_hull_ffi_rejects_too_few_or_non_finite_points() {
+        let mut simulation = Simulation::new(TnPhysicsWorldOptions {
+            gravity_x: 0.0,
+            gravity_y: 0.0,
+            gravity_z: 0.0,
+        })
+        .unwrap();
+        let mut options = fixed_box(0, 0.0, 0.0, 1);
+        options.shape_type = 5;
+        // Three points are a triangle, not a solid.
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, CUBE_CLOUD.as_ptr(), 9));
+        let mut nan = CUBE_CLOUD;
+        nan[4] = f32::NAN;
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, nan.as_ptr(), 27));
+        assert!(!tn_physics_add_convex_hull_body(&mut simulation, &options, ptr::null(), 27));
+        assert!(tn_physics_add_convex_hull_body(&mut simulation, &options, CUBE_CLOUD.as_ptr(), 27));
     }
 
     #[test]

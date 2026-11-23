@@ -36,11 +36,11 @@ import {
 } from "../simulation.js";
 
 export interface INativeShapeDescriptor {
-  readonly kind: "box" | "capsule" | "heightfield" | "sphere" | "trimesh";
+  readonly kind: "box" | "capsule" | "convexHull" | "heightfield" | "sphere" | "trimesh";
   readonly x: number;
   readonly y: number;
   readonly z: number;
-  /** Present for `trimesh` only: a flat xyz vertex buffer and a flat triangle-index buffer. */
+  /** `trimesh` and `convexHull`: a flat xyz vertex buffer; `trimesh` adds a flat triangle-index buffer. */
   readonly vertices?: Float32Array;
   readonly indices?: Uint32Array;
   /** Present for `heightfield` only: column-major samples, the grid and its full extent. */
@@ -308,6 +308,20 @@ function nativeBodyShape(shape: IPhysicsShapeDescriptor): INativeShapeDescriptor
       collisionLayer: shape.collisionLayer,
       collisionMask: shape.collisionMask,
       indices: shape.indices,
+      kind: shape.kind,
+      sensor: shape.sensor,
+      vertices: shape.vertices,
+      x: shape.x,
+      y: shape.y,
+      z: shape.z,
+    };
+  }
+  if (shape.kind === "convexHull") {
+    if (shape.vertices === undefined)
+      throw new Error("TN_NATIVE_PHYSICS_SHAPE_INVALID: convexHull requires vertices");
+    return {
+      collisionLayer: shape.collisionLayer,
+      collisionMask: shape.collisionMask,
       kind: shape.kind,
       sensor: shape.sensor,
       vertices: shape.vertices,

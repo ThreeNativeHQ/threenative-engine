@@ -11,6 +11,7 @@ import type { INativePhysicsHost, INativeQueryHit, INativeSimulation } from "./h
 
 const EXPORTS = [
   "tn_physics_add_body",
+  "tn_physics_add_convex_hull_body",
   "tn_physics_add_heightfield_body",
   "tn_physics_add_trimesh_body",
   "tn_physics_alloc",
@@ -316,9 +317,14 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
             value.type as string,
           );
           const shape = fields(value.shape);
-          const shapeType = ["box", "sphere", "capsule", "trimesh", "heightfield"].indexOf(
-            shape.kind as string,
-          );
+          const shapeType = [
+            "box",
+            "sphere",
+            "capsule",
+            "trimesh",
+            "heightfield",
+            "convexHull",
+          ].indexOf(shape.kind as string);
           if (typeof value.type !== "string" || bodyType < 0) throw INVALID;
           if (typeof shape.kind !== "string" || shapeType < 0) throw INVALID;
           u32[r] = nextId;
@@ -367,6 +373,15 @@ export function createWasmPhysicsHost(exports: WebAssembly.Exports): INativePhys
               sx,
               sy,
               sz,
+            );
+          } else if (shapeType === 5) {
+            const { vertices } = shape;
+            if (!(vertices instanceof Float32Array)) throw INVALID;
+            added = wasm.tn_physics_add_convex_hull_body(
+              simulation,
+              record,
+              copyIn(first, vertices),
+              vertices.length,
             );
           } else added = wasm.tn_physics_add_body(simulation, record);
         } catch (error) {

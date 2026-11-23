@@ -236,6 +236,20 @@ bool parseTrimeshBuffers(js::Engine *engine, js::JSValueHandle shape,
   return true;
 }
 
+// A convex hull's point cloud: only `vertices`, read like a trimesh's for the same synchronous call.
+bool parseHullPoints(js::Engine *engine, js::JSValueHandle shape, TrimeshBuffers &points) {
+  const auto vertices = engine->getProperty(shape, "vertices");
+  if (!isTypedArray(engine, vertices, "Float32Array"))
+    return false;
+  size_t vertexBytes = 0;
+  void *vertexData = engine->getArrayBufferData(vertices, &vertexBytes);
+  if (vertexData == nullptr)
+    return false;
+  points.vertices = static_cast<const float *>(vertexData);
+  points.vertex_floats = static_cast<uint32_t>(vertexBytes / sizeof(float));
+  return true;
+}
+
 bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
                       TnPhysicsBodyOptions &options, TrimeshBuffers &trimesh,
                       HeightfieldBuffers &heightfield) {
@@ -274,6 +288,11 @@ bool parseBodyOptions(js::Engine *engine, js::JSValueHandle value, uint32_t id,
   else if (shapeName == "trimesh") {
     options.shape_type = 3;
     if (!parseTrimeshBuffers(engine, shape, trimesh))
+      return false;
+  } else if (shapeName == "convexHull") {
+    // Shape type 5 never crosses the C ABI either: it selects tn_physics_add_convex_hull_body.
+    options.shape_type = 5;
+    if (!parseHullPoints(engine, shape, trimesh))
       return false;
   } else if (shapeName == "heightfield") {
     // Shape type 4 never crosses the C ABI: it selects tn_physics_add_heightfield_body.
@@ -648,6 +667,10 @@ js::JSValueHandle makeSimulationObject(
                           owner->simulation, &options, trimesh.vertices,
                           trimesh.vertex_floats, trimesh.indices,
                           trimesh.index_count)
+                : options.shape_type == 5
+                    ? tn_physics_add_convex_hull_body(owner->simulation, &options,
+                                                      trimesh.vertices,
+                                                      trimesh.vertex_floats)
                 : options.shape_type == 4
                     ? tn_physics_add_heightfield_body(
                           owner->simulation, &options, heightfield.heights,
