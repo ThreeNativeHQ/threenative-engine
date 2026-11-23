@@ -8593,7 +8593,7 @@
         "roadWidth and markings apply to straight and curve; roadLength applies to straight; bendAngle, bendRadius and bendSide apply to curve; roadSurface applies to socketed road modules",
         "bake-time only, so keep it a dev dependency; textures are capped at 1024 px like the page's export",
         "only bake road tiles (`straight`, `curve`, `cross`, `tee`, `alley`, `grid`, `pit`, `cul-de-sac`) when assembling the drivable carriageway from kit tiles; when a level builds its own spline or terrain road, bake scenery modules instead (`detail: 1, dressing: false` keeps draw counts low)",
-        "`emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; `opaqueGlass: true` converts transmissive architectural glass to opaque reflective PBR glass so background buildings avoid a full-scene transmission pass"
+        "`emissiveSigns: true` lights canvas-drawn signs (`extras.sign`) for night scenes; glass ships opaque reflective PBR by default (`opaqueGlass: true`), because the default native engine refuses a transmissive mesh by name (`TN_MATERIAL_UNSUPPORTED transmission`) and three pays a full-scene transmission pass; `opaqueGlass: false` keeps the kit's transmissive glass under its own file name"
       ],
       "example": "await bakeCity({ module: \"office\", detail: 1, dressing: false, out: \"assets/city\" });\nawait bakeCity({ module: \"civic-ad\", detail: 1, text: \"GRAND PRIX\", emissiveSigns: true, out: \"assets/city\" });\n// Modular-road layout built from kit tiles:\nawait bakeCity({ module: \"cross\", out: \"assets/city\" });",
       "importPath": "@threenative/procedural-environment",

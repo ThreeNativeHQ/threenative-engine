@@ -12,6 +12,7 @@ import type { IResolvedAsset } from "../src/assets.js";
 import { createAssetLoader } from "../src/assets.js";
 import { defineGame } from "../src/game.js";
 import { GEOMETRY_ASSET_KEY } from "../src/geometry-capture.js";
+import { InstancedModel } from "../src/instanced-model.js";
 import { DiscreteLodPlugin, TN_DISCRETE_LOD, lodChainOf } from "../src/model-lod.js";
 import { playtest } from "../src/playtest.js";
 import { Scene } from "../src/scene.js";
@@ -159,6 +160,36 @@ describe("measureStartupOffscreenBytes", () => {
 
     expect(report.visibleBytes).toBe(70_000);
     expect(report.offscreenBytes).toBe(0);
+  });
+
+  it("should report a model placed through InstancedModel from a named sub-node, and not-placed only before it is placed", () => {
+    // The loader's stamps: the model root and every mesh geometry (assets.ts stampAssetProvenance).
+    const loaded = new Group();
+    loaded.userData[GEOMETRY_ASSET_KEY] = "city/structures.glb";
+    const office = new Group();
+    office.name = "Glass office";
+    const pane = new Mesh(new BoxGeometry(2, 2, 2), new MeshBasicMaterial());
+    pane.geometry.userData[GEOMETRY_ASSET_KEY] = "city/structures.glb";
+    office.add(pane);
+    loaded.add(office);
+    const scene = new Group();
+    const resolved = resolvedModels({ "city/structures.glb": 3_488_995 });
+
+    // Settled, but the game has not placed it yet: the honest answer is not-placed.
+    expect(measureStartupOffscreenBytes(resolved, scene, spawnCamera()).top).toEqual([
+      { bytes: 3_488_995, path: "city/structures.glb", reason: "not-placed" },
+    ]);
+
+    // The game swaps the material and instances the sub-node; the batch keeps the stamp.
+    pane.material = new MeshBasicMaterial();
+    const model = new InstancedModel({ source: office, cellSize: 36 });
+    model.place({ position: [0, 0, -20] });
+    model.build({ parent: scene });
+    scene.updateMatrixWorld(true);
+
+    const report = measureStartupOffscreenBytes(resolved, scene, spawnCamera());
+    expect(report.visibleBytes).toBe(3_488_995);
+    expect(report.top).toEqual([]);
   });
 
   it("should count textures and unsized files without calling them off-screen", () => {
