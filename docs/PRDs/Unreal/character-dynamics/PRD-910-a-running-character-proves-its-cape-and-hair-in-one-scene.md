@@ -50,7 +50,7 @@ The Unreal reference is the same experiment in UE 5.8.3 with stock Chaos Cloth a
 
 - [ ] A hair arm puts a ponytail chain and a fringe of cards on the head, and the probe prints hair metrics per phase. proof: the AC-1 command.
 - [ ] The playtest asserts the per-phase bounds that PRD-911 and PRD-912 set, read from `GameState.phases`. The incumbent arm fails them. proof: `examples/character-dynamics/playtests/acceptance.playtest.json` (red on `?arm=softbody`, green on the new arms).
-- [ ] The probe math has a unit check: a known cape pose gives a known stretch, trail and penetration count. proof: `pnpm --filter character-dynamics exec vitest run`
+- [x] The probe math has a unit check: a known cape pose gives a known stretch, trail and penetration count. proof: `pnpm --filter character-dynamics test` — 2026-11-22: 5 tests pass (stretch 0.5, trail 0/45/90°, capsule count 2); red control 0.4 vs 0.5 failed first.
 
 #### Phase 3: The Unreal reference
 

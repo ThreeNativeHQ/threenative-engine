@@ -29,6 +29,7 @@ import {
   Vector3,
 } from "three";
 import { MeshStandardNodeMaterial } from "three/webgpu";
+import { centroid, countInsideCapsule, maxEdgeStretch, trailAngleDegrees } from "./probe.js";
 
 type Glb = { animations: AnimationClip[]; scene: Object3D };
 
@@ -89,13 +90,6 @@ function boneOf(root: Object3D, name: string): Bone {
   const bone = root.getObjectByName(name) as Bone | undefined;
   if (bone === undefined) throw new Error(`CHARACTER_DYNAMICS_BONE_MISSING ${name}`);
   return bone;
-}
-
-/** Distance from p to segment ab. */
-function segmentDistance(p: Vector3, a: Vector3, b: Vector3): number {
-  const ab = b.clone().sub(a);
-  const t = Math.min(1, Math.max(0, p.clone().sub(a).dot(ab) / ab.lengthSq()));
-  return p.distanceTo(a.clone().addScaledVector(ab, t));
 }
 
 class CharacterDynamics extends Scene<IState> {
@@ -286,7 +280,6 @@ class CharacterDynamics extends Scene<IState> {
     let complete = false;
     let tick = 0;
     const forward = new Vector3();
-    const local = new Vector3();
     const world = new Vector3();
     const a = new Vector3();
     const b = new Vector3();
@@ -314,43 +307,30 @@ class CharacterDynamics extends Scene<IState> {
       if (sample === undefined) return;
       const data = sample.data;
       for (let i = 0; i < data.length; i++) if (!Number.isFinite(data[i] as number)) finite = false;
-      const hemC = new Vector3();
-      for (const v of hem) hemC.add(local.fromArray(data, v * 3));
-      hemC.divideScalar(hem.length);
-      const topC = new Vector3();
-      for (const v of top) topC.add(local.fromArray(data, v * 3));
-      topC.divideScalar(top.length);
+      const hemC = centroid(data, hem);
+      const topC = centroid(data, top);
       if (phaseName === "settle") restHem = hemC.clone();
       if (restHem !== undefined)
         metrics.hemOffset = Math.max(metrics.hemOffset, hemC.distanceTo(restHem));
       const hemW = hemC.clone().applyMatrix4(cloth.matrixWorld);
       const topW = topC.clone().applyMatrix4(cloth.matrixWorld);
-      const drop = hemW.sub(topW).normalize();
-      metrics.hemTrail = Math.max(
-        metrics.hemTrail,
-        (Math.acos(Math.min(1, Math.max(-1, -drop.y))) * 180) / Math.PI,
+      metrics.hemTrail = Math.max(metrics.hemTrail, trailAngleDegrees(topW, hemW));
+      metrics.maxStretch = Math.max(
+        metrics.maxStretch,
+        maxEdgeStretch(data, topology.springs, topology.restLengths),
       );
-      for (let s = 0; s < topology.springs.length; s += 2) {
-        const i = topology.springs[s] as number;
-        const j = topology.springs[s + 1] as number;
-        const len = Math.hypot(
-          (data[i * 3] as number) - (data[j * 3] as number),
-          (data[i * 3 + 1] as number) - (data[j * 3 + 1] as number),
-          (data[i * 3 + 2] as number) - (data[j * 3 + 2] as number),
-        );
-        metrics.maxStretch = Math.max(
-          metrics.maxStretch,
-          len / (topology.restLengths[s / 2] as number) - 1,
-        );
-      }
       pelvis.getWorldPosition(a);
       neck.getWorldPosition(b);
-      let inside = 0;
-      for (let v = 0; v < unique; v++) {
-        world.fromArray(data, v * 3).applyMatrix4(cloth.matrixWorld);
-        if (segmentDistance(world, a, b) < torsoRadius) inside++;
-      }
-      metrics.bodyPenetration = Math.max(metrics.bodyPenetration, inside);
+      const worldPositions = new Float32Array(unique * 3);
+      for (let v = 0; v < unique; v++)
+        world
+          .fromArray(data, v * 3)
+          .applyMatrix4(cloth.matrixWorld)
+          .toArray(worldPositions, v * 3);
+      metrics.bodyPenetration = Math.max(
+        metrics.bodyPenetration,
+        countInsideCapsule(worldPositions, a, b, torsoRadius),
+      );
       metrics.samples++;
     };
 
