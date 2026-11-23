@@ -24,11 +24,14 @@ struct Accessor {
     PbrMap map;           // kPbrMapCount: the diffuse `map`
 };
 // Every `material*` constant tslConstants answers has a row here. A new one fails `every_accessor_is_listed`
-// until it is given its map, or is listed in `kUnbridged` as not answered at all.
+// until it is given its map, or is listed in `kRawReferences` as a property read that samples no map.
 const Accessor kAccessors[] = {{"materialColor", "t_map", "f_diffuse", kPbrMapCount},
                                {"materialEmissive", "t_emissiveMap", "f_emissive", kEmissiveMap},
                                {"materialMetalness", "t_metalnessMap", "f_metalness", kMetalnessMap},
                                {"materialRoughness", "t_roughnessMap", "f_roughness", kRoughnessMap}};
+// three's materialReference(name) is a ReferenceNode: it reads the material's property itself and never
+// samples a map, so it has no map to prove. materialReferenceOpacity is `opacity` (the diffuse uniform's w).
+const char* const kRawReferences[] = {"materialReferenceOpacity"};
 
 g::Node constant(const std::string& name) {
     for (auto& [label, node] : tn::abi::tslConstants())
@@ -75,6 +78,9 @@ void everyAccessorIsListed() {
     size_t seen = 0;
     for (auto& [label, node] : tn::abi::tslConstants()) {
         if (label.rfind("material", 0) != 0) continue;
+        bool raw = false;
+        for (const char* name : kRawReferences) raw |= label == name;
+        if (raw) continue;
         ++seen;
         bool listed = false;
         for (const Accessor& accessor : kAccessors) listed |= label == accessor.name;
