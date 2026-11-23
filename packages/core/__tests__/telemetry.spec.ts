@@ -205,10 +205,13 @@ describe("telemetry", () => {
     installTelemetry(undefined);
     console.warn("TN_TRANSPORT: x");
     expect(fetchMock).toHaveBeenCalledTimes(1);
-    const [url, init] = fetchMock.mock.calls[0] as [string, { keepalive: boolean; method: string }];
+    const [url, init] = fetchMock.mock.calls[0] as [
+      string,
+      { body: string; keepalive: boolean; method: string },
+    ];
     expect(url).toBe(ENDPOINT);
     expect(init).toMatchObject({ keepalive: true, method: "POST" });
-    expect(JSON.parse(String((init as { body: string }).body)).code).toBe("TN_TRANSPORT");
+    expect(JSON.parse(init.body).code).toBe("TN_TRANSPORT");
 
     fetchMock.mockImplementation(() => Promise.reject(new Error("offline")));
     expect(() => console.warn("TN_OFFLINE: x")).not.toThrow();
