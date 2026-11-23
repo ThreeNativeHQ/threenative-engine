@@ -97,7 +97,7 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     constraints: [
       "Fires once per real transition, for the scene active at that moment.",
       "The paused hook gets one JavaScript turn before the host parks the loop; a localStorage write there is flushed to disk before the app is backgrounded.",
-      "The owned desktop engine player does not dispatch it yet; the legacy host (Android, desktop `engine: \"threejs\"`) and the web do.",
+      'The owned desktop engine player does not dispatch it yet; the legacy host (Android, desktop `engine: "threejs"`) and the web do.',
     ],
     example:
       'override applicationPaused(ctx) { localStorage.setItem("save", JSON.stringify(ctx.state.getState())); }',
@@ -145,7 +145,7 @@ export const CTX_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     signature:
       "ctx.input.startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean",
     summary:
-      "Rumbles a gamepad through Gamepad.vibrationActuator.playEffect(\"dual-rumble\"), after Godot's Input.start_joy_vibration. The native host shims it with SDL_RumbleGamepad. Magnitudes are 0 to 1.",
+      'Rumbles a gamepad through Gamepad.vibrationActuator.playEffect("dual-rumble"), after Godot\'s Input.start_joy_vibration. The native host shims it with SDL_RumbleGamepad. Magnitudes are 0 to 1.',
     situations: [
       "controller rumble",
       "gamepad vibration when the player crashes or fires",
