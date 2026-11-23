@@ -15,8 +15,10 @@ import { MeshStandardNodeMaterial } from "three/webgpu";
 import { describe, expect, it, vi } from "vitest";
 import type { IRendererLike } from "../src/renderer.js";
 import {
+  MAX_BODY_CAPSULES,
   buildClothAdjacency,
   buildTethers,
+  createSkinnedCloth,
   fitCapsule,
   frameCarry,
   measureBodyCapsules,
@@ -25,6 +27,7 @@ import {
 } from "../src/softbody-skinned.js";
 import { SoftBody3D, buildClothTopology } from "../src/softbody.js";
 import { WindField3D } from "../src/wind-field.js";
+import { mannequinBindPose } from "./mannequin-bind-pose.js";
 
 function renderer(dispatched: unknown[]): IRendererLike {
   return {
@@ -222,6 +225,46 @@ describe("skinned SoftBody3D helpers", () => {
     // A rest cloth vertex 0.1 m behind the chest axis, inside the 0.15 m measured skin.
     const capsules = measureBodyCapsules(cape, 16, [0, 1.6, -0.1], 0.01);
     expect(capsules[0]?.radius).toBeCloseTo(0.09, 4);
+  });
+});
+
+describe("body capsules on the real mannequin", () => {
+  it("measures the bind pose's capsules from the skin: torso, pelvis, thighs and upperarms, no fingers or toes", async () => {
+    const { cape } = await mannequinBindPose();
+    const capsules = measureBodyCapsules(cape());
+    const measured = capsules.map((capsule) => `${capsule.bone.name}:${capsule.radius.toFixed(3)}`);
+    console.info(`TN_SOFTBODY_AUTO_CAPSULES:${JSON.stringify(measured)}`);
+    const bones = capsules.map((capsule) => capsule.bone.name);
+    expect(bones).toContain("pelvis");
+    expect(bones.some((name) => name === "spine_03" || name === "spine_02")).toBe(true);
+    expect(bones).toEqual(
+      expect.arrayContaining(["thigh_l", "thigh_r", "upperarm_l", "upperarm_r"]),
+    );
+    expect(bones.filter((name) => /(index|middle|pinky|ring|thumb|ball)/.test(name))).toEqual([]);
+    for (const capsule of capsules) {
+      expect(Number.isFinite(capsule.radius)).toBe(true);
+      expect(capsule.radius).toBeGreaterThan(0.02);
+      expect(capsule.radius).toBeLessThan(0.3);
+    }
+    expect(capsules.length).toBeGreaterThan(0);
+    expect(capsules.length).toBeLessThanOrEqual(MAX_BODY_CAPSULES);
+  });
+
+  it("replaces the measured capsules with an explicit bodyColliders array, and turns them off with false", async () => {
+    const { cape, spine } = await mannequinBindPose();
+    const source = cape();
+    const measured = measureBodyCapsules(source);
+    expect(measured.length).toBeGreaterThan(1);
+    const explicit = { bone: spine, end: new Vector3(0, 0.2, 0), radius: 0.42 };
+    const override = createSkinnedCloth(source, { bodyColliders: [explicit] });
+    expect(override.capsules).toHaveLength(1);
+    expect(override.capsules[0]).toBe(explicit);
+    const replaced = new SoftBody3D(source, { bodyColliders: [explicit] });
+    expect(replaced.debug().bodyCapsules).toBe(1);
+    const auto = new SoftBody3D(source, {});
+    expect(auto.debug().bodyCapsules).toBe(measured.length);
+    const off = new SoftBody3D(source, { bodyColliders: false });
+    expect(off.debug().bodyCapsules).toBe(0);
   });
 });
 
