@@ -32,13 +32,20 @@ export interface IAssetLibraryVitePlugin {
   readonly apply: "serve";
   readonly enforce: "pre";
   configResolved(config: { readonly root: string }): void;
-  resolveId(
-    this: {
-      resolve(source: string, importer?: string, options?: object): Promise<{ id: string } | null>;
-    },
-    source: string,
-    importer?: string,
-  ): Promise<string | null>;
+  readonly resolveId: {
+    readonly order: "pre";
+    handler(
+      this: {
+        resolve(
+          source: string,
+          importer?: string,
+          options?: object,
+        ): Promise<{ id: string } | null>;
+      },
+      source: string,
+      importer?: string,
+    ): Promise<string | null>;
+  };
   load(id: string): Promise<string | null>;
   configureServer(server: IViteServer): void;
   transformIndexHtml: {
@@ -230,23 +237,28 @@ export function createAssetLibraryPlugin(
     configResolved(config) {
       root = config.root;
     },
-    async resolveId(source, importer) {
-      if (source === ENTRY) return `${RESOLVED}entry`;
-      if (source.startsWith(STORY))
-        return RESOLVED + source.slice("virtual:tn-asset-library/".length);
-      // The shell draws with upstream three's WebGLRenderer, which the Wasm engine does not bind:
-      // only the shell's own `three` skips the engine alias. Code stories keep the game's.
-      if (
-        source === "three" &&
-        dir &&
-        importer &&
-        shellFiles().includes(importer.split("?")[0] as string)
-      ) {
-        const resolved = await this.resolve(source, importer, { skipSelf: true });
-        if (resolved?.id === WEB_ENGINE_ID || resolved?.id.startsWith("\0"))
-          return path.join(threeDir(root), "build", "three.module.js");
-      }
-      return null;
+    // `pre` runs this ahead of every plugin's resolveId: a kit's engine alias is listed first and
+    // would otherwise claim the shell's `three` before this hook ever saw it.
+    resolveId: {
+      order: "pre",
+      async handler(source, importer) {
+        if (source === ENTRY) return `${RESOLVED}entry`;
+        if (source.startsWith(STORY))
+          return RESOLVED + source.slice("virtual:tn-asset-library/".length);
+        // The shell draws with upstream three's WebGLRenderer, which the Wasm engine does not bind:
+        // only the shell's own `three` skips the engine alias. Code stories keep the game's.
+        if (
+          source === "three" &&
+          dir &&
+          importer &&
+          shellFiles().includes(importer.split("?")[0] as string)
+        ) {
+          const resolved = await this.resolve(source, importer, { skipSelf: true });
+          if (resolved?.id === WEB_ENGINE_ID || resolved?.id.startsWith("\0"))
+            return path.join(threeDir(root), "build", "three.module.js");
+        }
+        return null;
+      },
     },
     async load(id) {
       if (id === `${RESOLVED}entry`) {

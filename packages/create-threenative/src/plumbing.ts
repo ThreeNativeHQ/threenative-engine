@@ -60,114 +60,44 @@ export function kitPlumbingDelta(kit: string, root: string): IPlumbingDelta {
   return { react };
 }
 
-/** The width `biome.json` formats to: the generator wraps an array the same way it would. */
-const FORMAT_WIDTH = 100;
-
 /** What a kit's `vite.config.ts` depends on, each derived from the kit itself. */
 export interface IVitePlumbingDelta extends IPlumbingDelta {
   /** Whether the kit depends on `@tailwindcss/vite`. */
   readonly tailwind: boolean;
-  /** Whether the kit ships a second HTML entry, `main.html`, that runs the game on the page thread. */
-  readonly workerEntry: boolean;
 }
 
 /**
- * The `vite.config.ts` a kit ships.
+ * The `vite.config.ts` a kit ships: `threenative()` plus what is the kit's own.
  *
- * Three things vary, and each is read from the kit rather than listed: React and Tailwind are
- * dependencies of its manifest, and the second entry exists when `main.html` does. Everything else —
- * the freshness probe, the brand plugin, the asset watch that compiles `assets/` into `public/`, the
- * server's polling watch — is the same in all sixteen and belongs in one place.
+ * Every piece of plumbing the sixteen kits share — engine freshness, brand and web engine, the
+ * engine catalog, the Asset Library, the asset watch, the polling watch and the `main.html` entry —
+ * lives in `threenative()` (`src/kit-plugins.ts`), so a new one ships without restamping a kit.
+ * What varies is read from the kit: React and Tailwind are dependencies of its manifest.
  */
 export function viteConfigText(delta: IVitePlumbingDelta): string {
   const imports = [
     ...(delta.tailwind ? ['import tailwindcss from "@tailwindcss/vite";'] : []),
-    'import { watchAssets } from "@threenative/assets";',
     ...(delta.react ? ['import react from "@vitejs/plugin-react";'] : []),
-    "import {",
-    // PRD-915: `/__assets/`, the Asset Library, and the `Game | Asset Library` switcher; serve only.
-    "  createAssetLibraryPlugin,",
-    // PRD-829's catalog plugin: every kit serves the engine catalog in dev, so it is plumbing.
-    "  createEngineCatalogPlugin,",
-    "  createEngineFreshnessPlugin,",
-    "  createWebBrandPlugin,",
-    "  webRuntimeDecoders,",
-    '} from "create-threenative";',
+    'import { threenative } from "create-threenative";',
     'import { defineConfig } from "vite";',
-    'import type { Plugin } from "vite";',
-    'import config from "./threenative.config.js";',
   ];
   const pluginNames = [
-    "createEngineFreshnessPlugin()",
-    "createWebBrandPlugin()",
-    "createEngineCatalogPlugin()",
-    "createAssetLibraryPlugin()",
+    "threenative()",
     ...(delta.react ? ["react()"] : []),
     ...(delta.tailwind ? ["tailwindcss()"] : []),
-    "assetsWatchPlugin()",
   ];
-  // The formatter keeps the array on one line while it fits and wraps it after that, so the
-  // generator has to do the same or `stamp --check` and `biome format` would disagree forever.
-  const inline = `  plugins: [${pluginNames.join(", ")}],`;
-  const plugins =
-    inline.length <= FORMAT_WIDTH
-      ? [inline]
-      : ["  plugins: [", ...pluginNames.map((name) => `    ${name},`), "  ],"];
-  const build = delta.workerEntry
-    ? [
-        "  // `index.html` runs the game in a worker (the default); `main.html` runs it on the page thread.",
-        '  build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },',
-      ]
-    : [];
   return `${[
     ...imports,
     "",
-    "/**",
-    " * Recompiles assets/ into public/ while the dev server runs, so editing a texture does not",
-    " * need a rebuild. Serve-only by declaration: builds compile through `threenative build`.",
-    " */",
-    "function assetsWatchPlugin(): Plugin {",
-    "  return {",
-    '    name: "threenative-assets-watch",',
-    '    apply: "serve",',
-    "    // A cook writes many files into `public/`, and Vite reloaded the page for each of them: 45 reloads",
-    "    // in a second left the GPU holding one device per reload until it ran out of memory. A `public/` file",
-    "    // is no module, so no reload belongs to it; the settled cook reloads the page once instead.",
-    "    hotUpdate({ file, server }) {",
-    "      return file.startsWith(`${server.config.publicDir}/`) ? [] : undefined;",
-    "    },",
-    "    async configureServer(server) {",
-    "      const handle = watchAssets({",
-    "        config: config.assets,",
-    "        cwd: server.config.root,",
-    "        runtimeDecoders: webRuntimeDecoders(config),",
-    "        onChange: ({ compiled }) => {",
-    '          if (compiled.length > 0) server.ws.send({ type: "full-reload" });',
-    "        },",
-    "      });",
-    '      server.httpServer?.once("close", () => handle.close());',
-    "      // Nothing is served before the first cook settles: until it does, `public/` has no",
-    "      // `assets.manifest.json` and every asset answers from its source fallback.",
-    "      await handle.ready;",
-    "    },",
-    "  };",
-    "}",
-    "",
+    "// `threenative()` is every plugin the kits share; add the game's own after it.",
     "export default defineConfig({",
-    ...plugins,
-    ...build,
-    "  server: {",
-    "    watch: {",
-    '      ignored: ["**/artifacts/**", "**/screenshots/**", "**/playtests/**"],',
-    "      usePolling: true,",
-    "    },",
-    "  },",
+    `  plugins: [${pluginNames.join(", ")}],`,
     "});",
     "",
   ].join("\n")}`;
 }
 
-/** The Vite delta a kit declares: React and Tailwind by dependency, the second entry by `main.html`. */
+/** The Vite delta a kit declares: React and Tailwind, by dependency. */
 export function kitViteDelta(kit: string, root: string): IVitePlumbingDelta {
   const manifest = JSON.parse(readFileSync(path.join(root, kit, "package.json"), "utf8")) as {
     dependencies?: Record<string, string>;
@@ -178,7 +108,6 @@ export function kitViteDelta(kit: string, root: string): IVitePlumbingDelta {
   return {
     react: kitPlumbingDelta(kit, root).react,
     tailwind: dependsOn("@tailwindcss/vite"),
-    workerEntry: existsSync(path.join(root, kit, "main.html")),
   };
 }
 

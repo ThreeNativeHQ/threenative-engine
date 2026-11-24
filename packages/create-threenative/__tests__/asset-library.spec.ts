@@ -15,6 +15,7 @@ import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createAssetLibraryPlugin, devShellScript } from "../src/asset-library.js";
 import { containedFile } from "../src/asset-library/project-source.js";
 import { inspectAsset } from "../src/inspect.js";
+import { WEB_ENGINE_ID } from "../src/web-engine.js";
 
 const STARTER = path.resolve("packages/create-threenative/templates/starter");
 const fromHere = createRequire(path.resolve("packages/create-threenative/package.json"));
@@ -120,7 +121,16 @@ beforeAll(async () => {
     configFile: false,
     logLevel: "silent",
     server: { port: 0, host: "127.0.0.1" },
-    plugins: [createAssetLibraryPlugin()],
+    plugins: [
+      // A kit's engine alias, listed first as in every kit: it claims every `three` import.
+      {
+        name: "stand-in-web-engine",
+        enforce: "pre",
+        resolveId: (source: string) => (source === "three" ? WEB_ENGINE_ID : null),
+        load: (id: string) => (id === WEB_ENGINE_ID ? "export const engine = true;" : null),
+      },
+      createAssetLibraryPlugin(),
+    ],
   });
   await server.listen();
   const address = server.httpServer?.address();
@@ -198,6 +208,30 @@ describe("asset library server", () => {
     expect(containedFile(root, "assets/props/crate.glb", ["assets"])).toBe(
       path.join(root, "assets/props/crate.glb"),
     );
+  });
+
+  it("hands the shell upstream three even behind a kit's engine alias, and a story the game's", async () => {
+    const shell = await get("../@id/virtual:tn-asset-library/entry");
+    const client = /import\("([^"]+client\.js)"\)/u.exec(shell.body)?.[1] ?? "";
+    expect(client).not.toBe("");
+    const module = await (await fetch(`${base}${client}`)).text();
+    expect(module).toMatch(/from "[^"]*three\/build\/three\.module\.js"/u);
+    expect(module).not.toContain("threenative:web-engine");
+    const story = await get(
+      `../@id/virtual:tn-asset-library/story/${encodeURIComponent("src/entities/crate.story.ts")}.js`,
+    );
+    const frame = /from "([^"]+story-frame\.js)"/u.exec(story.body)?.[1] ?? "";
+    expect(await (await fetch(`${base}${frame}`)).text()).toContain("threenative:web-engine");
+  });
+
+  it("ships defineAssetStory as browser code, with no Node import", async () => {
+    // A story imports it in the page: tsup's Node `require` banner threw there.
+    const shipped = await readFile(
+      path.resolve("packages/create-threenative/dist/asset-story.js"),
+      "utf8",
+    );
+    expect(shipped).toContain("function defineAssetStory");
+    expect(shipped).not.toMatch(/node:/u);
   });
 
   it("frames a code story with the game's own Vite graph and an HMR boundary", async () => {

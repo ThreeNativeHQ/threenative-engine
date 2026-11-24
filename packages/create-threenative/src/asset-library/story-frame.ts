@@ -14,7 +14,6 @@ import {
   PerspectiveCamera,
   Scene,
   Sphere,
-  Spherical,
   type Texture,
   Vector3,
 } from "three";
@@ -76,7 +75,9 @@ export async function mountStory(
   scene.add(grid);
   const camera = new PerspectiveCamera(40, 1, 0.05, 2000);
   const target = new Vector3();
-  const orbit = new Spherical(6, 1.1, 0.6);
+  // A plain orbit, not three's `Spherical`: the Wasm engine does not bind it, and a story runs on
+  // the game's own engine.
+  const orbit = { radius: 6, phi: 1.1, theta: 0.6 };
 
   let story = first;
   let props: Record<string, unknown> = {};
@@ -86,7 +87,12 @@ export async function mountStory(
   let paused = false;
 
   const place = () => {
-    camera.position.setFromSpherical(orbit).add(target);
+    const ring = orbit.radius * Math.sin(orbit.phi);
+    camera.position.set(
+      target.x + ring * Math.sin(orbit.theta),
+      target.y + orbit.radius * Math.cos(orbit.phi),
+      target.z + ring * Math.cos(orbit.theta),
+    );
     camera.lookAt(target);
   };
   const frameObject = () => {
@@ -117,6 +123,8 @@ export async function mountStory(
       scene.add(next);
       dress();
       if (first) frameObject();
+      // The Wasm engine's `info` adds up until its caller resets it, once per frame.
+      renderer.info.reset();
       renderer.render(scene, camera);
       post({
         type: "tn-story:stats",
@@ -193,7 +201,7 @@ export async function mountStory(
     out.width = width * 2;
     out.height = height * 2;
     const ctx = out.getContext("2d") as CanvasRenderingContext2D;
-    const saved = orbit.clone();
+    const saved = { ...orbit };
     for (const [i, [label, theta, phi]] of views.entries()) {
       orbit.theta = theta;
       orbit.phi = phi;
@@ -206,14 +214,15 @@ export async function mountStory(
       ctx.font = "bold 18px sans-serif";
       ctx.fillText(label, (i % 2) * width + 16, Math.floor(i / 2) * height + 30);
     }
-    orbit.copy(saved);
+    Object.assign(orbit, saved);
     place();
     post({ type: "tn-story:sheet", url: out.toDataURL("image/png") });
   }
 
   let last = performance.now();
-  renderer.setAnimationLoop(() => {
-    const now = performance.now();
+  // A plain rAF loop: the Wasm engine's renderer has no `setAnimationLoop`.
+  const loop = (now: number) => {
+    requestAnimationFrame(loop);
     const dt = Math.min(0.1, (now - last) / 1000);
     last = now;
     if (paused || document.visibilityState === "hidden") return;
@@ -225,8 +234,10 @@ export async function mountStory(
       camera.updateProjectionMatrix();
     }
     story.update?.(dt, props);
+    renderer.info.reset();
     renderer.render(scene, camera);
-  });
+  };
+  requestAnimationFrame(loop);
   place();
   announce();
   // Opened on its own (no shell around it), the story builds from its control defaults.
