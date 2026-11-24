@@ -105,6 +105,7 @@
     "@types/node": "20.19.43",
     "@types/three": "0.187.0",
     "esbuild": "catalog:",
+    "playwright": "1.62.1",
     "publint": "0.3.22",
     "tailwindcss": "catalog:",
     "@threenative/blender-bridge": "workspace:*",
