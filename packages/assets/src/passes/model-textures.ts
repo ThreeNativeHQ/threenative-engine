@@ -15,7 +15,7 @@ import {
   measureKtx2,
   transcodeKtx2ToAstc,
 } from "../image-quality.js";
-import { encodeToKTX2 } from "../ktx2-encoder.js";
+import { MAX_SOURCE_TEXELS, encodeToKTX2 } from "../ktx2-encoder.js";
 import { decodeImageBytes } from "./decode-image.js";
 import type { TextureCodec, TextureSkipReason } from "./texture.js";
 
@@ -160,9 +160,10 @@ const DEFAULT_MAX_SIZE = 2048;
 /**
  * Authored size a texture-projection atlas keeps. The marker (glTF `textures[i].extras`
  * `threenative.textureProjection`) says the image is a painted atlas the asset MCP generated:
- * a first-person surface seen up close, where the 2048 cap blurs and ETC1S blocks.
+ * a first-person surface seen up close, where the 2048 cap blurs and ETC1S blocks. The cap is the
+ * KTX2 encoder's square ceiling (4096): a larger atlas is box-resampled to it, never shipped raw.
  */
-export const PROJECTION_MAX_SIZE = 8192;
+export const PROJECTION_MAX_SIZE = Math.floor(Math.sqrt(MAX_SOURCE_TEXELS));
 const DEFAULT_ETC1S_QUALITY = 150;
 /** BC1, BC7, ETC2 and ASTC 4x4 all address pixels in 4x4 blocks. */
 const BLOCK_SIZE = 4;

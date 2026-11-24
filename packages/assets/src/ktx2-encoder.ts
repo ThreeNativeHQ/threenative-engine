@@ -13,7 +13,8 @@ import BASIS from "../vendor/basis-encoder/basis_encoder.js";
 export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-fast-capped-v3";
 
 const OUTPUT_HEADER_SLACK = 64 * 1024;
-const MAX_SOURCE_TEXELS = 16 * 1024 * 1024;
+/** The bundled WASM32 encoder's source ceiling: 4096x4096. */
+export const MAX_SOURCE_TEXELS = 16 * 1024 * 1024;
 
 interface IEncodeOptions {
   readonly generateMipmap?: boolean;
