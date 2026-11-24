@@ -522,6 +522,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const uint64_t trackedWorldHash = r.trackedWorldHash;
         const bool trackedWorldValid = r.trackedWorldValid;
         const uint8_t worldMoves = r.worldMoves;
+        const bool lastDirtyCastShadow = r.lastDirtyCastShadow;
+        const uint32_t lastDirtyLayers = r.lastDirtyLayers;
         r = Record{};
         r.cacheId = cacheId;
         r.dirtyTracked = dirtyTracked;
@@ -532,6 +534,8 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         r.trackedWorldHash = trackedWorldHash;
         r.trackedWorldValid = trackedWorldValid;
         r.worldMoves = worldMoves;
+        r.lastDirtyCastShadow = lastDirtyCastShadow;
+        r.lastDirtyLayers = lastDirtyLayers;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
@@ -678,13 +682,19 @@ Box3 RenderDatabase::removeTrackedState(const Record& r) {
 void RenderDatabase::trackDirty(const Mesh& mesh, Record& r, std::string_view type, bool shadowCaster) {
     constexpr uint64_t kTrackSlots = uint64_t(1) << 20;
     const uint32_t rev = static_cast<uint32_t>(mesh.revision());
+    const uint32_t layers = Layers::bits(mesh.layers().mask);
     const bool instanced = (type == "InstancedMesh") || (mesh.geometry && mesh.geometry->instanced);
-    if (r.dirtyTracked && r.lastDirtyRevision == rev && !r.dirtyGeomChanged && !instanced)
+    if (r.dirtyTracked && r.lastDirtyRevision == rev && !r.dirtyGeomChanged && !instanced &&
+        shadowCaster == r.lastDirtyCastShadow && layers == r.lastDirtyLayers)
         return;
 
     const bool isNew = !r.dirtyTracked;
-    const bool transformChanged = !isNew && r.lastDirtyRevision != rev;
+    bool transformChanged = !isNew && r.lastDirtyRevision != rev;
     const bool geometryChanged = !isNew && r.dirtyGeomChanged;
+    // A caster that starts or stops casting, or moves to a layer the atlas does not see, is a state change even
+    // when the object's own revision did not move: the VSM stage must hear it on this frame (PRD-775 Phase 2).
+    const bool stateChanged = !isNew && (shadowCaster != r.lastDirtyCastShadow || layers != r.lastDirtyLayers);
+    transformChanged = transformChanged || stateChanged;
     const uint64_t trackKey = r.cacheId != UINT64_MAX ? r.cacheId : mesh.id();
     bool instanceChanged = false;
     InstanceDirtyState nextInst{};
@@ -761,6 +771,8 @@ void RenderDatabase::trackDirty(const Mesh& mesh, Record& r, std::string_view ty
     r.dirtyGeomChanged = false;
     r.lastDirtyFrame16 = static_cast<uint16_t>(frame_);
     r.lastDirtyRevision = rev;
+    r.lastDirtyCastShadow = shadowCaster;
+    r.lastDirtyLayers = layers;
 }
 
 DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
@@ -2534,6 +2546,31 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         std::chrono::duration<double, std::milli>(projected - matrices).count(),
         std::chrono::duration<double, std::milli>(batched - beforeBatch).count(),
         std::chrono::duration<double, std::milli>((beforeBatch - projected) + (Clock::now() - batched)).count()};
+    // PRD-775 Phase 2: the VSM caster cache is indexed by position in this list, so it is only valid while the
+    // list's layout and its caster/receiver presence hold. Skipping non-shadow items and folding only
+    // `instanceCount == 0` avoids invalidating the cache when particles or non-shadow instanced draws resize.
+    uint64_t layout = 0xcbf29ce484222325ull;
+    layout = (layout ^ uint64_t(items.size())) * 0x100000001b3ull;
+    for (std::size_t idx = 0; idx < items.size(); ++idx) {
+        const DrawItem& item = items[idx];
+        if (!item.castShadow && !item.receiveShadow) continue;
+        layout = (layout ^ uint64_t(idx)) * 0x100000001b3ull;
+        layout = (layout ^ item.key) * 0x100000001b3ull;
+        layout = (layout ^ uint64_t(item.shadowObject ? item.shadowObject->id() : 0)) * 0x100000001b3ull;
+        layout = (layout ^ (uint64_t(item.layers) | (uint64_t(item.castShadow) << 32) |
+                            (uint64_t(item.receiveShadow) << 33) | (uint64_t(item.instanceCount == 0) << 34))) *
+                 0x100000001b3ull;
+        layout = (layout ^ reinterpret_cast<uint64_t>(item.positions)) * 0x100000001b3ull;
+        layout = (layout ^ reinterpret_cast<uint64_t>(item.instanceMatrices)) * 0x100000001b3ull;
+        layout = (layout ^ (uint64_t(bool(item.boneMatrices)) | (uint64_t(bool(item.morphGeometry)) << 1) |
+                            (uint64_t(bool(item.positionNode)) << 2) | (uint64_t(bool(item.gpuJoints)) << 3) |
+                            (uint64_t(bool(item.nodes->shadowPositionNode())) << 4))) * 0x100000001b3ull;
+    }
+    if (layout != topologyLayoutHash_ || items.size() != topologyLayoutCount_) {
+        topologyLayoutHash_ = layout;
+        topologyLayoutCount_ = items.size();
+        ++topologyVersion_;
+    }
     previousDrawCount_ = items.size();
     return items_;
 }
@@ -2552,7 +2589,7 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
-    auto compilations = renderer.compileAsync(items, state, lights, outputFormat);
+    auto compilations = renderer.compileAsync(items, state, lights, outputFormat, dirtyPrimitives_, true, topologyVersion_);
     if (!reflecting_) precacheReflections(renderer, root, camera, targetScene, compilations);
     return compilations;
 }
@@ -2634,10 +2671,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     uint64_t result;
     const auto rendererStart = metered ? Clock::now() : Clock::time_point{};
     if (encodeJobs) {
-        result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
+        result = renderer.renderDeferred(items_, cameraState_, lights_, clear, dirtyPrimitives_, true, topologyVersion_);
         encodeJobs->push_back([&renderer] { renderer.encodePending(); });
     } else {
-        result = renderer.render(items_, cameraState_, lights_, clear);
+        result = renderer.render(items_, cameraState_, lights_, clear, dirtyPrimitives_, true, topologyVersion_);
     }
     if (metered) rendererMs_ += std::chrono::duration<double, std::milli>(Clock::now() - rendererStart).count();
     if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();

@@ -483,7 +483,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group, bool shared
     }
 
     const Stage stage = program.stage_;
-    const bool hasOutputs = stage != Stage::Compute;
+    const bool hasOutputs = stage != Stage::Compute && (stage != Stage::Fragment || !program.outputs_.empty());
     if (hasOutputs) {
         out += "struct Out {\n";
         // A fragment's further colour targets (MRT) take the locations after `color`'s 0, in first-output order.

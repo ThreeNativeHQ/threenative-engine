@@ -645,6 +645,13 @@ GpuStatus Renderer::readGpuCullArgs(uint32_t drawCount, ReadbackCallback done) {
     return gpu_.readBuffer(gpuCullArgs_, 0, uint64_t(drawCount) * 20, std::move(done));
 }
 
+GpuStatus Renderer::readVsmArgs(uint32_t drawCount, ReadbackCallback done) {
+    if (!done || drawCount == 0) return GpuStatus::OutOfRange;
+    const Handle args = gpuVsm_ ? gpuVsm_->argsHandle() : Handle{};
+    if (!args.type) return GpuStatus::InvalidHandle;
+    return gpu_.readBuffer(args, 0, uint64_t(drawCount) * 20, std::move(done));
+}
+
 GpuStatus Renderer::readPresented(ReadbackCallback done) {
     if (!colorView_) return GpuStatus::InvalidHandle;
     if (!presentedView_ || presentedWidth_ != width_ || presentedHeight_ != height_) {

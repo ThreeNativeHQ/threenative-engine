@@ -1,6 +1,6 @@
 # PRD-775 — Virtual shadow pages are managed and drawn on the GPU, as in Unreal
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P1 — no box is ticked: the stress lab `?stress` CPU frame (p50 12.82, p95 17.64 ms) is behind Unreal 5.8.3 (p50 9.45, p95 11.03 ms) on the same scene, and the gap is the virtual shadow map's CPU work.
 **Complexity:** 6 (MEDIUM) — 6-10 files (+2), a new GPU page module (+2), CPU/GPU page state in step (+2); risk override: HIGH, because every virtual-shadow game (the shooter kit ships VSM by default) takes the new path.
 **Owner:** João · 2026-10-30
@@ -135,8 +135,8 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
 
 ## Acceptance criteria
 
-- [ ] AC-1 [local]: In a PRD-770 fair window, `?stress` CPU frame p95 is below 11.03 ms and p50 below 9.45 ms, GPU p95 is not worse than develop. proof: `TN_STRESS_LEDGER=/home/joao/projects/threenative/threenative-engine/docs/stress-loop/ledger.json node scripts/stress-loop.mjs fair ...` (ledger row)
-- [ ] AC-2 [local]: A fresh Opus visual judge returns NEUTRAL or IMPROVEMENT for the whole stack against develop on `?stress&freezeAt=12` and `?stress&closeup`, 2+ runs per arm. proof: judge verdict on the PR (orphan `prd-775-screenshots` branch)
+- [ ] AC-1 [local]: In a PRD-770 fair window, `?stress` CPU frame p95 is below 11.03 ms and p50 below 9.45 ms, GPU p95 is not worse than develop. proof: `TN_STRESS_LEDGER=/home/joao/projects/threenative/threenative-engine/docs/stress-loop/ledger.json node scripts/stress-loop.mjs fair ...` (ledger row) — *Open: RTX 2080 Brave WebGPU ABBA (`prd-914` vs `prd-775`, 2 reps/arm, `coi=true`, 0 errors on all stress runs) measured `?stress` `frameP50 9.50/9.99 -> 9.96/9.96 ms`, `frameP95 11.59/13.98 -> 12.61/11.74 ms`, `wasmPlan p95 2.66/3.04 -> 2.54/2.30 ms`, `planVirtualPages 0.60/0.66 -> 0.55/0.52 ms`, and `gpuP95 5.04/5.11 -> 5.93/5.31 ms` (`systems` `8.17/8.00 -> 36.77/11.77 ms`, `strata` `9.17/9.04 -> 9.64/10.07 ms`, `freezeAt=12` `4.99/5.02 -> 6.19/5.22 ms`); GPU p95 regressed on granting frames (single-pass fragment `discard` without `clip-distances`) and `stress-loop.mjs fair` was not run.*
+- [x] AC-2 [local]: A fresh Opus visual judge returns NEUTRAL or IMPROVEMENT for the whole stack against develop on `?stress&freezeAt=12` and `?stress&closeup`, 2+ runs per arm. proof: `PRD-775 Visual Judge` (`research` subagent) inspected 12 BEFORE/AFTER sheets (`systems`, `strata`, `freezeAt=12`, `closeup`, `forest_overview`, `forest_vista`; 2 reps/arm on RTX 2080 WebGPU) and returned `12/12 NEUTRAL` (Overall: `NEUTRAL`); sheets pushed to orphan branch `prd-775-screenshots`
 
 ## Blocked on
 
@@ -179,28 +179,28 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 1 — One shadow pass per light draws GPU-culled page instances
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` granting regression & `stress:loop` / holdout open)
 **Files:** new `packages/runtime-native/src/engine/renderer/shadows/virtual/gpu_pages.{h,cpp}` (cull kernel, buffers);
 `renderer.cpp` (shadow stage, encode); the shadow vertex program generator under `engine/shader/` (page record path);
 `tests/native-engine/render_database_test.cpp`.
 
-- [ ] A granted level draws in one render pass per light, from GPU rows. proof: new case `virtual_shadow_pages_draw_from_gpu_rows` in `tn-native-engine-render-database-test` — RED on develop (one pass per drawn page, 124+ passes); GREEN: one pass, the GPU's (page, instance) set equals FG1's CPU set (1,118 instances on 124 pages), receiver pixels max channel diff 0 on the case and on `ctest -R native_engine_render_vsm`
-- [ ] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout
+- [x] A granted level draws in one render pass per light, from GPU rows. proof: `virtual_shadow_pages_draw_from_gpu_rows` (`0` differing pixels across `34,392` covered, 0 WebGPU validation errors), `vsm_batched_depth_skips_vsm_page_clip_attr`, and full `ctest -L native-engine` `655/655` pass (`2026-11-24`); Wasm `4,392,975` / `4,403,260` B (`<= 4,456,448` B), `native:coverage` `82.00%`, `ablation-flags-never-ship` `8/8`; pre-rebase (`28dc0b2c3`) desktop-vs-web owned-engine VSM parity `5/5` pass; RTX 2080 WebGPU ABBA `0` errors on all stress runs, `shadowDraws p95` `-64–85%`, `gpuP50` improved on `systems`/`strata`.
+- [ ] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout — *Open: Visual Judge `NEUTRAL` (12/12 sheets) and `wasmPlan p95` `-37–44%` (`systems 9.64/9.14 -> 5.24/5.79 ms`, `strata 6.57/5.78 -> 3.65/3.55 ms`), but `gpuP95` increased `+0.5–3.7 ms` on granting frames (`systems 8.17/8.00 -> 36.77/11.77`, `strata 9.17/9.04 -> 9.64/10.07`, `stress 5.04/5.11 -> 5.93/5.31`, `freezeAt=12 4.99/5.02 -> 6.19/5.22`) due to `vsmPageDiscard` fragment discard without `clip-distances`; `stress-loop.mjs fair` and `holdout-measure-shooter.sh` were not run.*
 
 ### Phase 2 — The VSM stage reads the caster change set
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` stack gate & `stress:loop` / holdout open)
 **Files:** `renderer.cpp` (VSM stage), `render_database.{h,cpp}` (change set), `shadows/virtual/atlas.{h,cpp}`
 (`updateCasters` over changed casters), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
-- [ ] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: new case `virtual_shadow_caster_changes_are_pushed` in `tn-native-engine-render-database-test` (RED: develop visits every caster; GREEN: 0 visits) plus every `tn-native-engine-vsm-atlas-test` case green
-- [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout
+- [x] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: `virtual_shadow_caster_changes_are_pushed` (seed 64 visits, steady 0 visits / 0 passes, move 1 visit / 0 differ, settle 0 visits, remove 0 differ / 0 visits) and `ctest -L native-engine` `655/655` green on RTX 2080 (`2026-11-24`); RTX 2080 ABBA reduced `planVirtualPages` on every scene (`systems 0.92/0.83 -> 0.65/0.74 ms`, `strata 0.83/0.73 -> 0.64/0.60 ms`, `stress 0.60/0.66 -> 0.55/0.52 ms`, `stress&still 0.42/0.38 -> 0.23/0.23 ms`, `forest_overview 0.14 -> 0.03–0.06 ms`).
+- [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout — *Open: `stress-loop.mjs` fair window and `holdout-measure-shooter.sh` not run; whole-stack `gpuP95` regressed on granting frames as noted in AC-1.*
 
 ### Phase 3 — The page table and physical pool live on the GPU
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` granting regression & `stress:loop` / holdout open)
 **Files:** `shadows/virtual/gpu_pages.{h,cpp}` (page manager passes), `shadows/virtual/atlas.{h,cpp}` (per-level state
 only on the runtime path), `renderer.cpp` (table binding), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
-- [ ] The GPU page manager maps the same virtual pages as the CPU `PageAtlas` over a recorded path with pans, a camera cut, a sun direction change and an invalidation, with no lost or duplicated physical page. proof: new differential case `gpu_page_table_matches_cpu_atlas` in `tn-native-engine-vsm-atlas-test`, receiver pixels max channel diff 0 on `ctest -R native_engine_render_vsm`
-- [ ] Phase 3 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout
+- [x] The GPU page manager maps the same virtual pages as the CPU `PageAtlas` over a recorded path with pans, a camera cut, a sun direction change and an invalidation, with no lost or duplicated physical page. proof: `gpu_page_table_matches_cpu_atlas` (`0` WebGPU validation errors), `vsm_batched_depth_skips_vsm_page_clip_attr`, and `ctest -L native-engine` `655/655` green (`2026-11-24`); `gpuP50` improved on `systems`/`strata` with `0` stress runtime errors.
+- [ ] Phase 3 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout — *Open: `gpuP95` increased on granting frames as noted in AC-1; `stress-loop.mjs` fair window and `holdout-measure-shooter.sh` were not run.*

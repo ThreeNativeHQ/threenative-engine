@@ -62,6 +62,16 @@ elseif(TARGET wgpu::wgpu)
 endif()
 tn_engine_renderer_target(tn_host_services ${tn_renderer_backend})
 
+# PRD-775 Phase 3: the differential page-table case drives a real headless WebGPU device, so it needs the native
+# backend and host services that the portable `tn_engine_vsm` library does not.
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_renderer tn_host_services)
+    target_compile_definitions(tn-native-engine-vsm-atlas-test PRIVATE TN_NATIVE_ENGINE_GPU_PAGE_TEST=1)
+    add_test(NAME native_engine_gpu_page_table_matches_cpu_atlas
+        COMMAND tn-native-engine-vsm-atlas-test gpu_page_table_matches_cpu_atlas)
+    set_tests_properties(native_engine_gpu_page_table_matches_cpu_atlas PROPERTIES LABELS "native-engine")
+endif()
+
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
     add_executable(tn-native-engine-gate-e EXCLUDE_FROM_ALL tests/native-engine/gate_e_driver.cpp)
@@ -319,6 +329,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_page_jobs=virtual_shadow_page_jobs
         native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
+        native_engine_virtual_shadow_pages_draw_from_gpu_rows=virtual_shadow_pages_draw_from_gpu_rows
+        native_engine_virtual_shadow_caster_changes_are_pushed=virtual_shadow_caster_changes_are_pushed
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_virtual_shadow_bounds_arvo_parity=virtual_shadow_bounds_arvo_parity
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected

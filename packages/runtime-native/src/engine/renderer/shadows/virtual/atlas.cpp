@@ -42,6 +42,7 @@ std::optional<PageAtlas> PageAtlas::create(const AtlasOptions& options, std::str
     const int count = out.pageCount();
     if (count > 4096) { error = "TN_VIRTUAL_SHADOW_INVALID: page capacity"; return std::nullopt; }
     out.pool_ = PhysicalPagePool::create(count, error);
+    out.poolGeneration_ = 1;
     const int span = (options.moverMapSize + 2 * options.border + out.stride() - 1) / out.stride();
     out.slotsPerAxis_ = packedSide(count, int(options.clipExtents.size()), span);
     out.staticRows_ = (count + out.slotsPerAxis_ - 1) / out.slotsPerAxis_;
@@ -93,7 +94,10 @@ void PageAtlas::invalidate(const Box3& bounds, bool urgent) {
         const double lowV = level.window.minY * level.window.pageWorldSize;
         if (u.low <= lowU + 2 * level.window.extent && u.high >= lowU &&
             v.low <= lowV + 2 * level.window.extent && v.high >= lowV) { level.dirty = true; level.urgent |= urgent;
-            for (const auto& page : level.pages) if (overlaps(page, bounds)) level.dirtySlots.insert(page.slot); }
+            for (const auto& page : level.pages) if (overlaps(page, bounds)) {
+                level.dirtySlots.insert(page.slot);
+                if (gpuManaged_) level.dirtyIds.insert(virtualPageId(int(&level - levels_.data()), page));
+            } }
     }
 }
 
@@ -137,6 +141,7 @@ void PageAtlas::pageRange(int level, const Box3& bounds, int& x0, int& x1, int& 
 }
 
 std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& towards, bool cameraCut, const std::vector<Box3>& casters, double deltaSeconds) {
+    requests_.clear();
     // A declared focus (a third-person hero) centres every window; the eye then orbits it without a pan, a level
     // pick or a redraw changing. UE 5.8.3: VirtualShadowMapClipmap.cpp:256-295 moves the WorldOrigin to the view target.
     const Vector3 eye = options_.control->focus.value_or(viewEye);
@@ -154,6 +159,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         // The renderer validates the direction before entering this CPU plan.
         if (!clipmap_) return {};
         pool_ = PhysicalPagePool::create(pageCount(), error);
+        ++poolGeneration_;
         for (auto& level : levels_) level = Level{};
     }
     if (cameraCut) invalidateAll();
@@ -176,15 +182,19 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
     std::vector<AtlasPage> pages;
     // Protect all held levels until their own replacement has been rendered.
     std::unordered_set<uint64_t> protectedIds;
-    for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
-        for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
-            protectedIds.insert(pageId(l, levels_[l].window.minX + x * options_.pageTexels,
-                                       levels_[l].window.minY + y * options_.pageTexels));
+    if (!gpuManaged_) {
+        for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
+            for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
+                protectedIds.insert(pageId(l, levels_[l].window.minX + x * options_.pageTexels,
+                                           levels_[l].window.minY + y * options_.pageTexels));
+    }
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
     // receiver-feedback path is not used by virtual-shadow.ts). Tile that same request into
     // physical pages; cached levels are neither cleared nor rendered.
     // One ordinary grant; urgent mover evictions cannot leave a detached old shadow behind.
     bool granted = false;
+    std::vector<char> grantedLevel(levels_.size(), 0);
+    const int header = int(levels_.size()) * 9;
     const int startLevel = nextLevel_;
     for (int offset = 0; offset < int(levels_.size()); ++offset) {
         const int l = (startLevel + offset) % int(levels_.size());
@@ -194,7 +204,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         const double gpuDelay = options_.adaptiveRefresh ? level.costMs / (1000 * options_.expensiveRefreshShare) : 0;
         const bool matured = level.dirty && (level.urgent || now_ - level.lastRender >= std::max(at(options_.invalidationDelay, l), gpuDelay));
         if ((!moved && !matured) || (granted && !level.urgent)) continue;
-        if (level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
+        if (!gpuManaged_ && level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
             protectedIds.erase(pageId(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
         const Matrix4 oldMatrix = level.matrix;
         bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
@@ -204,7 +214,11 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         const double oldCenterW = level.centerW, oldEye = level.eye;
         const double oldDepthOrigin = level.centerW + level.eye, oldNear = level.near, oldFar = level.far;
         const double oldPageWorldSize = level.window.pageWorldSize;
-        const std::set<int> oldSlots(level.slots.begin(), level.slots.end());
+        std::set<int> oldSlots;
+        if (!gpuManaged_ && level.mapped) oldSlots.insert(level.slots.begin(), level.slots.end());
+        std::unordered_set<uint64_t> oldIds;
+        if (gpuManaged_ && level.mapped)
+            for (const AtlasPage& page : level.pages) oldIds.insert(virtualPageId(l, page));
         level.window = window;
         level.centerW = center.w;
         const double cu = (window.minX + mapSize(l) / 2.0) * window.pageWorldSize;
@@ -297,15 +311,23 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x) {
             // The view's axes are -U and -V, so page (x, y) sits (n-1-x, n-1-y) pages along U and V: the key names that rect.
             const uint64_t id = pageId(l, window.minX + (tiles(l) - 1 - x) * options_.pageTexels, window.minY + (tiles(l) - 1 - y) * options_.pageTexels);
-            const auto allocation = pool_->allocate(id, frame_, false, protectedIds);
-            if (!allocation) { level.mapped = false; writeTable(); return {}; }
-            if (allocation->hasEvicted) waste::debugAdd(counts.shadowPageEvictions);
-            level.slots.push_back(allocation->entry.slot);
+            // GPU-managed: the CPU pool stays out of the runtime path. The pool keeps the page's slot; this side
+            // only names the virtual page and leaves the table entry for the GPU to write.
+            int slot = 0;
+            bool reused = false;
+            if (!gpuManaged_) {
+                const auto allocation = pool_->allocate(id, frame_, false, protectedIds);
+                if (!allocation) { level.mapped = false; writeTable(gpuManaged_); return {}; }
+                if (allocation->hasEvicted) waste::debugAdd(counts.shadowPageEvictions);
+                slot = allocation->entry.slot;
+                reused = allocation->reused;
+            }
+            level.slots.push_back(slot);
             const double texel = window.pageWorldSize, pad = options_.border * texel;
             const double texelV = texel * vScale, padV = options_.border * texelV;
             const double left = -window.extent + x * options_.pageTexels * texel;
             const double bottom = -window.extent * vScale + y * options_.pageTexels * texelV;
-            AtlasPage page; page.level = l; page.x = x; page.y = y; page.slot = allocation->entry.slot; page.view = level.view;
+            AtlasPage page; page.level = l; page.x = x; page.y = y; page.slot = slot; page.view = level.view;
             page.projection.makeOrthographic(left - pad, left + options_.pageTexels * texel + pad,
                 bottom + options_.pageTexels * texelV + padV, bottom - padV,
                 level.near, level.far, CoordinateSystem::WebGPU);
@@ -315,20 +337,55 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
             page.lowU = cameraU + left - pad; page.highU = cameraU + left + options_.pageTexels * texel + pad;
             page.lowV = cameraV + bottom - padV; page.highV = cameraV + bottom + options_.pageTexels * texelV + padV;
             level.pages.push_back(page);
-            const bool kept = partial || (pan && allocation->reused && oldSlots.count(page.slot));
-            if (!kept || level.dirtySlots.count(page.slot)) pages.push_back(page);
+            if (gpuManaged_) {
+                // A pan keeps a page whose virtual id the old window held; a partial redraw keeps every page. An
+                // invalidated page redraws even when it was kept, so the request carries the forced-redraw bit.
+                const bool dirtyVirtual = level.dirtyAll || level.dirtyIds.count(id) != 0;
+                const bool kept = partial || (pan && oldIds.count(id) != 0);
+                uint32_t gpuPageIndex = 0xFFFFFFFFu;
+                if (!kept || dirtyVirtual) {
+                    gpuPageIndex = uint32_t(pages.size());
+                    pages.push_back(page);
+                }
+                const uint32_t flags = 1u | (pan && !dirtyVirtual ? 2u : 0u) | (dirtyVirtual ? 4u : 0u);
+                requests_.push_back({id, flags, gpuPageIndex,
+                    uint32_t(header + pageBase(l) + (tiles(l) - 1 - y) * tiles(l) + x)});
+            } else {
+                const bool kept = partial || (pan && reused && oldSlots.count(page.slot));
+                if (!kept || level.dirtySlots.count(page.slot)) pages.push_back(page);
+            }
         }
         waste::debugAdd(counts.shadowPagesRefreshed, pages.size() - pagesBefore);
         level.mapped = true;
         level.dirty = false;
-        level.dirtyAll = false; level.dirtySlots.clear();
+        level.dirtyAll = false; level.dirtySlots.clear(); level.dirtyIds.clear();
         level.urgent = false;
         level.lastRender = now_;
-        for (auto& [key, motion] : motion_) motion.settling &= ~(1u << l);
+        for (auto it = activeMovers_.begin(); it != activeMovers_.end();) {
+            const auto found = motion_.find(*it);
+            if (found == motion_.end()) { it = activeMovers_.erase(it); continue; }
+            found->second.settling &= ~(1u << l);
+            if (!found->second.moving && found->second.settling == 0) it = activeMovers_.erase(it);
+            else ++it;
+        }
         granted = true;
+        grantedLevel[std::size_t(l)] = 1;
         nextLevel_ = (l + 1) % int(levels_.size());
     }
-    writeTable();
+    if (gpuManaged_) {
+        // Every page of a held level is still referenced this frame: it keeps its slot and its table entry, so the
+        // GPU manager refreshes it instead of evicting it, and neither clear nor cull sees it.
+        for (int l = 0; l < int(levels_.size()); ++l) {
+            const Level& level = levels_[std::size_t(l)];
+            if (!level.mapped || grantedLevel[std::size_t(l)]) continue;
+            const int n = tiles(l);
+            for (const AtlasPage& page : level.pages) {
+                requests_.push_back({virtualPageId(l, page), 0u, 0xFFFFFFFFu,
+                    uint32_t(header + pageBase(l) + (n - 1 - page.y) * n + page.x)});
+            }
+        }
+    }
+    writeTable(gpuManaged_);
     return pages;
 }
 
@@ -347,6 +404,33 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
     return it == motion_.end() || !it->second.moving;
 }
 
+void PageAtlas::applyCaster(const CasterState& caster, uint64_t present) {
+    auto [it, inserted] = motion_.try_emplace(caster.key);
+    auto& m = it->second;
+    if (present != 0) m.present = present;
+    const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || !(caster.signature == m.caster.signature));
+    const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
+    if (moving) {
+        waste::meterAdd(waste::counters().castersMoving);
+        if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
+        m.moving = true; m.quiet = 0; m.settling = 0;
+    } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
+        // UE 5.8.3 VirtualShadowMapCacheManager.cpp:1810: static once the age exceeds the threshold.
+        m.moving = false;
+        m.settling = 0;
+        for (int l = 0; l < int(levels_.size()); ++l)
+            if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
+                [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
+        invalidate(caster.bounds);
+    } else if (inserted) {
+        waste::debugAdd(waste::counters().shadowCasterChurn);
+        invalidate(caster.bounds);
+    }
+    m.caster = caster;
+    if (m.moving || m.settling != 0) activeMovers_.insert(caster.key);
+    else activeMovers_.erase(caster.key);
+}
+
 void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied) {
     // Presence is a stamp, not a `std::set` of every caster: an insert per caster per frame was the second cost of
     // this pass (PRD-872), and the sweep below needs only "did this frame list it".
@@ -355,44 +439,99 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std
         const auto it = motion_.find(key);
         if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) it->second.present = present;
     }
-    for (const auto& caster : casters) {
-        auto [it, inserted] = motion_.try_emplace(caster.key);
-        auto& m = it->second;
-        m.present = present;
-        const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || !(caster.signature == m.caster.signature));
-        const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
-        if (moving) {
-            waste::meterAdd(waste::counters().castersMoving);
-            if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
-            m.moving = true; m.quiet = 0; m.settling = 0;
-        } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
-            // UE 5.8.3 VirtualShadowMapCacheManager.cpp:1810: static once the age exceeds the threshold.
-            m.moving = false;
-            m.settling = 0;
-            for (int l = 0; l < int(levels_.size()); ++l)
-                if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
-                    [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
-            invalidate(caster.bounds);
-        } else if (inserted) {
-            waste::debugAdd(waste::counters().shadowCasterChurn);
-            invalidate(caster.bounds);
-        }
-        m.caster = caster;
-    }
+    for (const auto& caster : casters) applyCaster(caster, present);
     for (auto it = motion_.begin(); it != motion_.end();) {
         if (it->second.present == present) { ++it; continue; }
         if (!it->second.moving) {
             waste::debugAdd(waste::counters().shadowCasterChurn);
             invalidate(it->second.caster.bounds);
         }
+        activeMovers_.erase(it->first);
         it = motion_.erase(it);
+    }
+    seeded_ = true;
+    lastCasterVisits_ = casters.size();
+}
+
+void PageAtlas::updateCastersChanged(const std::vector<CasterState>& changed, const std::vector<uint64_t>& removed,
+                                     const std::vector<uint64_t>& emptied) {
+    seeded_ = true;
+    lastCasterVisits_ = 0;
+    if (changed.empty() && removed.empty() && emptied.empty() && activeMovers_.empty()) return;
+    visitedKeysScratch_.clear();
+    visitedKeysScratch_.reserve(changed.size());
+    for (const auto& caster : changed) {
+        ++lastCasterVisits_;
+        applyCaster(caster, 0);
+        visitedKeysScratch_.push_back(caster.key);
+    }
+    const bool sortVisited = visitedKeysScratch_.size() > 16;
+    if (sortVisited) std::sort(visitedKeysScratch_.begin(), visitedKeysScratch_.end());
+    const auto wasVisited = [&](uint64_t key) {
+        return sortVisited ? std::binary_search(visitedKeysScratch_.begin(), visitedKeysScratch_.end(), key)
+                           : std::find(visitedKeysScratch_.begin(), visitedKeysScratch_.end(), key) !=
+                                 visitedKeysScratch_.end();
+    };
+    // Every mover the change set did not name advances exactly as an unchanged still frame of that caster would.
+    // Snapshot the keys: settling erases from the set while this loop runs.
+    moversScratch_.assign(activeMovers_.begin(), activeMovers_.end());
+    for (const uint64_t key : moversScratch_) {
+        if (wasVisited(key)) continue;
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) { activeMovers_.erase(key); continue; }
+        ++lastCasterVisits_;
+        Motion& m = it->second;
+        const CasterState& caster = m.caster;
+        const bool moving = caster.tracked || (!caster.pinned && caster.automatic && caster.deforming);
+        if (moving) {
+            waste::meterAdd(waste::counters().castersMoving);
+            m.moving = true; m.quiet = 0; m.settling = 0;
+        } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
+            m.moving = false;
+            m.settling = 0;
+            for (int l = 0; l < int(levels_.size()); ++l)
+                if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
+                    [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
+            invalidate(caster.bounds);
+        }
+        if (!m.moving && m.settling == 0) activeMovers_.erase(key);
+    }
+    emptiedKeysScratch_ = emptied;
+    const bool sortEmptied = emptiedKeysScratch_.size() > 16;
+    if (sortEmptied) std::sort(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end());
+    const auto isEmptied = [&](uint64_t key) {
+        return sortEmptied ? std::binary_search(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end(), key)
+                           : std::find(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end(), key) !=
+                                 emptiedKeysScratch_.end();
+    };
+    for (const uint64_t key : removed) {
+        if (isEmptied(key)) continue;
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) continue;
+        ++lastCasterVisits_;
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
+        activeMovers_.erase(key);
+        motion_.erase(it);
+    }
+    // An emptied owner-told caster keeps its last state; every other one leaves as the full scan's sweep would.
+    for (const uint64_t key : emptied) {
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) continue;
+        if (!it->second.moving && !it->second.caster.automatic) continue;
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
+        activeMovers_.erase(key);
+        motion_.erase(it);
     }
 }
 
 void PageAtlas::appendMoverPages(std::vector<AtlasPage>& pages) const {
-    if (std::none_of(motion_.begin(), motion_.end(), [](const auto& entry) {
-        return entry.second.moving || entry.second.settling;
-    })) return;
+    if (activeMovers_.empty()) return;
     for (int l = 0; l < int(levels_.size()); ++l) {
         const auto& level = levels_[l];
         if (!level.mapped) continue;
@@ -444,7 +583,14 @@ Vector3 PageAtlas::viewFocus(const Vector3& eye, const Vector3& forward, double 
     return focus;
 }
 
-void PageAtlas::writeTable() {
+uint64_t PageAtlas::virtualPageId(int level, const AtlasPage& page) const {
+    const ClipWindow& window = levels_[std::size_t(level)].window;
+    const int n = tiles(level);
+    return pageId(level, window.minX + (n - 1 - page.x) * options_.pageTexels,
+                  window.minY + (n - 1 - page.y) * options_.pageTexels);
+}
+
+void PageAtlas::writeTable(bool headersOnly) {
     // Nine vec4s per level followed by a row-major page table. Page rows are flipped here rather
     // than in the sampler: the light-space V axis is up; WebGPU texture Y is down.
     const int header = int(levels_.size()) * 9;
@@ -475,7 +621,7 @@ void PageAtlas::writeTable() {
         out[34] = float(edge());
         // Positive while mapped: the shader scales the light's bias by biasSpan / span, so the pad keeps its metres.
         out[35] = level.mapped ? float(level.biasSpan) : 0;
-        if (!level.mapped) continue;
+        if (!level.mapped || headersOnly) continue;
         const int n = tiles(l);
         for (int y = 0; y < n; ++y) for (int x = 0; x < n; ++x) {
             const auto [px, py] = origin(level.slots[y * n + x]);

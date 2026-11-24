@@ -30,6 +30,7 @@
 #include "engine/renderer/probes/volume.h"
 #include "engine/renderer/shadows/virtual/atlas.h"
 #include "engine/renderer/shadows/virtual/caster_plan.h"
+#include "engine/renderer/shadows/virtual/gpu_pages.h"
 #include "engine/shader/output.h"
 #include "engine/shader/package.h"
 #include "engine/shader/standard.h"
@@ -151,6 +152,17 @@ struct DrawCache {
     bool velocitySharedView = false;
     bool velocitySupported = false;
     std::pair<Box3, double> shadowBounds;
+    /** The caster's own geometry box, before any instance or model transform: the local AABB a batched VSM page row
+     *  transforms per instance. Built beside `shadowBounds`. */
+    Box3 localShadowBox;
+    // PRD-775: a batched VSM depth draw's own program and pipeline, kept apart from the mover/lamp depth cache above
+    // so the two never collide.
+    void* vsmDepthProgram = nullptr;
+    void* vsmDepthPipeline = nullptr;
+    uint64_t vsmDepthStamp = 0;
+    DepthRowKey vsmDepthKey;
+    uint64_t vsmDepthTargetKey = 0;
+    bool vsmDepthMasked = false;
     // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
     std::vector<Box3> shadowInstanceBoxes;
@@ -312,6 +324,20 @@ struct DrawItem {
     std::shared_ptr<const shader::PositionNode> positionNode;  // the material's; null keeps positionLocal
     /** The record's resolved-state cache, or null for a synthesized draw (the renderer then resolves afresh). */
     DrawCache* cache = nullptr;
+};
+
+/** A primitive whose transform, instance buffers, geometry, cast/layers state or scene membership changed in the
+ *  last prepare (PRD-913, PRD-775 Phase 2). The render database hands the change set to the VSM stage, so a caster
+ *  the frame did not touch costs no state transition. */
+struct DirtyPrimitive {
+    uint64_t objectId = 0;
+    bool transformChanged = false;
+    bool instanceChanged = false;
+    bool geometryChanged = false;
+    bool added = false;
+    bool removed = false;
+    Box3 oldBounds{};
+    Box3 newBounds{};
 };
 
 struct CameraState {
@@ -679,7 +705,9 @@ public:
      * after them by renderOrder, then depth back to front, then id.
      */
     uint64_t render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                    std::array<double, 4> clear = {0, 0, 0, 0});
+                    std::array<double, 4> clear = {0, 0, 0, 0},
+                    std::span<const DirtyPrimitive> dirtyPrimitives = {}, bool hasDirtyTracking = false,
+                    uint64_t topologyVersion = 0);
     /**
      * render() in two halves for the render thread (PRD-613). `renderDeferred` does everything that reads
      * scene-owned data (syncs, texture and geometry uploads, uniform packing, program lookup) and returns;
@@ -688,7 +716,9 @@ public:
      * call and after the second; a call that breaks the order throws TN_RENDER_THREAD_BATON.
      */
     uint64_t renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                            std::array<double, 4> clear = {0, 0, 0, 0});
+                            std::array<double, 4> clear = {0, 0, 0, 0},
+                            std::span<const DirtyPrimitive> dirtyPrimitives = {}, bool hasDirtyTracking = false,
+                            uint64_t topologyVersion = 0);
     void encodePending();
     /**
      * A game's RenderTarget whose draw was planned and not yet recorded (`jobs`: one encodePending per renderer it planned).
@@ -705,7 +735,9 @@ public:
     bool framePending() const { return pendingEncode_ || encoding_; }
     /** Pipeline preparation only: shares render's planning, submits no frame. */
     std::vector<std::shared_ptr<PipelineCompilation>> compileAsync(std::span<const DrawItem> items,
-        const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm);
+        const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat = WGPUTextureFormat_RGBA8Unorm,
+        std::span<const DirtyPrimitive> dirtyPrimitives = {}, bool hasDirtyTracking = false,
+        uint64_t topologyVersion = 0);
     /**
      * Frame-pumped PMREM (PRD-573): submits at most one retained full-quality packet of the single
      * in-flight environment preparation and reports whether every environment the frame samples is
@@ -829,6 +861,8 @@ public:
      * the count the compute pass wrote; the copies land after the frame that recorded them.
      */
     GpuStatus readGpuCullArgs(uint32_t drawCount, ReadbackCallback done);
+    /** PRD-775: the last frame's batched VSM indirect records, five u32 per draw (index count, surviving records). */
+    GpuStatus readVsmArgs(uint32_t drawCount, ReadbackCallback done);
     /** The last frame as presented, the UI overlay drawn over it (PRD-554), read back: what a player sees. */
     GpuStatus readPresented(ReadbackCallback done);
     void poll() { gpu_.poll(); }
@@ -923,6 +957,15 @@ public:
     };
     /** The shadow draws the last planned frame kept, in pass order, and one row per draw in draw order. */
     std::vector<ShadowPlanRow> shadowPlan() const;
+    /** PRD-775 Phase 1: the batched static VSM passes the last encoded frame recorded (one per light), and the
+     *  physical pages those passes cleared and drew from GPU records. Zero on the legacy per-page path. */
+    uint32_t lastStaticVsmPasses() const { return lastStaticVsmPasses_; }
+    uint32_t lastStaticVsmPages() const { return lastStaticVsmPages_; }
+    /** PRD-775 Phase 2: caster states the last frame's VSM stage looked at, summed over the virtual shadows. A frame
+     *  where no caster changed visits none. */
+    uint64_t lastVsmCasterVisits() const;
+    /** The indirect records the batched VSM draws read, for a test that checks the GPU wrote them. */
+    WGPUBuffer vsmArgsBufferForTest() const { return gpuVsm_ ? gpuVsm_->argsBuffer() : nullptr; }
     /** The bytes `shadowPlan()`'s offsets point into: one buffer per planned frame, written once. */
     std::span<const uint8_t> frameUniformBytes() const { return frameUniforms_; }
     /** Game thread, with the render thread idle: publishes the stats of the frame `encodePending` last finished. */
@@ -1052,7 +1095,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAnisotropyMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kGpuCullIdBase, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kGpuCullIdBase, kVsmRecordBase, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -1062,7 +1105,8 @@ private:
                                 kLightShadowPenumbraScale, kLightSourceRadius, kLightFieldCount };
     uint64_t renderPrepared(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
         std::array<double, 4> clear, std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
-        WGPUTextureFormat outputFormat, bool defer = false);
+        WGPUTextureFormat outputFormat, bool defer = false, std::span<const DirtyPrimitive> dirtyPrimitives = {},
+        bool hasDirtyTracking = false, uint64_t topologyVersion = 0);
     // renderPrepared's plan, frozen for encodePending: the draws with their programs, pipelines and uniform slices.
     struct Planned;
     struct ShadowPass;
@@ -1407,6 +1451,28 @@ private:
         ShadowMap map;
         std::shared_ptr<VirtualShadowCosts> costs = std::make_shared<VirtualShadowCosts>();
         std::map<int, uint64_t> consumedCosts;
+        // PRD-775 Phase 2: sorted flat vectors + reusable scratch buffers (zero per-frame hash allocations).
+        std::vector<std::pair<uint64_t, uint32_t>> objectToIndex;  // sorted (shadowObject->id(), item index)
+        std::vector<std::pair<uint64_t, uint32_t>> keyToIndex;     // sorted (DrawItem::key, item index)
+        std::vector<uint64_t> casterKeys, prevCasterKeys;          // sorted casting DrawItem::key sets
+        std::vector<std::size_t> candidateIndices;
+        std::vector<shadows::CasterState> changedStatesScratch, statesScratch;
+        std::vector<uint64_t> emptiedScratch, removedScratch;
+        std::vector<Box3> rungChangedScratch;
+        std::vector<std::size_t> dynamicIndices;  // re-evaluated every frame: deformed, tracked or pinned casters
+        std::vector<std::size_t> depthSlots, receiverSlots;
+        std::vector<uint32_t> incrementalMarks;
+        uint32_t incrementalMarkStamp = 0;
+        std::vector<Box3> depthCastersCache, receiversCache;
+        /** PRD-775 Phase 3: the GPU page manager for this light, and the table/request state it last dispatched for. */
+        std::unique_ptr<shadows::GpuPhysicalPagePool> pagePool;
+        uint64_t pagePoolGeneration = 0;
+        Handle pagePoolLastTable{};
+        uint64_t pagePoolLastReqHash = 0;
+        std::size_t pagePoolLastReqCount = 0;
+        uint64_t lastTopologyVersion = 0, lastControlEpoch = 0;
+        std::size_t lastItemsCount = 0;
+        bool incrementalCacheValid = false;
     };
     std::map<std::size_t, VirtualShadow> virtualShadows_;
     /** FS11: `virtualShadows_`' caster bookkeeping, indexed by the draw's position in `items`. */
@@ -1739,6 +1805,7 @@ private:
     bool staticVelocityEnabled();
     bool unifiedAuxEnabled();
     bool gpuInstanceCullEnabled();
+    bool vsmGpuPagesEnabled();
     /**
      * PRD-914 Phase 3: the compute frustum-cull pipeline and its five-binding layout (`instances`, `descs`, uniforms,
      * compacted ids, indirect args), built on the first frame that culls.
@@ -1753,6 +1820,9 @@ private:
     WGPUComputePipeline gpuCullPipeline_ = nullptr;
     WGPUBindGroupLayout gpuCullLayout_ = nullptr;
     RecentBindGroups gpuCullGroups_{4};
+    /** PRD-775 Phase 1: the batched VSM page clear and cull kernel, its buffers, and the last frame's counts. */
+    std::unique_ptr<shadows::GpuVsmResources> gpuVsm_;
+    uint32_t lastStaticVsmPasses_ = 0, lastStaticVsmPages_ = 0;
     struct BonePlacement {
         const std::vector<float>* ptr = nullptr;
         uint64_t version = 0;
@@ -1798,6 +1868,8 @@ private:
         std::vector<uint8_t> uploaded;
         Handle uploadedBuffer;
         uint64_t uploadedPrefix = 0;
+        /** PRD-775 Phase 3: a byte range the GPU owns (the VSM table's page entries), never written by an upload. */
+        uint64_t gpuOwnedStartByte = 0, gpuOwnedEndByte = 0;
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;

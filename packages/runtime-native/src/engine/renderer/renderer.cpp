@@ -60,6 +60,7 @@ const std::pair<Box3, double>& DrawCache::virtualShadowBounds(const DrawItem& it
         }
     }
     Matrix4 model; model.elements = item.matrixWorld;
+    localShadowBox = bounds;
     const double localDiameter = bounds.min.distanceTo(bounds.max);
     double reach = margin * model.getMaxScaleOnAxis();
     double diameter = localDiameter * model.getMaxScaleOnAxis();
@@ -203,8 +204,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
     // traaPrevious_boneMatrices and traaPrevious_instances: the previous frame's palette and instances, copied after the
     // velocity pass. gpuCullIds: PRD-914 Phase 3's persistent original instance indices, written by the cull compute pass.
+    // vsmGpuPages and vsmPageRecords: PRD-775 Phase 1's physical pages and (instance, page) records, grown by GpuVsmResources.
     for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances", "gpuCullIds",
-                             "traaPrevious_boneMatrices", "traaPrevious_instances"}) {
+                             "vsmGpuPages", "vsmPageRecords", "traaPrevious_boneMatrices", "traaPrevious_instances"}) {
         FrameStorage& storage = storages_[name];
         storage.capacity = 64;
         storage.buffer = gpu_.createBuffer(storage.capacity,
@@ -461,6 +463,11 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
 }
 
 Renderer::~Renderer() {
+    // The VSM resources own pipelines, bind groups and buffers; release them while the device and GpuResources live.
+    for (auto& [light, shadow] : virtualShadows_)
+        if (shadow.pagePool) shadow.pagePool->release();
+    if (gpuVsm_) gpuVsm_->release();
+    gpuVsm_.reset();
     if (gpuJoints_) gpuJoints_->revoke();
     gpuJointPass_.reset();
     if (mipEncoder_) wgpuCommandEncoderRelease(mipEncoder_);
@@ -547,6 +554,11 @@ bool Renderer::unifiedAuxEnabled() {
 bool Renderer::gpuInstanceCullEnabled() {
     return flagEnabledOrLog(flags::read<flags::GpuInstanceCull>(),
                             "TN_GPU_INSTANCE_CULL=0: legacy CPU instance culling enabled", diagnostics_);
+}
+
+bool Renderer::vsmGpuPagesEnabled() {
+    return flagEnabledOrLog(flags::read<flags::VsmGpuPages>(),
+                            "TN_VSM_GPU_PAGES=0: legacy CPU VSM page path enabled", diagnostics_);
 }
 
 void Renderer::ensureGpuCullPipeline() {
@@ -811,13 +823,17 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
 }
 
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                          std::array<double, 4> clear) {
-    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
+                          std::array<double, 4> clear, std::span<const DirtyPrimitive> dirtyPrimitives,
+                          bool hasDirtyTracking, uint64_t topologyVersion) {
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, false, dirtyPrimitives,
+                          hasDirtyTracking, topologyVersion);
 }
 
 uint64_t Renderer::renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                                  std::array<double, 4> clear) {
-    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, true);
+                                  std::array<double, 4> clear, std::span<const DirtyPrimitive> dirtyPrimitives,
+                                  bool hasDirtyTracking, uint64_t topologyVersion) {
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, true, dirtyPrimitives,
+                          hasDirtyTracking, topologyVersion);
 }
 
 void Renderer::encodePending() {
@@ -857,10 +873,18 @@ void Renderer::recordDeferred(bool sampled) {
 }
 
 std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::span<const DrawItem> items,
-    const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat) {
+    const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat,
+    std::span<const DirtyPrimitive> dirtyPrimitives, bool hasDirtyTracking, uint64_t topologyVersion) {
     std::vector<std::shared_ptr<PipelineCompilation>> compilation;
-    renderPrepared(items, camera, lights, {}, &compilation, outputFormat);
+    renderPrepared(items, camera, lights, {}, &compilation, outputFormat, false, dirtyPrimitives, hasDirtyTracking,
+                   topologyVersion);
     return compilation;
+}
+
+uint64_t Renderer::lastVsmCasterVisits() const {
+    uint64_t visits = 0;
+    for (const auto& [light, shadow] : virtualShadows_) visits += shadow.atlas.lastCasterVisits();
+    return visits;
 }
 
 void Renderer::setCpuMeters(bool enabled) {
@@ -1055,6 +1079,22 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Keep the shadow diagnostic while timing each shadow pass separately.
     const bool shadowTimed = timed && !shadowPasses.empty();
     if (timed) timerBeganAtShadow_ = shadowTimed;
+    // PRD-775 Phase 3: the page managers map this frame's pages and write each table entry and GPU page's slot rect,
+    // scale/bias, bounds and identity first, so the cull emits no record for a kept panning page and the clear draws
+    // nothing for one; the main pass then samples the GPU-written table.
+    const auto vsmGpuPages = storages_.find("vsmGpuPages");
+    WGPUBuffer vsmGpuPagesBuffer = vsmGpuPages != storages_.end() && vsmGpuPages->second.buffer.type != 0
+        ? gpu_.buffer(vsmGpuPages->second.buffer) : nullptr;
+    for (const FrameJob::VsmPageDispatch& dispatch : job.vsmPageDispatches) {
+        if (dispatch.pool == nullptr) continue;
+        const auto table = storages_.find("vsmTable" + std::to_string(dispatch.light));
+        if (table == storages_.end()) continue;
+        dispatch.pool->dispatch(encoder, gpu_.buffer(table->second.buffer), vsmGpuPagesBuffer);
+    }
+    // PRD-775 Phase 1: the cull kernel writes every batched VSM draw's (instance, page) records and indirect count
+    // before any shadow pass reads them. It reads the same packed `instances` storage the plan uploaded.
+    if (job.dispatchVsmCull && gpuVsm_)
+        gpuVsm_->dispatchCull(encoder, gpu_.buffer(storages_.at("instances").buffer));
     std::map<std::pair<std::size_t, int>, double> shadowCosts;
     std::map<size_t, std::pair<std::weak_ptr<VirtualShadowCosts>, int>> shadowQueries;
     for (const ShadowPass& shadowPlan : shadowPasses) {
@@ -1062,7 +1102,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         const double shadowMeter = meterMs(), recordedBefore = lastFrame_.recordMs;
         WGPURenderPassDepthStencilAttachment shadowDepth = {};
         shadowDepth.view = shadowPlan.target;
-        shadowDepth.depthLoadOp = shadowPlan.size ? WGPULoadOp_Load : WGPULoadOp_Clear;
+        shadowDepth.depthLoadOp = shadowPlan.size || shadowPlan.batchedVsm ? WGPULoadOp_Load : WGPULoadOp_Clear;
         shadowDepth.depthStoreOp = WGPUStoreOp_Store;
         shadowDepth.depthClearValue = 1.0f;
         WGPURenderPassDescriptor shadowDesc = {};
@@ -1074,9 +1114,22 @@ void Renderer::encodeFrame(FrameJob& job) {
             lastFrame_.lampRedraws += &shadowPlan == shadowPasses.data() || (&shadowPlan - 1)->virtualLight != shadowPlan.virtualLight || !(&shadowPlan - 1)->lamp;
             lastFrame_.lampShadowDraws += uint32_t(shadowPlan.draws.size());
         }
-        if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query)
+        if (shadowPlan.batchedVsm) {
+            if (!shadowPlan.vsmLevels.empty() && passTimer_->segments.size() > query)
+                shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.vsmLevels.front()};
+        } else if (shadowPlan.virtualLevel >= 0 && passTimer_->segments.size() > query) {
             shadowQueries[query] = {virtualShadows_.at(shadowPlan.virtualLight).costs, shadowPlan.virtualLevel};
-        if (shadowPlan.size) {
+        }
+        if (shadowPlan.batchedVsm) {
+            // One pass over the physical atlas: clear this light's static pages from the GPU page table, then draw
+            // every caster from the records the cull kernel wrote.
+            const uint32_t edge = uint32_t(virtualShadows_.at(shadowPlan.virtualLight).atlas.edge());
+            wgpuRenderPassEncoderSetViewport(shadowPass, 0, 0, float(edge), float(edge), 0, 1);
+            wgpuRenderPassEncoderSetScissorRect(shadowPass, 0, 0, edge, edge);
+            if (gpuVsm_)
+                gpuVsm_->encodePageClears(shadowPass, gpu_.buffer(storages_.at("vsmGpuPages").buffer),
+                                          shadowPlan.vsmPageCount, shadowPlan.vsmPageOffset);
+        } else if (shadowPlan.size) {
             wgpuRenderPassEncoderSetViewport(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size, 0, 1);
             wgpuRenderPassEncoderSetScissorRect(shadowPass, shadowPlan.x, shadowPlan.y, shadowPlan.size, shadowPlan.size);
             wgpuRenderPassEncoderSetPipeline(shadowPass, pageClear);
@@ -1129,8 +1182,22 @@ void Renderer::encodeFrame(FrameJob& job) {
         wgpuRenderPassEncoderRelease(shadowPass);
         const double shadowMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - shadowStarted).count();
         lastFrame_.shadowEncodeMs += meterMs() - shadowMeter - (lastFrame_.recordMs - recordedBefore);
-        if (shadowPlan.virtualLevel >= 0) shadowCosts[{shadowPlan.virtualLight, shadowPlan.virtualLevel}] += shadowMs;
+        if (shadowPlan.batchedVsm) {
+            // One pass wrote every granted level: without GPU timestamps its CPU cost is split evenly, as the
+            // legacy per-level passes each measured their own.
+            if (!shadowPlan.vsmLevels.empty()) {
+                const double share = shadowMs / double(shadowPlan.vsmLevels.size());
+                for (const int level : shadowPlan.vsmLevels)
+                    shadowCosts[{shadowPlan.virtualLight, level}] += share;
+            }
+        } else if (shadowPlan.virtualLevel >= 0) {
+            shadowCosts[{shadowPlan.virtualLight, shadowPlan.virtualLevel}] += shadowMs;
+        }
     }
+    lastStaticVsmPasses_ = job.staticVsmPasses;
+    lastStaticVsmPages_ = 0;
+    for (const ShadowPass& shadowPlan : shadowPasses)
+        if (shadowPlan.batchedVsm) lastStaticVsmPages_ += shadowPlan.vsmPageCount;
     // Like core's CPU measurement when timestamp queries are unavailable; never mix CPU and GPU samples.
     if (!passTimer_->queries)
         for (const auto& [key, ms] : shadowCosts) virtualShadows_.at(key.first).atlas.recordCost(key.second, ms, frameDelta_);
