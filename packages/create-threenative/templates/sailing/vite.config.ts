@@ -2,6 +2,7 @@ import tailwindcss from "@tailwindcss/vite";
 import { watchAssets } from "@threenative/assets";
 import react from "@vitejs/plugin-react";
 import {
+  createAssetLibraryPlugin,
   createEngineCatalogPlugin,
   createEngineFreshnessPlugin,
   createWebBrandPlugin,
@@ -47,6 +48,7 @@ export default defineConfig({
     createEngineFreshnessPlugin(),
     createWebBrandPlugin(),
     createEngineCatalogPlugin(),
+    createAssetLibraryPlugin(),
     react(),
     tailwindcss(),
     assetsWatchPlugin(),

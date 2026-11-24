@@ -842,8 +842,9 @@ function elementNode(e: IAssetElement) {
   const at = hashOf(e.kind, e.id);
   const biome = controlsFor(e.kind, e.id).find((c) => c.key === "biome" && c.type === "select");
   const tile = tileControl(e.kind, e.id);
-  // A file has one story: it is a leaf, not a folder of variants.
-  if (!biome && !tile) return leaf(at, e.name, "story", story, "pl-10", "controls");
+  // A project file has one story: it is a leaf. A source element keeps its Docs and Default nodes.
+  if (BUILT_IN_KINDS.has(e.kind) && !biome && !tile)
+    return leaf(at, e.name, "story", story, "pl-10", "controls");
   const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-5");
   group.append(
     leaf(at, "Docs", "doc", current && docs, "pl-14", "docs"),

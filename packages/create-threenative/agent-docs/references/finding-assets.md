@@ -244,6 +244,28 @@ blender --background --factory-startup --python packages/blender-bridge/gpl/conv
 For bpy work of your own — decimating a scan, unwrapping, baking AO, retargeting — write the script
 and run it with `blender --background --python`. Nothing here is a sandbox or claims to be.
 
+## Checking what arrived: the Asset Library
+
+Every kit serves `/__assets/` in `pnpm dev` (`createAssetLibraryPlugin` in `vite.config.ts`; it is
+dev-only and adds nothing to `threenative build`). The game page shows a `Game | Asset Library`
+switcher; it loads nothing until it is picked, and it is hidden under automation and with
+`?noDevShell=1`.
+
+| You want | Open |
+| --- | --- |
+| One model: health badges, hierarchy, Raw vs Cooked, Auto-LOD 2-80 m, clips | `/__assets/#/model/<path under the project>` |
+| A contact sheet for a judge | add `?sheet=turntable`, wait for `globalThis.__TN_ASSET_LIBRARY_READY__ === true`; the image is `globalThis.__TN_ASSET_LIBRARY_SHEET__` |
+| A texture's channels, tiling and VRAM | `/__assets/#/texture/<path>` |
+| A sound's waveform | `/__assets/#/audio/<path>` |
+| A prop tuned with live controls | a `src/**/*.story.ts` default-exporting `defineAssetStory({ title, controls, create })` |
+| A composed diorama | the Stage: "Save scene module" writes `src/scenes/<name>.ts`, "Save merged GLB" writes `assets/bundles/<name>.glb` |
+
+A red badge is a fix before the asset ships: "likely centimetres" needs a 0.01 scale, a non-zero
+`min.y` floats or sinks, "missing normals" renders black, "unbound animation tracks" never move.
+A project with `@threenative/procedural-environment` installed also lists its bakes, with
+"Save to assets/". Studio embeds the same page with `?embed=1` and drives it by `postMessage`
+(`tn-asset-library:select`, `:sheet`, `:theme`, `:pause`, `:resume`; it answers `:ready`).
+
 ## The narrower tools
 
 The directory spells out the conditions on each. The Fab tools are covered above; the server

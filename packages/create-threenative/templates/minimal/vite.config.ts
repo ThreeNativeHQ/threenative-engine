@@ -1,5 +1,6 @@
 import { watchAssets } from "@threenative/assets";
 import {
+  createAssetLibraryPlugin,
   createEngineCatalogPlugin,
   createEngineFreshnessPlugin,
   createWebBrandPlugin,
@@ -45,6 +46,7 @@ export default defineConfig({
     createEngineFreshnessPlugin(),
     createWebBrandPlugin(),
     createEngineCatalogPlugin(),
+    createAssetLibraryPlugin(),
     assetsWatchPlugin(),
   ],
   server: {

@@ -85,6 +85,8 @@ export function viteConfigText(delta: IVitePlumbingDelta): string {
     'import { watchAssets } from "@threenative/assets";',
     ...(delta.react ? ['import react from "@vitejs/plugin-react";'] : []),
     "import {",
+    // PRD-915: `/__assets/`, the Asset Library, and the `Game | Asset Library` switcher; serve only.
+    "  createAssetLibraryPlugin,",
     // PRD-829's catalog plugin: every kit serves the engine catalog in dev, so it is plumbing.
     "  createEngineCatalogPlugin,",
     "  createEngineFreshnessPlugin,",
@@ -99,6 +101,7 @@ export function viteConfigText(delta: IVitePlumbingDelta): string {
     "createEngineFreshnessPlugin()",
     "createWebBrandPlugin()",
     "createEngineCatalogPlugin()",
+    "createAssetLibraryPlugin()",
     ...(delta.react ? ["react()"] : []),
     ...(delta.tailwind ? ["tailwindcss()"] : []),
     "assetsWatchPlugin()",
