@@ -113,6 +113,11 @@ export interface IEmbeddedTextureSummary {
   /** Images retained at their authored bytes, by name, with the reason each one was not cooked. */
   readonly skippedCompression: Readonly<Record<string, TextureSkipReason>>;
   /**
+   * Texture-projection images, keyed like `formats`, valued with the atlas edge the asset MCP
+   * marked: the marker kept the authored size and skipped ETC1S, so a flat row stays explained.
+   */
+  readonly projected?: Readonly<Record<string, number>>;
+  /**
    * Bytes KTX2 saves over the decoder-free container across this model's automatic images,
    * whether or not the transcoder charge let it ship. The build sums it over every model to
    * decide once whether the shared transcoder pays for itself. Absent when zero.
@@ -152,6 +157,12 @@ export interface IModelTextureBindings {
 type RootOf = ReturnType<Document["getRoot"]>;
 
 const DEFAULT_MAX_SIZE = 2048;
+/**
+ * Authored size a texture-projection atlas keeps. The marker (glTF `textures[i].extras`
+ * `threenative.textureProjection`) says the image is a painted atlas the asset MCP generated:
+ * a first-person surface seen up close, where the 2048 cap blurs and ETC1S blocks.
+ */
+export const PROJECTION_MAX_SIZE = 8192;
 const DEFAULT_ETC1S_QUALITY = 150;
 /** BC1, BC7, ETC2 and ASTC 4x4 all address pixels in 4x4 blocks. */
 const BLOCK_SIZE = 4;
@@ -444,6 +455,43 @@ export function resolveTextureMaxSize(
   );
 }
 
+/**
+ * The atlas edge a texture-projection marker declares, or undefined for an unmarked texture.
+ * A marker that exists but cannot be read fails closed: quietly capping a painted atlas is the
+ * blur this marker exists to prevent. `runId` rides along in the glTF but the cook never needs it.
+ */
+export function textureProjectionAtlas(texture: Texture): number | undefined {
+  const threenative = texture.getExtras().threenative;
+  if (typeof threenative !== "object" || threenative === null) return undefined;
+  const marker = (threenative as Record<string, unknown>).textureProjection;
+  if (marker === undefined) return undefined;
+  const atlas =
+    typeof marker === "object" && marker !== null
+      ? (marker as Record<string, unknown>).atlas
+      : undefined;
+  if (typeof atlas !== "number" || !Number.isSafeInteger(atlas) || atlas <= 0)
+    throw new Error(
+      `TN_ASSETS_TEXTURE_PROJECTION: embedded texture '${texture.getName() === "" ? "unnamed" : texture.getName()}' carries a threenative.textureProjection marker whose atlas is not a positive integer.`,
+    );
+  return atlas;
+}
+
+/**
+ * Longest edge one embedded texture may keep. A projected atlas keeps its authored size up to
+ * {@link PROJECTION_MAX_SIZE}; a `maxSize` the project declared for one of its slots still wins.
+ */
+export function textureMaxSize(
+  texture: Texture,
+  maxSize: TextureMaxSize | undefined,
+  slots = listTextureSlots(texture),
+): number {
+  return resolveTextureMaxSize(
+    maxSize,
+    slots,
+    textureProjectionAtlas(texture) === undefined ? DEFAULT_MAX_SIZE : PROJECTION_MAX_SIZE,
+  );
+}
+
 /** Longest edge clamped to the cap, aspect preserved, each edge a whole number of blocks. */
 export function cappedSize(
   width: number,
@@ -467,6 +515,8 @@ interface ICodecRung {
 export function codecLadder(
   slots: readonly string[],
   forced?: TextureCodec,
+  /** A projected atlas: ETC1S blocks a painted surface, so colour keeps the UASTC rungs only. */
+  projected = false,
 ): readonly ICodecRung[] {
   const data = slots.length === 0 || slots.some((slot) => !COLOUR_SLOTS.has(slot));
   if (forced !== undefined) {
@@ -474,15 +524,14 @@ export function codecLadder(
       throw new Error("TN_ASSETS_TEXTURE_SLOT_CODEC: ETC1S is forbidden for normal/data slots.");
     return [{ codec: forced }];
   }
-  return data
-    ? [{ codec: "uastc" }, { codec: "none" }]
-    : [
-        { codec: "etc1s" },
-        { codec: "uastc", rdoLambda: 3 },
-        { codec: "uastc", rdoLambda: 1 },
-        { codec: "uastc" },
-        { codec: "none" },
-      ];
+  if (data) return [{ codec: "uastc" }, { codec: "none" }];
+  const lossless: readonly ICodecRung[] = [
+    { codec: "uastc", rdoLambda: 3 },
+    { codec: "uastc", rdoLambda: 1 },
+    { codec: "uastc" },
+    { codec: "none" },
+  ];
+  return projected ? lossless : [{ codec: "etc1s" }, ...lossless];
 }
 
 /** Above this, a source ETC1S cannot beat skips the UASTC rungs; the RDO bound uses the same size. */
@@ -499,6 +548,8 @@ export async function encodeTextureLadder(
     readonly forced?: TextureCodec;
     /** Automatic source retention: candidates that cannot save bytes need no quality score. */
     readonly maxBytes?: number;
+    /** Projected atlas: colour skips ETC1S (see {@link codecLadder}). */
+    readonly projected?: boolean;
     readonly srgb: boolean;
     readonly quality: number;
   },
@@ -511,7 +562,7 @@ export async function encodeTextureLadder(
   let smallest: { encoded: Uint8Array; codec: TextureCodec; quality: ITextureQuality } | undefined;
   let smallerThanSource = options.maxBytes === undefined;
   let sourceWins = false;
-  for (const candidate of codecLadder(slots, options.forced)) {
+  for (const candidate of codecLadder(slots, options.forced, options.projected === true)) {
     if (candidate.codec === "none" && smallest !== undefined) return smallest;
     if (sourceWins && candidate.codec !== "none") continue;
     const rung =
@@ -668,6 +719,8 @@ export async function compressEmbeddedTextures(
   const formats: Record<string, string> = {};
   const scores: Record<string, ITextureQuality> = {};
   const skippedCompression: Record<string, TextureSkipReason> = {};
+  // Authored atlas edge per texture-projection image; reported so the row is never silent.
+  const projected: Record<string, number> = {};
   let bytesBefore = 0;
   let bytesAfter = 0;
   let gpuBytesBefore = 0;
@@ -680,6 +733,9 @@ export async function compressEmbeddedTextures(
 
   for (const [index, texture] of textures.entries()) {
     const key = keys[index] ?? `texture#${String(index)}`;
+    // Read before any store hit: a recalled image reports the same marker as a cold one.
+    const projectedAtlas = textureProjectionAtlas(texture);
+    if (projectedAtlas !== undefined) projected[key] = projectedAtlas;
     const image = texture.getImage();
     if (image === null) {
       throw new Error(
@@ -757,7 +813,7 @@ export async function compressEmbeddedTextures(
       authoredBasis && readKTX2(image).dataFormatDescriptor[0]?.colorModel === KHR_DF_MODEL_UASTC
         ? "uastc"
         : "etc1s";
-    const maxSize = resolveTextureMaxSize(options.maxSize, slots);
+    const maxSize = textureMaxSize(texture, options.maxSize, slots);
     let decoded: { data: Uint8Array; height: number; width: number };
     try {
       if (authoredBasis) {
@@ -775,7 +831,7 @@ export async function compressEmbeddedTextures(
       );
     }
     const explicit = (options.overrides ?? []).some((override) => slots.includes(override.slot));
-    const codec = codecLadder(slots, forced)[0]?.codec ?? "none";
+    const codec = codecLadder(slots, forced, projectedAtlas !== undefined)[0]?.codec ?? "none";
     bytesBefore += image.byteLength;
     gpuBytesBefore += gpuBytes(
       decoded.width,
@@ -943,6 +999,7 @@ export async function compressEmbeddedTextures(
             : {}),
           ...(automatic ? { maxBytes: jpegLimit } : {}),
           ...(forced === undefined ? {} : { forced }),
+          ...(projectedAtlas === undefined ? {} : { projected: true }),
         });
       }
       if (authoredBasis && selected.encoded === undefined)
@@ -1061,6 +1118,7 @@ export async function compressEmbeddedTextures(
     gpuBytesBefore,
     resized,
     skippedCompression,
+    ...(Object.keys(projected).length === 0 ? {} : { projected }),
     ...(transcoderSavings > 0 ? { transcoderSavings } : {}),
     ...(transcoderRequired ? { transcoderRequired: true as const } : {}),
     ...(Object.keys(transcoderByImage).length === 0 ? {} : { transcoderByImage }),

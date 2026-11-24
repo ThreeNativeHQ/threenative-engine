@@ -357,6 +357,13 @@ export function embeddedTextureRow(value: unknown): IEmbeddedTextureRow | undefi
           ) as Record<string, TextureSkipReason>,
         }
       : {}),
+    ...(isRecord(value.projected)
+      ? {
+          projected: Object.fromEntries(
+            Object.entries(value.projected).filter(([, atlas]) => typeof atlas === "number"),
+          ) as Record<string, number>,
+        }
+      : {}),
     gpuBytesAfter: value.gpuBytesAfter as number,
     gpuBytesBefore: value.gpuBytesBefore as number,
     resized: value.resized as number,

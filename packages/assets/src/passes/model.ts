@@ -76,9 +76,9 @@ import {
   type IRecalledTexture,
   assertNoTextureDrift,
   compressEmbeddedTextures,
-  resolveTextureMaxSize,
   textureBindings,
   textureKeys,
+  textureMaxSize,
   textureQualitySemantics,
 } from "./model-textures.js";
 import { pruneRestPoseTracks } from "./prune-rest-tracks.js";
@@ -1225,7 +1225,9 @@ function sharedSettings(
             jpegLadder: "colour-opaque-q75-90-v1",
             floor: resolveImageQualityFloor(textureOptions.floor),
             keepSmallerSource: keepSmallerSource(textureOptions),
-            maxSize: resolveTextureMaxSize(textureOptions.maxSize, listTextureSlots(texture)),
+            // The projection marker changes the cap, so it belongs in the shared-image key: an
+            // unmarked consumer of the same bytes must not hand a marked atlas a capped cook.
+            maxSize: textureMaxSize(texture, textureOptions.maxSize),
             overrides: textureOptions.overrides ?? [],
             quality: textureOptions.quality ?? null,
             transcoderBytes: textureOptions.transcoderBytes ?? null,

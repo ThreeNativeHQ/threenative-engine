@@ -47,6 +47,8 @@ async function readOutput(buffer: Buffer): Promise<Document> {
 async function fixtureWithTextures(options: {
   readonly height?: number;
   readonly width: number;
+  /** Mark the base colour map the way the asset MCP marks a projected atlas. */
+  readonly projection?: number;
 }): Promise<Buffer> {
   const { width } = options;
   const height = options.height ?? width;
@@ -80,7 +82,27 @@ async function fixtureWithTextures(options: {
       }),
     )
     .setMimeType("image/png");
+  if (options.projection !== undefined)
+    baseColor?.setExtras({
+      threenative: { textureProjection: { atlas: options.projection, runId: "run-1" } },
+    });
   return Buffer.from(await new NodeIO().writeBinary(document));
+}
+
+/** The base-colour image of the cooked fixture, whichever container the cook chose. */
+async function cookedColourSize(buffer: Buffer): Promise<readonly [number, number]> {
+  const texture = (await readOutput(buffer))
+    .getRoot()
+    .listMaterials()
+    .find((material) => material.getName() === "cloth")
+    ?.getBaseColorTexture();
+  const image = texture?.getImage() ?? new Uint8Array();
+  if (texture?.getMimeType() === "image/ktx2") {
+    const container = readKTX2(image);
+    return [container.pixelWidth, container.pixelHeight];
+  }
+  const png = PNG.sync.read(Buffer.from(image));
+  return [png.width, png.height];
 }
 
 /**
@@ -1136,6 +1158,73 @@ describe("embedded model textures", () => {
     }
     const summary = entry.embeddedTextures as { readonly resized: number } | undefined;
     expect(summary?.resized).toBe(2);
+  });
+
+  it("should keep a texture-projection atlas at its authored size and off ETC1S", async () => {
+    // A projected atlas is a painted texture seen up close: the 2048 cap blurs it and ETC1S
+    // blocks it. A real atlas is square; only the longest edge decides the cap, so a 4096-wide
+    // sliver proves the rule at a fraction of the encode cost.
+    const encode = vi.spyOn(encoder, "encodeToKTX2");
+    try {
+      const marked = await compiled(
+        await fixtureWithTextures({ height: 16, projection: 4096, width: 4096 }),
+        { textures: { jpeg: false } },
+      );
+      expect(await cookedColourSize(marked.buffer)).toEqual([4096, 16]);
+      expect(encode.mock.calls.length).toBeGreaterThan(0);
+      expect(encode.mock.calls.every(([, settings]) => settings.isUASTC === true)).toBe(true);
+      expect(marked.entry.embeddedTextures).toMatchObject({ projected: { checker: 4096 } });
+      encode.mockClear();
+      // The unmarked twin is capped at the default 2048 and still walks the ETC1S rung.
+      const twin = await compiled(await fixtureWithTextures({ height: 16, width: 4096 }), {
+        textures: { jpeg: false },
+      });
+      expect(await cookedColourSize(twin.buffer)).toEqual([2048, 8]);
+      expect(encode.mock.calls.some(([, settings]) => settings.isUASTC === false)).toBe(true);
+      expect(
+        (twin.entry.embeddedTextures as { readonly projected?: unknown }).projected,
+      ).toBeUndefined();
+    } finally {
+      encode.mockRestore();
+    }
+  });
+
+  it("should let an explicit maxSize win over a texture-projection marker", async () => {
+    const { buffer, entry } = await compiled(
+      await fixtureWithTextures({ height: 16, projection: 4096, width: 4096 }),
+      { textures: { jpeg: false, maxSize: 1024 } },
+    );
+    expect(await cookedColourSize(buffer)).toEqual([1024, 4]);
+    // The marker is still named, so the row never leaves the cap unexplained.
+    expect(entry.embeddedTextures).toMatchObject({ projected: { checker: 4096 } });
+  });
+
+  it("should let an explicit codec override win over a texture-projection marker", async () => {
+    const { entry } = await compiled(
+      await fixtureWithTextures({ height: 64, projection: 256, width: 256 }),
+      { textures: { overrides: [{ codec: "etc1s", slot: "baseColorTexture" }] } },
+    );
+    const summary = entry.embeddedTextures as {
+      readonly formats: Readonly<Record<string, string>>;
+      readonly projected: Readonly<Record<string, number>>;
+    };
+    expect(summary.formats.checker).toBe("etc1s");
+    expect(summary.projected.checker).toBe(256);
+  });
+
+  it("fails closed on a texture-projection marker it cannot read", async () => {
+    const document = await new NodeIO().readBinary(
+      await fixtureWithTextures({ height: 4, projection: 4, width: 4 }),
+    );
+    document
+      .getRoot()
+      .listTextures()[0]
+      ?.setExtras({
+        threenative: { textureProjection: { atlas: 0, runId: "run-1" } },
+      });
+    await expect(compressEmbeddedTextures(document, "prop.glb")).rejects.toThrow(
+      /TN_ASSETS_TEXTURE_PROJECTION: embedded texture 'checker' carries a threenative\.textureProjection marker whose atlas is not a positive integer\./u,
+    );
   });
 
   it("should cap baseColor at 2048 and masks at 1024", async () => {
