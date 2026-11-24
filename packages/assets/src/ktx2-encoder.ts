@@ -9,8 +9,8 @@ import {
 } from "ktx-parse";
 import BASIS from "../vendor/basis-encoder/basis_encoder.js";
 
-/** Included in both pass and shared-image cache keys whenever encoded bytes can change. */
-export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-fast-capped-v3";
+/** Included in both pass and shared-image cache keys whenever encoded bytes can change (v4: a projected atlas leaves the JPEG contest). */
+export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-fast-capped-projected-v4";
 
 const OUTPUT_HEADER_SLACK = 64 * 1024;
 /** The bundled WASM32 encoder's source ceiling: 4096x4096. */
