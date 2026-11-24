@@ -189,7 +189,7 @@ export function judge(band: ICaptureDelta, change: ICaptureDelta): string[] {
 /**
  * Stops the project's dev server from re-baking the files this gate is about to delete.
  *
- * The templates' `vite.config.ts` installs `assetsWatchPlugin()`, which recompiles `assets/` into
+ * The templates' `vite.config.ts` calls `threenative()`, whose asset watch recompiles `assets/` into
  * `public/` every time `pnpm dev` starts. Left in place it restores every deleted output before the
  * page loads, and the gate reports a green that measured nothing — which is what the first run of
  * this gate did, and what its negative control caught.
@@ -200,16 +200,14 @@ export function judge(band: ICaptureDelta, change: ICaptureDelta): string[] {
 export async function disableAssetWatcher(projectDir: string): Promise<void> {
   const file = path.join(projectDir, "vite.config.ts");
   const source = await readFile(file, "utf8");
-  const line = "    assetsWatchPlugin(),\n";
-  if (!source.includes(line)) {
+  const call = "threenative()";
+  if (!source.includes(call)) {
     throw new Error(
-      `TN_DELETE_TEST_WATCHER_UNKNOWN: '${file}' does not install assetsWatchPlugin() in the shape this gate knows how to switch off. Without that, the dev server re-bakes what this gate deletes and the result means nothing.`,
+      `TN_DELETE_TEST_WATCHER_UNKNOWN: '${file}' does not call threenative() in the shape this gate knows how to switch off. Without that, the dev server re-bakes what this gate deletes and the result means nothing.`,
     );
   }
-  await writeFile(
-    file,
-    source.replace(line, "    // assetsWatchPlugin() — disabled by the delete-test\n"),
-  );
+  // The asset watch is disabled by the delete-test.
+  await writeFile(file, source.replace(call, "threenative({ assetsWatch: false })"));
 }
 
 /** Every file under `root`, relative to it — used to report what a failing run could not find. */

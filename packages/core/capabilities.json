@@ -8747,6 +8747,24 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "createAssetLibraryPlugin({ sources: [proceduralEnvironmentSource({ root, save: true })] })",
+      "importPath": "@threenative/procedural-environment/asset-library",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export function proceduralEnvironmentSource( options: IProceduralEnvironmentSourceOptions, ): IProceduralSource { … }",
+      "situations": [
+        "browse and bake procedural trees, rocks, cliffs and city modules in the asset library of a game",
+        "save a procedural bake into the game's assets folder from the asset library"
+      ],
+      "summary": "This package's bake catalog as a source of the shared Asset Library (`/__assets/` in a kit).",
+      "supersedes": [],
+      "symbol": "proceduralEnvironmentSource"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the biome shaders, dungeon surface finish, and fire motion use Three.js WebGL materials",
         "toybox pieces animate only when the game sets `stylizedUniforms.uTime` and calls `update(seconds)` each frame; `backdrop` is an image URL the game shows behind the scene"

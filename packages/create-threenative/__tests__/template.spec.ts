@@ -122,8 +122,7 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   };
   await linkDependency(target, "@threenative/core", path.resolve("packages/core"));
   await linkDependency(target, "@threenative/physics", path.resolve("packages/physics"));
-  // Every template's vite.config.ts imports watchAssets from here since PRD-094 phase 4;
-  // tsc reads vite.config.ts through the root-level *.ts include.
+  // `threenative()` in every template's vite.config.ts imports watchAssets from here (a peer).
   await linkDependency(target, "@threenative/assets", path.resolve("packages/assets"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
   // The web build loads the Wasm engine from here. Left unlinked, resolution falls through to the
@@ -299,7 +298,7 @@ describe("template contracts", () => {
         readFile(path.join(root, "src/main.ts"), "utf8"),
         readFile(path.join(root, "vite.config.ts"), "utf8"),
       ]);
-      expect(vite, template).toContain("createWebBrandPlugin()");
+      expect(vite, template).toContain("threenative()");
       // No launch/name card in the DOM. A scaffolded game shows its own in-canvas loading
       // screen and then the game — never a branded splash with the project's name on it.
       // The owner asked for this repeatedly; the assertion is inverted so it stays gone.

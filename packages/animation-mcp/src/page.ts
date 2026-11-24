@@ -7,5 +7,5 @@ function escapeHtml(value: string): string {
 }
 
 export function poseLabPage(projectName: string): string {
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pose Lab — ${escapeHtml(projectName)}</title><style>${CSS}</style></head><body><div id="root" data-project="${escapeHtml(projectName)}"></div><script type="module" src="/app.js"></script></body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Pose Lab — ${escapeHtml(projectName)}</title><style>${CSS}</style></head><body><div id="root" data-project="${escapeHtml(projectName)}"></div><script type="module" src="app.js"></script></body></html>`;
 }

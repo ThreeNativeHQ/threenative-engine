@@ -1,4 +1,5 @@
 @import "tailwindcss";
+@source "./";
 
 /* Storybook 8's dark theme as tokens; a light theme redefines these under a selector. */
 @theme {
@@ -15,6 +16,9 @@
   --color-story: #37d5d3;
   --color-group: #1ea7fd;
   --color-danger: #ff6b5f;
+  /* The ThreeNative TN mark: #e0fb50 on #020407. */
+  --color-brand: #e0fb50;
+  --color-brand-ink: #020407;
   --font-sans: "Nunito Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
 }
 
@@ -42,4 +46,23 @@
 
 * {
   scrollbar-color: var(--color-line) transparent;
+}
+
+/* `?embed=1`: a host frames the stage alone; the sidebar and toolbar are its own chrome. */
+html[data-embed] body {
+  grid-template-columns: minmax(0, 1fr);
+}
+html[data-embed] #sidebar,
+html[data-embed] #toolbar {
+  display: none !important;
+}
+/* `?sheet=turntable`: the contact sheet covers the page. */
+#sheet-view {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  background: #111;
+  object-fit: contain;
+  width: 100%;
+  height: 100%;
 }

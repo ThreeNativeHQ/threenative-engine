@@ -505,8 +505,9 @@
       }
     },
     "@threenative/procedural-environment": {
-      "exports": [".", "./package.json", "./stylized"],
+      "exports": [".", "./asset-library", "./package.json", "./stylized"],
       "symbols": {
+        "@threenative/procedural-environment/asset-library#proceduralEnvironmentSource": "export function proceduralEnvironmentSource( options: IProceduralEnvironmentSourceOptions, ): IProceduralSource { … }",
         "@threenative/procedural-environment/stylized#createStylizedAsset": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
         "@threenative/procedural-environment/stylized#scatter": "export function scatter( source: Object3D, placements: { … }",
         "@threenative/procedural-environment/stylized#sky": "export function sky(options?: { … }",
@@ -703,11 +704,19 @@
       }
     },
     "create-threenative": {
-      "exports": [".", "./package.json", "./quality", "./terrain-kit", "./web-brand"],
+      "exports": [
+        ".",
+        "./asset-library",
+        "./asset-story",
+        "./package.json",
+        "./quality",
+        "./terrain-kit",
+        "./web-brand"
+      ],
       "symbols": {}
     },
     "threenative-animation-mcp": {
-      "exports": [".", "./package.json"],
+      "exports": [".", "./package.json", "./pose-lab"],
       "symbols": {}
     },
     "threenative-engine-mcp": {

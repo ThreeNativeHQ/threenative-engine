@@ -16,6 +16,14 @@ in `src/render/`. Start the session from the game root so the project-scoped MCP
    write to the configured project directory.
 4. Add file, source, license, and URL to `CREDITS.md`. Never state a license not returned by a tool.
 
+Check every file before the game loads it. `pnpm dev` serves the Asset Library at `/__assets/`:
+health badges (units, grounding, missing normals or UVs), Raw vs Cooked bytes, LOD switching,
+animation playback with `animation_verify` defects, textures and sounds. Open
+`/__assets/?sheet=turntable#/model/<path>` and wait for `__TN_ASSET_LIBRARY_READY__` to get a
+labelled multi-angle contact sheet for a visual review. A `src/**/*.story.ts` file
+(`defineAssetStory` from `create-threenative/asset-story`) shows one prop with live controls, and
+the Scene Bundler writes `src/scenes/<name>.ts` or `assets/bundles/<name>.glb`.
+
 Many Fab listings are Unreal-only rather than ready-to-load GLBs. Search with `fab_search_assets`,
 check owned listings with `fab_list_owned`, then use `fab_import_asset` to download and convert an
 owned listing; use `asset_import_unreal` for an already-downloaded local pack. Both write textured

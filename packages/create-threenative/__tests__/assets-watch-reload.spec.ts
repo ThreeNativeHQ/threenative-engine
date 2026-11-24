@@ -5,29 +5,24 @@
 // Vite dev server.
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
-import { transform } from "esbuild";
 import { type Plugin, type ViteDevServer, createServer } from "vite";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { viteConfigText } from "../src/plumbing.js";
+import { createAssetsWatchPlugin } from "../src/kit-plugins.js";
 
 interface IWatchOptions {
   readonly onChange?: (summary: { compiled: string[]; failed: string[] }) => void;
 }
 
-/** The generated `assetsWatchPlugin`, compiled from the stamped text with its imports injected. */
+const watch = vi.hoisted(() => ({ fn: (_options: IWatchOptions): unknown => undefined }));
+vi.mock("@threenative/assets", () => ({
+  watchAssets: (options: IWatchOptions) => watch.fn(options),
+}));
+
+/** The kit's asset watch, the one `threenative()` mounts, cooking through a stand-in. */
 async function generatedPlugin(watchAssets: (options: IWatchOptions) => unknown): Promise<Plugin> {
-  const text = viteConfigText({ react: false, tailwind: false, workerEntry: false });
-  const start = text.indexOf("function assetsWatchPlugin");
-  const end = text.indexOf("\nexport default");
-  const { code } = await transform(text.slice(start, end), { loader: "ts" });
-  const factory = new Function(
-    "watchAssets",
-    "config",
-    "webRuntimeDecoders",
-    `${code}\nreturn assetsWatchPlugin();`,
-  );
-  return factory(watchAssets, { assets: {} }, () => ({})) as Plugin;
+  watch.fn = watchAssets;
+  return createAssetsWatchPlugin() as unknown as Plugin;
 }
 
 let server: ViteDevServer | undefined;
@@ -41,6 +36,10 @@ describe("the kit's asset watch under a cook", () => {
     const root = await makeTempDir("tn-assets-reload-");
     await mkdir(path.join(root, "public"), { recursive: true });
     await mkdir(path.join(root, "src"), { recursive: true });
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "reload", type: "module" }),
+    );
     await writeFile(
       path.join(root, "index.html"),
       '<script type="module" src="/src/main.js"></script>',
