@@ -6,15 +6,19 @@ import {
   VK_FORMAT_ASTC_4x4_SRGB_BLOCK,
   VK_FORMAT_ASTC_4x4_UNORM_BLOCK,
   read as readKTX2,
+  write as writeKTX2,
 } from "ktx-parse";
 import BASIS from "../vendor/basis-encoder/basis_encoder.js";
+import { resampleRgba } from "./passes/resample.js";
 
 /** Included in both pass and shared-image cache keys whenever encoded bytes can change (v4: a projected atlas leaves the JPEG contest). */
 export const KTX2_ENCODER_VERSION = "basis-v2.5-ldr16m-zstd-rdo-fast-capped-projected-v4";
 
 const OUTPUT_HEADER_SLACK = 64 * 1024;
-/** The bundled WASM32 encoder's source ceiling: 4096x4096. */
+/** One Basis pass; above it only UASTC is encoded, in strips. */
 export const MAX_SOURCE_TEXELS = 16 * 1024 * 1024;
+/** WebGPU's default maxTextureDimension2D squared; a tiled UASTC source may be this large. */
+const MAX_TILED_TEXELS = 8192 * 8192;
 
 interface IEncodeOptions {
   readonly generateMipmap?: boolean;
@@ -25,6 +29,8 @@ interface IEncodeOptions {
   readonly isPerceptual?: boolean;
   readonly isSetKTX2SRGBTransferFunc?: boolean;
   readonly isUASTC?: boolean;
+  /** Internal: the per-call encoder ceiling, lowered by tests to exercise tiling cheaply. */
+  readonly maxSourceTexels?: number;
   readonly needSupercompression?: boolean;
   readonly qualityLevel?: number;
   readonly rdoLambda?: number;
@@ -97,7 +103,8 @@ async function basisModule(): Promise<IBasisModule> {
 
 /**
  * Private LDR KTX2 encoder for the asset compiler. Its WASM32 build raises Basis v2.5's
- * conservative LDR ceiling from 12 to 16 Mi texels so an ordinary 4096² source is retained.
+ * conservative LDR ceiling from 12 to 16 Mi texels so an ordinary 4096² source is retained;
+ * a larger UASTC source, up to 8192², is encoded in strips (see {@link encodeTiledUastc}).
  * The codecs and appearance settings remain wholly caller-owned.
  */
 export async function encodeToKTX2(
@@ -111,11 +118,13 @@ export async function encodeToKTX2(
     throw new Error("TN_ASSETS_KTX2_RDO: RDO requires UASTC and a positive finite lambda.");
   const decoded = await options.imageDecoder(input);
   const texels = decoded.width * decoded.height;
-  if (!Number.isSafeInteger(texels) || texels <= 0 || texels > MAX_SOURCE_TEXELS) {
+  const cap = options.maxSourceTexels ?? MAX_SOURCE_TEXELS;
+  if (!Number.isSafeInteger(texels) || texels <= 0 || texels > MAX_TILED_TEXELS) {
     throw new Error(
-      `TN_ASSETS_KTX2_SOURCE_SIZE: ${String(decoded.width)}x${String(decoded.height)} is ${String(texels)} texels; the bundled WASM32 encoder supports 1–${String(MAX_SOURCE_TEXELS)} texels.`,
+      `TN_ASSETS_KTX2_SOURCE_SIZE: ${String(decoded.width)}x${String(decoded.height)} is ${String(texels)} texels; the KTX2 encoder supports 1–${String(MAX_TILED_TEXELS)} texels.`,
     );
   }
+  if (texels > cap) return encodeTiledUastc(decoded, options, cap);
 
   const encoder = new (await basisModule()).BasisEncoder();
   try {
@@ -171,6 +180,67 @@ export async function encodeToKTX2(
   }
 }
 
+/**
+ * UASTC is a fixed-rate format of independent 4x4 blocks, so an over-cap source is encoded as
+ * full-width strips whose level-0 block rows are contiguous in the final level 0, and the lower
+ * mips come from one encode of the half-size image. With supercompression each strip's level is
+ * one zstd frame; concatenated frames are one valid zstd stream (RFC 8878 section 3). Per-strip RDO
+ * stays on: it only picks among valid block encodings, and the caller still scores the result.
+ */
+async function encodeTiledUastc(
+  decoded: { readonly data: Uint8Array; readonly height: number; readonly width: number },
+  options: IEncodeOptions,
+  cap: number,
+): Promise<Uint8Array> {
+  const { data, height, width } = decoded;
+  if (options.isUASTC === false)
+    throw new Error(
+      `TN_ASSETS_KTX2_SOURCE_SIZE: ${String(width)}x${String(height)} is ${String(width * height)} texels; the bundled WASM32 encoder takes at most ${String(cap)} in one pass and ETC1S's one global codebook cannot be tiled. Use codec "uastc" or a smaller maxSize for this slot.`,
+    );
+  const rows = Math.floor(cap / width / 4) * 4;
+  const halfWidth = Math.max(1, width >> 1);
+  const halfHeight = Math.max(1, height >> 1);
+  if (rows < 4 || halfWidth * halfHeight > cap || (options.generateMipmap ?? true) === false)
+    throw new Error(
+      `TN_ASSETS_KTX2_SOURCE_SIZE: ${String(width)}x${String(height)} cannot be tiled under ${String(cap)} texels per pass with a full mip chain.`,
+    );
+  const strips: Uint8Array[] = [];
+  let uncompressedByteLength = 0;
+  for (let y = 0; y < height; y += rows) {
+    const stripHeight = Math.min(rows, height - y);
+    const strip = data.subarray(y * width * 4, (y + stripHeight) * width * 4);
+    const level = readKTX2(
+      await encodeToKTX2(new Uint8Array([0]), {
+        ...options,
+        generateMipmap: false,
+        imageDecoder: async () => ({ data: strip, height: stripHeight, width }),
+      }),
+    ).levels[0];
+    if (level === undefined) throw new Error("TN_ASSETS_KTX2_ENCODE_FAILED: strip has no level 0.");
+    strips.push(level.levelData);
+    uncompressedByteLength += level.uncompressedByteLength;
+  }
+  const srgb = options.isSetKTX2SRGBTransferFunc ?? true;
+  const half = resampleRgba(data, width, height, halfWidth, halfHeight, srgb);
+  const container = readKTX2(
+    await encodeToKTX2(new Uint8Array([0]), {
+      ...options,
+      imageDecoder: async () => ({ data: half, height: halfHeight, width: halfWidth }),
+    }),
+  );
+  const levelData = new Uint8Array(strips.reduce((total, strip) => total + strip.byteLength, 0));
+  let offset = 0;
+  for (const strip of strips) {
+    levelData.set(strip, offset);
+    offset += strip.byteLength;
+  }
+  container.pixelWidth = width;
+  container.pixelHeight = height;
+  container.levels = [{ levelData, uncompressedByteLength }, ...container.levels];
+  container.levelCount = container.levels.length;
+  return writeKTX2(container);
+}
+
 /** Validate and decode every final ASTC mip; retain only tight RGBA8 mip zero for scoring. */
 export async function decodeAstcKtx2(
   encoded: Uint8Array,
@@ -184,7 +254,7 @@ export async function decodeAstcKtx2(
     !Number.isSafeInteger(height) ||
     width <= 0 ||
     height <= 0 ||
-    width * height > MAX_SOURCE_TEXELS ||
+    width * height > MAX_TILED_TEXELS ||
     ![VK_FORMAT_ASTC_4x4_UNORM_BLOCK, VK_FORMAT_ASTC_4x4_SRGB_BLOCK].includes(container.vkFormat) ||
     container.pixelWidth !== width ||
     container.pixelHeight !== height ||
