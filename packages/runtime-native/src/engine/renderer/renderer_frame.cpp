@@ -652,8 +652,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             struct LampReceiver { Box3 box; uint32_t layers; };
             std::vector<LampReceiver> lampReceivers;
             lampReceivers.reserve(items.size());
+            // A virtual page's caster record already holds this pass's world box for every draw list position, so a
+            // settled receiver costs a box test here rather than a mesh lookup and a box transform of its own.
+            const std::vector<CasterRecord>* const vsmRecord =
+                !virtualShadows_.empty() ? &casterRecords_.begin()->second : nullptr;
             for (const DrawItem& item : items) {
                 if (!item.mainPass || !item.receiveShadow) continue;
+                if (vsmRecord != nullptr && !item.instanceMatrices) {
+                    const auto itemIndex = std::size_t(&item - items.data());
+                    if (itemIndex < vsmRecord->size() && (*vsmRecord)[itemIndex].casts) {
+                        const Box3& bounds = (*vsmRecord)[itemIndex].bounds;
+                        if (!bounds.isEmpty() && std::isfinite(bounds.min.x + bounds.min.y + bounds.min.z +
+                                                                bounds.max.x + bounds.max.y + bounds.max.z)) {
+                            if (frustumIntersectsBox(cameraFrustum, bounds)) lampReceivers.push_back({bounds, item.layers});
+                            continue;
+                        }
+                    }
+                }
                 const auto* mesh = dynamic_cast<const Mesh*>(item.shadowObject);
                 if (!mesh || !mesh->geometry) continue;
                 std::shared_ptr<Box3> local = mesh->geometry->boundingBox;
@@ -1287,11 +1302,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
     job.previousBytes = {}; job.previousSeed = false; job.instancesMutated = false; job.traaSeedFrame = false;
     job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
-    job.deformationFrames.clear();
+    job.deformationUpserts.clear();
+    const uint64_t submitEpoch = compilation ? 0 : deformationEpoch_ + 1;
+    job.deformationEpoch = submitEpoch;
     job.gpuCullDraws.clear(); job.gpuCullDrawCounts.clear(); job.gpuCullTotalInstances = 0;
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
+    job.deformationUpserts.reserve(opaque.size());
     // PRD-914 Phase 3: the plan entries drawn from the GPU cull's indirect records, in `job.gpuCullDraws` order.
     std::vector<std::size_t> gpuCullPlanDraws;
     // Each GPU-culled draw keeps its indirect record and its id range where its instance place lives, so a depth
@@ -2352,21 +2370,32 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 if (trimmed && pageInstances.empty()) continue;
             }
-            if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias && drawn->shadowObject) {
+            if (page && !page->mover && page->level > 0 && virtualIt->second.atlas.options().shadowLodBias &&
+                (drawn->shadowLodChain != nullptr || drawn->shadowObject)) {
+                // A settled static batch carries its own chain and the largest scale of the meshes it merged, so a
+                // page picks a rung without the per-mesh lookup and the main draw's matrix; a plain caster still
+                // reads its chain by object id.
                 const auto& lods = virtualIt->second.atlas.options().control->lods;
-                const auto lod = lods.find(drawn->shadowObject->id());
-                if (lod != lods.end()) {
+                const shadows::ShadowLodChain* chain = drawn->shadowLodChain;
+                if (chain == nullptr) {
+                    const auto lod = lods.find(drawn->shadowObject->id());
+                    chain = lod != lods.end() ? &lod->second : nullptr;
+                }
+                if (chain != nullptr) {
                     // The coarsest rung whose error this page's budget allows, and never finer
                     // than the rung the main pass draws (its index buffer is one of the chain's).
-                    const auto& chain = lod->second;
                     int shown = 0;
-                    for (std::size_t r = 0; r < chain.rungs.size(); ++r)
-                        if (chain.rungs[r]->index && chain.rungs[r]->index->store.get() == drawn->indices) shown = int(r) + 1;
-                    Matrix4 model; model.elements = drawn->matrixWorld;
-                    const int rung = shadows::shadowLodRung(chain.errors, shown, lodBudget, model.getMaxScaleOnAxis());
-                    if (rung > 0 && std::size_t(rung) <= chain.rungs.size() && chain.rungs[std::size_t(rung - 1)]->index) {
+                    for (std::size_t r = 0; r < chain->rungs.size(); ++r)
+                        if (chain->rungs[r]->index && chain->rungs[r]->index->store.get() == drawn->indices) shown = int(r) + 1;
+                    double scale = drawn->shadowLodMaxScale;
+                    if (scale <= 0.0) {
+                        Matrix4 model; model.elements = drawn->matrixWorld;
+                        scale = model.getMaxScaleOnAxis();
+                    }
+                    const int rung = shadows::shadowLodRung(chain->errors, shown, lodBudget, scale);
+                    if (rung > 0 && std::size_t(rung) <= chain->rungs.size() && chain->rungs[std::size_t(rung - 1)]->index) {
                         auto& copy = job.shadowLodItems.emplace_back(*drawn);
-                        copy.indices = chain.rungs[std::size_t(rung - 1)]->index->store.get();
+                        copy.indices = chain->rungs[std::size_t(rung - 1)]->index->store.get();
                         copy.cache = nullptr;
                         selected = &copy;
                     }
@@ -2592,21 +2621,34 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 instances.insert(instances.end(), {1.0f, 1.0f, 1.0f, 0.0f});  // no instance colour: a depth pass reads none
             }
             const bool masked = shadowMasked(*row.material, *row.nodes);
-            const shader::VertexVariant variant = variantOf(row);
-            Program& program = depthProgram(variant, masked);
-            const shader::StageModule* depthFragment = (masked || variant.alphaHash) ? &program.fragment : nullptr;
             const uint8_t derivedFaces = row.side == 2 ? 2 : row.side == 1 || virtualMap ? 0 : 1;
             const uint8_t faces = row.shadowSide != 255 ? row.shadowSide : derivedFaces;
-            const WGPUCullMode cull =
-                faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
-            PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
-            target.layout = program.pipelineLayout;
-            target.frontFace = row.frontFace();
-            target.skinIndex = skinIndexFormat(row);
-            target.instanceStepMask = instanceStepMask(program.vertex, row);
-            if (lampMap && faces == 1) target.depthBias = -kLampBackFaceBias;
-            WGPURenderPipeline pipeline = pipelines_->get(program.vertex, depthFragment, target);
-            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+            const bool lampBackFace = lampMap && faces == 1;
+            // Every member resolved its own depth program and pipeline above, and the group holds only casters that
+            // share both: the key names a pipeline this frame's rows already built, so a grouped page finds it
+            // instead of a variant key string and a pipeline-table probe per page per frame.
+            const ShadowGroupPipelineKey groupKey{groups[at].program, groups[at].pipeline, masked,
+                                                  row.boneMatrices != nullptr, lampBackFace, faces};
+            const auto cachedGroup = shadowGroupPipelines_.find(groupKey);
+            Program& program = cachedGroup != shadowGroupPipelines_.end() ? *cachedGroup->second.program
+                                                                        : depthProgram(variantOf(row), masked);
+            WGPURenderPipeline pipeline;
+            if (cachedGroup != shadowGroupPipelines_.end()) {
+                pipeline = cachedGroup->second.pipeline;
+            } else {
+                const WGPUCullMode cull =
+                    faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
+                PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
+                target.layout = program.pipelineLayout;
+                target.frontFace = row.frontFace();
+                target.skinIndex = skinIndexFormat(row);
+                target.instanceStepMask = instanceStepMask(program.vertex, row);
+                if (lampBackFace) target.depthBias = -kLampBackFaceBias;
+                const shader::StageModule* depthFragment = (masked || program.variant.alphaHash) ? &program.fragment : nullptr;
+                pipeline = pipelines_->get(program.vertex, depthFragment, target);
+                if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+                shadowGroupPipelines_.emplace(groupKey, ShadowGroupPipelineEntry{&program, pipeline});
+            }
             Planned& planned = pass.draws.emplace_back(Planned{&row, &program, pipeline, 0, 0, instanceBase});
             planned.members = recorded.data();
             planned.memberCount = uint32_t(recorded.size());
@@ -2821,61 +2863,107 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); markIncomplete(); continue; }
-            const std::string key = "traa-velocity|" + variant.key() + (sharedView ? "|sv1" : "|sv0");
-            if (!programs_.count(key)) {
-                auto source = shader::velocityPrograms(variant);
-                source.vertex.setInvariantPosition(true);
-                add(key, shader::buildStage(source.vertex, 0, sharedView), shader::buildStage(source.fragment, 1, sharedView));
+            // The velocity program of a main program is a pure function of its variant and the shared-view flag, so a
+            // record keeps it: a settled scene resolves no key string and scans no binding list per draw per frame.
+            DrawCache* const cache = item.cache;
+            Program* velocityProgram = nullptr;
+            if (cache && cache->velocitySourceProgram == draw.program && cache->velocitySharedView == sharedView) {
+                if (!cache->velocitySupported) { skip("storage/texture history"); markIncomplete(); continue; }
+                velocityProgram = static_cast<Program*>(cache->velocityProgram);
+            } else {
+                const std::string key = "traa-velocity|" + variant.key() + (sharedView ? "|sv1" : "|sv0");
+                if (!programs_.count(key)) {
+                    auto source = shader::velocityPrograms(variant);
+                    source.vertex.setInvariantPosition(true);
+                    add(key, shader::buildStage(source.vertex, 0, sharedView), shader::buildStage(source.fragment, 1, sharedView));
+                }
+                velocityProgram = programs_.at(key).get();
+                // GPU-written storage and sampled displacement have no retained previous contents.
+                const bool supported = !std::any_of(velocityProgram->vertex.bindings.begin(), velocityProgram->vertex.bindings.end(),
+                    [](const auto& binding) {
+                        return binding.kind != shader::BindingKind::Uniform &&
+                            !(binding.kind == shader::BindingKind::Storage && (binding.name == "s_instances" ||
+                                binding.name == "s_boneMatrices" || binding.name == "s_traaPrevious_instances" ||
+                                binding.name == "s_traaPrevious_boneMatrices" || binding.name == "s_gpuCullIds"));
+                    });
+                if (cache) {
+                    cache->velocitySourceProgram = draw.program;
+                    cache->velocitySharedView = sharedView;
+                    cache->velocityProgram = velocityProgram;
+                    cache->velocitySupported = supported;
+                }
+                if (!supported) { skip("storage/texture history"); markIncomplete(); continue; }
             }
-            Program& velocity = *programs_.at(key);
-            // GPU-written storage and sampled displacement have no retained previous contents.
-            if (std::any_of(velocity.vertex.bindings.begin(), velocity.vertex.bindings.end(), [](const auto& binding) {
-                return binding.kind != shader::BindingKind::Uniform &&
-                    !(binding.kind == shader::BindingKind::Storage && (binding.name == "s_instances" ||
-                        binding.name == "s_boneMatrices" || binding.name == "s_traaPrevious_instances" ||
-                        binding.name == "s_traaPrevious_boneMatrices" || binding.name == "s_gpuCullIds"));
-            })) { skip("storage/texture history"); markIncomplete(); continue; }
-            PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
-                item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
-            target.layout = velocity.pipelineLayout; target.depthWrite = false;
-            target.sampleCount = sampleCount_;
-            target.instanceStepMask = instanceStepMask(velocity.vertex, item);
-            lineTopology(target, item);
-            target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
-            target.skinIndex = skinIndexFormat(item);
-            target.instanceStepMask = instanceStepMask(velocity.vertex, item);
+            Program& velocity = *velocityProgram;
+            // Built only where a pipeline is needed: a static draw keeps its record and asks for none.
+            const auto velocityTarget = [&] {
+                PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
+                    item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
+                target.layout = velocity.pipelineLayout; target.depthWrite = false;
+                target.sampleCount = sampleCount_;
+                target.instanceStepMask = instanceStepMask(velocity.vertex, item);
+                lineTopology(target, item);
+                target.depthCompare = WGPUCompareFunction_Equal; target.frontFace = item.frontFace();
+                target.skinIndex = skinIndexFormat(item);
+                return target;
+            };
+            // Preparation compiles the velocity pipeline whether or not the draw would move, so the frame that moves it
+            // never compiles. Nothing below (stamps, previous model, previous storage) is read to build it.
             if (compilation) {
-                compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
+                compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, velocityTarget()));
                 continue;
             }
             const BufferStore* instStore = item.instanceMatrices;
-            DeformationFrame current;
-            current.program = &velocity;
-            current.buffers.push_back(item.instanceCount);
-            const auto remember = [&](BufferStore* store) {
-                current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
-                    store ? store->epoch() : 0, store ? store->writes() : 0,
-                    store ? store->version() : 0, store ? store->count() : 0});
+            // A draw's vertex stores are folded into one word instead of held as a vector: the stamps still detect any
+            // edit, and the fold keeps the steady path free of allocations.
+            // ponytail: 64-bit fold, not an exact stamp list; a collision reads as "unchanged" and costs one stale frame.
+            uint64_t bufHash = 0x9e3779b97f4a7c15ull;
+            uint32_t bufCount = 0;
+            const auto mixU64 = [&](uint64_t v) {
+                v += 0x9e3779b97f4a7c15ull;
+                v = (v ^ (v >> 30)) * 0xbf58476d1ce4e5b9ull;
+                v = (v ^ (v >> 27)) * 0x94d049bb133111ebull;
+                v ^= (v >> 31);
+                bufHash ^= v + 0x9e3779b97f4a7c15ull + (bufHash << 6) + (bufHash >> 2);
+                ++bufCount;
             };
             // Instance matrices move freely: BufferStore epoch/writes/version stamps detect edits with zero CPU hashing.
-            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(instStore),
-                instStore ? instStore->count() : 0});
+            mixU64(item.instanceCount);
+            mixU64(reinterpret_cast<uintptr_t>(instStore));
+            mixU64(instStore ? instStore->count() : 0);
+            const auto remember = [&](BufferStore* store) {
+                mixU64(reinterpret_cast<uintptr_t>(store));
+                mixU64(store ? store->epoch() : 0);
+                mixU64(store ? store->writes() : 0);
+                mixU64(store ? store->version() : 0);
+                mixU64(store ? store->count() : 0);
+            };
+            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
+            DeformationFrame current;
+            current.program = &velocity;
+            current.bufferHash = bufHash;
+            current.bufferCount = bufCount;
+            current.seenFrame = submitEpoch;
             current.instanceEpoch = instStore ? instStore->epoch() : 0;
             current.instanceWrites = instStore ? instStore->writes() : 0;
             current.instanceVersion = instStore ? instStore->version() : 0;
+            current.instanceCount = item.instanceCount;
+            current.instanceStore = instStore;
+            current.instanceStoreCount = instStore ? instStore->count() : 0;
             if (instStore) {
                 const auto it = instanceBases.find(&item);
                 current.instanceBase = it != instanceBases.end() ? it->second : 0.0;
             }
-            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             const auto prior = deformationFrames_.find(item.key);
+            // A draw absent from the last submitted frame has no previous deformation: its kept record only speaks
+            // for the frame it was seen in.
             const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
-                prior->second.program == &velocity ? &prior->second : nullptr;
+                prior->second.program == &velocity && prior->second.seenFrame + 1 >= submitEpoch ? &prior->second : nullptr;
             const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
-            const bool instanceStampSame = instStore && !item.indirect && previous && previous->buffers.size() >= 3 &&
-                previous->buffers[0] == item.instanceCount &&
-                previous->buffers[1] == reinterpret_cast<uintptr_t>(instStore) &&
-                previous->buffers[2] == instStore->count() &&
+            const bool instanceStampSame = instStore && !item.indirect && previous &&
+                previous->instanceCount == current.instanceCount &&
+                previous->instanceStore == current.instanceStore &&
+                previous->instanceStoreCount == current.instanceStoreCount &&
                 previous->instanceEpoch == current.instanceEpoch &&
                 previous->instanceWrites == current.instanceWrites &&
                 previous->instanceVersion == current.instanceVersion &&
@@ -2883,11 +2971,15 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool instancesMoved = instStore && !item.indirect && (!previous || !instanceStampSame);
             const bool isDynamic =
                 previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved;
-            const bool changedBuffers = previous && previous->buffers != current.buffers;
+            const bool changedBuffers = previous &&
+                (previous->bufferHash != bufHash || previous->bufferCount != bufCount);
             // PRD-914 Phase 1: static opaque draws reuse fillVelocity()'s camera reprojection directly without redrawing.
+            // Nothing it would record differs from the record already kept, so the entry only notes the frame it was
+            // seen: no copy, no insert, no allocation on a steady frame.
             if (!isDynamic && !staticVelocity && !changedBuffers) {
-                if (previous) current.uniforms = previous->uniforms;
-                job.deformationFrames[item.key] = std::move(current);
+                // The note is an eviction hint only: a frame dropped before encode leaves the record it already had.
+                if (previous) prior->second.seenFrame = submitEpoch;
+                else job.deformationUpserts.emplace_back(item.key, std::move(current));
                 continue;
             }
             // PRD-754: a slot of its own beside the draw's colour blocks, else appended in plan order.
@@ -2921,7 +3013,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.nodes->positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
-            job.deformationFrames[item.key] = std::move(current);
+            job.deformationUpserts.emplace_back(item.key, std::move(current));
             if (changedBuffers) { skip("changed vertex data"); markIncomplete(); continue; }
             // The previous palette and instances hold last frame's layout. A seeded frame copies this frame's there first, so
             // both positions match (and a copy that grows loses nothing). A draw new to an unseeded frame has no previous base,
@@ -2940,7 +3032,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!previous && !traa_->needsSeed()) { skip("draw without a previous frame"); markIncomplete(); continue; }
                 job.previousSeed = job.previousSeed || traa_->needsSeed();
             }
-            const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
+            const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, velocityTarget());
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
             velocityPlan.back().slot = velocitySlot;
@@ -3308,7 +3400,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         };
         fillSlices(viewSlices, newSliceBytes, viewUniforms_);
-        fillSlices(shadowViewSlices, kShadowSliceBytes, shadowViewUniforms_);
+        // A frame without shadow slices (a render-target quad, an unshadowed scene) that held none before has no
+        // shadow view bytes to write: no draw binds the shadow view group, which the first shadow slice creates.
+        const bool shadowViews = !shadowViewSlices.empty() || !shadowViewUniforms_.empty() || !uploadedShadowViewUniforms_.empty();
+        if (shadowViews) fillSlices(shadowViewSlices, kShadowSliceBytes, shadowViewUniforms_);
         const auto patchViewOffsets = [&](std::vector<Planned>& draws) {
             for (Planned& p : draws)
                 p.viewOffset *= static_cast<uint32_t>(p.shadowViewSlice ? kShadowSliceBytes : newSliceBytes);
@@ -3369,7 +3464,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         };
         syncViewBuffer(viewBuffer_, viewCapacity_, viewSliceBytes_, viewGroup_, viewUniforms_, uploadedViewUniforms_, newSliceBytes, 16 * 1024);
-        syncViewBuffer(shadowViewBuffer_, shadowViewCapacity_, shadowViewSliceBytes_, shadowViewGroup_, shadowViewUniforms_, uploadedShadowViewUniforms_, kShadowSliceBytes, 8 * 1024);
+        if (shadowViews) syncViewBuffer(shadowViewBuffer_, shadowViewCapacity_, shadowViewSliceBytes_, shadowViewGroup_, shadowViewUniforms_, uploadedShadowViewUniforms_, kShadowSliceBytes, 8 * 1024);
     }
 
     if (frameUniforms_.size() > uniformCapacity_) {
@@ -3387,10 +3482,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // every slot, because each draw's block carries the view and the view-space light slab: only a second binding
     // for the frame's own slab takes that share out of every draw's block. The scan is per uniform block (a slot is
     // 256-byte aligned, so a slot that moved re-sends whole), and a mostly-dirty arena still makes one write, so
-    // this never costs more calls than the single write it replaced.
+    // this never costs more calls than the single write it replaced. The arena is read once: a block scan that stops
+    // as soon as the arena is mostly dirty answers what a whole-arena compare before it would have said.
     const uint64_t uniformBytes = frameUniforms_.size();
-    // PRD-913 Phase 1 (debug only): what the dirty scan reads — the arena once when the whole compare finds nothing to
-    // send, the arena again a block at a time when it does — and what reading it costs.
+    // PRD-913 Phase 1 (debug only): what the dirty scan reads, and what reading it costs.
     const bool uniformScanTimed = waste::debugEnabled().load(std::memory_order_relaxed);
     const auto uniformScanStart =
         uniformScanTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
@@ -3405,8 +3500,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);  // a grown arena: all of it once
         uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
         waste::debugAdd(waste::counters().uniformUploadBytes, uniformBytes);
-    } else if (uniformBytes != 0 &&
-               (common != uniformBytes || std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), common) != 0)) {
+    } else if (uniformBytes != 0) {
         constexpr uint64_t kUniformBlock = kUniformAlign;  // one block's granularity
         // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
         static_assert(kUniformAlign % 4 == 0);
@@ -3416,12 +3510,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (runEnd != runStart) uniformDirtyRanges_.emplace_back(runStart, runEnd - runStart);
             runStart = runEnd = 0;
         };
-        uint64_t scannedBytes = common;
-        const bool commonDiffers =
-            common > 0 && dirty * 2 < uniformBytes &&
-            (common == uniformBytes || std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), common) != 0);
-        if (commonDiffers) {
-            scannedBytes = 0;
+        // The bytes past the last upload are new, so they are already dirty; a scan only pays while they are few.
+        if (common > 0 && dirty * 2 < uniformBytes) {
+            uint64_t scannedBytes = 0;
             for (uint64_t at = 0; at < common; at += kUniformBlock) {
                 const uint64_t end = std::min(at + kUniformBlock, common);
                 scannedBytes = end;
@@ -3443,7 +3534,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
             uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
             dirty = uniformBytes;
-        } else {
+        } else if (uniformBytes != common || dirty != 0) {
+            // Nothing to send only when the arena is the same size and every block matched: then no write, no
+            // resize, and the scan above was the whole cost of the frame's uniform upload.
             if (uniformBytes > common) {
                 if (!uniformDirtyRanges_.empty() &&
                     uniformDirtyRanges_.back().first + uniformDirtyRanges_.back().second == common) {
@@ -3811,11 +3904,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             draw.vertexGroup = vertexGroupOf(draw);
             if (!draw.item->material->alphaHash || !draw.item->map) continue;
             const MaterialTexture* map = materialTexture(*draw.item->map);
-            const std::string key = "shadow|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
-                std::to_string(reinterpret_cast<uintptr_t>(map->view)) + "|" + std::to_string(reinterpret_cast<uintptr_t>(map->sampler));
-            const auto found = mapGroups_.find(key);
-            draw.mapGroup = found != mapGroups_.end() ? found->second :
-                mapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+            // Keyed by the views it binds, not by a string built from their addresses: a page redraws its casters
+            // every frame, and three concatenations per draw per frame bought nothing the pointers do not.
+            const DepthMapGroupKey key{draw.program, map->view, map->sampler, true};
+            const auto found = depthMapGroups_.find(key);
+            draw.mapGroup = found != depthMapGroups_.end() ? found->second :
+                depthMapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
                     lutView_, lutSampler_, map->view, map->sampler)).first->second;
         }
 
@@ -3889,6 +3983,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const MaterialTexture* map = draw.item->map ? materialTexture(*draw.item->map) : nullptr;
             const WGPUTextureView mapView = map ? map->view : nullptr;
             const WGPUSampler mapSampler = map ? map->sampler : nullptr;
+            if (!draw.item->nodeTextures || draw.item->nodeTextures->empty()) {
+                // The group binds the caster's map and nothing else, so the views alone name it: no key string.
+                const DepthMapGroupKey key{draw.program, mapView, mapSampler, false};
+                const auto found = depthMapGroups_.find(key);
+                draw.mapGroup = found != depthMapGroups_.end() ? found->second
+                    : depthMapGroups_.emplace(key, bindGroup(draw.program->layouts[1], draw.program->fragment, uniformBuffer_,
+                                                         lutView_, lutSampler_, mapView, mapSampler, nullptr, nullptr, nullptr,
+                                                         nullptr, nullptr, nullptr, nullptr, nullptr, nullptr))
+                          .first->second;
+                continue;
+            }
             const std::string key = "depth|" + std::to_string(reinterpret_cast<uintptr_t>(draw.program)) + "|" +
                                     std::to_string(reinterpret_cast<uintptr_t>(mapView)) + "|" +
                                     std::to_string(reinterpret_cast<uintptr_t>(mapSampler)) + graphKeyOf(*draw.item);

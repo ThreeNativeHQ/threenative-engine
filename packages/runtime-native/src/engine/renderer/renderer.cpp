@@ -1677,7 +1677,16 @@ void Renderer::encodeFrame(FrameJob& job) {
     }
     WGPUCommandBufferDescriptor commandDesc = {};
     submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
-    deformationFrames_.swap(job.deformationFrames);
+    deformationEpoch_ = std::max(deformationEpoch_, job.deformationEpoch);
+    for (auto& [key, entry] : job.deformationUpserts) deformationFrames_[key] = std::move(entry);
+    // A draw's record is kept across frames, so one that leaves is dropped by age: an entry unseen for 120 submitted
+    // frames goes, swept every 64 frames instead of rebuilt every frame.
+    if ((deformationEpoch_ & 63ull) == 0 && !deformationFrames_.empty()) {
+        for (auto it = deformationFrames_.begin(); it != deformationFrames_.end();) {
+            if (deformationEpoch_ > it->second.seenFrame + 120) it = deformationFrames_.erase(it);
+            else ++it;
+        }
+    }
     wgpuCommandEncoderRelease(encoder);
     if (resolveTiming) {
         passTimer_->pending = true;

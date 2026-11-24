@@ -9,6 +9,7 @@
 
 #include "engine/animation/skinning/skeleton.h"
 #include "engine/renderer/projection/plan.h"
+#include "engine/renderer/shadows/virtual/atlas.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -36,6 +37,12 @@ void indirectOf(const Mesh& mesh, DrawItem& d) {
     const BufferGeometry* geometry = mesh.geometry.get();
     d.indirect = geometry && geometry->indirect ? geometry->indirect->store.get() : nullptr;
     d.indirectOffset = d.indirect ? static_cast<uint64_t>(geometry->indirectOffset) : 0;
+}
+
+uint64_t matrixWorldHash(const std::array<double, 16>& m) {
+    uint64_t h = 14695981039346656037ull;
+    for (double e : m) h = (h ^ std::bit_cast<uint64_t>(e)) * 1099511628211ull;
+    return h;
 }
 
 // What a material's node graphs read from outside the material: the texture pmremTexture
@@ -511,12 +518,20 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const bool dirtyGeomChanged = r.dirtyGeomChanged || (dirtyTracked && r.geometryRevision != geometryRevision);
         const uint32_t lastDR = r.lastDirtyRevision;
         const uint16_t lastDF = r.lastDirtyFrame16;
+        const uint64_t lastMovedFrame = r.lastMovedFrame;
+        const uint64_t trackedWorldHash = r.trackedWorldHash;
+        const bool trackedWorldValid = r.trackedWorldValid;
+        const uint8_t worldMoves = r.worldMoves;
         r = Record{};
         r.cacheId = cacheId;
         r.dirtyTracked = dirtyTracked;
         r.dirtyGeomChanged = dirtyGeomChanged;
         r.lastDirtyRevision = lastDR;
         r.lastDirtyFrame16 = lastDF;
+        r.lastMovedFrame = lastMovedFrame;
+        r.trackedWorldHash = trackedWorldHash;
+        r.trackedWorldValid = trackedWorldValid;
+        r.worldMoves = worldMoves;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
@@ -824,6 +839,10 @@ DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
     d.shadowObject = &mesh;
     d.layers = Layers::bits(mesh.layers().mask);
     d.mainPass = true;
+    // A draw slots into a batch only through batchMeshes(), which stamps the batch's chain: anything reaching
+    // here is not a batch row, and must not keep the chain a previous frame's row left on this record's item.
+    d.shadowLodChain = nullptr;
+    d.shadowLodMaxScale = 0.0;
     return d;
 }
 
@@ -949,6 +968,9 @@ bool RenderDatabase::rigCastsShadow(Object3D& object) {
 
 void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCamera) {
     shadowFrustums_.clear();
+    virtualControls_.clear();
+    anyControlPinOrTrack_ = false;
+    anyControlLods_ = false;
     shadowByLight_.clear();
     shadowPointLightActive_ = false;
     if (!shadowMapEnabled) return;
@@ -983,6 +1005,12 @@ void RenderDatabase::collectShadowFrustums(Object3D& root, const Camera& mainCam
                 const uint32_t mask = effectiveShadowLayersMask(*l.shadow.camera, mainCamera);
                 shadowByLight_[&l] = shadowOf(l.shadow, from, to, mask, &f);
                 shadowFrustums_.push_back({f, mask});
+                if (l.shadow.virtualShadow && l.shadow.virtualShadow->control) {
+                    const shadows::AtlasControl* control = l.shadow.virtualShadow->control.get();
+                    virtualControls_.push_back(control);
+                    anyControlPinOrTrack_ |= !control->pinned.empty() || !control->tracked.empty();
+                    anyControlLods_ |= !control->lods.empty();
+                }
             }
         } else if (type == "SpotLight") {
             auto& l = static_cast<SpotLight&>(obj);
@@ -1036,8 +1064,19 @@ void RenderDatabase::projectGroups(const Mesh& mesh, const Camera& camera, std::
 }
 
 void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
-                             bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly, const Object3D* excluded) {
+                             bool updateChildren, bool force, Record* cached, bool plainMesh, bool lightsOnly,
+                             const Object3D* excluded, bool controlProtectedAncestor) {
     if (&object == excluded) return;
+    // A virtual shadow's control pins or tracks an object by id: its subtree draws for that caster alone, so the
+    // protection carries down to every mesh that draws under it.
+    bool controlProtected = controlProtectedAncestor;
+    if (!controlProtected && anyControlPinOrTrack_)
+        for (const auto* ctrl : virtualControls_)
+            if ((!ctrl->pinned.empty() || !ctrl->tracked.empty()) &&
+                (ctrl->pinned.count(object.id()) || ctrl->tracked.count(object.id()))) {
+                controlProtected = true;
+                break;
+            }
     ++projectVisits_;
     if (object.skipsGpuJointSubtree()) { ++Object3D::gpuProjectionVisits_; return; }
     // A skeleton's bones are matrices for its rigs, not scene draws: Unreal keeps them in the mesh component
@@ -1127,19 +1166,36 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 if (Record* r = cached ? (cached->meshId == mesh.id() ? cached : nullptr) : findRecord(mesh, false))
                     markSeen(*r);
             } else {
+                const uint32_t dirtyRev = static_cast<uint32_t>(mesh.revision());
+                // A mirrored caster's winding faces away, so it never batches. The determinant is 20+ multiplies of
+                // matrix bits that only move with the mesh's revision: a record keeps the answer until then.
+                const bool detHeld = cached != nullptr && cached->meshId == mesh.id() && cached->detValid &&
+                                     cached->detRevision == dirtyRev;
+                const bool positiveDet = detHeld ? cached->positiveDet : mesh.matrixWorld.determinant() > 0;
                 const bool compact = batching && type == "Mesh" && mesh.geometry && mesh.material && !mesh.onBeforeRender &&
                                      !mesh.material->transparent && !mesh.material->vertexColors && !mesh.material->positionNode &&
                                      !mesh.material->nodes.positionNode && !mesh.material->nodes.vertexNode &&
                                      !mesh.geometry->instanced &&
                                      (mesh.geometry->morphPositions.empty() || mesh.morphTargetInfluences.empty()) &&
-                                     mesh.matrixWorld.determinant() > 0;
-                // A virtual shadow culls and detects movers per caster, so a caster keeps its own
-                // shadow-only item (own key, own bounds); its main-pass draw still joins the batch.
-                const bool pageCaster = compact && virtualShadows_ && shadowCaster;
-                Record& r = cached ? record(mesh, *cached, !compact || pageCaster) : record(mesh, !compact || pageCaster);
+                                     positiveDet;
+                // A virtual shadow culls and detects movers per caster: an unsettled caster keeps its own
+                // shadow-only item (own key, own bounds); one that has held still joins the settled batch.
+                // A control that tracks or pins this mesh draws it per page: never in the batch. Its AutoLOD
+                // chain does not protect it: the settled batch carries that chain for the pages.
+                bool meshControlProtected = controlProtected;
+                if (!meshControlProtected && anyControlPinOrTrack_)
+                    for (const auto* ctrl : virtualControls_)
+                        if ((!ctrl->pinned.empty() || !ctrl->tracked.empty()) &&
+                            (ctrl->pinned.count(mesh.id()) || ctrl->tracked.count(mesh.id()))) {
+                            meshControlProtected = true;
+                            break;
+                        }
+                Record& r = cached ? record(mesh, *cached, !compact) : record(mesh, !compact);
+                r.detRevision = dirtyRev;
+                r.positiveDet = positiveDet;
+                r.detValid = true;
                 markSeen(r);
                 if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
-                    const uint32_t dirtyRev = static_cast<uint32_t>(mesh.revision());
                     const bool instanced = !compact && ((type == "InstancedMesh") || (mesh.geometry && mesh.geometry->instanced));
                     bool needsTrack = !r.dirtyTracked || r.lastDirtyRevision != dirtyRev || r.dirtyGeomChanged;
                     if (!needsTrack && instanced) {
@@ -1162,9 +1218,38 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             needsTrack = true;
                         }
                     }
-                    if (needsTrack)
+                    // The frame this caster last moved (a new one counts as moved); then the settle: a compact caster
+                    // that has never moved its world transform, no control protects, and stays still for over four
+                    // frames joins one shadow row with its siblings.
+                    const bool movedThisFrame = needsTrack;
+                    if (needsTrack) {
+                        const uint64_t worldHash = matrixWorldHash(mesh.matrixWorld.elements);
+                        if (r.trackedWorldValid && r.trackedWorldHash != worldHash && r.worldMoves < 2)
+                            ++r.worldMoves;
+                        r.trackedWorldHash = worldHash;
+                        r.trackedWorldValid = true;
                         trackDirty(mesh, r, type, shadowCaster);
-                    if (compact && !pageCaster) {
+                    }
+                    if (movedThisFrame || r.lastMovedFrame == 0) r.lastMovedFrame = frame_;
+                    const bool settledStaticShadow = compact && virtualShadows_ && shadowCaster && !meshControlProtected &&
+                                                     r.worldMoves < 2 && !movedThisFrame && r.dirtyTracked &&
+                                                     frame_ > r.lastMovedFrame + 4;
+                    const bool pageCaster = compact && virtualShadows_ && shadowCaster && !settledStaticShadow;
+                    // The chain every settled caster of one batch must share (addBatchMesh keeps the groups apart):
+                    // looked up once here, so a page reads one chain per row instead of one lookup per caster.
+                    const shadows::ShadowLodChain* lodChain = nullptr;
+                    if (settledStaticShadow && anyControlLods_)
+                        for (const auto* ctrl : virtualControls_) {
+                            if (ctrl->lods.empty()) continue;
+                            const auto it = ctrl->lods.find(mesh.id());
+                            if (it != ctrl->lods.end()) { lodChain = &it->second; break; }
+                        }
+                    if (pageCaster) record(mesh, r, true);
+                    if (settledStaticShadow) {
+                        // Two memberships: the main pass draws it batched, the pages draw it in the shadow batch.
+                        if (mainPass) addBatchMesh(mesh, r, true, false);
+                        addBatchMesh(mesh, r, false, true, lodChain);
+                    } else if (compact && !pageCaster) {
                         addBatchMesh(mesh, r, mainPass, shadowCaster);
                     } else if (pageCaster) {
                         if (mainPass) addBatchMesh(mesh, r, true, false);
@@ -1413,7 +1498,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
 #endif
         if (updateChildren)
             child->Object3D::updateMatrixWorldSelf(force, flatParentIdentity_, flatPlainMeshes_[i]);
-        project(*child, camera, items, lights, false, false, slot, plainChild, lightsOnly, excluded);
+        project(*child, camera, items, lights, false, false, slot, plainChild, lightsOnly, excluded, controlProtected);
     }
 }
 
@@ -1648,6 +1733,124 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         }
         batchMembers_ += g.size();
     }
+    // Transparent draws blend in submission order, so only a contiguous back-to-front stretch of one state may merge:
+    // an interleaved draw (fire, particles) breaks the run, and the merged draw keeps the run's farthest member's
+    // render-list origin, so the sort puts it back exactly where the run started. Blue glass and panels are ~120 of
+    // these draws a frame; four or more in a row draw as one instanced item, blended in the run's own order.
+    const auto det3x3Pos = [](const Matrix& m) {
+        return m[0] * (m[5] * m[10] - m[6] * m[9]) - m[4] * (m[1] * m[10] - m[2] * m[9]) +
+                   m[8] * (m[1] * m[6] - m[2] * m[5]) >
+               0.0;
+    };
+    const auto transparentBatchable = [&](const DrawItem& d) {
+        // A sprite's vertex stage billboards from the model matrix alone (shader/sprite.cpp), so it never instances.
+        return d.transparent && d.mainPass && !d.castShadow && !d.sprite && d.side != 2 && !d.background &&
+               !d.boneMatrices && !d.gpuJoints && !d.skinnedRig && !d.morphGeometry && !d.instanceMatrices &&
+               !d.indirect && !d.colors && !d.positionNode &&
+               (!d.nodes || (!d.nodes->positionNode && !d.nodes->vertexNode)) &&
+               (!d.attributes || d.attributes->empty()) && d.materialKey != nullptr && d.material != nullptr &&
+               d.positions != nullptr && det3x3Pos(d.matrixWorld);
+    };
+    const auto sameTransparentRun = [](const DrawItem& a, const DrawItem& b) {
+        // alphaHash and alphaToCoverage are material uniforms, so sameUniforms settles them with the rest.
+        return a.kind == b.kind && a.topology == b.topology && a.renderOrder == b.renderOrder &&
+               a.layers == b.layers && a.receiveShadow == b.receiveShadow && a.side == b.side &&
+               a.blending == b.blending &&
+               a.blendFactors == b.blendFactors && a.depthWrite == b.depthWrite && a.depthTest == b.depthTest &&
+               a.colorWrite == b.colorWrite && a.forceSinglePass == b.forceSinglePass && a.positions == b.positions &&
+               a.normals == b.normals && a.uvs == b.uvs && a.indices == b.indices &&
+               (a.materialKey == b.materialKey ||
+                (a.renderOrder == 0 && projection::detail::sameUniforms(*static_cast<const Material*>(a.materialKey),
+                                                                      *static_cast<const Material*>(b.materialKey))));
+    };
+    std::vector<std::vector<std::size_t>> transparentRuns;
+    std::vector<std::size_t> currentRun;
+    const auto flushRun = [&] {
+        if (currentRun.size() >= kMinBatchMembers) transparentRuns.push_back(currentRun);
+        currentRun.clear();
+    };
+    for (const auto& [depth, item] : ordered) {
+        const std::size_t i = std::size_t(item - items.data());
+        const DrawItem& d = items[i];
+        if (!d.transparent || absorbed_[i] || !transparentBatchable(d)) {
+            flushRun();  // an opaque draw or an unmergeable one ends whatever run was open
+            continue;
+        }
+        if (!currentRun.empty() && !sameTransparentRun(items[currentRun.front()], d)) flushRun();
+        currentRun.push_back(i);
+    }
+    flushRun();
+    std::size_t runOrdinal = 0;
+    for (const std::vector<std::size_t>& run : transparentRuns) {
+        const DrawItem& first = items[run.front()];
+        const bool uniform = std::any_of(run.begin(), run.end(), [&](std::size_t k) {
+            return items[k].materialKey != first.materialKey;
+        });
+        // A split material draws two runs in one frame, so each gets its own identity and slot: the same state's
+        // second stretch needs its own instance buffer.
+        uint64_t baseHash = first.renderOrder == 0
+                                ? projection::detail::uniformHash(*static_cast<const Material*>(first.materialKey))
+                                : std::hash<const void*>{}(first.materialKey);
+        const auto mix = [&](std::size_t v) { baseHash = (baseHash ^ v) * 0x9e3779b1u; };
+        mix(std::hash<const void*>{}(first.positions));
+        mix(std::hash<const void*>{}(first.normals));
+        mix(std::hash<const void*>{}(first.uvs));
+        mix(std::hash<const void*>{}(first.indices));
+        mix(std::size_t(first.renderOrder) * 31 + first.layers);
+        mix(std::size_t(first.receiveShadow) * 7 + first.side);
+        const uint64_t identity = (uint64_t{3} << 62) |
+                                  ((baseHash * 0x9e3779b97f4a7c15ull + runOrdinal++) & ((uint64_t{1} << 62) - 1));
+        ++batchGroups_;
+        const auto slot = batchSlot(identity);
+        while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
+        BufferStore& store = *batchStores_[slot];
+        if (store.count() != run.size() * 16)
+            store.resize(run.size() * 16);
+        if (batchColors_.size() <= slot) batchColors_.resize(slot + 1);
+        auto& colorStore = batchColors_[slot];
+        if (uniform && !colorStore) colorStore = std::make_shared<BufferStore>(Scalar::F32, 0);
+        if (uniform && colorStore->count() != run.size() * 3) colorStore->resize(run.size() * 3);
+        auto* matrices = reinterpret_cast<float*>(store.data());
+        auto* colors = uniform ? reinterpret_cast<float*>(colorStore->data()) : nullptr;
+        std::size_t matrixOffset = 0, colorOffset = 0;
+        for (std::size_t k : run) {
+            // The run's own order is the blend order: the farthest first, so the pixels composite as before.
+            for (double e : items[k].matrixWorld)
+                matrices[matrixOffset++] = static_cast<float>(e);
+            if (colors)
+                for (float c : items[k].material->color) colors[colorOffset++] = c;
+            absorbed_[k] = true;
+        }
+        store.needsUpdate();
+        // Every member is absorbed; move the first (the farthest) directly into the output, as the opaque groups do.
+        DrawItem& d = merged_.emplace_back(std::move(items[run.front()]));
+        const Matrix& fm = d.matrixWorld;
+        std::array<double, 3> origin{fm[12], fm[13], fm[14]};
+        if (!d.sortOrigin && d.sortCenter) {
+            const auto& c = *d.sortCenter;
+            origin = {fm[0] * c[0] + fm[4] * c[1] + fm[8] * c[2] + fm[12],
+                      fm[1] * c[0] + fm[5] * c[1] + fm[9] * c[2] + fm[13],
+                      fm[2] * c[0] + fm[6] * c[1] + fm[10] * c[2] + fm[14]};
+        }
+        d.sortOrigin = d.sortOrigin.value_or(origin);
+        d.sortCenter = std::nullopt;
+        d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        d.instanceMatrices = &store;
+        d.instanceCount = static_cast<uint32_t>(run.size());
+        if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
+        d.cache = &batchCaches_[slot];
+        d.key = (uint64_t{2} << 62) | (identity & ((uint64_t{1} << 62) - 1));
+        if (uniform) {
+            colorStore->needsUpdate();
+            d.instanceColors = colorStore.get();
+            while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
+            auto& params = *batchParams_[slot];
+            params = *d.material;
+            params.color = {1, 1, 1};
+            d.material = &params;
+        }
+        batchMembers_ += run.size();
+    }
     if (merged_.empty())
         return;
     // Compacted in place, in the same order: the draws before the first member stay where they are. A draw is 1.4 KB,
@@ -1659,9 +1862,40 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
     items.insert(items.end(), std::make_move_iterator(merged_.begin()), std::make_move_iterator(merged_.end()));
 }
 
+namespace {
+
+// Two settled casters share one shadow batch only when their AutoLOD chains draw the same rungs. A clone's chain
+// is its own object with equal content and must group with its twin, and two different chains never merge.
+bool sameLodChain(const shadows::ShadowLodChain* a, const shadows::ShadowLodChain* b) {
+    if (a == b) return true;
+    if ((a == nullptr) != (b == nullptr)) return false;
+    if (a->rungs.size() != b->rungs.size() || a->errors.size() != b->errors.size()) return false;
+    for (std::size_t k = 0; k < a->rungs.size(); ++k)
+        if (a->rungs[k].get() != b->rungs[k].get()) return false;
+    for (std::size_t k = 0; k < a->errors.size(); ++k)
+        if (std::bit_cast<uint64_t>(a->errors[k]) != std::bit_cast<uint64_t>(b->errors[k])) return false;
+    return true;
+}
+
+// FNV-1a over exactly what sameLodChain compares, so equal chains fold into one group, its one identity and its
+// one slot: a shadow batch keeps its buffers while its chain holds, and two chains never share a row.
+std::size_t lodChainHash(const shadows::ShadowLodChain* chain) {
+    if (chain == nullptr) return 0;
+    uint64_t h = 14695981039346656037ull;
+    const auto fold = [&h](uint64_t v) { h = (h ^ v) * 1099511628211ull; };
+    fold(chain->rungs.size());
+    for (const auto& rung : chain->rungs) fold(static_cast<uint64_t>(std::hash<const void*>{}(rung.get())));
+    fold(chain->errors.size());
+    for (double error : chain->errors) fold(std::bit_cast<uint64_t>(error));
+    return static_cast<std::size_t>(h ^ (h >> 32));
+}
+
+}  // namespace
+
 // Capture members while their scene/material cache lines are hot. DrawItems are made only for
 // submitted draws; sorting and packing touch compact arrays rather than the authored object graph.
-void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster) {
+void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster,
+                                  const shadows::ShadowLodChain* lodChain) {
     const auto& geometry = record.buffers;
     const uint32_t layers = Layers::bits(mesh.layers().mask);
     const auto same = [&](std::size_t index) {
@@ -1671,7 +1905,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         return ((record.geometry == member.record->geometry && record.geometryRevision == member.record->geometryRevision) ||
                 group.geometry == geometry) && first.renderOrder() == mesh.renderOrder() &&
                member.shadowCaster == shadowCaster && first.receiveShadow() == mesh.receiveShadow() &&
-               member.mainPass == mainPass && member.layers == layers &&
+               member.mainPass == mainPass && member.layers == layers && sameLodChain(group.lodChain, lodChain) &&
                first.material->type == mesh.material->type &&
                (first.material == mesh.material ||
                 (mesh.renderOrder() == 0 && projection::detail::sameUniforms(*first.material, *mesh.material)));
@@ -1690,6 +1924,7 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
         mix(mesh.receiveShadow());
         mix(static_cast<std::size_t>(mainPass));
         mix(static_cast<std::size_t>(layers));
+        mix(lodChainHash(lodChain));
         auto& bucket = meshCandidates_[hash];
         const auto found = std::find_if(bucket.begin(), bucket.end(), same);
         if (found == bucket.end()) {
@@ -1705,6 +1940,8 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
                 reused.orderedIds = true;
                 reused.uniform = false;
                 reused.dirtyCount = 0;
+                reused.lodChain = nullptr;
+                reused.lodMaxScale = 0.0;
             }
             meshGroups_[group].identity = identity;
             meshGroups_[group].firstMaterial = mesh.material.get();
@@ -1718,18 +1955,27 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
     if (!target.members.empty() && batchMeshes_[target.members.back()].id > mesh.id())
         target.orderedIds = false;
     target.members.push_back(batchMeshes_.size());
+    // The row reads its chain at the widest member scale: one rung serves every caster of the batch. Three square
+    // roots per member per frame, so the record keeps the answer until the member's revision moves.
+    target.lodChain = lodChain;
+    if (lodChain != nullptr) {
+        const uint32_t rev = static_cast<uint32_t>(mesh.revision());
+        if (!record.maxScaleValid || record.maxScaleRevision != rev) {
+            record.cachedMaxScale = mesh.matrixWorld.getMaxScaleOnAxis();
+            record.maxScaleRevision = rev;
+            record.maxScaleValid = true;
+        }
+        target.lodMaxScale = std::max(target.lodMaxScale, record.cachedMaxScale);
+    }
     const auto& m = mesh.matrixWorld.elements;
     const auto& p = batchProjView_;
+    // A shadow-only member's row order is the scene's id order, never the camera's: skipping the projection
+    // leaves an orbiting camera rewriting none of a settled shadow batch's instance matrices.
+    const double depth = mainPass ? (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) /
+                                        (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15])
+                                  : 0.0;
     batchMeshes_.push_back(
-        {&mesh, mesh.material.get(),
-         (p[2] * m[12] + p[6] * m[13] + p[10] * m[14] + p[14]) / (p[3] * m[12] + p[7] * m[13] + p[11] * m[14] + p[15]),
-         mesh.id(), mesh.renderOrder(), &record, mainPass, layers, shadowCaster});
-    BatchTransform packed;
-    for (int i = 0; i < 16; ++i)
-        packed.matrix[i] = static_cast<float>(m[i]);
-    batchRgb_.push_back({static_cast<float>(mesh.material->color.r), static_cast<float>(mesh.material->color.g),
-                         static_cast<float>(mesh.material->color.b)});
-    batchTransforms_.push_back(packed);
+        {&mesh, mesh.material.get(), depth, mesh.id(), mesh.renderOrder(), &record, mainPass, layers, shadowCaster});
 }
 
 std::size_t RenderDatabase::batchSlot(uint64_t identity) {
@@ -1758,20 +2004,19 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             return a.depth < b.depth;
         return a.id < b.id;
     };
+    // Filled only for the groups that take the radix path below: a shadow-only or sub-256 batch sorts without them.
     depthKeys_.resize(batchMeshes_.size());
     floatKeys_.resize(batchMeshes_.size());
-    for (std::size_t i = 0; i < batchMeshes_.size(); ++i) {
-        const double depth = batchMeshes_[i].depth == 0 ? 0.0 : batchMeshes_[i].depth;
-        const auto bits = std::bit_cast<uint64_t>(depth);
-        depthKeys_[i] = bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63);
-        // The depth rounded to float32: never out of order against the double, so four radix passes
-        // order everything but the keys that round together, which the pass after them settles.
-        const auto narrow = std::bit_cast<uint32_t>(static_cast<float>(depth));
-        floatKeys_[i] = narrow >> 31 ? ~narrow : narrow ^ (uint32_t{1} << 31);
-    }
+    const auto idBefore = [&](std::size_t a, std::size_t b) { return batchMeshes_[a].id < batchMeshes_[b].id; };
     for (std::size_t slot = 0; slot < meshGroupCount_; ++slot) {
         auto& group = meshGroups_[slot];
         auto& members = group.members;
+        // A shadow-only batch draws every member as a page caster, whose row order is the scene's: sort by id and
+        // stop, so an orbiting camera rewrites no instance matrices (no camera-depth sort, ever).
+        if (!members.empty() && !batchMeshes_[members.front()].mainPass) {
+            if (!group.orderedIds) std::sort(members.begin(), members.end(), idBefore);
+            continue;
+        }
         if (members.size() < 256 || std::any_of(members.begin(), members.end(), [&](std::size_t i) {
                 return !std::isfinite(batchMeshes_[i].depth);
             })) {
@@ -1780,7 +2025,15 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         }
         // Group flags already fix renderOrder. Stable depth radix preserves the id tie-break,
         // with bounded linear work even when every mesh moves. Signed zero sorts as one depth.
-        const auto idBefore = [&](std::size_t a, std::size_t b) { return batchMeshes_[a].id < batchMeshes_[b].id; };
+        for (auto i : members) {
+            const double depth = batchMeshes_[i].depth == 0 ? 0.0 : batchMeshes_[i].depth;
+            const auto bits = std::bit_cast<uint64_t>(depth);
+            depthKeys_[i] = bits >> 63 ? ~bits : bits ^ (uint64_t{1} << 63);
+            // The depth rounded to float32: never out of order against the double, so four radix passes
+            // order everything but the keys that round together, which the pass after them settles.
+            const auto narrow = std::bit_cast<uint32_t>(static_cast<float>(depth));
+            floatKeys_[i] = narrow >> 31 ? ~narrow : narrow ^ (uint32_t{1} << 31);
+        }
         if (!group.orderedIds)
             std::sort(members.begin(), members.end(), idBefore);
         sortScratch_.resize(members.size());
@@ -1873,14 +2126,19 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             bool anyMat = false, anyCol = false;
             const uint16_t curFrame16 = static_cast<uint16_t>(frame_);
             for (std::size_t i = 0; i < members.size(); ++i) {
-                const auto index = members[i];
-                if (batchMeshes_[index].record->lastDirtyFrame16 != curFrame16) continue;
-                matrices.write(uint64_t(i) * 16 * sizeof(float), batchTransforms_[index].matrix.data(),
-                               16 * sizeof(float));
+                const auto& member = batchMeshes_[members[i]];
+                if (member.record->lastDirtyFrame16 != curFrame16) continue;
+                // Read the authored transform and colour here, not a copy taken during projection.
+                const auto& m = member.mesh->matrixWorld.elements;
+                float tmp[16];
+                for (int k = 0; k < 16; ++k) tmp[k] = static_cast<float>(m[k]);
+                matrices.write(uint64_t(i) * 16 * sizeof(float), tmp, 16 * sizeof(float));
                 anyMat = true;
                 if (uniform) {
-                    batchColors_[slot]->write(uint64_t(i) * 3 * sizeof(float), batchRgb_[index].data(),
-                                              3 * sizeof(float));
+                    const std::array<float, 3> rgb{static_cast<float>(member.material->color.r),
+                                                   static_cast<float>(member.material->color.g),
+                                                   static_cast<float>(member.material->color.b)};
+                    batchColors_[slot]->write(uint64_t(i) * 3 * sizeof(float), rgb.data(), 3 * sizeof(float));
                     anyCol = true;
                 }
             }
@@ -1902,22 +2160,31 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
             for (std::size_t i = 0; i < members.size(); ++i) {
 #if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
                 if (i + 16 < members.size()) {
-                    const auto next = members[i + 16];
-                    TN_PREFETCH(&batchTransforms_[next], 0, 3);
-                    if (color) TN_PREFETCH(&batchRgb_[next], 0, 3);
+                    const auto& next = batchMeshes_[members[i + 16]];
+                    TN_PREFETCH(next.mesh->matrixWorld.elements.data(), 0, 3);
+                    if (color) TN_PREFETCH(&next.material->color, 0, 3);
                 }
 #endif
-                const auto index = members[i];
-                const auto& packed = batchTransforms_[index];
-                std::copy_n(packed.matrix.data(), 16, matrix);
+                const auto& member = batchMeshes_[members[i]];
+                const auto& m = member.mesh->matrixWorld.elements;
+                for (int k = 0; k < 16; ++k) matrix[k] = static_cast<float>(m[k]);
                 matrix += 16;
                 if (color) {
-                    std::copy_n(batchRgb_[index].data(), 3, color);
+                    const Color& c = member.material->color;
+                    color[0] = static_cast<float>(c.r);
+                    color[1] = static_cast<float>(c.g);
+                    color[2] = static_cast<float>(c.b);
                     color += 3;
                 }
             }
             matrices.needsUpdate();
             if (uniform) batchColors_[slot]->needsUpdate();
+        }
+        // A shadow batch carries the AutoLOD chain its members share, so a page draws the row's chain without a
+        // per-caster lookup; every other draw leaves both fields clear (refresh resets them).
+        if (group.lodChain != nullptr) {
+            d.shadowLodChain = group.lodChain;
+            d.shadowLodMaxScale = group.lodMaxScale;
         }
         d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
@@ -2018,8 +2285,6 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     static std::atomic<uint64_t> prepares{0};
     prepareId_ = ++prepares;
     batchMeshes_.clear();
-    batchTransforms_.clear();
-    batchRgb_.clear();
     meshGroupCount_ = 0;
     meshCandidates_.clear();
     lastMeshGroup_.reset();
@@ -2027,7 +2292,13 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     projectionView.multiplyMatrices(camera.projectionMatrix, camera.matrixWorldInverse);
     batchProjView_ = toArray(projectionView);
     frustum_.setFromProjectionMatrix(projectionView, camera.coordinateSystem, camera.reversedDepth());
-    collectShadowFrustums(targetScene ? *targetScene : scene, camera);
+    // A childless plain mesh drawn alone (a render target's full-screen quad) has no light, shadow or batch partner:
+    // the passes that only find those are skipped while the state they would clear is already clear.
+    const bool standalone = !targetScene && !shadowMapEnabled && scene.children.empty() &&
+                            dynamic_cast<const Mesh*>(&scene) && !dynamic_cast<const SkinnedMesh*>(&scene);
+    if (!standalone || !shadowFrustums_.empty() || !virtualControls_.empty() || !shadowByLight_.empty() ||
+        anyControlPinOrTrack_ || anyControlLods_ || shadowPointLightActive_)
+        collectShadowFrustums(targetScene ? *targetScene : scene, camera);
     if (flat) flatRecords_.resize(scene.children.size());
     else flatRecords_.clear();
     // Off the flat lane, the scene's plain meshes still find their records by scene order, not by hash.
@@ -2122,10 +2393,14 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     const auto beforeBatch = profiling ? Clock::now() : Clock::time_point{};
     if (batching) {
-        CameraState state;
-        state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
-        state.projectionMatrix = toArray(camera.projectionMatrix);
-        batch(items, scene, Renderer::sortDraws(items, state));
+        // One unskinned draw merges with nothing (a group needs kMinBatchMembers): no sort, no projection verdict.
+        // A settled mesh waits in batchMeshes_, which still turns it into its draw.
+        if (!standalone || items.size() > 1) {
+            CameraState state;
+            state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
+            state.projectionMatrix = toArray(camera.projectionMatrix);
+            batch(items, scene, Renderer::sortDraws(items, state));
+        }
         batchMeshes(items);
     }
     // A draw that still reads a skeleton's world palette (a rig drawn alone, a shadow copy whose rig kept no slot)
@@ -2146,6 +2421,8 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         return toArray(rotation);
     }();
     static constexpr Matrix kIdentityMatrix{1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    // `Material::maps` is a std::map keyed by std::string: a literal look-up builds a temporary key per draw.
+    static const std::string kEnvMap = "envMap";
     for (DrawItem& item : items) {
         const Material& source = *static_cast<const Material*>(item.materialKey);
         item.fog = world && source.fog ? world->fog.get() : nullptr;
@@ -2157,22 +2434,23 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         // environment and the material no envMap, else the material's envMapRotation (identity here).
         const GraphSources& sources = graphSources(source);
         item.pmremMap = sources.texture;
+        // One `envMap` look-up per draw, skipped outright when the material carries no maps.
+        const Texture* env = nullptr;
+        if (!source.maps.empty()) {
+            const auto found = source.maps.find(kEnvMap);
+            if (found != source.maps.end()) env = found->second.get();
+        }
         // The render publishes each mirror pass's view on the material's sources (the cached entry, which
         // outlives the frame), so the draw binds the view that pass drew this frame.
         item.reflectors = sources.reflectors.empty() ? nullptr : &const_cast<GraphSources&>(sources).reflectorViews;
         item.nodeTextures = sources.textures.empty() ? nullptr : &sources.textures;
         item.nodeStorages = sources.storages.empty() ? nullptr : &sources.storages;
         if (item.pmremMap) {
-            item.pmremRotation = (world && world->environment && source.maps.find("envMap") == source.maps.end())
-                                     ? sceneEnvRotation
-                                     : kIdentityMatrix;
+            item.pmremRotation = (world && world->environment && env == nullptr) ? sceneEnvRotation : kIdentityMatrix;
         }
         if (item.kind != MaterialKind::Standard && item.kind != MaterialKind::Physical) continue;
-        const Material& material = *static_cast<const Material*>(item.materialKey);
-        const auto found = material.maps.find("envMap");
-        const Texture* env = found != material.maps.end() ? found->second.get() : nullptr;
         item.envMap = env ? env : world ? world->environment.get() : nullptr;
-        item.envMapIntensity = env ? material.envMapIntensity : world ? world->environmentIntensity : 1;
+        item.envMapIntensity = env ? source.envMapIntensity : world ? world->environmentIntensity : 1;
         item.envRotation = (!env && world) ? sceneEnvRotation : kIdentityMatrix;
         // three's NodeMaterial.setupEnvironment takes material.envNode before material.envMap and before
         // scene.environment (NodeMaterial.js:968-970, MeshStandardNodeMaterial.js:110-116). The program then
@@ -2302,7 +2580,11 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
         if (metered) sceneMs_ += std::chrono::duration<double, std::milli>(Clock::now() - sceneStart).count();
     };
     const auto previousJoints = gpuJoints_;
-    gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
+    // A childless plain mesh drawn alone (a render target's full-screen quad) holds no rig, light or mirror.
+    const bool standaloneMesh = !reflecting_ && !shadowMapEnabled && scene.children.empty() &&
+                                dynamic_cast<const Mesh*>(&scene) && !dynamic_cast<const SkinnedMesh*>(&scene);
+    if (!standaloneMesh || gpuJoints_ || renderer.currentGpuJoints())
+        gpuJoints_ = renderer.prepareGpuJoints(scene, reflecting_ ? gpuJoints_ : nullptr);
     const auto jointsDone = profiling ? Clock::now() : Clock::time_point{};
     static const bool drawUse = [] { const auto* flag = flags::once<flags::GpuJointDrawUse>(); return flag && std::strcmp(flag, "1") == 0; }();
     if (drawUse && !reflecting_ && gpuJoints_) gpuJoints_->drawUse.assign(gpuJoints_->rigs.size(), 0);
@@ -2313,18 +2595,26 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     const bool hadVirtual = renderer.hasVirtualShadows();
     // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
     const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
-    renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
+    // No light and no atlas held: the sync would neither drop nor build one.
+    if (!standaloneMesh || !lights_.direct.empty() || hadVirtual)
+        renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
     if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
     // advance one retained packet and skip the frame. No partial target is published and the covered
     // scene is not drawn. The native player and the WASM host both reach this through render().
-    if (!renderer.prepareEnvironments(items_)) {
+    // ponytail: a bake begun by an earlier frame of this target pauses while it draws no environment, and resumes
+    // (pending, no partial target) on the next frame that samples one; an envPrep_ accessor lets it keep pumping.
+    const bool samplesEnvironment = !standaloneMesh || renderer.environmentPending() ||
+        std::any_of(items_.begin(), items_.end(), [](const DrawItem& item) { return item.envMap || item.pmremMap; });
+    if (samplesEnvironment && !renderer.prepareEnvironments(items_)) {
         chargeScene();
         if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();
         return 0;
     }
-    if (!reflecting_) renderReflections(renderer, scene, camera, items_, clear);
+    if (!reflecting_ && (!standaloneMesh || !reflections_.empty() ||
+                         std::any_of(items_.begin(), items_.end(), [](const DrawItem& item) { return item.reflectors; })))
+        renderReflections(renderer, scene, camera, items_, clear);
     if (profiling) renderPhaseMs_ = {std::chrono::duration<double, std::milli>(jointsDone - start).count(),
                                     std::chrono::duration<double, std::milli>(preparedScene - jointsDone).count(),
                                     std::chrono::duration<double, std::milli>(Clock::now() - preparedScene).count()};

@@ -508,21 +508,30 @@ void Object3D::billboardFace(Object3D& camera, int lockAxis) {
     constexpr double kEpsilon = 1e-12;
     prepareLocalTransformWrite();
     Object3D* const parent_ = parent;
-    updateWorldMatrix(true, false);
+    updateWorldMatrix(true, false);  // ancestors included, so parent_->matrixWorld below is current
     camera.updateWorldMatrix(true, false);
 
     Vector3 objectPosition, cameraPosition, direction;
     Quaternion cameraQuaternion, objectQuaternion, parentQuaternion;
-    getWorldPosition(objectPosition);
-    camera.getWorldQuaternion(cameraQuaternion);
+    objectPosition.setFromMatrixPosition(matrixWorld);
+    // A perspective billboard aims at the camera's position; only an orthographic one, or a camera sitting
+    // on the billboard, needs its rotation, so the decompose waits for the read that needs it.
+    bool cameraRotationRead = false;
+    auto cameraOrientation = [&]() -> Quaternion& {
+        if (!cameraRotationRead) {
+            camera.matrixWorld.decompose(scratchPosition, cameraQuaternion, scratchScale);
+            cameraRotationRead = true;
+        }
+        return cameraQuaternion;
+    };
 
     if (camera.type() == "OrthographicCamera") {
-        direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+        direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraOrientation()).negate();
     } else {
-        camera.getWorldPosition(cameraPosition);
+        cameraPosition.setFromMatrixPosition(camera.matrixWorld);
         direction.subVectors(cameraPosition, objectPosition);
         if (direction.lengthSq() <= kEpsilon) {
-            direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraQuaternion).negate();
+            direction.set(0.0, 0.0, -1.0).applyQuaternion(cameraOrientation()).negate();
         }
     }
     if (direction.lengthSq() <= kEpsilon) direction.set(0.0, 0.0, 1.0);
@@ -543,9 +552,9 @@ void Object3D::billboardFace(Object3D& camera, int lockAxis) {
         objectQuaternion.setFromUnitVectors(forward, direction);
     } else {
         Vector3 screenUp(0.0, 1.0, 0.0);
-        screenUp.applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+        screenUp.applyQuaternion(cameraOrientation()).projectOnPlane(direction);
         if (screenUp.lengthSq() <= kEpsilon) {
-            screenUp.set(1.0, 0.0, 0.0).applyQuaternion(cameraQuaternion).projectOnPlane(direction);
+            screenUp.set(1.0, 0.0, 0.0).applyQuaternion(cameraOrientation()).projectOnPlane(direction);
         }
         if (screenUp.lengthSq() <= kEpsilon) {
             screenUp.set(0.0, 1.0, 0.0);
@@ -561,12 +570,26 @@ void Object3D::billboardFace(Object3D& camera, int lockAxis) {
     }
 
     if (parent_ == nullptr) {
+        if (quaternion.equals(objectQuaternion)) return;  // nothing moved: leave the revision alone
         quaternion.copy(objectQuaternion);
-    } else {
-        parent_->updateWorldMatrix(true, false);
-        parent_->getWorldQuaternion(parentQuaternion);
-        quaternion.copy(parentQuaternion).invert().multiply(objectQuaternion);
+        bump();
+        return;
     }
+    const auto& pm = parent_->matrixWorld.elements;
+    if (pm[1] == 0.0 && pm[2] == 0.0 && pm[4] == 0.0 && pm[6] == 0.0 && pm[8] == 0.0 && pm[9] == 0.0 &&
+        pm[0] > 0.0 && pm[5] > 0.0 && pm[10] > 0.0) {
+        // The parent carries no rotation (axis-aligned, unmirrored world): the local angle is the facing one.
+        if (quaternion.equals(objectQuaternion)) return;
+        quaternion.copy(objectQuaternion);
+        bump();
+        return;
+    }
+    // parent_->matrixWorld is already current from the updateWorldMatrix above, so decompose it here
+    // rather than walking the parent's ancestors a second time.
+    parent_->matrixWorld.decompose(scratchPosition, parentQuaternion, scratchScale);
+    parentQuaternion.invert().multiply(objectQuaternion);
+    if (quaternion.equals(parentQuaternion)) return;
+    quaternion.copy(parentQuaternion);
     bump();
 }
 
@@ -1009,19 +1032,19 @@ Object3D& Object3D::copy(const Object3D& source) {
 }
 
 namespace {
-bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
-    if (!node.matrixAutoUpdate || !node.matrixWorldAutoUpdate || node.pivot.has_value())
-        return false;
-    if (isRoot) {
-        if (node.hasDeferredTransformPublication() || node.skipsGpuJointSubtree()) return false;
-    } else if (node.skipsGpuJointSubtree()) {
-        // MatrixWorldPass skips GPU-joint bone subtrees; they evaluate on GPU relative to the shifted placement.
-        return true;
-    } else if (node.hasDeferredTransformPublication()) {
-        return false;
-    }
+// The pre-walk's GPU-joint verdict for each node it admits, in visit order: the shift walk below visits the same
+// nodes in the same order and reads it here instead of locking each boundary's weak flag a second time.
+thread_local std::vector<uint8_t> shiftBoundaries;
+
+bool canShiftWorldYSubtree(const Object3D& node) {
+    if (!node.matrixAutoUpdate || !node.matrixWorldAutoUpdate || node.pivot.has_value()) return false;
+    // MatrixWorldPass skips GPU-joint bone subtrees; they evaluate on GPU relative to the shifted placement.
+    const bool boundary = node.skipsGpuJointSubtree();
+    shiftBoundaries.push_back(boundary ? 1 : 0);
+    if (boundary) return true;
+    if (node.hasDeferredTransformPublication()) return false;
     for (const Object3D* child : node.children) {
-        if (!canShiftWorldYSubtree(*child, false)) return false;
+        if (!canShiftWorldYSubtree(*child)) return false;
     }
     return true;
 }
@@ -1030,7 +1053,15 @@ bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
 bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) {
     (void)alreadyWalkedDescendant;
     if (dy == 0.0) return true;
-    if (!canShiftWorldYSubtree(*this, true)) return false;
+    // The shift root owns its own placement: a manual matrix, a pivot, a deferred publication or a GPU-joint
+    // subtree makes a blind +dy world shift a guess, so answer in O(1) before the walk and let the caller compose.
+    if (!matrixAutoUpdate || !matrixWorldAutoUpdate || pivot.has_value() || hasDeferredTransformPublication() ||
+        skipsGpuJointSubtree())
+        return false;
+    shiftBoundaries.clear();
+    for (const Object3D* child : children) {
+        if (!canShiftWorldYSubtree(*child)) return false;
+    }
 
     const uint64_t expectedParentId = parent ? parent->id() + 1 : 0;
     const uint64_t expectedParentRev = parent ? parent->revision() : 0;
@@ -1081,19 +1112,21 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
     afterMatrixWorld();
 
     // Shift only subtrees whose cached local & world state is strictly clean from this parent; any node with
-    // uncomposed local edits or unwalked parent links updates via updateWorldMatrix once instead of blind shifting.
+    // uncomposed local edits or unwalked parent links composes itself once instead of blind shifting.
+    std::size_t visit = 0;
     auto syncOrShift = [&](auto& selfRef, Object3D& node, uint64_t pId, uint64_t pOldRev, bool canShift) -> void {
-        if (node.skipsGpuJointSubtree()) return;
+        if (shiftBoundaries[visit++] != 0) return;
         const uint64_t nodeOldRev = node.revision_;
         bool nodeClean = false;
         if (canShift) {
-            const Matrix4 oldLocal = node.matrix;
+            // canShiftWorldYSubtree admitted this node, so it owns its local matrix: recompose it in place.
+            // updateMatrix() always raises matrixWorldNeedsUpdate, so the dirt that matters is the earlier
+            // one, and a local matrix that actually moved shows up as a revision bump inside updateMatrix().
             node.materializeLocalTransform();
+            const bool worldWasDirty = node.matrixWorldNeedsUpdate;
             if (node.matrixAutoUpdate) node.updateMatrix();
-            const bool localUnchanged =
-                std::memcmp(oldLocal.elements.data(), node.matrix.elements.data(), sizeof(double) * 16) == 0;
-            nodeClean = localUnchanged && !node.matrixWorldNeedsUpdate &&
-                        node.worldParentId_ == pId && node.worldParentRevision_ == pOldRev;
+            nodeClean = !worldWasDirty && node.revision_ == nodeOldRev && node.worldParentId_ == pId &&
+                        node.worldParentRevision_ == pOldRev;
         }
         if (nodeClean) {
             node.matrixWorld.elements[13] += dy;
@@ -1106,7 +1139,21 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
             for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, true);
             return;
         }
-        node.updateWorldMatrix(false, false, true);
+        if (canShift) {
+            // The local matrix is materialised and composed above, so compose the world matrix alone here:
+            // updateWorldMatrix would materialise and compose that local matrix a second time.
+            node.matrixWorldNeedsUpdate = false;
+            const Matrix4 before = node.matrixWorld;
+            node.matrixWorld.multiplyMatrices(node.parent->matrixWorld, node.matrix);
+            if (std::memcmp(before.elements.data(), node.matrixWorld.elements.data(), sizeof(double) * 16) != 0)
+                node.bump();
+            node.worldParentId_ = pId;
+            node.worldParentRevision_ = node.parent->revision();
+            node.lastWorldEvaluation_ = ++matrixEvaluations_;
+            node.afterMatrixWorld();
+        } else {
+            node.updateWorldMatrix(false, false, true);
+        }
         for (Object3D* c : node.children) selfRef(selfRef, *c, node.id() + 1, nodeOldRev, false);
     };
     for (Object3D* c : children) syncOrShift(syncOrShift, *c, id() + 1, selfOldRev, pureYShift);

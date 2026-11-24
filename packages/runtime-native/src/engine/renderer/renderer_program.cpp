@@ -589,6 +589,9 @@ void Renderer::rebuildGroups() {
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    for (auto& [key, group] : depthMapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    depthMapGroups_.clear();
     gpuCullGroups_.clear();  // they bind the instance and id storages too
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {

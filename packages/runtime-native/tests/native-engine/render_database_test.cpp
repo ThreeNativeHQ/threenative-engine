@@ -4093,9 +4093,9 @@ void instanced() {
 }
 
 // PRD-519 phase 1: a mixed scene renders the same batched and fully unbatched. Automatic batching
-// merges opaque plain meshes sharing a geometry and material (at least four) into instanced draws;
-// below the minimum, transparent meshes, a different render order and a mesh with a render callback
-// stay single. Batching on and off must give the same frame, with fewer draws on.
+// merges opaque plain meshes sharing a geometry and material (at least four) into instanced draws, and a
+// contiguous transparent run of one state the same way; below the minimum, a different render order and a
+// mesh with a render callback stay single. Batching on and off must give the same frame, with fewer draws on.
 void batchedVsUnbatched() {
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
@@ -4142,7 +4142,7 @@ void batchedVsUnbatched() {
     for (int i = 0; i < 6; ++i) place(sphere, standard, -5 + i * 2.0, 2.4, 0);       // one batch of six
     for (int i = 0; i < 3; ++i) place(sphere, single, -2 + i * 2.0, -2.6, 1);        // three: below the minimum
     for (int i = 0; i < 5; ++i) place(box, lambert, -4 + i * 2.0, 0.4, -1);          // a second batch of five
-    for (int i = 0; i < 4; ++i) place(sphere, glass, -3 + i * 2.0, -0.9, 2.5);       // transparent: never batched
+    for (int i = 0; i < 4; ++i) place(sphere, glass, -3 + i * 2.0, -0.9, 2.5);       // one transparent run of four
     for (int i = 0; i < 4; ++i) place(box, standard, -3 + i * 2.0, 4.2, -2, 1);      // another render order
     auto watched = place(sphere, standard, 4, -2.6, 1);                              // a callback keeps it single
     int callbacks = 0;
@@ -4174,7 +4174,7 @@ void batchedVsUnbatched() {
                 groups, members, batchedStats.draws, unbatchedStats.draws, (unsigned long long)batchedStats.triangles,
                 (unsigned long long)unbatchedStats.triangles, covered, differ, worst, callbacks);
     CHECK(batched.size() == unbatched.size() && !batched.empty());
-    CHECK(groups == 3 && members == 6 + 5 + 4);                 // standard spheres, lambert boxes, ordered boxes
+    CHECK(groups == 4 && members == 6 + 5 + 4 + 4);             // standard spheres, lambert boxes, ordered boxes, glass spheres
     CHECK(batchedStats.draws == unbatchedStats.draws - members + groups);
     CHECK(batchedStats.triangles == unbatchedStats.triangles);
     CHECK(covered > 2000 && differ == 0);
@@ -8235,6 +8235,433 @@ void virtualShadowCastersBatchInMainPass() {
     }
 }
 
+// Lever 1: a static caster that has held still for a few frames joins one shadow-only batch, so a settled field
+// costs one shadow row, not one per caster, and a camera orbit rewrites none of that row's instance matrices.
+void staticShadowCastersBatchUnderVirtualShadows() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    camera.position.set(4, 20, 30);
+    camera.lookAt(4, 0, 4);
+    auto sun = std::make_shared<DirectionalLight>();
+    sun->position.set(2, 14, 1.5);
+    sun->target->position.set(2, 0, 1.5);
+    sun->setCastShadow(true);
+    shadows::AtlasOptions options;
+    sun->shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(options));
+    scene.add(*sun);
+    scene.add(*sun->target);
+    const auto geometry = makeBoxGeometry();
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 20; ++i) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(i % 5, 0, i / 5);
+        mesh->setCastShadow(true);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    // The shadow rows a frame drew: how many, and the widest row's instance count.
+    const auto shadowRows = [](const std::vector<DrawItem>& items, std::size_t& rows, uint32_t& instances) {
+        rows = 0;
+        instances = 0;
+        for (const DrawItem& item : items) {
+            if (item.mainPass || !item.castShadow) continue;
+            ++rows;
+            instances = std::max(instances, item.instanceCount);
+        }
+    };
+    std::size_t rows = 0;
+    uint32_t instances = 0;
+    // Frames 1 to 5: a young caster keeps its own shadow row for the per-page cull.
+    for (int frame = 0; frame < 5; ++frame) {
+        shadowRows(database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true), rows, instances);
+        CHECK(rows == 20 && instances == 1);
+    }
+    // Frames 6 and 7: settled, one row of 20; the camera turn between them rewrites none of it.
+    uint64_t matrixWrites = 0;
+    for (int frame = 0; frame < 2; ++frame) {
+        camera.position.set(4.0 + frame * 8, 20, 30);
+        camera.lookAt(4, 0, 4);
+        const auto& items = database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+        shadowRows(items, rows, instances);
+        CHECK(rows == 1 && instances == 20);
+        uint64_t writes = 0;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow && item.instanceCount > 1) {
+                CHECK(item.instanceMatrices != nullptr);
+                writes = item.instanceMatrices->writes();
+            }
+        if (frame == 0) matrixWrites = writes;
+        else CHECK(writes == matrixWrites);
+    }
+    // A moved caster leaves the row for its own item and keeps its shadow matrix current; the other 19 stay one row.
+    uint64_t remainingBatchWrites = 0;
+    meshes[0]->position.x += 2.0;
+    {
+        const auto& items = database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+        shadowRows(items, rows, instances);
+        CHECK(rows == 2 && instances == 19);
+        std::size_t alone = 0;
+        for (const DrawItem& item : items) {
+            if (!item.mainPass && item.castShadow && item.instanceCount <= 1) {
+                ++alone;
+                CHECK(item.id == meshes[0]->id());
+                CHECK(std::abs(item.matrixWorld[12] - meshes[0]->matrixWorld.elements[12]) < 1e-6);
+            } else if (!item.mainPass && item.castShadow && item.instanceCount > 1) {
+                CHECK(item.instanceMatrices != nullptr);
+                remainingBatchWrites = item.instanceMatrices->writes();
+            }
+        }
+        CHECK(alone == 1);
+    }
+    // A second consecutive move (while already materialized) also updates the shadow row's world matrix.
+    meshes[0]->position.x += 3.0;
+    {
+        const auto& items = database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+        shadowRows(items, rows, instances);
+        CHECK(rows == 2 && instances == 19);
+        std::size_t alone = 0;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow && item.instanceCount <= 1) {
+                ++alone;
+                CHECK(item.id == meshes[0]->id());
+                CHECK(std::abs(item.matrixWorld[12] - meshes[0]->matrixWorld.elements[12]) < 1e-6);
+            }
+        CHECK(alone == 1);
+    }
+    // Six quiet frames later a caster that has moved stays its own per-caster row so it never churns the static batch.
+    for (int frame = 0; frame < 6; ++frame)
+        shadowRows(database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true), rows, instances);
+    CHECK(rows == 2 && instances == 19);
+    {
+        const auto& items = database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+        uint64_t writesAfterQuiet = 0;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow && item.instanceCount > 1) {
+                CHECK(item.instanceMatrices != nullptr);
+                writesAfterQuiet = item.instanceMatrices->writes();
+            }
+        CHECK(writesAfterQuiet == remainingBatchWrites);
+    }
+}
+
+// A settled caster's AutoLOD chain does not keep it out of the shadow batch: the row carries the chain every member
+// shares and the widest member scale, so the 600 stress props cost one row and the pages read the row's chain
+// instead of looking every caster up. A pinned or tracked caster still keeps its own row, and carries no chain.
+void staticShadowCastersBatchWithTheirLodChain() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    camera.position.set(4, 20, 30);
+    camera.lookAt(4, 0, 4);
+    auto sun = std::make_shared<DirectionalLight>();
+    sun->position.set(2, 14, 1.5);
+    sun->target->position.set(2, 0, 1.5);
+    sun->setCastShadow(true);
+    shadows::AtlasOptions options;
+    sun->shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(options);
+    scene.add(*sun);
+    scene.add(*sun->target);
+    const auto control = options.control;
+    const auto geometry = makeBoxGeometry();
+    const auto coarser = makeBoxGeometry(1, 1, 1, 2, 2, 2);  // a rung's own bytes
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    for (int i = 0; i < 6; ++i) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(i % 3, 0, i / 3);
+        mesh->scale.set(i + 1, i + 1, i + 1);
+        mesh->setCastShadow(true);
+        scene.add(*mesh);
+        // Each caster's entry is its own chain object with the same rungs and errors: a clone groups with its twin.
+        control->lods[mesh->id()] = shadows::ShadowLodChain{{coarser}, {0.125}};
+    }
+    const auto pinned = std::make_shared<Mesh>(geometry, material);
+    pinned->position.set(0, 0, 4);
+    pinned->setCastShadow(true);
+    scene.add(*pinned);
+    control->pinned.insert(pinned->id());
+    const auto tracked = std::make_shared<Mesh>(geometry, material);
+    tracked->position.set(1, 0, 4);
+    tracked->setCastShadow(true);
+    scene.add(*tracked);
+    control->tracked.insert(tracked->id());
+
+    const auto shadowRows = [](const std::vector<DrawItem>& items) {
+        std::vector<const DrawItem*> rows;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow) rows.push_back(&item);
+        return rows;
+    };
+    // Frames 1 to 5: every caster of a virtual shadow keeps its own row for the per-page cull.
+    for (int frame = 0; frame < 5; ++frame) {
+        std::size_t young = 0;
+        for (const DrawItem* row : shadowRows(database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true))) {
+            ++young;
+            CHECK(row->instanceCount == 1);
+        }
+        CHECK(young == 8);
+    }
+    // Settled: the eight LOD casters are one row, and only the pinned and tracked ones keep a row each.
+    const auto rows = shadowRows(database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true));
+    CHECK(rows.size() == 3);
+    std::size_t batched = 0;
+    for (const DrawItem* row : rows) {
+        if (row->instanceCount == 6) {
+            ++batched;
+            CHECK(row->shadowLodChain != nullptr);
+            CHECK(row->shadowLodChain->rungs.size() == 1 && row->shadowLodChain->rungs[0].get() == coarser.get());
+            CHECK(row->shadowLodMaxScale == 6.0);
+        } else {
+            CHECK(row->instanceCount == 1);
+            CHECK(row->shadowLodChain == nullptr);
+            CHECK(row->id == pinned->id() || row->id == tracked->id());
+        }
+    }
+    CHECK(batched == 1);
+}
+
+// The record's cached matrix answers follow the mesh. A scaled member widens the settled row's chain scale on the
+// frame the row reads it (a record that kept the scale of another revision would report the old one forever), and a
+// mirrored member leaves the batch and never returns: its winding faces away, so the cropped determinant is read
+// again at the new revision instead of staying the positive one it was cached as.
+void recordCachedScaleAndDetFollowTransformEdits() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    camera.position.set(4, 20, 30);
+    camera.lookAt(4, 0, 4);
+    auto sun = std::make_shared<DirectionalLight>();
+    sun->position.set(2, 14, 1.5);
+    sun->target->position.set(2, 0, 1.5);
+    sun->setCastShadow(true);
+    shadows::AtlasOptions options;
+    sun->shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(options);
+    scene.add(*sun);
+    scene.add(*sun->target);
+    const auto control = options.control;
+    const auto geometry = makeBoxGeometry();
+    const auto coarser = makeBoxGeometry(1, 1, 1, 2, 2, 2);
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 6; ++i) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(i % 3, 0, i / 3);
+        mesh->setCastShadow(true);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+        control->lods[mesh->id()] = shadows::ShadowLodChain{{coarser}, {0.125}};
+    }
+    // The frame's shadow rows, in no particular order.
+    const auto shadowRows = [](const std::vector<DrawItem>& items) {
+        std::vector<const DrawItem*> rows;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow) rows.push_back(&item);
+        return rows;
+    };
+    // The row that draws every member of the batch.
+    const auto whole = [&](const std::vector<DrawItem>& items) -> const DrawItem* {
+        for (const DrawItem* row : shadowRows(items))
+            if (static_cast<std::size_t>(row->instanceCount) == meshes.size()) return row;
+        return nullptr;
+    };
+    const auto prepare = [&]() -> const std::vector<DrawItem>& {
+        return database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+    };
+    // Frames 1 to 5: a young caster keeps its own shadow row; then the six settle into one, at their one scale.
+    for (int frame = 0; frame < 5; ++frame) CHECK(shadowRows(prepare()).size() == meshes.size());
+    const DrawItem* settled = whole(prepare());
+    CHECK(settled != nullptr);
+    if (settled == nullptr) return;
+    CHECK(settled->shadowLodChain != nullptr && settled->shadowLodMaxScale == 1.0);
+    // One member scaled: it leaves the row while it moves, and once it settles the row reads its new width.
+    meshes[0]->scale.set(2.5, 2.5, 2.5);
+    CHECK(shadowRows(prepare()).size() == 2);  // the five still, plus the mover on its own
+    for (int frame = 0; frame < 6; ++frame) prepare();
+    const DrawItem* scaled = whole(prepare());
+    CHECK(scaled != nullptr);
+    if (scaled != nullptr) CHECK(scaled->shadowLodMaxScale == 2.5);
+    // One member mirrored: a caster whose determinant is not positive never batched, on this frame or a later one.
+    meshes[1]->scale.x = -1.0;
+    const auto mirrored = [&](const std::vector<DrawItem>& items) -> const DrawItem* {
+        for (const DrawItem& item : items)
+            if (item.id == meshes[1]->id()) return &item;
+        return nullptr;
+    };
+    const auto checkMirroredOut = [&](const std::vector<DrawItem>& items) {
+        const auto rows = shadowRows(items);
+        CHECK(rows.size() == 1);
+        if (rows.size() == 1) {
+            CHECK(static_cast<std::size_t>(rows[0]->instanceCount) == meshes.size() - 1);
+            CHECK(rows[0]->shadowLodMaxScale == 2.5);  // the other member's scale is still the widest
+        }
+        const DrawItem* solo = mirrored(items);
+        CHECK(solo != nullptr);
+        if (solo == nullptr) return;
+        CHECK(solo->instanceCount == 1);
+        CHECK(solo->instanceMatrices == nullptr);  // its own draw, not a row of one
+        CHECK(solo->mainPass && solo->castShadow);
+    };
+    checkMirroredOut(prepare());
+    // Six quiet frames would have settled any other member back into the row: the mirrored one still does not.
+    for (int frame = 0; frame < 6; ++frame) prepare();
+    checkMirroredOut(prepare());
+}
+
+// Two different chains never fold into one shadow row, not even for casters drawing the same geometry and material:
+// a row draws one chain. And a caster whose geometry moves to a coarser rung joins that rung's row.
+void differentLodChainsNeverShareAShadowBatch() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    database.shadowMapEnabled = true;
+    camera.position.set(4, 20, 30);
+    camera.lookAt(4, 0, 4);
+    auto sun = std::make_shared<DirectionalLight>();
+    sun->position.set(2, 14, 1.5);
+    sun->target->position.set(2, 0, 1.5);
+    sun->setCastShadow(true);
+    shadows::AtlasOptions options;
+    sun->shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(options);
+    scene.add(*sun);
+    scene.add(*sun->target);
+    const auto control = options.control;
+    const auto base = makeBoxGeometry();
+    // Content-identical geometry draws from one buffer set, so each rung needs bytes of its own.
+    const auto rungA = makeBoxGeometry(1, 1, 1, 2, 2, 2);
+    const auto rungB = makeBoxGeometry(1, 1, 1, 3, 3, 3);
+    const auto material = std::make_shared<Material>(MaterialType::Standard);
+    const shadows::ShadowLodChain chainA{{rungA}, {0.125}};
+    const shadows::ShadowLodChain chainB{{rungB}, {0.25}};
+    const auto add = [&](const std::shared_ptr<BufferGeometry>& geometry, const shadows::ShadowLodChain& chain,
+                         double x) {
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(x, 0, 0);
+        mesh->setCastShadow(true);
+        scene.add(*mesh);
+        control->lods[mesh->id()] = chain;
+        return mesh;
+    };
+    std::vector<std::shared_ptr<Mesh>> swapped;
+    for (int i = 0; i < 5; ++i) swapped.push_back(add(base, chainA, i));  // chain A at its own rung 0
+    for (int i = 0; i < 5; ++i) add(rungA, chainA, i);                    // chain A already at rung 1
+    for (int i = 0; i < 5; ++i) add(base, chainB, i);                     // chain B: same geometry, own chain
+
+    // The frame's shadow rows: each row's instance count, in no particular order.
+    const auto rowSizes = [&](const std::vector<DrawItem>& items) {
+        std::vector<uint32_t> sizes;
+        for (const DrawItem& item : items)
+            if (!item.mainPass && item.castShadow) sizes.push_back(item.instanceCount);
+        std::sort(sizes.begin(), sizes.end());
+        return sizes;
+    };
+    for (int frame = 0; frame < 6; ++frame)
+        database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+    const std::vector<uint32_t> settledRows{5, 5, 5}, rungRows{4, 5, 6};
+    {   // Three rows, and the two chains drawing the same geometry are two of them.
+        const auto& items = database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true);
+        CHECK(rowSizes(items) == settledRows);
+        std::size_t chain0 = 0, chain1 = 0;
+        for (const DrawItem& item : items) {
+            if (item.mainPass || !item.castShadow) continue;
+            CHECK(item.shadowLodChain != nullptr);
+            if (item.shadowLodChain == nullptr) continue;
+            const auto& errors = item.shadowLodChain->errors;
+            CHECK(errors.size() == 1);
+            if (errors.size() == 1 && errors[0] == 0.125) {
+                ++chain0;
+                CHECK(item.shadowLodChain->rungs.size() == 1 && item.shadowLodChain->rungs[0].get() == rungA.get());
+            } else {
+                ++chain1;
+                CHECK(errors.size() == 1 && errors[0] == 0.25);
+            }
+        }
+        CHECK(chain0 == 2 && chain1 == 1);
+    }
+    // A main-pass LOD swap moves the caster's geometry to the coarser rung: at once it draws that rung's row.
+    swapped[0]->geometry = rungA;
+    for (int frame = 0; frame < 2; ++frame)
+        CHECK(rowSizes(database.prepare(scene, camera, lights, nullptr, /*virtualShadows=*/true)) == rungRows);
+}
+
+// The batch row reads each member's transform and colour straight from the scene: a steady batch copies nothing, a
+// dirty member rewrites its own row, and a new draw order rewrites all of it — the same bytes either way.
+void batchInstanceRowsReadTheScene() {
+    Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database;
+    const auto geometry = makeBoxGeometry();
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int i = 0; i < 8; ++i) {
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setRGB(0.1 * i, 0.2, 0.3);
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(0, 0, -2.0 - i);
+        scene.add(*mesh);
+        meshes.push_back(mesh);
+    }
+    camera.position.set(0, 0, 0);
+    camera.lookAt(0, 0, -1);
+    // The frame's one instanced row of every box.
+    const auto row = [&](const std::vector<DrawItem>& items) -> const DrawItem* {
+        const DrawItem* found = nullptr;
+        for (const DrawItem& item : items)
+            if (item.instanceMatrices != nullptr && static_cast<std::size_t>(item.instanceCount) == meshes.size()) {
+                CHECK(found == nullptr);  // one row, not two
+                found = &item;
+            }
+        return found;
+    };
+    // Every row is its member's own matrix, and its member's own colour where colours travel per instance.
+    const auto accurate = [&](const DrawItem& d) {
+        std::vector<float> matrices(std::size_t(d.instanceCount) * 16);
+        CHECK(d.instanceMatrices->read(0, matrices.data(), matrices.size() * sizeof(float)) == BufferError::None);
+        std::vector<float> colors(std::size_t(d.instanceCount) * 3);
+        if (d.instanceColors != nullptr)
+            CHECK(d.instanceColors->read(0, colors.data(), colors.size() * sizeof(float)) == BufferError::None);
+        for (std::size_t i = 0; i < d.instanceCount; ++i) {
+            const float* m = matrices.data() + i * 16;
+            const auto member = std::find_if(meshes.begin(), meshes.end(), [&](const auto& mesh) {
+                const auto& e = mesh->matrixWorld.elements;
+                return static_cast<float>(e[12]) == m[12] && static_cast<float>(e[13]) == m[13] &&
+                       static_cast<float>(e[14]) == m[14];
+            });
+            CHECK(member != meshes.end());
+            if (member == meshes.end()) continue;
+            const auto& e = (*member)->matrixWorld.elements;
+            for (int k = 0; k < 16; ++k) CHECK(m[k] == static_cast<float>(e[k]));
+            if (d.instanceColors == nullptr) continue;
+            const Color& color = (*member)->material->color;
+            CHECK(colors[i * 3] == static_cast<float>(color.r));
+            CHECK(colors[i * 3 + 1] == static_cast<float>(color.g));
+            CHECK(colors[i * 3 + 2] == static_cast<float>(color.b));
+        }
+    };
+    const DrawItem* built = row(database.prepare(scene, camera, lights));
+    CHECK(built != nullptr && built->instanceColors != nullptr);
+    if (built) accurate(*built);
+    BufferStore* matrices = built ? built->instanceMatrices : nullptr;
+    BufferStore* colors = built ? built->instanceColors : nullptr;
+    if (matrices == nullptr || colors == nullptr) return;
+    const uint64_t matrixWrites = matrices->writes();
+    const uint64_t colorWrites = colors->writes();
+    matrices->clearDirtyByteRanges();
+    colors->clearDirtyByteRanges();
+    // Unchanged frame: the row keeps its bytes, no copy and no upload.
+    const DrawItem* still = row(database.prepare(scene, camera, lights));
+    CHECK(still != nullptr && still->instanceMatrices == matrices && still->instanceColors == colors);
+    CHECK(matrices->writes() == matrixWrites && colors->writes() == colorWrites);
+    CHECK(!matrices->dirtyAll() && matrices->dirtyByteRanges().empty());
+    CHECK(colors->dirtyByteRanges().empty());
+    // One member moves, the order holds: one 64-byte matrix row and one 12-byte colour are written.
+    meshes[2]->position.x = 0.5;
+    const DrawItem* dirty = row(database.prepare(scene, camera, lights));
+    CHECK(dirty != nullptr);
+    if (dirty) accurate(*dirty);
+    CHECK(!matrices->dirtyAll());
+    CHECK(matrices->dirtyByteRanges().size() == 1 && matrices->dirtyByteRanges()[0].count == 16 * sizeof(float));
+    CHECK(colors->dirtyByteRanges().size() == 1 && colors->dirtyByteRanges()[0].count == 3 * sizeof(float));
+    // One member moves past the others: the order changes and every row is rewritten from the scene.
+    meshes[0]->position.z = -40;
+    const DrawItem* rebuilt = row(database.prepare(scene, camera, lights));
+    CHECK(rebuilt != nullptr);
+    if (rebuilt) accurate(*rebuilt);
+    CHECK(matrices->dirtyAll());
+}
+
 // The skinned half of the same rule: rigs that share a geometry draw as one palette batch in the main
 // pass under a virtual shadow, and each rig keeps its own shadow-only item for the pages.
 void virtualShadowRigsBatchInMainPass() {
@@ -10970,7 +11397,147 @@ void gpuSceneDirtyUploads() {
     waste::setDebugEnabled(false);
 }
 
-TN_TEST_MAIN({"reflection_filter", reflectionFilter}, {"lamp_footprint_box_parity", lampFootprintBoxParity}, {"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+// Lever 2: a contiguous back-to-front stretch of one transparent state collapses into one instanced draw, drawn in
+// the run's own order. A transparent draw of another state between two stretches splits them, and the merged draw
+// keeps the run's farthest member's render-list place, so an interleaved particle/fire draw keeps its order.
+void transparentContiguousRunsBatchInBackToFrontOrder() {
+    const auto glass = [] {
+        auto material = std::make_shared<Material>(MaterialType::Basic);
+        material->transparent = true;
+        material->opacity = 0.5;
+        material->depthWrite = false;
+        return material;
+    };
+    // Each panel one step farther than the last: `first` down to `first - count + 1` in z.
+    const auto addPanels = [](Scene& scene, const std::shared_ptr<Material>& material,
+                              const std::shared_ptr<BufferGeometry>& geometry, double first, int count) {
+        for (int i = 0; i < count; ++i) {
+            auto mesh = std::make_shared<Mesh>(geometry, material);
+            mesh->position.z = first - i;
+            scene.add(*mesh);
+        }
+    };
+    const auto instanceZ = [](const DrawItem& d, std::size_t index) {
+        return reinterpret_cast<const float*>(d.instanceMatrices->data())[index * 16 + 14];
+    };
+    const auto frameWith = [](PerspectiveCamera& camera) {
+        camera.position.set(0, 0, 5);
+        camera.lookAt(0, 0, 0);
+    };
+    {  // (a) Ten panels of one material: one instanced transparent draw, its farthest member first.
+        Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database; frameWith(camera);
+        addPanels(scene, glass(), makePlaneGeometry(1, 1), -1, 10);  // z -1 .. -10
+        const auto& items = database.prepare(scene, camera, lights);
+        std::printf("transparent run: %zu draws\n", items.size());
+        CHECK(items.size() == 1);
+        if (items.size() != 1) return;
+        CHECK(items[0].transparent && items[0].instanceCount == 10 && items[0].instanceMatrices);
+        for (int i = 0; i < 10; ++i) CHECK(instanceZ(items[0], std::size_t(i)) == float(-10 + i));
+    }
+    {  // (b) Another transparent state at z -5.5 splits the ten into five behind it and five in front, and the
+       //     sorted list draws them in that order.
+        Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database; frameWith(camera);
+        const auto geometry = makePlaneGeometry(1, 1);
+        const auto panels = glass();
+        addPanels(scene, panels, geometry, -6, 5);  // z -6 .. -10, behind the interleaver
+        addPanels(scene, panels, geometry, -1, 5);  // z -1 .. -5, in front of it
+        const auto interleaver = glass();
+        interleaver->opacity = 0.25;  // a different uniform group: it joins neither run
+        auto fire = std::make_shared<Mesh>(geometry, interleaver);
+        fire->position.z = -5.5;
+        scene.add(*fire);
+        const auto& items = database.prepare(scene, camera, lights);
+        CameraState state;
+        state.matrixWorldInverse = camera.matrixWorldInverse.elements;
+        state.projectionMatrix = camera.projectionMatrix.elements;
+        const auto sorted = Renderer::sortDraws(items, state);
+        std::printf("transparent split run: %zu draws\n", sorted.size());
+        CHECK(sorted.size() == 3);
+        if (sorted.size() != 3) return;
+        const DrawItem& back = *sorted[0].second, &middle = *sorted[1].second, &front = *sorted[2].second;
+        CHECK(back.transparent && middle.transparent && front.transparent);
+        CHECK(back.instanceCount == 5 && middle.instanceCount == 1 && front.instanceCount == 5);
+        CHECK(back.materialKey == panels.get() && middle.materialKey == interleaver.get() && front.materialKey == panels.get());
+        CHECK(instanceZ(back, 0) == -10 && instanceZ(back, 4) == -6);
+        CHECK(middle.matrixWorld[14] == -5.5);
+        CHECK(instanceZ(front, 0) == -5 && instanceZ(front, 4) == -1);
+    }
+    {  // (c) A DoubleSide transparent draw renders its two passes separately, so it never joins a run.
+        Scene scene; PerspectiveCamera camera; LightState lights; RenderDatabase database; frameWith(camera);
+        const auto leaf = glass();
+        leaf->side = Side::Double;
+        addPanels(scene, leaf, makePlaneGeometry(1, 1), -1, 8);
+        const auto& items = database.prepare(scene, camera, lights);
+        CHECK(!items.empty());
+        for (const DrawItem& d : items) CHECK(d.instanceCount <= 1 && d.instanceMatrices == nullptr);
+    }
+}
+
+// A render target's full-screen quad (a childless plain Mesh drawn as the root) has no light, rig, mirror or batch
+// partner: its render runs neither the batch walk nor the GPU-joint scan, yet writes the texel a one-mesh scene
+// writes, with no diagnostic.
+void singleMeshRttSkipsSceneOverheadAndPreservesDraw() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(64, 64);
+    OrthographicCamera camera(-1, 1, 1, -1, 0.1, 10);
+    camera.position.z = 5;
+    camera.updateMatrixWorld();
+    auto red = std::make_shared<Material>(MaterialType::Basic);
+    red->color.setRGB(1, 0, 0);
+    const auto texel = [&](RenderTarget& from) {
+        std::array<float, 4> rgba{-1, -1, -1, -1};
+        bool done = false;
+        CHECK(readRenderTarget(from, 4, 4, 1, 1, [&](GpuStatus status, std::vector<uint8_t> bytes) {
+            if (status == GpuStatus::Ok && bytes.size() == 8)
+                for (int c = 0; c < 4; ++c) {
+                    uint16_t bits = 0;
+                    std::memcpy(&bits, bytes.data() + c * 2, 2);
+                    rgba[c] = halfToFloat(bits);
+                }
+            done = true;
+        }) == GpuStatus::Ok);
+        for (int i = 0; i < 5000 && !done; ++i) {
+            renderer.poll();
+            events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        return rgba;
+    };
+    auto& walks = projection::walkCounters(projection::WalkCaller::RenderDatabase);
+    // Control: the same quad as the one child of a scene still batches.
+    const auto sceneTarget = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    Scene scene;
+    Mesh child(makePlaneGeometry(4, 4), red);
+    scene.add(child);
+    scene.updateMatrixWorld(true);
+    const uint64_t sceneWalks = walks.calls;
+    CHECK(renderToTarget(renderer, *sceneTarget, scene, camera, {0, 0, 1, 1}, false).empty());
+    CHECK(walks.calls == sceneWalks + 1);
+    const auto expected = texel(*sceneTarget);
+    CHECK(expected[0] > 0.99f && expected[1] < 0.01f && expected[2] < 0.01f);
+
+    const auto target = RenderTarget::make(8, 8, kTextureHalfFloatType);
+    Mesh quad(makePlaneGeometry(4, 4), red);
+    quad.updateMatrixWorld(true);
+    Object3D elsewhere, leaf;
+    for (int frame = 0; frame < 3; ++frame) {
+        // A hierarchy edit elsewhere would send the GPU-joint scan over the quad again.
+        if (frame == 1) elsewhere.add(leaf);
+        const uint64_t before = walks.calls, visits = Object3D::gpuMaintenanceVisits_;
+        CHECK(renderToTarget(renderer, *target, quad, camera, {0, 0, 1, 1}, false).empty());
+        CHECK(walks.calls == before);
+        CHECK(Object3D::gpuMaintenanceVisits_ == visits);
+        const auto got = texel(*target);
+        for (int c = 0; c < 4; ++c) CHECK(std::abs(got[c] - expected[c]) < 1e-3f);
+    }
+    CHECK(renderer.diagnostics().empty());
+}
+
+
+TN_TEST_MAIN({"reflection_filter", reflectionFilter}, {"lamp_footprint_box_parity", lampFootprintBoxParity}, {"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"single_mesh_rtt_skips_scene_overhead_and_preserves_draw", singleMeshRttSkipsSceneOverheadAndPreservesDraw}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
@@ -10979,7 +11546,7 @@ TN_TEST_MAIN({"reflection_filter", reflectionFilter}, {"lamp_footprint_box_parit
              {"virtual_sun_level_sizes", virtualSunLevelSizes},
              {"virtual_sun_auto_map_size", virtualSunAutoMapSize},
              {"batched_vs_unbatched", batchedVsUnbatched}, {"stable_passes_match_direct", stablePassesMatchDirect}, {"camera_cull_keeps_bundle", cameraCull}, {"skinned_crowd", skinnedCrowdPixels}, {"skinned_decline_cadence", skinnedDeclineCadence}, {"skinned_projecting_cadence", skinnedProjectingCadence}, {"skinned_normalized_weights", skinnedNormalizedWeights}, {"normal_map_tilt", normalMapTilt}, {"unsupported_map_slot", unsupportedMapSlot}, {"env_map_slot_is_read", envMapSlotIsRead}, {"converted_copies_swept", convertedCopiesAreSwept}, {"gpu_timer_covers_offscreen", gpuTimerCoversOffscreen}, {"gpu_timer_splits_the_gather", gpuTimerSplitsTheLabelledGather}, {"gpu_timer_covers_shadows", gpuTimerCoversShadows}, {"overlay_over_frame", overlayOverFrame}, {"gpu_timer_is_opt_in", gpuTimerIsOptIn}, {"msaa_edges", msaaEdges}, {"shadow_camera_layers", shadowCameraLayers}, {"flat_shading_needs_no_normals", flatShadingNeedsNoNormals}, {"map_sampleability_changes", mapSampleabilityChanges}, {"batch_caches_stay_put", batchCachesStayPut}, {"batch_keeps_member_id", batchKeepsMemberId}, {"frustum_culling", frustumCulling},
-             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"late_program_builds_only_after_reveal", lateProgramBuildsOnlyAfterReveal}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled}, {"bone_chains_are_not_projected", boneChainsAreNotProjected}, {"batch_compacts_in_place", batchCompactsInPlace}, {"gpu_scene_dirty_uploads", gpuSceneDirtyUploads})
+             {"shadow_caster_frustum_culling", shadowCasterFrustumCulling}, {"skinned_shadow_caster_frustum_culling", skinnedShadowCasterFrustumCulling}, {"masked_shadow", maskedShadow}, {"alpha_test_node", alphaTestNode}, {"leaf_receiver", leafReceiver}, {"shadow_noise_frame", shadowNoiseFrame},{"foliage_transmission", foliageTransmission}, {"rough_diffuse", roughDiffuse}, {"point_shadow_cube_faces", pointShadowCubeFaces}, {"lamp_source_radius", lampSourceRadius}, {"lamp_source_radius_wall", lampSourceRadiusWall}, {"lamp_source_radius_crate", lampSourceRadiusCrate}, {"contact_shadow_foot", contactShadowFoot}, {"virtual_sun_contact_foot", virtualSunContactFoot}, {"lamp_cache", lampCache}, {"cached_lamp_has_no_uniform_upload", cachedLampHasNoUniformUpload}, {"sun_cache", sunCache}, {"lamp_atlas", lampAtlas}, {"gpu_timer_splits_lamp_shadows", gpuTimerSplitsLampShadows}, {"shadow_lights_follow_hierarchy", shadowLightsFollowHierarchy}, {"records_survive_siblings", recordsSurviveSiblings}, {"steady_frame_hashes_no_record", steadyFrameHashesNoRecord}, {"nested_record_cache", nestedRecordCache}, {"frustum_record_retention", frustumRecordRetention}, {"world_sphere_measured_once", worldSphereMeasuredOnce}, {"reflection_reuse", reflectionReuse}, {"program_probes_are_resolved_once", programProbesAreResolvedOnce}, {"late_program_builds_only_after_reveal", lateProgramBuildsOnlyAfterReveal}, {"maps_share_one_pipeline", mapsShareOnePipeline}, {"serial_uniforms_share_one_pipeline", serialUniformsShareOnePipeline}, {"mirror_programs_precompiled", mirrorProgramsPrecompiled}, {"bone_chains_are_not_projected", boneChainsAreNotProjected}, {"batch_compacts_in_place", batchCompactsInPlace}, {"gpu_scene_dirty_uploads", gpuSceneDirtyUploads}, {"static_shadow_casters_batch_under_virtual_shadows", staticShadowCastersBatchUnderVirtualShadows}, {"static_shadow_casters_batch_with_their_lod_chain", staticShadowCastersBatchWithTheirLodChain}, {"different_lod_chains_never_share_a_shadow_batch", differentLodChainsNeverShareAShadowBatch}, {"record_cached_scale_and_det_follow_transform_edits", recordCachedScaleAndDetFollowTransformEdits}, {"batch_instance_rows_read_the_scene", batchInstanceRowsReadTheScene}, {"transparent_contiguous_runs_batch", transparentContiguousRunsBatchInBackToFrontOrder})
 
 
 

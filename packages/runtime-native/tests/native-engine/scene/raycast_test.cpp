@@ -5,12 +5,17 @@
 #include "engine/scene/material.h"
 #include <bit>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 using namespace tn::engine;
 using J = json::Value;
+// CPU-test diagnostics beside raycastTrianglesTested, declared by raycaster.cpp for this suite.
+namespace tn::engine { uint64_t raycastMeshesTested(); void resetRaycastMeshesTested();
+void raycastNextAfterForTesting(double x, double& up, double& down); }
 namespace {
 const J& field(const J& v, const char* name) {
     const auto* f = v.find(name); if (!f) throw std::runtime_error(std::string("missing ") + name); return *f;
@@ -224,6 +229,331 @@ void bvhInvalidation() {
     p->store->resize(57*3); compare("BVH position count",1);
     g->deleteAttribute("position"); compare("BVH missing position",0);
 }
+void subtreeBvh() {
+    auto material=std::make_shared<Material>(MaterialType::Basic); material->side=Side::Double;
+    const auto quad=[&]() {
+        auto g=std::make_shared<BufferGeometry>();
+        g->setAttribute("position",BufferAttribute::fromFloats({-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0},3));
+        g->setAttribute("uv",BufferAttribute::fromFloats({0,0,1,0,1,1,0,1},2));
+        g->setAttribute("normal",BufferAttribute::fromFloats({0,0,1,0,0,1,0,0,1,0,0,1},3));
+        g->setIndexFromArray({0,1,2,0,2,3});
+        return g;
+    };
+    auto root=std::make_shared<Group>();
+    std::vector<std::shared_ptr<Object3D>> keep;
+    std::vector<Mesh*> meshes;
+    uint32_t seed=0x51b7ee;
+    const auto random=[&]() { seed=1664525*seed+1013904223; return double(seed)/4294967296.0; };
+    // 150 house-like meshes under 10 groups: 8 shadow-free picks a frame walk this subtree every time.
+    for(int group=0;group<10;++group) {
+        auto holder=std::make_shared<Group>();
+        holder->position.set(group*13.0-58.5,(group%3)*3.0-3.0,(group%2)*4.0);
+        holder->rotation.set(0,0.15*(group%4),0.05*group);
+        holder->scale.set(group%5==0 ? -1 : 1,-1,1);
+        for(int m=0;m<15;++m) {
+            auto mesh=std::make_shared<Mesh>(quad(),material);
+            mesh->name="house-"+std::to_string(group)+"-"+std::to_string(m);
+            mesh->position.set((m%5)*2.6-5.2,(m/5)*3.1-3.1,0.6*(m%3));
+            mesh->rotation.set(-0.2+0.1*(m%4),0.25*((m+group)%5),0.3*(m%6-3));
+            mesh->scale.set(0.8+0.2*(m%3),1.1-0.1*(m%4),1);
+            holder->add(*mesh);
+            keep.push_back(mesh); meshes.push_back(mesh.get());
+        }
+        root->add(*holder); keep.push_back(holder);
+    }
+    // A hidden-layer mesh: the mask is a query-time test, the structure still holds it.
+    auto hidden=std::make_shared<Mesh>(quad(),material);
+    hidden->name="hidden"; hidden->position.set(-58.5,-3,0.6); hidden->setLayerMask(1u<<1);
+    root->add(*hidden); keep.push_back(hidden);
+    // An LOD: its own raycast picks a level and still propagates, so it must never be flattened.
+    auto lod=std::make_shared<LOD>(); lod->name="lod"; lod->position.set(60,0,0);
+    auto nearLevel=std::make_shared<Mesh>(quad(),material); nearLevel->name="lod-near";
+    auto farLevel=std::make_shared<Mesh>(quad(),material); farLevel->name="lod-far"; farLevel->position.set(0,1,0);
+    keep.push_back(lod); keep.push_back(nearLevel); keep.push_back(farLevel);
+    lod->addLevel(*nearLevel,0); lod->addLevel(*farLevel,50);
+    root->add(*lod);
+    // Two coincident meshes: equal distances make `sort`'s stability, hence visit order, observable.
+    auto ties=std::make_shared<Group>(); ties->position.set(0,12,0);
+    auto tieA=std::make_shared<Mesh>(quad(),material); tieA->name="tie-a";
+    auto tieB=std::make_shared<Mesh>(quad(),material); tieB->name="tie-b";
+    ties->add(*tieA); ties->add(*tieB);
+    root->add(*ties); keep.push_back(ties); keep.push_back(tieA); keep.push_back(tieB);
+    root->updateMatrixWorld(true);
+    check(meshes.size()==150,"subtree BVH mesh count");
+    std::vector<Raycaster> rays;
+    Vector3 hiddenCenter; hiddenCenter.setFromMatrixPosition(hidden->matrixWorld);
+    Vector3 tieCenter; tieCenter.setFromMatrixPosition(tieA->matrixWorld);
+    for(int i=0;i<128;++i) {
+        const bool otherLayer=i%4==3;
+        const bool aimed=i%8!=0;
+        Vector3 center=hiddenCenter;
+        if (!otherLayer) {
+            if (i%5==2) center=tieCenter;
+            else {
+                const auto index=size_t(random()*double(meshes.size()));
+                center.setFromMatrixPosition(meshes[index<meshes.size() ? index : 0]->matrixWorld);
+            }
+        }
+        const bool back=i%3==0;
+        const Vector3 origin{aimed ? center.x+random()*0.3-0.15 : random()*140-70,
+                             aimed ? center.y+random()*0.3-0.15 : random()*20-10,
+                             back ? -40.0 : 40.0};
+        rays.emplace_back(origin,Vector3{0,0,back ? 1.0 : -1.0});
+        if (otherLayer) rays.back().layers.set(1);
+        if (i%9==0) { rays.back().near=35; rays.back().far=41; }  // A sliced interval culls by distance too.
+    }
+    const auto compare=[&](const char* where) {
+        size_t observed=0;
+        for(size_t i=0;i<rays.size();++i) {
+            auto ray=rays[i]; std::vector<Intersection> actual, expected;
+            ray.intersectObject(*root,true,actual);
+            ray.meshBruteForceForTesting=true; ray.intersectObject(*root,true,expected);
+            sameHits(actual,expected,std::string(where)+" ray "+std::to_string(i));
+            observed+=expected.size();
+        }
+        return observed;
+    };
+    const auto initialHits=compare("subtree BVH initial");
+    check(initialHits>80,"subtree BVH initial hits");
+    {
+        Raycaster tied({tieCenter.x,tieCenter.y,tieCenter.z+40},{0,0,-1});
+        auto tiedBrute=tied; tiedBrute.meshBruteForceForTesting=true;
+        const auto tiedActual=tied.intersectObject(*root,true), tiedExpected=tiedBrute.intersectObject(*root,true);
+        sameHits(tiedActual,tiedExpected,"subtree BVH tie order");
+        size_t tieHits=0;
+        for(const auto& hit:tiedExpected) if (hit.object==tieA.get() || hit.object==tieB.get()) ++tieHits;
+        check(tieHits>=2,"subtree BVH tie hits: "+std::to_string(tieHits));
+        std::printf("Subtree BVH tie: %zu hits, tie meshes %zu\n",tiedExpected.size(),tieHits);
+    }
+    meshes[7]->position.set(meshes[7]->position.x+4.0,meshes[7]->position.y-1.5,meshes[7]->position.z);
+    root->updateMatrixWorld(true);
+    compare("subtree BVH transform");
+    // A raw matrix write with no revision bump: only the stored world matrix can reveal it.
+    meshes[23]->matrixWorld.elements[12]+=0.75;
+    meshes[23]->matrixWorld.elements[13]-=0.5;
+    compare("subtree BVH raw matrix write");
+    meshes[40]->geometry=quad();
+    compare("subtree BVH geometry replacement");
+    auto added=std::make_shared<Group>(); added->position.set(3,9,0);
+    auto extra=std::make_shared<Mesh>(quad(),material); extra->name="extra"; extra->position.set(0,0,1.5);
+    added->add(*extra); root->add(*added); keep.push_back(added); keep.push_back(extra);
+    root->updateMatrixWorld(true);
+    compare("subtree BVH add");
+    root->remove(*added); root->updateMatrixWorld(true);
+    compare("subtree BVH remove");
+    // One mesh out of 150: the subtree tree must reject the other branches before their meshes run.
+    Vector3 center; center.setFromMatrixPosition(meshes[0]->matrixWorld);
+    Raycaster focused({center.x,center.y,center.z+40},{0,0,-1});
+    resetRaycastTrianglesTested(); resetRaycastMeshesTested();
+    const auto cachedHits=focused.intersectObject(*root,true);
+    const auto cachedTriangles=raycastTrianglesTested(), cachedMeshes=raycastMeshesTested();
+    auto brute=focused; brute.meshBruteForceForTesting=true;
+    resetRaycastTrianglesTested(); resetRaycastMeshesTested();
+    const auto bruteHits=brute.intersectObject(*root,true);
+    const auto bruteTriangles=raycastTrianglesTested(), bruteMeshes=raycastMeshesTested();
+    sameHits(cachedHits,bruteHits,"subtree BVH cost");
+    check(cachedHits.size()==1,"subtree BVH cost ray hits one mesh");
+    check(cachedMeshes*10<bruteMeshes,"subtree BVH cost: "+std::to_string(cachedMeshes)+" of "+
+        std::to_string(bruteMeshes)+" meshes");
+    check(cachedTriangles<=bruteTriangles,"subtree BVH cost triangles");
+    std::printf("Subtree BVH cost: %llu / %llu meshes, %llu / %llu triangles (%zu hits)\n",
+        (unsigned long long)cachedMeshes,(unsigned long long)bruteMeshes,
+        (unsigned long long)cachedTriangles,(unsigned long long)bruteTriangles,cachedHits.size());
+}
+std::string hexBits(uint64_t bits) {
+    char text[17]; std::snprintf(text,sizeof(text),"%016llx",(unsigned long long)bits); return text;
+}
+// The slab test's one-ulp steps, which used to be std::nextafter: every IEEE-754 class, as raw bits.
+void nextAfterBits() {
+    struct Case { uint64_t bits, up, down; };
+    const Case pinned[] = {
+        {0x0000000000000000ull, 0x0000000000000001ull, 0x8000000000000001ull},  // +0
+        {0x8000000000000000ull, 0x0000000000000001ull, 0x8000000000000001ull},  // -0 is +0's neighbour too
+        {0x0000000000000001ull, 0x0000000000000002ull, 0x0000000000000000ull},  // smallest subnormal
+        {0x8000000000000001ull, 0x8000000000000000ull, 0x8000000000000002ull},
+        {0x000fffffffffffffull, 0x0010000000000000ull, 0x000ffffffffffffeull},  // largest subnormal
+        {0x0010000000000000ull, 0x0010000000000001ull, 0x000fffffffffffffull},  // DBL_MIN
+        {0x7fefffffffffffffull, 0x7ff0000000000000ull, 0x7feffffffffffffeull},  // DBL_MAX -> +inf
+        {0xffefffffffffffffull, 0xffeffffffffffffeull, 0xfff0000000000000ull},  // -DBL_MAX -> -inf
+        {0x7ff0000000000000ull, 0x7ff0000000000000ull, 0x7fefffffffffffffull},  // +inf stays on nextUp
+        {0xfff0000000000000ull, 0xffefffffffffffffull, 0xfff0000000000000ull},  // -inf stays on nextDown
+        {0x7ff8000000000000ull, 0x7ff8000000000000ull, 0x7ff8000000000000ull},  // NaN keeps its payload
+        {0xfff8000000000000ull, 0xfff8000000000000ull, 0xfff8000000000000ull},
+        {0x3ff0000000000000ull, 0x3ff0000000000001ull, 0x3fefffffffffffffull},  // 1
+        {0xbff0000000000000ull, 0xbfefffffffffffffull, 0xbff0000000000001ull},  // -1
+    };
+    std::vector<uint64_t> patterns;
+    for (const auto& c : pinned) {
+        patterns.push_back(c.bits);
+        double up = 0, down = 0;
+        tn::engine::raycastNextAfterForTesting(std::bit_cast<double>(c.bits),up,down);
+        check(std::bit_cast<uint64_t>(up) == c.up, "nextUp pinned "+hexBits(c.bits));
+        check(std::bit_cast<uint64_t>(down) == c.down, "nextDown pinned "+hexBits(c.bits));
+    }
+    uint32_t seed = 0x6e7fa7e5u;
+    for (int i = 0; i < 512; ++i) {
+        seed = 1664525u * seed + 1013904223u;
+        const uint64_t high = seed;
+        seed = 1664525u * seed + 1013904223u;
+        patterns.push_back(high << 32 | seed);
+    }
+    size_t compared = 0;
+    for (const uint64_t bits : patterns) {
+        const double x = std::bit_cast<double>(bits);
+        if (std::isnan(x)) continue;  // nextafter only promises a NaN for a NaN; the pinned rows pin that.
+        double up = 0, down = 0;
+        tn::engine::raycastNextAfterForTesting(x,up,down);
+        const double next = std::nextafter(x,std::numeric_limits<double>::infinity());
+        const double previous = std::nextafter(x,-std::numeric_limits<double>::infinity());
+        check(std::bit_cast<uint64_t>(up) == std::bit_cast<uint64_t>(next), "nextUp nextafter "+hexBits(bits));
+        check(std::bit_cast<uint64_t>(down) == std::bit_cast<uint64_t>(previous), "nextDown nextafter "+hexBits(bits));
+        ++compared;
+    }
+    check(compared > 512, "nextUp/nextDown oracle not vacuous");
+    std::printf("nextUp/nextDown: %zu patterns, %zu oracle comparisons\n",patterns.size(),compared);
+}
+// Two zero-thickness walls plus a collinear triangle: every triangle box is empty on at least one axis.
+std::shared_ptr<BufferGeometry> plates() {
+    auto g = std::make_shared<BufferGeometry>();
+    g->setAttribute("position",BufferAttribute::fromFloats({0,0,0, 1,0,0, 1,1,0, 0,1,0,          // z = 0
+        0,0,-5, 1,0,-5, 1,1,-5, 0,1,-5,                                                      // z = -5
+        0,2,0, 1,2,0, 2,2,0},3));                                                            // collinear
+    g->setIndexFromArray({0,1,2, 0,2,3, 4,5,6, 4,6,7, 8,9,10});
+    return g;
+}
+void edgeRayBounds() {
+    auto material=std::make_shared<Material>(MaterialType::Basic); material->side=Side::Double;
+    Mesh mesh(plates(),material); mesh.updateMatrixWorld(true);
+    std::vector<Raycaster> rays;
+    // Corners, shared edges and interior of a wall with no thickness: the slab test decides before the
+    // triangle code ever sees these.
+    for (const Vector3& at : {Vector3{0,0,0},Vector3{1,0,0},Vector3{0,1,0},Vector3{1,1,0},Vector3{0,0.5,0},
+                              Vector3{0.5,0,0},Vector3{1,0.5,0},Vector3{0.5,1,0},Vector3{0.5,0.5,0},
+                              Vector3{0.25,0.75,0}})
+        rays.emplace_back(Vector3{at.x,at.y,10},Vector3{0,0,-1});
+    rays.emplace_back(Vector3{0.5,0.5,-20},Vector3{0,0,1});              // up through both walls
+    rays.emplace_back(Vector3{0.5,0.5,0},Vector3{1,0,0});                // grazing inside the plane
+    rays.emplace_back(Vector3{0,0.5,0},Vector3{1,0,0});                  // along a zero-thickness edge
+    rays.emplace_back(Vector3{0.75,2,10},Vector3{0,0,-1});               // the collinear triangle's line
+    rays.emplace_back(Vector3{1.5,0.5,10},Vector3{-0.0,0.0,-1});         // signed-zero direction, outside x
+    rays.emplace_back(Vector3{-0.5,0.5,10},Vector3{-0.0,-0.0,-1});
+    rays.emplace_back(Vector3{std::numeric_limits<double>::quiet_NaN(),0.5,10},Vector3{0,0,-1});
+    rays.emplace_back(Vector3{std::numeric_limits<double>::infinity(),0.5,10},Vector3{0,0,-1});
+    rays.emplace_back(Vector3{-std::numeric_limits<double>::infinity(),0.5,10},Vector3{0,0,-1});
+    for (const double d : {5.0,10.0,15.0}) {                             // intervals pinned to the hit planes
+        rays.emplace_back(Vector3{0.5,0.5,10},Vector3{0,0,-1},d,d);
+        rays.emplace_back(Vector3{0.5,0.5,10},Vector3{0,0,-1},0.0,d);
+        rays.emplace_back(Vector3{0.5,0.5,10},Vector3{0,0,-1},d,std::numeric_limits<double>::infinity());
+    }
+    size_t observed=0;
+    for (size_t i=0;i<rays.size();++i) {
+        auto ray=rays[i]; std::vector<Intersection> actual, expected;
+        ray.intersectObject(mesh,false,actual);
+        ray.meshBruteForceForTesting=true; ray.intersectObject(mesh,false,expected);
+        sameHits(actual,expected,"edge bounds ray "+std::to_string(i));
+        observed+=expected.size();
+    }
+    check(observed>20,"edge bounds rays hit: "+std::to_string(observed));
+    // The interval must bite at its own boundaries: a hit exactly at near and far survives, a hair past
+    // either drops. This is what the padded slab and its one-ulp steps exist to keep true.
+    const auto count=[&](Vector3 origin,double near,double far) {
+        Raycaster probe(origin,Vector3{0,0,-1},near,far); return probe.intersectObject(mesh,false).size();
+    };
+    const Vector3 offDiagonal{0.25,0.5,10};  // Off the shared diagonal: one triangle per wall.
+    check(count({0.5,0.5,10},0,std::numeric_limits<double>::infinity())==4,"edge bounds: both walls, both triangles");
+    check(count(offDiagonal,0,std::numeric_limits<double>::infinity())==2,"edge bounds: both walls hit");
+    check(count(offDiagonal,10,10)==1,"edge bounds: near == far == the hit distance keeps it");
+    check(count(offDiagonal,0,10)==1,"edge bounds: far == the hit distance keeps it");
+    check(count(offDiagonal,10+1e-9,std::numeric_limits<double>::infinity())==1,"edge bounds: near past the hit drops it");
+    check(count(offDiagonal,0,10-1e-9)==0,"edge bounds: far before the hit drops it");
+    std::printf("Edge ray bounds: %zu rays, %zu hits\n",rays.size(),observed);
+}
+std::shared_ptr<BufferGeometry> unitQuad() {
+    auto g=std::make_shared<BufferGeometry>();
+    g->setAttribute("position",BufferAttribute::fromFloats({-0.5,-0.5,0, 0.5,-0.5,0, 0.5,0.5,0, -0.5,0.5,0},3));
+    g->setAttribute("normal",BufferAttribute::fromFloats({0,0,1,0,0,1,0,0,1,0,0,1},3));
+    g->setIndexFromArray({0,1,2,0,2,3});
+    return g;
+}
+// The object-level cache must drop when a leaf moves (through the hierarchy or through a raw world matrix)
+// or when a leaf is freed from the group that owned it.
+void subtreeInvalidation() {
+    auto material=std::make_shared<Material>(MaterialType::Basic); material->side=Side::Double;
+    auto root=std::make_shared<Group>();
+    std::vector<std::shared_ptr<Group>> holders;
+    std::vector<std::shared_ptr<Mesh>> meshes;
+    for (int holder=0;holder<4;++holder) {  // 20 bounded leaves: over the 16-mesh threshold, so the tree runs
+        auto group=std::make_shared<Group>();
+        group->position.set(holder*10.0,0,0);
+        for (int m=0;m<5;++m) {
+            auto mesh=std::make_shared<Mesh>(unitQuad(),material);
+            mesh->name="leaf-"+std::to_string(holder)+"-"+std::to_string(m);
+            mesh->position.set(m*2.0,0,0);
+            group->add(*mesh);
+            meshes.push_back(mesh);
+        }
+        root->add(*group); holders.push_back(group);
+    }
+    check(meshes.size()>=16,"subtree invalidation: leaf count "+std::to_string(meshes.size()));
+    root->updateMatrixWorld(true);
+    // One ray per live leaf, aimed at its current world centre: a stale box turns into a missing hit.
+    const auto compare=[&](const char* where) {
+        size_t observed=0, index=0;
+        for (const auto& mesh : meshes) {
+            if (!mesh) continue;
+            Vector3 center; center.setFromMatrixPosition(mesh->matrixWorld);
+            Raycaster ray({center.x,center.y,center.z+20},{0,0,-1});
+            std::vector<Intersection> actual, expected;
+            ray.intersectObject(*root,true,actual);
+            ray.meshBruteForceForTesting=true; ray.intersectObject(*root,true,expected);
+            sameHits(actual,expected,std::string(where)+" leaf "+std::to_string(index++));
+            observed+=expected.size();
+        }
+        return observed;
+    };
+    // A cached walk that visited every mesh would pass the comparisons above while proving nothing.
+    const auto cost=[&](const char* where) {
+        Vector3 center; center.setFromMatrixPosition(meshes[0]->matrixWorld);
+        Raycaster probe({center.x,center.y,center.z+20},{0,0,-1});
+        resetRaycastMeshesTested(); const auto cachedHits=probe.intersectObject(*root,true);
+        const auto cachedMeshes=raycastMeshesTested();
+        probe.meshBruteForceForTesting=true;
+        resetRaycastMeshesTested(); const auto bruteHits=probe.intersectObject(*root,true);
+        const auto bruteMeshes=raycastMeshesTested();
+        sameHits(cachedHits,bruteHits,where);
+        bool oneLeaf=!cachedHits.empty();
+        for (const auto& hit : cachedHits) oneLeaf=oneLeaf && hit.object==cachedHits.front().object;
+        check(oneLeaf,std::string(where)+" hits one leaf");
+        check(cachedMeshes*2<bruteMeshes,std::string(where)+": "+std::to_string(cachedMeshes)+" of "+
+            std::to_string(bruteMeshes)+" meshes");
+    };
+    check(compare("subtree invalidation initial")>0,"subtree invalidation initial hits");
+    cost("subtree invalidation tree engaged");
+    meshes[6]->matrixWorld.elements[12]+=3.0;  // A raw world write: no revision, no hierarchy version.
+    check(compare("subtree invalidation raw matrix move")>0,"subtree invalidation raw move hits");
+    cost("subtree invalidation tree after raw move");
+    meshes[11]->position.set(meshes[11]->position.x+1.25,meshes[11]->position.y+0.75,meshes[11]->position.z);
+    root->updateMatrixWorld(true);
+    check(compare("subtree invalidation position move")>0,"subtree invalidation position move hits");
+    std::weak_ptr<Object3D> freed=meshes[13];
+    holders[2]->remove(*meshes[13]);
+    meshes[13].reset();
+    check(freed.expired(),"subtree invalidation: freed leaf destroyed");
+    check(compare("subtree invalidation freed leaf")>0,"subtree invalidation freed leaf hits");
+    cost("subtree invalidation tree after free");
+    meshes[17]->matrixWorld.elements[12]-=2.5;  // The rebuilt tree must still notice a later move.
+    check(compare("subtree invalidation move after free")>0,"subtree invalidation rebuilt move hits");
+    cost("subtree invalidation tree after rebuild");
+    std::printf("Subtree BVH invalidation: %zu leaves, 3 moves, 1 free\n",meshes.size());
+}
+int nextAfterBounds() {
+    const int start=differ; nextAfterBits(); edgeRayBounds();
+    std::printf("nextUp/nextDown and edge ray bounds: %d differ\n",differ-start); return differ ? 1 : 0;
+}
+int subtreeBvhInvalidation() {
+    const int start=differ; subtreeInvalidation();
+    std::printf("Subtree BVH invalidation: %d differ\n",differ-start); return differ ? 1 : 0;
+}
 int bvh() {
     const int oracleStart=differ;
     const auto rays=seededRays(256);
@@ -257,6 +587,8 @@ int bvh() {
     std::printf("BVH oracle: 2048 rays, %zu hit rays, %zu miss rays, %d differ\n",hitRays,missRays,differ-oracleStart);
     const int invalidationStart=differ; bvhInvalidation();
     std::printf("BVH invalidation and morph fallback: %d differ\n",differ-invalidationStart);
+    const int subtreeStart=differ; subtreeBvh();
+    std::printf("Subtree BVH oracle: %d differ\n",differ-subtreeStart);
     auto g=gridGeometry(); auto material=std::make_shared<Material>(MaterialType::Basic);
     material->side=Side::Double; Mesh mesh(g,material); mesh.updateMatrixWorld(true);
     Raycaster focused({50.25,50.125,10},{0,0,-1});
@@ -350,6 +682,8 @@ int lod() {
 int main(int argc,char** argv) {
     try {
         if (argc>1 && std::string(argv[1])=="lod") return lod();
+        if (argc>1 && std::string(argv[1])=="nextafter_bounds") return nextAfterBounds();
+        if (argc>1 && std::string(argv[1])=="subtree_bvh_invalidation") return subtreeBvhInvalidation();
         const int reference=raycaster(); return bvh() || reference;
     }
     catch(const std::exception& e) { std::printf("FAIL: %s\n",e.what()); return 1; }

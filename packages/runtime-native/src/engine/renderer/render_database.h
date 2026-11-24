@@ -23,6 +23,10 @@
 namespace tn::engine {
 
 struct Reflector;
+namespace shadows {
+struct AtlasControl;  // a virtual shadow's tracked, pinned and LOD casters (atlas.h)
+struct ShadowLodChain;  // one caster's AutoLOD rungs as a shadow level draws them
+}  // namespace shadows
 
 /**
  * The render database (PRD-514 phase 1): `renderer.render(scene, camera)` on the native path. It
@@ -224,6 +228,24 @@ class RenderDatabase {
         // the attribute list was read at. Equal means the draw still reads the same material state (FM1).
         std::size_t materialSignature = 0;
         uint64_t refreshRevision = 0;
+        // The frame this caster last moved: one still for a few frames joins the static shadow batch.
+        uint64_t lastMovedFrame = 0;
+        // 64-bit hash of `matrixWorld` when last tracked; once `worldMoves >= 2` (world transform changed more than
+        // once after first tracking), the caster stays a per-caster virtual shadow row so moving bodies never churn
+        // the shared static shadow batch, while a one-shot transform edit (`worldMoves == 1`) may still settle back.
+        uint64_t trackedWorldHash = 0;
+        bool trackedWorldValid = false;
+        uint8_t worldMoves = 0;
+        // What its world matrix said at `detRevision`/`maxScaleRevision` (`Mesh::revision()`): whether its winding
+        // still faces the camera (a mirrored mesh cannot batch) and how wide its scale is (a settled shadow batch
+        // reads the widest member). Both are bit math over a matrix that only moves with its revision, so a steady
+        // mesh reads neither again. `Record{}` resets them with the rest of the record.
+        uint32_t detRevision = 0;
+        uint32_t maxScaleRevision = 0;
+        double cachedMaxScale = 1.0;
+        bool positiveDet = true;
+        bool detValid = false;
+        bool maxScaleValid = false;
         bool drawable = false, materialized = false;
         bool materialResolved = false;
         bool convertedInputs = false;  // a colour or custom attribute is a converted (non-float) copy
@@ -256,7 +278,7 @@ class RenderDatabase {
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                  bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false,
-                 bool lightsOnly = false, const Object3D* excluded = nullptr);
+                 bool lightsOnly = false, const Object3D* excluded = nullptr, bool controlProtectedAncestor = false);
     /** A multi-material mesh (three's material array): each geometry group draws as a mesh of its own, with
      *  the group's slice of the index and `materials[group.materialIndex]`, placed where the mesh is. */
     void projectGroups(const Mesh& mesh, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -296,6 +318,14 @@ class RenderDatabase {
         uint32_t layersMask = 1;
     };
     std::vector<ShadowFrustum> shadowFrustums_;
+    // The virtual shadow controls this frame's shadow-casting suns carry: a caster one of them tracks or pins keeps
+    // its own shadow row and never joins the settled batch (a caster's AutoLOD chain instead rides with its batch).
+    std::vector<const shadows::AtlasControl*> virtualControls_;
+    // The same controls, answered once per frame instead of once per projected node: does any of them pin or track
+    // a caster (so a node's protection is worth testing at all), and does any carry an AutoLOD chain (so a settled
+    // caster looks one up). A scene whose controls are all empty skips both scans on every node.
+    bool anyControlPinOrTrack_ = false;
+    bool anyControlLods_ = false;
     std::unordered_map<const Light*, DirectLight::Shadow> shadowByLight_;
     bool shadowPointLightActive_ = false;
     bool virtualShadows_ = false;
@@ -350,7 +380,8 @@ class RenderDatabase {
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
     void batchMeshes(std::vector<DrawItem>& items);
-    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster);
+    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster,
+                      const shadows::ShadowLodChain* lodChain = nullptr);
     struct BatchMember {
         const Mesh* mesh;
         const Material* material;
@@ -370,11 +401,12 @@ class RenderDatabase {
         bool uniform = false;
         uint32_t dirtyCount = 0;
         uint64_t identity = 0;  // the group's hash and bucket place: the same group every frame it exists
+        // The AutoLOD chain every member shares (null when none does), and the widest member scale it is read at:
+        // a settled shadow batch draws its whole chain as one row, so the pages need no per-caster lookup.
+        const shadows::ShadowLodChain* lodChain = nullptr;
+        double lodMaxScale = 0.0;
     };
     std::vector<BatchMember> batchMeshes_;
-    struct alignas(64) BatchTransform { std::array<float, 16> matrix; };
-    std::vector<BatchTransform> batchTransforms_; // one cache line per matrix, in scene order
-    std::vector<std::array<float, 3>> batchRgb_;
     std::vector<MeshGroup> meshGroups_;
     std::size_t meshGroupCount_ = 0;
     std::unordered_map<std::size_t, std::vector<std::size_t>> meshCandidates_;

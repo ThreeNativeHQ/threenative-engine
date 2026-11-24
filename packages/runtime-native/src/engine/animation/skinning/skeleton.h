@@ -58,6 +58,9 @@ class Bone : public Object3D {
     [[nodiscard]] const std::array<double, 10>& deferredTRSInternal() const { return deferredTRS_; }
     mutable bool poseObservationEscapedValues = false; // A retained native reference can read any later interval.
     [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
+    /** Moves on every deferred TRS write, admission and materialization: an equal value means equal deferred TRS. */
+    [[nodiscard]] uint64_t deferredVersion() const { return deferredVersion_; }
+    [[nodiscard]] const std::vector<std::shared_ptr<std::atomic<uint64_t>>>& poseVersions() const { return poseVersions_; }
 
     Bone(const Bone&) = delete;
     Bone& operator=(const Bone&) = delete;
@@ -73,6 +76,7 @@ class Bone : public Object3D {
     std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
     inline static std::size_t publicationCount_ = 0;
     bool deferred_ = false, pending_ = false, publication_ = false;
+    uint64_t deferredVersion_ = 0;
     std::shared_ptr<std::vector<float>> stream_;
     std::shared_ptr<bool> streamValid_;
     float* streamData_ = nullptr;

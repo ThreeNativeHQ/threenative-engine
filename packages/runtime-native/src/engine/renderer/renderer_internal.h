@@ -607,7 +607,10 @@ struct Renderer::FrameJob {
     bool instancesMutated = false;
     bool traaSeedFrame = false;
     std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
-    std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
+    // PRD-914: the records this frame changed, committed into Renderer::deformationFrames_ by encodeFrame(). A draw
+    // whose record an entry already holds adds nothing, so a steady frame allocates no per-draw vector.
+    std::vector<std::pair<uint64_t, DeformationFrame>> deformationUpserts;
+    uint64_t deformationEpoch = 0;  // the submitted frame these upserts belong to (0: a compile records nothing)
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan

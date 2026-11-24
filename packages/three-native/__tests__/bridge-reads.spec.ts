@@ -111,7 +111,7 @@ function sceneRuntime(clock: { ms: number }) {
       if (method === "update")
         for (const props of values.values()) if (props.has("intensity")) props.set("intensity", 7);
       if (method === "test") return true;
-      if (method === "intersectObject") return [];
+      if (method === "intersectObject" || method === "__tnIntersectObject") return [];
       return null;
     },
     get(self, property) {
@@ -485,7 +485,7 @@ describe("ray tests", () => {
       "DirectionalLight",
       "PointLight",
     ]);
-    expect(count("call Raycaster.intersectObject")).toBe(0);
+    expect(count("call Raycaster.__tnIntersectObject")).toBe(0);
     cast([
       "Mesh",
       "SkinnedMesh",
@@ -496,7 +496,7 @@ describe("ray tests", () => {
       "Sprite",
       "LOD",
     ]);
-    expect(count("call Raycaster.intersectObject")).toBe(8);
+    expect(count("call Raycaster.__tnIntersectObject")).toBe(8);
     expect(hits).toEqual([]);
   });
 });

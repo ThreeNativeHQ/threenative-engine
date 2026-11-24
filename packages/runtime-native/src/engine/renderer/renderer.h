@@ -146,6 +146,10 @@ struct DrawCache {
     void* translucentPipeline = nullptr;
     bool prepass = false;             // PRD-888: `pipeline` is the depth-Equal one, drawn after a masked depth prepass
     void* prepassPipeline = nullptr;  // ...and that prepass's depth-only pipeline, under `targetKey`
+    const void* velocitySourceProgram = nullptr;  // cached TRAA velocity program for source main program
+    void* velocityProgram = nullptr;
+    bool velocitySharedView = false;
+    bool velocitySupported = false;
     std::pair<Box3, double> shadowBounds;
     // FG1: an instanced draw's world box per instance, built with `shadowBounds` under the same key; empty for any
     // other draw. A virtual shadow page draws only the instances whose box can reach it.
@@ -270,6 +274,9 @@ struct DrawItem {
      *  `instances` storage and its own bone base and bind pair from `shadowSkin`, so one palette per rig per
      *  frame serves every page that draws it. */
     bool shadowGroup = false;
+    /** Settled static shadow batch sharing one AutoLOD chain: page-level LOD reads this instead of per-mesh lookup. */
+    const shadows::ShadowLodChain* shadowLodChain = nullptr;
+    double shadowLodMaxScale = 0.0;
     /** three's flipSided: mirrored authored meshes reverse the front-face winding. */
     [[nodiscard]] WGPUFrontFace frontFace() const {
         Matrix4 world;
@@ -1641,17 +1648,25 @@ private:
     std::shared_ptr<Timing> timing_ = std::make_shared<Timing>();
     struct DeformationFrame {
         Program* program = nullptr;
-        std::vector<uint64_t> buffers;
+        uint64_t bufferHash = 0;   // the draw's vertex stores' stamps folded into one word: no per-draw vector
+        uint32_t bufferCount = 0;  // how many stamps went in, so a fold of fewer stamps never reads as equal
+        uint64_t seenFrame = 0;    // the submitted frame that last recorded the draw, for the eviction sweep
         uint64_t instanceEpoch = 0;
         uint64_t instanceWrites = 0;
         uint64_t instanceVersion = 0;
         double instanceBase = 0;
+        // The instance draw's own row, compared by value rather than through the fold above.
+        uint32_t instanceCount = 0;
+        const BufferStore* instanceStore = nullptr;
+        uint64_t instanceStoreCount = 0;
         std::vector<uint8_t> uniforms;
     };
     std::array<bool, 2> previousStorageValid_{false, false};
     std::array<uint64_t, 2> previousStorageBytes_{0, 0};
-    // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
+    // Only submitted frames supply previous deformation; preparing or compiling a frame does not. Records are kept
+    // across frames rather than rebuilt: a draw whose stamps are unchanged leaves its entry alone.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
+    uint64_t deformationEpoch_ = 0;  // the last submitted frame a record was seen in
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
     /** PRD-754: each main draw's uniform blocks keep one place in frameUniforms_ (keyed by DrawItem::key and its
      *  occurrence in the frame), so a reorder or a culled neighbour moves no offset and the bundle key holds. A slot
@@ -1804,6 +1819,45 @@ private:
     // A material's diffuse map: its GPU texture/sampler, and, per (program, texture), the bind group
     // that binds it alongside the frame's uniforms. Cleared when the uniform buffer is rebuilt.
     std::map<std::string, WGPUBindGroup> mapGroups_;
+    struct DepthMapGroupKey {
+        const Program* program = nullptr;
+        WGPUTextureView view = nullptr;
+        WGPUSampler sampler = nullptr;
+        bool alphaHash = false;
+        bool operator==(const DepthMapGroupKey&) const = default;
+    };
+    struct DepthMapGroupKeyHash {
+        std::size_t operator()(const DepthMapGroupKey& k) const noexcept {
+            std::size_t h = std::hash<const Program*>{}(k.program);
+            h ^= std::hash<WGPUTextureView>{}(k.view) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            h ^= std::hash<WGPUSampler>{}(k.sampler) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            return h ^ (k.alphaHash ? 0x517cc1b727220a95ull : 0ull);
+        }
+    };
+    std::unordered_map<DepthMapGroupKey, WGPUBindGroup, DepthMapGroupKeyHash> depthMapGroups_;
+    struct ShadowGroupPipelineKey {
+        const Program* sourceProgram = nullptr;
+        WGPURenderPipeline sourcePipeline = nullptr;
+        bool masked = false;
+        bool skinned = false;
+        bool lampBackFace = false;
+        uint8_t faces = 0;
+        bool operator==(const ShadowGroupPipelineKey&) const = default;
+    };
+    struct ShadowGroupPipelineKeyHash {
+        std::size_t operator()(const ShadowGroupPipelineKey& k) const noexcept {
+            std::size_t h = std::hash<const Program*>{}(k.sourceProgram);
+            h ^= std::hash<WGPURenderPipeline>{}(k.sourcePipeline) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            h ^= (std::size_t(k.faces) | (std::size_t(k.masked) << 3) | (std::size_t(k.skinned) << 4) |
+                  (std::size_t(k.lampBackFace) << 5)) * 0x9e3779b97f4a7c15ull;
+            return h;
+        }
+    };
+    struct ShadowGroupPipelineEntry {
+        Program* program = nullptr;
+        WGPURenderPipeline pipeline = nullptr;
+    };
+    std::unordered_map<ShadowGroupPipelineKey, ShadowGroupPipelineEntry, ShadowGroupPipelineKeyHash> shadowGroupPipelines_;
     // PMREM (three's PMREMGenerator.fromEquirectangular): the cube it bakes, its source cube and the
     // pipelines that fill them, keyed by the equirect source texture.
     std::map<uint64_t, EnvironmentGpu> environments_;  // by Texture::ident
