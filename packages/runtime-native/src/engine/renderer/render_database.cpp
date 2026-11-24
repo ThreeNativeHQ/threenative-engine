@@ -507,8 +507,16 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         if (diagnostic.enabled) ++diagnostic.recordRebuilds;
         ++rebuilds_;
         const uint64_t cacheId = r.cacheId;
+        const bool dirtyTracked = r.dirtyTracked;
+        const bool dirtyGeomChanged = r.dirtyGeomChanged || (dirtyTracked && r.geometryRevision != geometryRevision);
+        const uint32_t lastDR = r.lastDirtyRevision;
+        const uint16_t lastDF = r.lastDirtyFrame16;
         r = Record{};
         r.cacheId = cacheId;
+        r.dirtyTracked = dirtyTracked;
+        r.dirtyGeomChanged = dirtyGeomChanged;
+        r.lastDirtyRevision = lastDR;
+        r.lastDirtyFrame16 = lastDF;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
@@ -624,6 +632,120 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
     d.blendFactors = material->blendFactors();
     r.drawable = d.positions != nullptr;
     return r;
+}
+
+Box3 RenderDatabase::removeTrackedState(const Record& r) {
+    constexpr uint64_t kTrackSlots = uint64_t(1) << 20;
+    const uint64_t id = r.cacheId != UINT64_MAX ? r.cacheId : r.meshId;
+    if (id < trackedInstancesById_.size()) {
+        trackedInstancesById_[id].valid = false;
+    } else if (id >= kTrackSlots) {
+        std::erase_if(trackedOverflowInstances_, [id](const auto& e) { return e.first == id; });
+    }
+    if (!trackDirtyBounds_) return Box3{};
+    if (id < trackedBoundsById_.size()) {
+        Box3 old = trackedBoundsById_[id];
+        trackedBoundsById_[id] = Box3{};
+        return old;
+    }
+    if (id >= kTrackSlots) {
+        for (auto it = trackedOverflowBounds_.begin(); it != trackedOverflowBounds_.end(); ++it) {
+            if (it->first == id) {
+                Box3 old = it->second;
+                trackedOverflowBounds_.erase(it);
+                return old;
+            }
+        }
+    }
+    return Box3{};
+}
+
+void RenderDatabase::trackDirty(const Mesh& mesh, Record& r, std::string_view type, bool shadowCaster) {
+    constexpr uint64_t kTrackSlots = uint64_t(1) << 20;
+    const uint32_t rev = static_cast<uint32_t>(mesh.revision());
+    const bool instanced = (type == "InstancedMesh") || (mesh.geometry && mesh.geometry->instanced);
+    if (r.dirtyTracked && r.lastDirtyRevision == rev && !r.dirtyGeomChanged && !instanced)
+        return;
+
+    const bool isNew = !r.dirtyTracked;
+    const bool transformChanged = !isNew && r.lastDirtyRevision != rev;
+    const bool geometryChanged = !isNew && r.dirtyGeomChanged;
+    const uint64_t trackKey = r.cacheId != UINT64_MAX ? r.cacheId : mesh.id();
+    bool instanceChanged = false;
+    InstanceDirtyState nextInst{};
+    if (instanced) {
+        if (type == "InstancedMesh") {
+            const auto& inst = static_cast<const InstancedMesh&>(mesh);
+            if (inst.instanceMatrix && inst.instanceMatrix->store) {
+                nextInst.matWrites = inst.instanceMatrix->store->writes();
+                nextInst.matEpoch = inst.instanceMatrix->store->epoch();
+                nextInst.count = static_cast<uint32_t>(std::min<uint64_t>(inst.count, inst.instanceMatrix->count()));
+            }
+            if (inst.instanceColor && inst.instanceColor->store) {
+                nextInst.colWrites = inst.instanceColor->store->writes();
+                nextInst.colEpoch = inst.instanceColor->store->epoch();
+            }
+        } else {
+            nextInst.count = instanceCountOf(*mesh.geometry);
+        }
+        nextInst.valid = true;
+        InstanceDirtyState* prev = nullptr;
+        if (trackKey < kTrackSlots) {
+            if (trackKey >= trackedInstancesById_.size()) trackedInstancesById_.resize(trackKey + 1);
+            prev = &trackedInstancesById_[trackKey];
+        } else {
+            for (auto& e : trackedOverflowInstances_) {
+                if (e.first == trackKey) { prev = &e.second; break; }
+            }
+            if (!prev) prev = &trackedOverflowInstances_.emplace_back(trackKey, InstanceDirtyState{}).second;
+        }
+        if (!isNew && prev->valid) {
+            instanceChanged = prev->matWrites != nextInst.matWrites || prev->matEpoch != nextInst.matEpoch ||
+                              prev->colWrites != nextInst.colWrites || prev->colEpoch != nextInst.colEpoch ||
+                              prev->count != nextInst.count;
+        }
+        if (isNew || !prev->valid || instanceChanged) *prev = nextInst;
+    }
+
+    if (!isNew && !transformChanged && !instanceChanged && !geometryChanged) return;
+
+    Box3 oldBounds{}, newBounds{};
+    if (trackDirtyBounds_ && shadowCaster) {
+        if (type == "InstancedMesh") {
+            const auto& inst = static_cast<const InstancedMesh&>(mesh);
+            if (inst.boundingBox) {
+                newBounds = *inst.boundingBox;
+            } else if (mesh.geometry && mesh.geometry->boundingBox) {
+                newBounds = *mesh.geometry->boundingBox;
+                newBounds.applyMatrix4(mesh.matrixWorld);
+            }
+        } else if (mesh.geometry) {
+            if (!mesh.geometry->boundingBox) const_cast<BufferGeometry*>(mesh.geometry.get())->computeBoundingBox();
+            if (mesh.geometry->boundingBox) {
+                newBounds = *mesh.geometry->boundingBox;
+                if (!newBounds.isEmpty()) newBounds.applyMatrix4(mesh.matrixWorld);
+            }
+        }
+        Box3* storedBounds = nullptr;
+        if (trackKey < kTrackSlots) {
+            if (trackKey >= trackedBoundsById_.size()) trackedBoundsById_.resize(trackKey + 1);
+            storedBounds = &trackedBoundsById_[trackKey];
+        } else {
+            for (auto& e : trackedOverflowBounds_) {
+                if (e.first == trackKey) { storedBounds = &e.second; break; }
+            }
+            if (!storedBounds) storedBounds = &trackedOverflowBounds_.emplace_back(trackKey, Box3{}).second;
+        }
+        oldBounds = isNew ? Box3{} : *storedBounds;
+        *storedBounds = newBounds;
+    }
+
+    dirtyPrimitives_.push_back(DirtyPrimitive{mesh.id(), transformChanged, instanceChanged, geometryChanged, isNew,
+                                              false, oldBounds, newBounds});
+    r.dirtyTracked = true;
+    r.dirtyGeomChanged = false;
+    r.lastDirtyFrame16 = static_cast<uint16_t>(frame_);
+    r.lastDirtyRevision = rev;
 }
 
 DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
@@ -1017,6 +1139,31 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                 Record& r = cached ? record(mesh, *cached, !compact || pageCaster) : record(mesh, !compact || pageCaster);
                 markSeen(r);
                 if (r.drawable && r.material->visible && (mainPass || shadowCaster)) {
+                    const uint32_t dirtyRev = static_cast<uint32_t>(mesh.revision());
+                    const bool instanced = !compact && ((type == "InstancedMesh") || (mesh.geometry && mesh.geometry->instanced));
+                    bool needsTrack = !r.dirtyTracked || r.lastDirtyRevision != dirtyRev || r.dirtyGeomChanged;
+                    if (!needsTrack && instanced) {
+                        const uint64_t trackKey = r.cacheId != UINT64_MAX ? r.cacheId : mesh.id();
+                        if (type == "InstancedMesh" && trackKey < trackedInstancesById_.size()) {
+                            const auto& inst = static_cast<const InstancedMesh&>(mesh);
+                            const auto& prev = trackedInstancesById_[trackKey];
+                            const auto* ms = inst.instanceMatrix ? inst.instanceMatrix->store.get() : nullptr;
+                            const auto* cs = inst.instanceColor ? inst.instanceColor->store.get() : nullptr;
+                            const uint32_t cnt =
+                                ms ? static_cast<uint32_t>(std::min<uint64_t>(inst.count, inst.instanceMatrix->count())) : 0;
+                            needsTrack = !prev.valid || prev.count != cnt ||
+                                         prev.matWrites != (ms ? ms->writes() : 0) || prev.matEpoch != (ms ? ms->epoch() : 0) ||
+                                         prev.colWrites != (cs ? cs->writes() : 0) || prev.colEpoch != (cs ? cs->epoch() : 0);
+                        } else if (type != "InstancedMesh" && trackKey < trackedInstancesById_.size()) {
+                            const auto& prev = trackedInstancesById_[trackKey];
+                            const uint32_t cnt = instanceCountOf(*mesh.geometry);
+                            needsTrack = !prev.valid || prev.count != cnt;
+                        } else {
+                            needsTrack = true;
+                        }
+                    }
+                    if (needsTrack)
+                        trackDirty(mesh, r, type, shadowCaster);
                     if (compact && !pageCaster) {
                         addBatchMesh(mesh, r, mainPass, shadowCaster);
                     } else if (pageCaster) {
@@ -1056,6 +1203,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                                     rig.deferWorldPalette(worldsFreshSince_);
                                 }
                                 d.boneMatrices = &skinned.skeleton->boneMatrices;
+                                d.boneVersion = skinned.skeleton->boneMatricesVersion();
                                 d.bindMatrix = toArray(skinned.bindMatrix);
                                 d.bindMatrixInverse = toArray(skinned.bindMatrixInverse);
                                 if (gpu) {
@@ -1483,6 +1631,18 @@ void RenderDatabase::batch(std::vector<DrawItem>& items, Object3D& scene,
         if (palette) {
             palette->end();
             d.boneMatrices = &palette->matrices();
+            if (paletteVersionCaches_.size() <= slot) paletteVersionCaches_.resize(slot + 1);
+            auto& pv = paletteVersionCaches_[slot];
+            uint64_t idHash = 14695981039346656037ull;
+            for (std::size_t k : g) idHash = (idHash ^ items[k].id) * 1099511628211ull;
+            const uint32_t count = static_cast<uint32_t>(g.size());
+            if (pv.count != count || pv.idHash != idHash || pv.writes != palette->writes()) {
+                pv.writes = palette->writes();
+                pv.count = count;
+                pv.idHash = idHash;
+                ++pv.version;
+            }
+            d.boneVersion = pv.version;
             d.boneStride = palette->bones();
             d.bindMatrix = d.bindMatrixInverse = d.matrixWorld;
         }
@@ -1541,14 +1701,20 @@ void RenderDatabase::addBatchMesh(const Mesh& mesh, Record& record, bool mainPas
                 auto& reused = meshGroups_[group];
                 reused.geometry = geometry;
                 reused.members.clear();
+                reused.firstMaterial = nullptr;
                 reused.orderedIds = true;
+                reused.uniform = false;
+                reused.dirtyCount = 0;
             }
             meshGroups_[group].identity = identity;
+            meshGroups_[group].firstMaterial = mesh.material.get();
         } else
             group = *found;
         lastMeshGroup_ = group;
     }
     auto& target = meshGroups_[group];
+    if (mesh.material.get() != target.firstMaterial) target.uniform = true;
+    if (record.lastDirtyFrame16 == static_cast<uint16_t>(frame_)) ++target.dirtyCount;
     if (!target.members.empty() && batchMeshes_[target.members.back()].id > mesh.id())
         target.orderedIds = false;
     target.members.push_back(batchMeshes_.size());
@@ -1666,45 +1832,93 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         d.layers = firstMember.layers;
         // PRD-754: the group, not its nearest member, keys the draw, so culling a member moves no uniform slot. The id
         // stays the member's: it breaks three's depth ties, and with it the winner of two coplanar draws.
-        if (features().batchSlotReuse) d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
+        d.key = uint64_t{1} << 62 | (group.identity & ((uint64_t{1} << 62) - 1));
         ++batchGroups_;
         const auto slot = batchSlot(group.identity);
         if (batchCaches_.size() <= slot) batchCaches_.resize(slot + 1);
         d.cache = &batchCaches_[slot];
         while (batchStores_.size() <= slot) batchStores_.push_back(std::make_shared<BufferStore>(Scalar::F32, 0));
         auto& matrices = *batchStores_[slot];
-        // Grow only, by half again: a member culled or back keeps the buffer, so the draw's vertex binding holds.
-        if (matrices.count() < members.size() * 16)
-            matrices.resize(members.size() * 24);
-        auto* matrix = reinterpret_cast<float*>(matrices.data());
-        const bool uniform = std::any_of(members.begin(), members.end(), [&](std::size_t i) {
-            return batchMeshes_[i].material != first.material.get();
-        });
+        const bool uniform = group.uniform;
         if (batchColors_.size() <= slot)
             batchColors_.resize(slot + 1);
         if (uniform && !batchColors_[slot])
             batchColors_[slot] = std::make_shared<BufferStore>(Scalar::F32, 0);
-        if (uniform && batchColors_[slot]->count() < members.size() * 3)
-            batchColors_[slot]->resize(members.size() * 9 / 2);
-        auto* color = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
-        for (std::size_t i = 0; i < members.size(); ++i) {
-#if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
-            if (i + 16 < members.size()) {
-                const auto next = members[i + 16];
-                TN_PREFETCH(&batchTransforms_[next], 0, 3);
-                if (color) TN_PREFETCH(&batchRgb_[next], 0, 3);
-            }
-#endif
-            const auto index = members[i];
-            const auto& packed = batchTransforms_[index];
-            std::copy_n(packed.matrix.data(), 16, matrix);
-            matrix += 16;
-            if (color) {
-                std::copy_n(batchRgb_[index].data(), 3, color);
-                color += 3;
-            }
+        if (batchStoreCaches_.size() <= slot) batchStoreCaches_.resize(slot + 1);
+        auto& sc = batchStoreCaches_[slot];
+        const uint32_t memberCount = static_cast<uint32_t>(members.size());
+        const bool resizedMat = matrices.count() < members.size() * 16;
+        if (resizedMat) matrices.resize(members.size() * 24);
+        const bool resizedCol = uniform && batchColors_[slot]->count() < members.size() * 3;
+        if (resizedCol) batchColors_[slot]->resize(members.size() * 9 / 2);
+
+        const auto computeOrderHash = [&]() {
+            uint64_t h = 14695981039346656037ull;
+            for (std::size_t i : members) h = (h ^ batchMeshes_[i].id) * 1099511628211ull;
+            return h;
+        };
+        const bool lowDirty = group.dirtyCount <= 32;
+        const bool maybeSame = lowDirty && !resizedMat && !resizedCol && sc.identity == group.identity &&
+                               sc.count == memberCount && sc.uniform == uniform &&
+                               sc.epoch == matrices.epoch();
+        uint64_t orderHash = 0;
+        bool sameOrder = false;
+        if (maybeSame) {
+            orderHash = computeOrderHash();
+            sameOrder = (sc.orderHash == orderHash);
         }
-        matrices.needsUpdate();
+        if (sameOrder && group.dirtyCount == 0) {
+            // Completely unchanged batch in the same draw order: preserve BufferStore stamp (0 copies, 0 GPU uploads).
+        } else if (sameOrder) {
+            bool anyMat = false, anyCol = false;
+            const uint16_t curFrame16 = static_cast<uint16_t>(frame_);
+            for (std::size_t i = 0; i < members.size(); ++i) {
+                const auto index = members[i];
+                if (batchMeshes_[index].record->lastDirtyFrame16 != curFrame16) continue;
+                matrices.write(uint64_t(i) * 16 * sizeof(float), batchTransforms_[index].matrix.data(),
+                               16 * sizeof(float));
+                anyMat = true;
+                if (uniform) {
+                    batchColors_[slot]->write(uint64_t(i) * 3 * sizeof(float), batchRgb_[index].data(),
+                                              3 * sizeof(float));
+                    anyCol = true;
+                }
+            }
+            if (anyMat) matrices.needsUpdate();
+            if (anyCol) batchColors_[slot]->needsUpdate();
+        } else {
+            if (lowDirty) {
+                if (!maybeSame) orderHash = computeOrderHash();
+                sc.identity = group.identity;
+                sc.epoch = matrices.epoch();
+                sc.orderHash = orderHash;
+                sc.count = memberCount;
+                sc.uniform = uniform;
+            } else {
+                sc.count = 0;
+            }
+            auto* matrix = reinterpret_cast<float*>(matrices.data());
+            auto* color = uniform ? reinterpret_cast<float*>(batchColors_[slot]->data()) : nullptr;
+            for (std::size_t i = 0; i < members.size(); ++i) {
+#if defined(__GNUC__) && !defined(__EMSCRIPTEN__)
+                if (i + 16 < members.size()) {
+                    const auto next = members[i + 16];
+                    TN_PREFETCH(&batchTransforms_[next], 0, 3);
+                    if (color) TN_PREFETCH(&batchRgb_[next], 0, 3);
+                }
+#endif
+                const auto index = members[i];
+                const auto& packed = batchTransforms_[index];
+                std::copy_n(packed.matrix.data(), 16, matrix);
+                matrix += 16;
+                if (color) {
+                    std::copy_n(batchRgb_[index].data(), 3, color);
+                    color += 3;
+                }
+            }
+            matrices.needsUpdate();
+            if (uniform) batchColors_[slot]->needsUpdate();
+        }
         d.sortOrigin = {d.matrixWorld[12], d.matrixWorld[13], d.matrixWorld[14]};
         d.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
         d.instanceMatrices = &matrices;
@@ -1713,7 +1927,6 @@ void RenderDatabase::batchMeshes(std::vector<DrawItem>& items) {
         while (batchParams_.size() <= slot) batchParams_.push_back(std::make_unique<shader::StandardMaterial>());
         *batchParams_[slot] = *d.material;
         if (uniform) {
-            batchColors_[slot]->needsUpdate();
             d.instanceColors = batchColors_[slot].get();
             batchParams_[slot]->color = {1, 1, 1};
         }
@@ -1792,6 +2005,7 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     flatParentIdentity_ = flat && scene.matrixWorld.elements == Matrix4{}.elements;
     items_.clear();
     items_.reserve(previousDrawCount_);
+    dirtyPrimitives_.clear();
     auto& items = items_;
     const auto matrices = profiling ? Clock::now() : Clock::time_point{};
     lights = LightState{};
@@ -1875,7 +2089,12 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (hemisphere_ > 1)
         diagnostics_.push_back("TN_NATIVE_LIGHTS_UNSUPPORTED: " + std::to_string(hemisphere_) +
                                " hemisphere lights; one is drawn");
-    for (auto& r : flatRecords_) if (r.seen != frame_) r = Record{};
+    for (auto& r : flatRecords_) if (r.seen != frame_) {
+        if (r.dirtyTracked)
+            dirtyPrimitives_.push_back(
+                DirtyPrimitive{r.meshId, false, false, false, false, true, removeTrackedState(r), Box3{}});
+        r = Record{};
+    }
     // A chain unseen for 256 renders leaves the cache: its bone may be gone, and the entry never reads its pointer.
     if (frame_ % 256 == 0) std::erase_if(boneChains_, [&](const auto& entry) { return frame_ - entry.second.seen > 256; });
     // Objects that left the scene leave the database.
@@ -1884,6 +2103,9 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     if (mapSeen_ != records_.size()) ++recordSweeps_;
     for (auto it = mapSeen_ == records_.size() ? records_.end() : records_.begin(); it != records_.end();) {
         if (it->second.seen != frame_) {
+            if (it->second.dirtyTracked)
+                dirtyPrimitives_.push_back(DirtyPrimitive{it->second.meshId, false, false, false, false, true,
+                                                          removeTrackedState(it->second), Box3{}});
             if (it->second.cacheId < byId_.size()) byId_[it->second.cacheId] = nullptr;
             it = records_.erase(it);
             erased = true;
@@ -1908,9 +2130,11 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
     }
     // A draw that still reads a skeleton's world palette (a rig drawn alone, a shadow copy whose rig kept no slot)
     // runs that skeleton's held update now; a batch's root-relative slots read none (PRD-878).
-    for (const DrawItem& item : items)
-        if (item.skinnedRig && item.skinnedRig->skeleton && item.boneMatrices == &item.skinnedRig->skeleton->boneMatrices)
+    for (DrawItem& item : items)
+        if (item.skinnedRig && item.skinnedRig->skeleton && item.boneMatrices == &item.skinnedRig->skeleton->boneMatrices) {
             item.skinnedRig->skeleton->ensureWorldPalette();
+            item.boneVersion = item.skinnedRig->skeleton->boneMatricesVersion();
+        }
     const auto batched = profiling ? Clock::now() : Clock::time_point{};
     // Resolve the scene fallback every frame: environment can change without a material version bump.
     const Scene* world = dynamic_cast<const Scene*>(&scene);

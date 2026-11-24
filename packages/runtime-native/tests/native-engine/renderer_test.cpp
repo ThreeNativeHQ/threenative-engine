@@ -4147,6 +4147,254 @@ void mainInstanceFrustumCull() {
         CHECK(recoveredPx == baselinePx);
     }
 }
+
+// PRD-913 Phase 1: size the per-draw work a frame repeats without needing it. A steady frame still copies every draw's
+// frame slab into its uniform slot, then compares the whole arena against the bytes the GPU holds and sends nothing, so
+// the compare reads exactly the arena; a camera turn moves every slot, so the copy runs again and the compare reads at
+// least the arena; a moved instance makes the storage scan read the page it wrote. Each frame fails on the counter it
+// owns, so a path that came back or went away shows here and not as a pixel difference.
+void uniformScanCounters() {
+    struct SharedViewGuard {
+        std::optional<std::string> prior;
+        std::optional<std::string> priorPersistent;
+        explicit SharedViewGuard(const char* value) {
+            if (const char* current = std::getenv("TN_SHARED_VIEW_UNIFORM")) prior = current;
+            if (const char* current = std::getenv("TN_PERSISTENT_GPU_SCENE")) priorPersistent = current;
+            setenv("TN_SHARED_VIEW_UNIFORM", value, 1);
+            setenv("TN_PERSISTENT_GPU_SCENE", value, 1);
+        }
+        ~SharedViewGuard() {
+            if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
+            else unsetenv("TN_SHARED_VIEW_UNIFORM");
+            if (priorPersistent) setenv("TN_PERSISTENT_GPU_SCENE", priorPersistent->c_str(), 1);
+            else unsetenv("TN_PERSISTENT_GPU_SCENE");
+        }
+    } guard("0");
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    struct Scan {
+        uint64_t slabCopyBytes, slabCopyMicros, memcmpBytes, memcmpMicros, storageBytes, storageMicros;
+    };
+    const auto sample = [] {
+        const auto& c = waste::counters();
+        return Scan{c.uniformSlabCopyBytes.load(),  c.uniformSlabCopyMicros.load(),  c.uniformMemcmpBytes.load(),
+                    c.uniformMemcmpMicros.load(),   c.storageSameBytesScanned.load(), c.storageSameBytesMicros.load()};
+    };
+    const auto since = [](const Scan& before, const Scan& after) {
+        return Scan{after.slabCopyBytes - before.slabCopyBytes, after.slabCopyMicros - before.slabCopyMicros,
+                    after.memcmpBytes - before.memcmpBytes,     after.memcmpMicros - before.memcmpMicros,
+                    after.storageBytes - before.storageBytes,   after.storageMicros - before.storageMicros};
+    };
+
+    constexpr uint32_t kInstances = 4;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial paint;
+    paint.color = {0.8f, 0.5f, 0.3f};
+    BufferStore matrices(Scalar::F32, kInstances * 16);
+    std::vector<float> instanceData(kInstances * 16, 0.0f);
+    for (uint32_t i = 0; i < kInstances; ++i) {
+        float* m = instanceData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = 0.5f;
+        m[15] = 1.0f;
+        m[12] = -1.5f + float(i);  // four half-metre instances across the view, one store they all share
+        m[14] = -0.5f;
+    }
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+
+    std::array<DrawItem, 2> items;
+    for (DrawItem& item : items) {
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions;
+        item.normals = &ball->normals;
+        item.indices = &ball->indices;
+        item.material = &paint;
+    }
+    items[0].key = items[0].id = 1;
+    items[0].instanceMatrices = &matrices;
+    items[0].instanceCount = kInstances;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[0].geometryBox = Box3();
+    items[0].geometryBox->min.set(-1, -1, -1);  // the unit ball each instance scales down
+    items[0].geometryBox->max.set(1, 1, 1);
+    items[1].key = items[1].id = 2;
+    items[1].matrixWorld = {0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 2.5, 0, 0, 1};
+
+    LightState lights;
+    const DirectLight sun = DirectLight::directional({0, 1, 0}, {1, 1, 1});
+    lights.direct.push_back(sun);
+
+    // camera(1) at z = 4 turned by `yaw` about y: a turn moves every draw's view-dependent slot, a held camera none.
+    const auto turned = [](double yaw) {
+        CameraState c = camera(1);
+        const double cs = std::cos(yaw), sn = std::sin(yaw);
+        c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+        c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 4 * sn, 0, -4 * cs, 1};
+        return c;
+    };
+    const CameraState held = turned(0), turnedCam = turned(0.2);
+
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const std::span<const DrawItem> scene(items.data(), items.size());
+    for (int frame = 0; frame < 2; ++frame)  // programs, slots and the first uploads settle
+        renderer.render(scene, held, lights, {0, 0, 0, 1});
+
+    waste::setDebugEnabled(true);
+    auto before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan steady = since(before, sample());
+    const uint64_t steadyBytes = renderer.lastFrame().uniformBytes;
+
+    before = sample();
+    renderer.render(scene, turnedCam, lights, {0, 0, 0, 1});
+    const Scan turn = since(before, sample());
+    const uint64_t turnBytes = renderer.lastFrame().uniformBytes;
+
+    instanceData[12] += 0.25f;  // instance 0 slid 25 cm: the page it lives in no longer matches the GPU's copy
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+    matrices.needsUpdate();
+    before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan movedInstance = since(before, sample());
+    waste::setDebugEnabled(false);
+
+    std::fprintf(stderr,
+                 "TN_DEBUG uniform scan: steady %llu slab bytes in %llu us, %llu memcmp bytes in %llu us of %llu; turn "
+                 "%llu slab bytes, %llu memcmp bytes of %llu; moved instance %llu storage bytes in %llu us\n",
+                 (unsigned long long)steady.slabCopyBytes, (unsigned long long)steady.slabCopyMicros,
+                 (unsigned long long)steady.memcmpBytes, (unsigned long long)steady.memcmpMicros,
+                 (unsigned long long)steadyBytes, (unsigned long long)turn.slabCopyBytes,
+                 (unsigned long long)turn.memcmpBytes, (unsigned long long)turnBytes,
+                 (unsigned long long)movedInstance.storageBytes, (unsigned long long)movedInstance.storageMicros);
+    CHECK(steady.slabCopyBytes > 0);  // every draw's slot is written from its program's slab, every frame
+    CHECK(steadyBytes > 0);
+    CHECK(steady.memcmpBytes == steadyBytes);  // one whole-arena pass found nothing to send
+    CHECK(turn.slabCopyBytes > 0);
+    CHECK(turnBytes > 0);
+    CHECK(turn.memcmpBytes >= turnBytes / 2);  // early-exits once half the arena is dirty
+    CHECK(movedInstance.storageBytes > 0);
+}
+
+// PRD-913 Phase 2: the frame-constant half of every draw's uniform block (camera, projection, lights, shadow
+// matrices, hemisphere) moves out of the per-draw arena into one record per view, written once and bound for the
+// pass. A camera turn is where that pays: the legacy path re-copies every draw's frame slab and re-uploads the whole
+// arena, the shared path copies no slab and uploads one view record, for the same pixels. `TN_SHARED_VIEW_UNIFORM=0`
+// restores the legacy blocks by name and says so in diagnostics.
+void sharedViewUniforms() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    Scene scene;
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xfff2e0), 2.4);
+    sun->position.set(3, 6, 5);
+    sun->setCastShadow(true);
+    scene.add(*sun);
+    auto lamp = std::make_shared<PointLight>(Color().setHex(0xffd0a0), 12, 0, 2);
+    lamp->position.set(-2.5, 1.5, 3);
+    scene.add(*lamp);
+    auto sky = std::make_shared<HemisphereLight>(Color().setHex(0xb0c4de), Color().setHex(0x302820), 0.7);
+    scene.add(*sky);
+    const auto geometry = makeBoxGeometry();
+    for (int i = 0; i < 10; ++i) {  // ten distinct materials: ten uniform slots, every one a camera turn dirties
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setHex(0x335577 + 0x070500 * uint32_t(i));
+        material->roughness = 0.1 + 0.09 * i;
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(-3.6 + 0.8 * i, 0.4 * ((i % 3) - 1), -1.2 + 0.6 * (i / 4));
+        mesh->rotation.set(0.2 * i, 0.15 * i, 0.1 * i);
+        mesh->setCastShadow(true);
+        mesh->setReceiveShadow(true);
+        scene.add(*mesh);
+    }
+
+    const auto look = [&](double x, double y) {  // a moved camera: every view-dependent field of the frame moves
+        camera.position.set(x, y, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+    };
+
+    const char* priorRaw = std::getenv("TN_SHARED_VIEW_UNIFORM");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
+            else unsetenv("TN_SHARED_VIEW_UNIFORM");
+        }
+    } restore{prior};
+
+    struct Arm {
+        uint64_t slabBytes = 0, uploadBytes = 0, firstFrameUniformBytes = 0, frameUniformBytes = 0;
+        std::vector<uint8_t> pixels;
+        std::vector<std::string> diagnostics;
+    };
+    // `flag` unset is the default shared view; "0" is the named legacy override.
+    const auto measure = [&](const char* flag) {
+        if (flag) setenv("TN_SHARED_VIEW_UNIFORM", flag, 1);
+        else unsetenv("TN_SHARED_VIEW_UNIFORM");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(96, 96);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        look(0, 0);
+        uint64_t firstUniformBytes = 0;
+        for (int frame = 0; frame < 4; ++frame) {  // programs, slots and the first uploads settle
+            database.render(renderer, scene, camera);
+            if (frame == 0) firstUniformBytes = renderer.lastFrame().uniformBytes;
+            renderer.poll();
+            events.drain();
+        }
+        waste::setDebugEnabled(true);
+        const uint64_t slabBefore = waste::counters().uniformSlabCopyBytes.load();
+        const uint64_t uploadBefore = renderer.gpu().queueWriteBytes();
+        look(0.8, 0.3);
+        database.render(renderer, scene, camera);
+        Arm arm;
+        arm.slabBytes = waste::counters().uniformSlabCopyBytes.load() - slabBefore;
+        arm.uploadBytes = renderer.gpu().queueWriteBytes() - uploadBefore;
+        arm.firstFrameUniformBytes = firstUniformBytes;
+        arm.frameUniformBytes = renderer.lastFrame().uniformBytes;
+        arm.pixels = read(renderer, events);
+        waste::setDebugEnabled(false);
+        arm.diagnostics = renderer.diagnostics();
+        return arm;
+    };
+
+    const Arm shared = measure(nullptr);
+    const Arm legacy = measure("0");
+
+    std::fprintf(stderr,
+                 "TN_DEBUG shared view uniforms: default %llu slab bytes, %llu uploaded, %llu/%llu arena; legacy %llu slab "
+                 "bytes, %llu uploaded, %llu/%llu arena\n",
+                 (unsigned long long)shared.slabBytes, (unsigned long long)shared.uploadBytes,
+                 (unsigned long long)shared.firstFrameUniformBytes, (unsigned long long)shared.frameUniformBytes,
+                 (unsigned long long)legacy.slabBytes, (unsigned long long)legacy.uploadBytes,
+                 (unsigned long long)legacy.firstFrameUniformBytes, (unsigned long long)legacy.frameUniformBytes);
+    CHECK(shared.slabBytes == 0);  // a turn writes the view record once, never a draw's block
+    CHECK(legacy.slabBytes > 0);   // the override restores one slab copy per draw
+    CHECK(shared.firstFrameUniformBytes < legacy.firstFrameUniformBytes);
+    CHECK(shared.uploadBytes * 4 <= legacy.uploadBytes);
+    bool reported = false;
+    for (const std::string& note : legacy.diagnostics)
+        if (note.find("TN_SHARED_VIEW_UNIFORM=0") != std::string::npos) reported = true;
+    CHECK(reported);  // the override is reported, never silent
+    // Same picture: the shared record carries the same bytes, they just stop riding in every draw's block.
+    CHECK(shared.pixels.size() == 96 * 96 * 4 && legacy.pixels.size() == shared.pixels.size());
+    int worst = 0;
+    for (std::size_t i = 0; i < shared.pixels.size() && shared.pixels.size() == legacy.pixels.size(); ++i)
+        worst = std::max(worst, std::abs(int(shared.pixels[i]) - int(legacy.pixels[i])));
+    CHECK(worst <= 2);
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4197,4 +4445,6 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
              {"indirect_record", indirectRecord},
              {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
-             {"main_instance_frustum_cull", mainInstanceFrustumCull})
+             {"main_instance_frustum_cull", mainInstanceFrustumCull},
+             {"uniform_scan_counters", uniformScanCounters},
+             {"shared_view_uniforms", sharedViewUniforms})

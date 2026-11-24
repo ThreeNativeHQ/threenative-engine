@@ -151,6 +151,8 @@ class Skeleton {
     uint64_t planPoseBuilds = 0;
     /** How many times `updateAfterWorldWalk` wrote the world palette (PRD-878: a held pose skips it). */
     uint64_t worldPaletteUpdates = 0;
+    /** Bumps only when `boneMatrices` bytes actually changed (PRD-913 Phase 3). */
+    [[nodiscard]] uint64_t boneMatricesVersion() const { return boneMatricesVersion_; }
     /** Every bone's world position in the space `inverse` takes it to, once per `stamp` and `inverse`: the two meshes a
      *  mannequin binds share one skeleton and one bind space, so the plan transforms its bones once (PRD-872). */
     const std::vector<Vector3>& planCenters(uint64_t stamp, const Matrix4& inverse);
@@ -167,6 +169,9 @@ class Skeleton {
     std::vector<Vector3> centers_;
     std::array<double, 16> centerInverse_{};
     uint64_t centerStamp_ = 0;
+    uint64_t boneMatricesVersion_ = 1;
+    uint64_t lastPalettePoseVersion_ = 0;
+    std::vector<uint64_t> lastBoneEvaluations_;
 };
 
 /**

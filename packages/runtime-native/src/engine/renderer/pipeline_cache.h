@@ -219,7 +219,8 @@ public:
     PipelineLayoutCache& operator=(const PipelineLayoutCache&) = delete;
 
     WGPUBindGroupLayout bindGroup(const std::string& key, const std::vector<WGPUBindGroupLayoutEntry>& entries);
-    WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second);
+    WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second,
+                                WGPUBindGroupLayout third = nullptr);
     /** Distinct pipeline layouts: a browser hands out a new handle per creation, where Dawn native dedupes equal ones. */
     size_t pipelineLayouts() const { return pipelines_.size(); }
 

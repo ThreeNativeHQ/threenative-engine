@@ -73,6 +73,13 @@ public:
     void addUpdateRange(uint64_t start, uint64_t count) { ranges_.push_back({start, count}); }
     void clearUpdateRanges() { ranges_.clear(); }
     std::span<const UpdateRange> updateRanges() const { return ranges_; }
+    /** PRD-913 Phase 3: byte-level dirty ranges recorded since the last clear (resize/data() sets dirtyAll). */
+    bool dirtyAll() const { return dirtyAll_; }
+    std::span<const UpdateRange> dirtyByteRanges() const { return dirtyByteRanges_; }
+    void clearDirtyByteRanges() const {
+        dirtyAll_ = false;
+        dirtyByteRanges_.clear();
+    }
 
     Scalar scalar() const { return scalar_; }
     uint64_t count() const { return bytes_.size() / scalarSize(scalar_); }
@@ -86,6 +93,8 @@ public:
     std::byte* data() {
         pull();
         ++writes_;
+        dirtyAll_ = true;
+        dirtyByteRanges_.clear();
         return bytes_.data();
     }
     const std::byte* data() const {
@@ -128,6 +137,9 @@ private:
     uint32_t version_ = 0;
     uint32_t gpuReleases_ = 0;
     std::vector<UpdateRange> ranges_;
+    mutable bool dirtyAll_ = true;
+    mutable std::vector<UpdateRange> dirtyByteRanges_;
+    void recordDirtyBytes(uint64_t byteOffset, uint64_t byteLength);
 };
 
 /**

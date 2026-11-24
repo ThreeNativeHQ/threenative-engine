@@ -256,6 +256,7 @@ struct DrawItem {
     const BufferGeometry* morphGeometry = nullptr;
     const std::vector<double>* morphInfluences = nullptr;
     const std::vector<float>* boneMatrices = nullptr;
+    uint64_t boneVersion = 0;
     Matrix bindMatrix{}, bindMatrixInverse{};
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
     std::shared_ptr<GpuJointScene> gpuJoints;
@@ -1084,6 +1085,9 @@ private:
          *  writes only their ambient and hemisphere terms. */
         bool selective = false;
         std::vector<uint64_t> lightSelection;
+        bool sharedView = false;
+        bool usesViewGroup = false;
+        uint32_t viewLightCount = 0;
         std::array<std::unique_ptr<shader::StageModule>, 32> aux;  // by AuxTarget mask, built on first request
         uint32_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
@@ -1631,6 +1635,9 @@ private:
     std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
     std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
     std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDirectWrites_;  // PRD-913: exact byte spans pushed to GPU without sameBytes scan
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDiffSpans_;     // full-slot overwrites filtered via SIMD sameBytes on upload
+    std::vector<const BufferStore*> instanceClearedStores_;
     std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
     uint64_t instanceTop_ = 0;
     static constexpr uint64_t kInstanceSlotPlans = 4096;
@@ -1667,8 +1674,34 @@ private:
     uint64_t morphPacks_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
+    bool sharedViewEnabled();
+    bool persistentGpuSceneEnabled();
+    struct BonePlacement {
+        const std::vector<float>* ptr = nullptr;
+        uint64_t version = 0;
+        uint64_t offsetBytes = 0;
+        uint64_t sizeBytes = 0;
+        bool operator==(const BonePlacement&) const = default;
+    };
+    std::vector<BonePlacement> bonePlacements_;
+    std::vector<BonePlacement> lastBonePlacements_;
+    Handle lastBoneBuffer_;
+    uint64_t lastBonePrefix_ = 0;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
+    WGPUBindGroupLayout viewLayout_ = nullptr;
+    WGPUBindGroup viewGroup_ = nullptr;
+    Handle viewBuffer_;
+    uint64_t viewCapacity_ = 0;
+    uint64_t viewSliceBytes_ = 0;
+    std::vector<uint8_t> viewUniforms_;
+    std::vector<uint8_t> uploadedViewUniforms_;
+    WGPUBindGroup shadowViewGroup_ = nullptr;
+    Handle shadowViewBuffer_;
+    uint64_t shadowViewCapacity_ = 0;
+    uint64_t shadowViewSliceBytes_ = 0;
+    std::vector<uint8_t> shadowViewUniforms_;
+    std::vector<uint8_t> uploadedShadowViewUniforms_;
     /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
     std::vector<uint8_t> uploadedUniforms_;
     std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;

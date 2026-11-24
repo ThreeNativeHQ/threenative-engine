@@ -191,7 +191,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size
         native_engine_post_stage_is_metered=post_stage_is_metered
-        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges)
+        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges
+        native_engine_renderer_uniform_scan_counters=uniform_scan_counters
+        native_engine_shared_view_uniforms=shared_view_uniforms)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
     # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
     if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
@@ -315,6 +317,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_palette_lifetime=palette_lifetime
         native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_gpu_scene_dirty_uploads=gpu_scene_dirty_uploads
         native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
         native_engine_shadow_row_follows_on_before_render=shadow_row_follows_on_before_render
         native_engine_skin_attribute_delete_is_seen=skin_attribute_delete_is_seen

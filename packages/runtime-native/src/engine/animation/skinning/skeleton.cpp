@@ -120,6 +120,8 @@ void Skeleton::refreshBoneLiveness() const {
 void Skeleton::init() {
     revokeGpuSkinning();
     markPoseChanged();
+    ++boneMatricesVersion_;
+    lastBoneEvaluations_.clear();
     boneMatrices.assign(bones.size() * 16, 0.0f);
 
     if (boneInverses.empty()) {
@@ -177,12 +179,30 @@ void Skeleton::deferWorldPalette(uint64_t firstEvaluation) {
 void Skeleton::updateAfterWorldWalk(uint64_t firstEvaluation) {
     revokeGpuSkinning();
     paletteDue_ = false;
+    const uint64_t currentPose = poseVersion();
+    if (firstEvaluation != 0 && lastPalettePoseVersion_ == currentPose &&
+        lastBoneEvaluations_.size() == bones.size() && boneMatrices.size() == bones.size() * 16) {
+        bool unchanged = true;
+        for (std::size_t i = 0; i < bones.size(); ++i) {
+            Bone* b = bone(i);
+            const uint64_t eval = b ? b->lastWorldEvaluation() : 0;
+            if (lastBoneEvaluations_[i] != eval) {
+                unchanged = false;
+                break;
+            }
+        }
+        if (unchanged) return;
+    }
     ++worldPaletteUpdates;
+    ++boneMatricesVersion_;
+    lastPalettePoseVersion_ = currentPose;
+    lastBoneEvaluations_.resize(bones.size());
     static const Matrix4 identity{};
     Matrix4 offset;
     for (std::size_t i = 0; i < bones.size(); ++i) {
         Bone* b = bone(i);
         if (b && (!firstEvaluation || b->lastWorldEvaluation() < firstEvaluation)) b->materializeWorldTransformIfPending();
+        lastBoneEvaluations_[i] = b ? b->lastWorldEvaluation() : 0;
         const Matrix4& matrix = b ? b->matrixWorld : identity;
         offset.multiplyMatrices(matrix, boneInverses[i]);
         for (std::size_t k = 0; k < 16; ++k)

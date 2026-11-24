@@ -138,6 +138,11 @@ target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 # stb_image is third-party C in a C++ unit: its own warnings are not this engine's.
 set_source_files_properties(src/engine/shader/graph/smaa_tables.cpp PROPERTIES COMPILE_OPTIONS "-w")
+if(EMSCRIPTEN)
+    # Compile cold shader emission/package units at -Os under Emscripten (native keeps -O3) to hold LIMITS.webEngineBytes.
+    set_source_files_properties(src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
+        src/engine/shader/graph/serialized.cpp PROPERTIES COMPILE_OPTIONS "-Os")
+endif()
 
 # meshoptimizer's decoders for EXT/KHR_meshopt_compression (provisioned by download-deps): MIT, three
 # translation units and one header, no platform code, so every target the engine builds gets the same
