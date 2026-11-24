@@ -601,6 +601,8 @@ struct Renderer::FrameJob {
     // velocity pass (zero copies nothing), and whether a seeded frame copies them before it too.
     std::array<uint64_t, 2> previousBytes{};
     bool previousSeed = false;
+    bool instancesMutated = false;
+    bool traaSeedFrame = false;
     std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;

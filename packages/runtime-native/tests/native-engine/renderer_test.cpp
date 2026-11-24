@@ -4395,6 +4395,162 @@ void sharedViewUniforms() {
         worst = std::max(worst, std::abs(int(shared.pixels[i]) - int(legacy.pixels[i])));
     CHECK(worst <= 2);
 }
+
+// PRD-914 Phase 1: an opaque draw whose model matrix, skinning, position node and instance revision are unchanged
+// since the previous frame takes fillVelocity()'s camera reprojection instead of redrawing into the velocity target.
+// Static meshes therefore emit no velocity draw and movers keep their own velocity, and TN_STATIC_VELOCITY=1 restores
+// the static draws and reports the override by name. A temporal effect replaces multisampling, so both requested
+// sample counts draw the scene through the same single-sampled velocity path.
+void traaDynamicOnlyVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    const std::size_t vertices = ball->positions.count() / 3;
+    BufferStore skinIndices(Scalar::U16, vertices * 4), skinWeights(Scalar::F32, vertices * 4);
+    const std::vector<uint16_t> zero(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, zero.data(), zero.size() * sizeof(uint16_t));
+    skinWeights.write(0, weights.data(), weights.size() * sizeof(float));
+    shader::StandardMaterial material;
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const char* priorRaw = std::getenv("TN_STATIC_VELOCITY");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_STATIC_VELOCITY", prior->c_str(), 1);
+            else unsetenv("TN_STATIC_VELOCITY");
+        }
+    } restore{prior};
+    const auto directory = std::filesystem::current_path() /
+        ("traa-dynamic-only-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    const auto readVelocity = [&](const std::filesystem::path& folder, int frame) {
+        std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    BufferStore staticMatrices(Scalar::F32, 16);
+    staticMatrices.write(0, identity, sizeof identity);
+    // One rigid and one instanced sphere that never move, under a camera sliding 0.02 along x per frame.
+    const auto staticArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(6, 6);
+        DrawItem items[2];
+        for (int i = 0; i < 2; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.9, 0, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.9, 0, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-static-only-forced" : "-static-only-default"));
+        bool reported = false;
+        for (int frame = 0; frame <= 6; ++frame) {
+            renderer.render(std::span<const DrawItem>(items, 2), slidingCamera(double(width) / height, frame),
+                            LightState{}, {0, 0, 0, 1});
+            if (forceStatic) {
+                CHECK(renderer.lastFrame().velocityDraws == 2);
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            } else if (frame >= 1) {
+                CHECK(renderer.lastFrame().velocityDraws == 0);
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 6);
+    };
+    // Two static spheres and three movers: a rigid sphere, a skinned sphere and an instanced sphere, each sliding 0.02
+    // along x per frame under a still camera.
+    const auto mixedArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        BufferStore movingMatrices(Scalar::F32, 16);
+        std::vector<float> bones(identity, identity + 16);
+        std::vector<DrawItem> items(5);
+        for (int i = 0; i < 5; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.4, 0.5, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.4, 0.5, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -0.4, 0, 1};
+        items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, -0.4, 0, 1};
+        items[3].skinIndices = &skinIndices; items[3].skinWeights = &skinWeights; items[3].boneMatrices = &bones;
+        items[3].bindMatrix = items[3].bindMatrixInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        items[4].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.5, -0.4, 0, 1};
+        items[4].instanceMatrices = &movingMatrices; items[4].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-mixed-forced" : "-mixed-default"));
+        std::array<float, 16> moving = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        bool reported = false;
+        for (int frame = 0; frame <= 20; ++frame) {
+            const float offset = 0.02f * float(frame);
+            items[2].matrixWorld[12] = offset;
+            bones[12] = offset;
+            moving[12] = offset;
+            movingMatrices.write(0, moving.data(), moving.size() * sizeof(float));
+            renderer.render(items, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
+            if (frame == 20) {
+                CHECK(renderer.lastFrame().velocityDraws == (forceStatic ? 5u : 3u));
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 20);
+    };
+    for (const uint32_t samples : {1u, 4u}) {
+        const std::string label = "samples-" + std::to_string(samples);
+        const auto staticDefault = staticArm(samples, label, false);
+        const auto staticForced = staticArm(samples, label, true);
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            CHECK(staticDefault[texel * 4 + 2] == 1.0f && staticDefault[texel * 4 + 3] == 1.0f);
+            CHECK(std::abs(staticDefault[texel * 4] - staticForced[texel * 4]) < 1e-4f);
+            CHECK(std::abs(staticDefault[texel * 4 + 1] - staticForced[texel * 4 + 1]) < 1e-4f);
+        }
+        const auto mixedDefault = mixedArm(samples, label, false);
+        const auto mixedForced = mixedArm(samples, label, true);
+        size_t moving = 0;
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            const float x = mixedDefault[texel * 4], y = mixedDefault[texel * 4 + 1];
+            const float z = mixedDefault[texel * 4 + 2], w = mixedDefault[texel * 4 + 3];
+            if (std::abs(x) > 0.004f || std::abs(y) > 0.004f || z == 3.0f) ++moving;
+            CHECK(w == 1.0f && mixedForced[texel * 4 + 3] == 1.0f);
+            CHECK(z == 1.0f || z == 3.0f);
+            CHECK(mixedForced[texel * 4 + 2] == z);
+            CHECK(std::abs(x - mixedForced[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(y - mixedForced[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 10);
+    }
+    std::filesystem::remove_all(directory);
+}
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4447,4 +4603,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
              {"main_instance_frustum_cull", mainInstanceFrustumCull},
              {"uniform_scan_counters", uniformScanCounters},
-             {"shared_view_uniforms", sharedViewUniforms})
+             {"shared_view_uniforms", sharedViewUniforms},
+             {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity})

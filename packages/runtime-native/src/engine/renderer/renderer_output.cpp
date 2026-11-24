@@ -659,13 +659,19 @@ GpuStatus Renderer::readPresented(ReadbackCallback done) {
 // The output triangle again, this time sampling the finished RGBA8 frame into a window surface. The
 // program's own variant is chosen by the target format, so a BGRA swapchain gets a BGRA pipeline.
 WGPURenderPipeline Renderer::copyPipeline(WGPUTextureFormat format, uint8_t blend,
-    std::vector<std::shared_ptr<PipelineCompilation>>* compilation) {
+    std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
+    WGPUTextureFormat depthFormat, uint32_t sampleCount) {
     if (blitVertex_.wgsl.code.empty()) {
         const shader::OutputPrograms copy = shader::buildOutput(std::nullopt, false);
         blitVertex_ = shader::buildStage(copy.vertex, 0);
         blitFragment_ = shader::buildStage(copy.fragment, 0);
     }
-    const PipelineTarget target{format, WGPUTextureFormat_Undefined, WGPUCullMode_None, blend};
+    PipelineTarget target{format, depthFormat, WGPUCullMode_None, blend};
+    target.sampleCount = sampleCount;
+    if (depthFormat != WGPUTextureFormat_Undefined) {
+        target.depthWrite = false;
+        target.depthCompare = WGPUCompareFunction_Always;
+    }
     if (compilation) {
         compilation->push_back(pipelines_->getAsync(blitVertex_, &blitFragment_, target));
         return nullptr;

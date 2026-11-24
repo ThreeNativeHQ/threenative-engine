@@ -530,6 +530,17 @@ bool Renderer::persistentGpuSceneEnabled() {
                             "TN_PERSISTENT_GPU_SCENE=0: legacy storage same-bytes scan enabled", diagnostics_);
 }
 
+bool Renderer::staticVelocityEnabled() {
+    const char* value = flags::read<flags::StaticVelocity>();
+    if (value != nullptr && std::strcmp(value, "0") != 0 && std::strlen(value) != 0) {
+        constexpr const char* note = "TN_STATIC_VELOCITY=1: drawing static meshes in velocity pass";
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end())
+            diagnostics_.push_back(note);
+        return true;
+    }
+    return false;
+}
+
 void Renderer::releaseTargets() {
     if (colorView_) {  // the color texture exists exactly while its view does
         wgpuTextureViewRelease(colorView_);
@@ -543,6 +554,8 @@ void Renderer::releaseTargets() {
     if (msaaColor_) wgpuTextureRelease(msaaColor_);
     if (msaaAuxColorView_) wgpuTextureViewRelease(msaaAuxColorView_);
     if (msaaAuxColor_) wgpuTextureRelease(msaaAuxColor_);
+    if (velocityCameraView_) wgpuTextureViewRelease(velocityCameraView_);
+    if (velocityCamera_) wgpuTextureRelease(velocityCamera_);
     if (sceneView_) wgpuTextureViewRelease(sceneView_);
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
@@ -573,6 +586,8 @@ void Renderer::releaseTargets() {
     depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     msaaAuxColor_ = nullptr;
     msaaAuxColorView_ = nullptr;
+    velocityCamera_ = nullptr;
+    velocityCameraView_ = nullptr;
     outputGroups_.clear();  // they hold the scene target
     releaseOutputGroup();
 }
@@ -1369,23 +1384,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const Planned& p : job.translucentPlan) encode(sheetPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(sheetPass); wgpuRenderPassEncoderRelease(sheetPass);
     }
+    lastFrame_.velocityDraws = 0;
     if (traa_) {
         traa_->fillVelocity(encoder, depthView_);
-        WGPURenderPassColorAttachment motion{};
-        motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Load; motion.storeOp = WGPUStoreOp_Store;
-        if (sampleCount_ == 4) {
-            motion.view = msaaAuxColorView_;
-            motion.loadOp = WGPULoadOp_Clear;
-            motion.resolveTarget = traa_->velocityView();
-        }
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDepthStencilAttachment motionDepth{};
-        motionDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; motionDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor motionDesc{};
-        motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
-        motionDesc.depthStencilAttachment = &motionDepth;
+        lastFrame_.velocityDraws = uint32_t(velocityPlan.size());
+        if (job.traaSeedFrame) previousStorageValid_ = {false, false};
         const auto copyPrevious = [&] {
             for (std::size_t k = 0; k < kPreviousStorages.size(); ++k)
                 if (job.previousBytes[k])
@@ -1394,14 +1397,58 @@ void Renderer::encodeFrame(FrameJob& job) {
                         job.previousBytes[k]);
         };
         if (job.previousSeed) copyPrevious();
-        if (sampleCount_ == 4 || !velocityPlan.empty()) {
+        if (!velocityPlan.empty()) {
+            WGPURenderPassColorAttachment motion{};
+            motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Load; motion.storeOp = WGPUStoreOp_Store;
+            if (sampleCount_ == 4) {
+                WGPUImageCopyTexture_Compat src{}, dst{};
+                src.texture = traa_->velocityTexture();
+                dst.texture = velocityCamera_;
+                const WGPUExtent3D extent{inputWidth_, inputHeight_, 1};
+                wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
+                motion.view = msaaAuxColorView_;
+                motion.loadOp = WGPULoadOp_Clear;
+                motion.resolveTarget = traa_->velocityView();
+            }
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+            WGPURenderPassDepthStencilAttachment motionDepth{};
+            motionDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; motionDepth.depthReadOnly = true;
+            WGPURenderPassDescriptor motionDesc{};
+            motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
+            motionDesc.depthStencilAttachment = &motionDepth;
             auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
+            if (sampleCount_ == 4) {
+                WGPURenderPipeline seedPipe = copyPipeline(
+                    WGPUTextureFormat_RGBA16Float, 0, nullptr, WGPUTextureFormat_Depth32Float, sampleCount_);
+                if (!seedPipe) throw std::runtime_error("TN_TRAA_CAMERA_SEED_PIPELINE_REFUSED");
+                WGPUBindGroupLayout seedLayout = wgpuRenderPipelineGetBindGroupLayout(seedPipe, 0);
+                WGPUBindGroup seedGroup = bindGroup(seedLayout, blitFragment_, outputUniforms_, velocityCameraView_,
+                    outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                    nullptr, nullptr, &outputGroups_);
+                wgpuBindGroupLayoutRelease(seedLayout);
+                if (!seedGroup) throw std::runtime_error("TN_TRAA_CAMERA_SEED_GROUP_REFUSED");
+                wgpuRenderPassEncoderSetPipeline(velocityPass, seedPipe);
+                wgpuRenderPassEncoderSetBindGroup(velocityPass, 0, seedGroup, 0, nullptr);
+                wgpuRenderPassEncoderSetVertexBuffer(
+                    velocityPass, blitVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
+                wgpuRenderPassEncoderDraw(velocityPass, 3, 1, 0, 0);
+            }
             const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
             replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
                    job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
             wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
         }
         copyPrevious();
+        for (std::size_t k = 0; k < kPreviousStorages.size(); ++k) {
+            if (job.previousBytes[k] > 0) {
+                previousStorageValid_[k] = true;
+                previousStorageBytes_[k] = job.previousBytes[k];
+            } else if (k == 1 && job.instancesMutated) {
+                previousStorageValid_[1] = false;
+            }
+        }
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     // A game's RenderTarget the post graph samples is drawn where the frame first reads it, after the render-to-texture

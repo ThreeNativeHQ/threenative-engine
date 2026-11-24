@@ -856,6 +856,8 @@ public:
         uint32_t shadowGroupRows = 0;
         /** PRD-888: the masked depth-only draws the main pass ran before shading those draws depth-Equal. */
         uint32_t prepassDraws = 0;
+        /** PRD-914 Phase 1: the draws emitted into `velocityPlan` after skipping unchanged static meshes. */
+        uint32_t velocityDraws = 0;
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -1140,7 +1142,8 @@ private:
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
-        std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr);
+        std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr,
+        WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined, uint32_t sampleCount = 1);
     /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
     void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels, uint32_t layers = 1);
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
@@ -1429,6 +1432,8 @@ private:
     WGPUTextureView msaaColorView_ = nullptr;
     WGPUTexture msaaAuxColor_ = nullptr;
     WGPUTextureView msaaAuxColorView_ = nullptr;
+    WGPUTexture velocityCamera_ = nullptr;
+    WGPUTextureView velocityCameraView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
     WGPUTextureView msaaDepthView_ = nullptr;
     WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame
@@ -1604,14 +1609,14 @@ private:
     struct DeformationFrame {
         Program* program = nullptr;
         std::vector<uint64_t> buffers;
-        std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
         uint64_t instanceEpoch = 0;
         uint64_t instanceWrites = 0;
-        uint32_t instanceVersion = 0;
+        uint64_t instanceVersion = 0;
         double instanceBase = 0;
-        bool staticOnly = false;
         std::vector<uint8_t> uniforms;
     };
+    std::array<bool, 2> previousStorageValid_{false, false};
+    std::array<uint64_t, 2> previousStorageBytes_{0, 0};
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
@@ -1676,6 +1681,7 @@ private:
     static constexpr uint64_t kSlotFrames = 600;
     bool sharedViewEnabled();
     bool persistentGpuSceneEnabled();
+    bool staticVelocityEnabled();
     struct BonePlacement {
         const std::vector<float>* ptr = nullptr;
         uint64_t version = 0;

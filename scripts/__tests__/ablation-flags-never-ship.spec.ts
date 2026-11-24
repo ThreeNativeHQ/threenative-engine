@@ -115,6 +115,7 @@ const ENGINE_FLAGS: Readonly<Record<string, "Once" | "Live">> = {
   TN_GPU_JOINT_DRAW_USE: "Once",
   TN_SHARED_VIEW_UNIFORM: "Live",
   TN_PERSISTENT_GPU_SCENE: "Live",
+  TN_STATIC_VELOCITY: "Live",
   TN_GAME_SPANS: "Live",
   TN_PLAYER_WIDTH: "Live",
   TN_PLAYER_HEIGHT: "Live",

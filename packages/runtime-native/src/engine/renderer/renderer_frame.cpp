@@ -1246,7 +1246,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.translucentPlan.clear();
     job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
+    job.previousBytes = {}; job.previousSeed = false; job.instancesMutated = false; job.traaSeedFrame = false;
+    job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
@@ -2475,6 +2476,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Transparent draws replayed into the motion target, appended once their bind groups are chosen.
     std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
+        const bool staticVelocity = staticVelocityEnabled();
+        job.traaSeedFrame = traa_->needsSeed();
         for (const Planned& draw : plan) {
             if (!compilation) waste::debugAdd(waste::counters().velocityCandidates);
             const DrawItem& item = *draw.item;
@@ -2484,19 +2487,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
                 item.positionNode || item.nodes->vertexNode || item.transparent;
             const auto markIncomplete = [&] {
-                if (sampleCount_ != 1 || item.background || item.transparent || !item.colorWrite || !draw.pipeline) return;
-                PipelineTarget target = colourTarget(item, *draw.program);
-                target.color = WGPUTextureFormat_RGBA16Float;
-                target.blend = 6;
-                target.depthWrite = false;
-                target.depthCompare = WGPUCompareFunction_Equal;
+                if (item.background || item.transparent || !item.colorWrite || !draw.pipeline) return;
+                PipelineTarget incompleteTarget = colourTarget(item, *draw.program);
+                incompleteTarget.color = WGPUTextureFormat_RGBA16Float;
+                incompleteTarget.blend = 6;
+                incompleteTarget.depthWrite = false;
+                incompleteTarget.depthCompare = WGPUCompareFunction_Equal;
                 if (compilation) {
-                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, target));
+                    compilation->push_back(
+                        pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, incompleteTarget));
                     return;
                 }
-                const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
-                if (!pipeline) throw std::runtime_error("TN_TRAA_INCOMPLETE_PIPELINE_REFUSED");
-                responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
+                const auto incompletePipe =
+                    pipelines_->get(draw.program->vertex, &draw.program->fragment, incompleteTarget);
+                if (!incompletePipe) throw std::runtime_error("TN_TRAA_INCOMPLETE_PIPELINE_REFUSED");
+                responsiveDraws.emplace_back(size_t(&draw - plan.data()), incompletePipe);
             };
             const auto skip = [&](const char* reason) {
                 if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
@@ -2520,89 +2525,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); markIncomplete(); continue; }
-            Matrix previousModel{};
-            bool havePreviousModel = false;
-            const DeformationFrame* seedPrevious = nullptr;
-            const BufferStore* instStore = item.instanceMatrices;
-            const auto computeInstanceHash = [&](const DeformationFrame* ref) -> std::size_t {
-                if (!instStore || item.indirect) return 0;
-                const bool stampMatch = ref && ref->buffers.size() >= 3 &&
-                    ref->buffers[0] == item.instanceCount &&
-                    ref->buffers[1] == reinterpret_cast<uintptr_t>(instStore) &&
-                    ref->buffers[2] == instStore->count() &&
-                    ref->instanceEpoch == instStore->epoch() &&
-                    ref->instanceWrites == instStore->writes() &&
-                    ref->instanceVersion == instStore->version();
-                if (stampMatch) return ref->instanceHash;
-                return std::hash<std::string_view>{}(std::string_view(
-                    reinterpret_cast<const char*>(instStore->data()),
-                    std::size_t{item.instanceCount} * 64));
-            };
-            std::optional<double> currentInstanceBase;
-            const auto lookupInstanceBase = [&] {
-                if (!item.instanceMatrices) return 0.0;
-                if (!currentInstanceBase) {
-                    const auto it = instanceBases.find(&item);
-                    currentInstanceBase = it != instanceBases.end() ? it->second : 0.0;
-                }
-                return *currentInstanceBase;
-            };
-            std::optional<std::size_t> cachedInstanceHash;
-            if (!compilation && sampleCount_ == 1) {
-                previousModel = traa_->previousModel(item.key, item.matrixWorld);
-                havePreviousModel = true;
-                const auto prior = deformationFrames_.find(item.key);
-                seedPrevious = !traa_->needsSeed() && prior != deformationFrames_.end() ? &prior->second : nullptr;
-                if (!item.boneMatrices && !instStore && !item.nodes->positionNode && previousModel == item.matrixWorld) {
-                    DeformationFrame current;
-                    current.staticOnly = true;
-                    current.buffers.push_back(item.instanceCount);
-                    for (const auto& attribute : draw.program->vertex.attributes) {
-                        BufferStore* store = vertexSourceOf(item, attribute);
-                        current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
-                            store ? store->epoch() : 0, store ? store->writes() : 0,
-                            store ? store->version() : 0, store ? store->count() : 0});
-                    }
-                    const bool changedBuffers = seedPrevious && seedPrevious->staticOnly && seedPrevious->buffers != current.buffers;
-                    job.deformationFrames[item.key] = std::move(current);
-                    if (changedBuffers) { skip("changed vertex data"); markIncomplete(); }
-                    continue;
-                }
-                if (!item.boneMatrices && instStore && !item.nodes->positionNode && previousModel == item.matrixWorld) {
-                    const std::size_t hash = computeInstanceHash(seedPrevious);
-                    cachedInstanceHash = hash;
-                    const double instBase = lookupInstanceBase();
-                    if (seedPrevious && seedPrevious->program != nullptr &&
-                        seedPrevious->instanceBase == instBase &&
-                        (item.indirect || seedPrevious->instanceHash == hash)) {
-                        DeformationFrame current;
-                        current.program = seedPrevious->program;
-                        current.uniforms = seedPrevious->uniforms;
-                        current.instanceHash = hash;
-                        current.instanceEpoch = instStore->epoch();
-                        current.instanceWrites = instStore->writes();
-                        current.instanceVersion = instStore->version();
-                        current.instanceBase = instBase;
-                        current.buffers.push_back(item.instanceCount);
-                        current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(instStore),
-                            instStore->count()});
-                        for (const auto& attribute : seedPrevious->program->vertex.attributes) {
-                            BufferStore* store = vertexSourceOf(item, attribute);
-                            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
-                                store ? store->epoch() : 0, store ? store->writes() : 0,
-                                store ? store->version() : 0, store ? store->count() : 0});
-                        }
-                        const uint64_t instBytes = instances.size() * 4;
-                        job.previousBytes[1] = std::max(job.previousBytes[1], instBytes);
-                        const bool outgrew = instBytes > storages_[std::string("traaPrevious_") + kPreviousStorages[1]].capacity;
-                        const bool changedBuffers = seedPrevious->buffers != current.buffers;
-                        job.deformationFrames[item.key] = std::move(current);
-                        if (changedBuffers) { skip("changed vertex data"); markIncomplete(); }
-                        else if (outgrew) { skip("previous-frame storage outgrew its copy"); markIncomplete(); }
-                        continue;
-                    }
-                }
-            }
             const std::string key = "traa-velocity|" + variant.key() + (sharedView ? "|sv1" : "|sv0");
             if (!programs_.count(key)) {
                 auto source = shader::velocityPrograms(variant);
@@ -2630,6 +2552,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
                 continue;
             }
+            const BufferStore* instStore = item.instanceMatrices;
             DeformationFrame current;
             current.program = &velocity;
             current.buffers.push_back(item.instanceCount);
@@ -2638,22 +2561,39 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     store ? store->epoch() : 0, store ? store->writes() : 0,
                     store ? store->version() : 0, store ? store->count() : 0});
             };
-            // Instance matrices move freely: the previous frame's copy places them. Only a changed count or store changes data.
-            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(item.instanceMatrices),
-                item.instanceMatrices ? item.instanceMatrices->count() : 0});
+            // Instance matrices move freely: BufferStore epoch/writes/version stamps detect edits with zero CPU hashing.
+            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(instStore),
+                instStore ? instStore->count() : 0});
+            current.instanceEpoch = instStore ? instStore->epoch() : 0;
+            current.instanceWrites = instStore ? instStore->writes() : 0;
+            current.instanceVersion = instStore ? instStore->version() : 0;
+            if (instStore) {
+                const auto it = instanceBases.find(&item);
+                current.instanceBase = it != instanceBases.end() ? it->second : 0.0;
+            }
+            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             const auto prior = deformationFrames_.find(item.key);
             const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
                 prior->second.program == &velocity ? &prior->second : nullptr;
-            // A store rewritten with the same matrices did not move: compare the contents, not the writes.
-            if (instStore) {
-                current.instanceEpoch = instStore->epoch();
-                current.instanceWrites = instStore->writes();
-                current.instanceVersion = instStore->version();
-                current.instanceBase = lookupInstanceBase();
-                if (!item.indirect)
-                    current.instanceHash = cachedInstanceHash ? *cachedInstanceHash : computeInstanceHash(previous);
+            const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
+            const bool instanceStampSame = instStore && !item.indirect && previous && previous->buffers.size() >= 3 &&
+                previous->buffers[0] == item.instanceCount &&
+                previous->buffers[1] == reinterpret_cast<uintptr_t>(instStore) &&
+                previous->buffers[2] == instStore->count() &&
+                previous->instanceEpoch == current.instanceEpoch &&
+                previous->instanceWrites == current.instanceWrites &&
+                previous->instanceVersion == current.instanceVersion &&
+                previous->instanceBase == current.instanceBase;
+            const bool instancesMoved = instStore && !item.indirect && (!previous || !instanceStampSame);
+            const bool isDynamic =
+                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved;
+            const bool changedBuffers = previous && previous->buffers != current.buffers;
+            // PRD-914 Phase 1: static opaque draws reuse fillVelocity()'s camera reprojection directly without redrawing.
+            if (!isDynamic && !staticVelocity && !changedBuffers) {
+                if (previous) current.uniforms = previous->uniforms;
+                job.deformationFrames[item.key] = std::move(current);
+                continue;
             }
-            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             // PRD-754: a slot of its own beside the draw's colour blocks, else appended in plan order.
             const uint64_t velocitySlot = useUniformSlots && draw.slot ? draw.slot * 0x9e3779b97f4a7c15ull + 0x5654u : 0;
             const auto offset = static_cast<uint32_t>(uniformBlocks(velocitySlot, aligned(velocity.vertex.uniformBlockSize)));
@@ -2665,10 +2605,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
             }
             putNodes(frameUniforms_, offset, velocity.vertex, *item.nodes, frameTime_, frameDelta_, lights);
-            if (!havePreviousModel) previousModel = traa_->previousModel(item.key, item.matrixWorld);
-            const bool instancesMoved = instStore && (!previous || previous->instanceHash != current.instanceHash);
-            const std::array<double, 1> dynamic{
-                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
+            const std::array<double, 1> dynamic{isDynamic ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
@@ -2688,24 +2625,24 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.nodes->positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
-            const bool changedBuffers = previous && previous->buffers != current.buffers;
             job.deformationFrames[item.key] = std::move(current);
             if (changedBuffers) { skip("changed vertex data"); markIncomplete(); continue; }
             // The previous palette and instances hold last frame's layout. A seeded frame copies this frame's there first, so
             // both positions match (and a copy that grows loses nothing). A draw new to an unseeded frame has no previous base,
-            // and storage that outgrew its previous copy replaces it: both draw no velocity for one frame.
+            // and storage that outgrew or skipped its previous copy replaces it: both draw no velocity for one frame.
             const std::array<bool, 2> reads{item.boneMatrices != nullptr, item.instanceMatrices != nullptr};
             const std::array<uint64_t, 2> bytes{jointPrefix + bones.size() * 4, instances.size() * 4};
-            bool outgrew = false;
+            bool notReady = false;
             for (std::size_t k = 0; k < reads.size(); ++k) {
                 if (!reads[k]) continue;
                 job.previousBytes[k] = std::max(job.previousBytes[k], bytes[k]);
-                outgrew = outgrew || bytes[k] > storages_[std::string("traaPrevious_") + kPreviousStorages[k]].capacity;
+                notReady = notReady || !previousStorageValid_[k] ||
+                    bytes[k] > storages_[std::string("traaPrevious_") + kPreviousStorages[k]].capacity;
             }
-            if (outgrew && !traa_->needsSeed()) { skip("previous-frame storage outgrew its copy"); markIncomplete(); continue; }
+            if (notReady && !traa_->needsSeed()) { skip("previous-frame storage outgrew or not seeded"); markIncomplete(); continue; }
             if (reads[0] || reads[1]) {
                 if (!previous && !traa_->needsSeed()) { skip("draw without a previous frame"); markIncomplete(); continue; }
-                job.previousSeed = job.previousSeed || !previous;
+                job.previousSeed = job.previousSeed || traa_->needsSeed();
             }
             const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
@@ -3512,6 +3449,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     // Storage that outgrew its previous copy: the copy grows now, its draws skipped velocity this frame, and the copy after
     // the velocity pass fills it for the next.
+    if (!compilation) job.instancesMutated = instanceCopies > 0 || instances.size() * 4 != previousStorageBytes_[1];
     for (std::size_t k = 0; k < kPreviousStorages.size(); ++k) {
         FrameStorage& previous = storages_.at(std::string("traaPrevious_") + kPreviousStorages[k]);
         if (job.previousBytes[k] <= previous.capacity) continue;
@@ -4157,6 +4095,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         desc.usage = WGPUTextureUsage_RenderAttachment;
         msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &desc);
         msaaAuxColorView_ = view2d(msaaAuxColor_, WGPUTextureFormat_RGBA16Float);
+    }
+    if (sampleCount_ == 4 && traa_ && !velocityCamera_) {
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
+        desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+        desc.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
+        velocityCamera_ = wgpuDeviceCreateTexture(device_, &desc);
+        velocityCameraView_ = view2d(velocityCamera_, WGPUTextureFormat_RGBA16Float);
+    }
+    if (sampleCount_ == 4 && traa_ && !velocityPlan.empty()) {
+        copyPipeline(WGPUTextureFormat_RGBA16Float, 0, compilation, WGPUTextureFormat_Depth32Float, sampleCount_);
     }
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;
