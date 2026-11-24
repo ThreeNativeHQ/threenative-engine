@@ -1029,6 +1029,7 @@ bool canShiftWorldYSubtree(const Object3D& node, bool isRoot = true) {
 
 bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) {
     (void)alreadyWalkedDescendant;
+    if (dy == 0.0) return true;
     if (!canShiftWorldYSubtree(*this, true)) return false;
 
     const uint64_t expectedParentId = parent ? parent->id() + 1 : 0;
@@ -1042,13 +1043,18 @@ bool Object3D::shiftWorldYInPlace(double dy, Object3D* alreadyWalkedDescendant) 
     if (parent == nullptr) {
         position.y += dy;
     } else {
-        Matrix4 parentInverse;
-        parentInverse.copy(parent->matrixWorld).invert();
-        Vector3 origin(0.0, 0.0, 0.0);
-        Vector3 target(0.0, dy, 0.0);
-        origin.applyMatrix4(parentInverse);
-        target.applyMatrix4(parentInverse);
-        position.add(target.sub(origin));
+        const auto& pm = parent->matrixWorld.elements;
+        if (std::abs(pm[1]) < 1e-12 && std::abs(pm[9]) < 1e-12 && std::abs(pm[5]) > 1e-12) {
+            position.y += dy / pm[5];
+        } else {
+            Matrix4 parentInverse;
+            parentInverse.copy(parent->matrixWorld).invert();
+            Vector3 origin(0.0, 0.0, 0.0);
+            Vector3 target(0.0, dy, 0.0);
+            origin.applyMatrix4(parentInverse);
+            target.applyMatrix4(parentInverse);
+            position.add(target.sub(origin));
+        }
     }
 
     updateMatrix();

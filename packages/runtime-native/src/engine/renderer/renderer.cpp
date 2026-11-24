@@ -1350,11 +1350,13 @@ void Renderer::encodeFrame(FrameJob& job) {
                         job.previousBytes[k]);
         };
         if (job.previousSeed) copyPrevious();
-        auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
-        const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
-        replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
-               job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
-        wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        if (sampleCount_ == 4 || !velocityPlan.empty()) {
+            auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
+            const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
+            replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
+                   job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
+            wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        }
         copyPrevious();
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }

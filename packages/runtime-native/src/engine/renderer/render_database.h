@@ -164,13 +164,26 @@ class RenderDatabase {
         std::weak_ptr<const void> owner;
         Renderer* renderer = nullptr;  // the main renderer's reflectionRenderer(owner)
         std::unique_ptr<RenderDatabase> database;
+        uint64_t lastRenderFrame = 0;
+        uint32_t lastWidth = 0;
+        uint32_t lastHeight = 0;
     };
     ReflectionPass& reflectionPass(Renderer& renderer, const std::shared_ptr<const Reflector>& reflector);
     /** compileAsync's mirror half: each reflector's pass compiles the scene as its mirror would draw it. */
     void precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
                              std::vector<std::shared_ptr<PipelineCompilation>>& compilations);
     std::unordered_map<const void*, ReflectionPass> reflections_;
+    struct ReflectionFilterEntry {
+        bool valid = false;
+        const void* geometry = nullptr;
+        uint64_t revision = 0;
+        double minSize = 0.0;
+        bool castShadow = false;
+        bool keep = false;
+    };
+    std::unordered_map<uint64_t, ReflectionFilterEntry> reflectionFilterCache_;
     bool reflecting_ = false;
+    const Reflector* activeReflector_ = nullptr;
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
     std::shared_ptr<GpuJointScene> gpuJoints_;
     bool gpuPreparing_ = false;

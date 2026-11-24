@@ -238,8 +238,9 @@ public:
     /** Counts one hierarchy change at `node` and stamps it on `node` and every ancestor. */
     static void markHierarchy(Object3D* node);
     bool skipsGpuJointSubtree() const {
+        if (gpuJointHierarchy != hierarchyVersion()) return false;
         const auto valid = gpuJointBoundary.lock();
-        return valid && *valid && gpuJointHierarchy == hierarchyVersion();
+        return valid && *valid;
     }
     inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0;
     // Counted by the matrix walk, which runs on the job pool's threads (updateMatrixWorldVisibleJobs).

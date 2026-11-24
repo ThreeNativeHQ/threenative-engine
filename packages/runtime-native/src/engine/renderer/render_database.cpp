@@ -945,6 +945,43 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
         } else if (!lightsOnly && (type == "Mesh" || type == "InstancedMesh" || type == "SkinnedMesh" || type == "Sprite" || type == "Line" ||
             type == "LineSegments" || type == "Points")) {
             const auto& mesh = static_cast<const Mesh&>(object);
+            bool reflectorSkip = false;
+            if (reflecting_ && activeReflector_) {
+                if (activeReflector_->excludeInstancedAndSkinned &&
+                    (type == "InstancedMesh" || type == "SkinnedMesh")) {
+                    reflectorSkip = true;
+                } else if (activeReflector_->minSize > 0.0) {
+                    const double minSize = activeReflector_->minSize;
+                    const void* geomPtr = mesh.geometry.get();
+                    const uint64_t rev = mesh.revision();
+                    const bool castsShadow = mesh.castShadow();
+                    auto& cachedFilter = reflectionFilterCache_[mesh.id()];
+                    bool keep = false;
+                    if (cachedFilter.valid && cachedFilter.geometry == geomPtr && cachedFilter.revision == rev &&
+                        cachedFilter.minSize == minSize && cachedFilter.castShadow == castsShadow) {
+                        keep = cachedFilter.keep;
+                    } else {
+                        if (mesh.geometry && type != "InstancedMesh" && type != "SkinnedMesh") {
+                            if (!mesh.geometry->boundingBox)
+                                const_cast<BufferGeometry*>(mesh.geometry.get())->computeBoundingBox();
+                            if (mesh.geometry->boundingBox && !mesh.geometry->boundingBox->isEmpty()) {
+                                Box3 worldBox = *mesh.geometry->boundingBox;
+                                worldBox.applyMatrix4(mesh.matrixWorld);
+                                Vector3 sz;
+                                worldBox.getSize(sz);
+                                const double horizontal = std::max(sz.x, sz.z);
+                                const bool terrain = horizontal >= minSize && sz.y <= std::min(sz.x, sz.z) * 0.5;
+                                keep = terrain || (castsShadow && std::max({sz.x, sz.y, sz.z}) >= minSize);
+                            }
+                        }
+                        cachedFilter = {true, geomPtr, rev, minSize, castsShadow, keep};
+                    }
+                    if (!keep) reflectorSkip = true;
+                }
+            }
+            if (reflectorSkip) {
+                // Skip this mesh in the reflection pass without skipping its children.
+            } else {
             if (mesh.frustumCulled && !cullExempt_) {
                 waste::debugAdd(waste::counters().cullCandidates);
                 // One world sphere serves the camera's frustum and the shadow frustums.
@@ -1089,6 +1126,7 @@ void RenderDatabase::project(Object3D& object, const Camera& camera, std::vector
                             callbacks_.push_back({mesh.weak_from_this().lock(), &mesh, &r});
                     }
                 }
+            }
             }
         } else if (!lightsOnly && type == "BatchedMesh") {
             // three's BatchedMesh: each geometry's visible instances, drawn as one instanced mesh.
@@ -2111,10 +2149,16 @@ RenderDatabase::ReflectionPass& RenderDatabase::reflectionPass(Renderer& rendere
     }
     pass.database->batching = batching;
     pass.database->reuseMainFrame = reuseMainFrame;
-    pass.database->shadowMapEnabled = shadowMapEnabled;
+    pass.database->shadowMapEnabled = shadowMapEnabled && !reflector->excludeInstancedAndSkinned;
     pass.renderer->setOutput(renderer.output());
-    pass.renderer->setSize(uint32_t(std::lround(renderer.width() * reflector->resolutionScale)),
-                           uint32_t(std::lround(renderer.height() * reflector->resolutionScale)));
+    const uint32_t targetW = uint32_t(std::lround(renderer.width() * reflector->resolutionScale));
+    const uint32_t targetH = uint32_t(std::lround(renderer.height() * reflector->resolutionScale));
+    if (pass.lastWidth != targetW || pass.lastHeight != targetH) {
+        pass.lastWidth = targetW;
+        pass.lastHeight = targetH;
+        pass.lastRenderFrame = 0;
+    }
+    pass.renderer->setSize(targetW, targetH);
     return pass;
 }
 
@@ -2151,7 +2195,9 @@ void RenderDatabase::precacheReflections(Renderer& renderer, Object3D& root, Cam
         ReflectionPass& pass = reflectionPass(renderer, reflector);
         // A camera under the plane leaves the mirror's last pose: a program does not depend on where it looks.
         poseReflection(*reflector, camera, *reflector->camera);
+        pass.database->activeReflector_ = reflector.get();
         auto more = pass.database->compileAsync(*pass.renderer, root, *reflector->camera, targetScene);
+        pass.database->activeReflector_ = nullptr;
         compilations.insert(compilations.end(), more.begin(), more.end());
     }
 }
@@ -2191,16 +2237,27 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
     } restore{hidden, wasVisible};
     for (const auto& reflector : drawn) {
         ReflectionPass& pass = reflectionPass(renderer, reflector);
+        const bool skipForInterval =
+            reflector->refreshInterval > 1 && pass.lastRenderFrame != 0 &&
+            pass.renderer->sceneColorView() != nullptr && frame_ >= pass.lastRenderFrame &&
+            (frame_ - pass.lastRenderFrame) < reflector->refreshInterval;
+        if (skipForInterval) {
+            if (encodeJobs) encodeJobs->push_back([] {});
+            continue;
+        }
         PerspectiveCamera& virtualCamera = *reflector->camera;
         if (poseReflection(*reflector, camera, virtualCamera)) {
+            pass.lastRenderFrame = frame_;
             pass.database->matricesFresh_ = reuseMainFrame && !ranCallbacks_;
             // Bones the main pass posed this frame are current too: no callback ran to move them.
             pass.database->freshPrepare_ = pass.database->matricesFresh_ ? prepareId_ : 0;
             pass.database->gpuJoints_ = gpuJoints_;
+            pass.database->activeReflector_ = reflector.get();
             std::array<double, 2> split{0, 0};
             pass.database->profiling = profiling;
             pass.database->encodeJobs = encodeJobs;
             pass.database->render(*pass.renderer, scene, virtualCamera, clear, profiling ? &split : nullptr);
+            pass.database->activeReflector_ = nullptr;
             if (profiling) {
                 reflectionMs_[0] += split[0];
                 reflectionMs_[1] += split[1];
@@ -2208,11 +2265,15 @@ void RenderDatabase::renderReflections(Renderer& renderer, Object3D& scene, Came
             }
             pass.database->freshPrepare_ = 0;
         }
-        else if (encodeJobs) {
-            pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
-            encodeJobs->push_back([renderer = pass.renderer] { renderer->encodePending(); });
-        } else
-            pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+        else {
+            pass.lastRenderFrame = 0;
+            if (encodeJobs) {
+                pass.renderer->renderDeferred({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+                encodeJobs->push_back([renderer = pass.renderer] { renderer->encodePending(); });
+            } else {
+                pass.renderer->render({}, CameraState{}, LightState{}, {0, 0, 0, 0});
+            }
+        }
         for (const auto& message : pass.database->diagnostics()) diagnostics_.push_back(message);
     }
     // Each sampled mirror reads its own pass's view, published on the material's graph sources.

@@ -162,11 +162,17 @@ export class WaterSurface3D {
     const refreshInterval = reflection.refreshInterval ?? 1;
     if (!Number.isInteger(refreshInterval) || refreshInterval < 1)
       throw new Error("WaterSurface3D.reflection.refreshInterval must be a positive integer.");
+    const automatic = reflection.layers === undefined;
+    const minSize = automatic ? finite("reflection.minSize", reflection.minSize ?? 10) : 10;
+    if (automatic && minSize <= 0)
+      throw new Error("WaterSurface3D.reflection.minSize must be positive.");
     const node = reflector({
       bounces: reflection.bounces === true,
       generateMipmaps: false,
+      refreshInterval,
       resolutionScale,
-    });
+      ...(automatic ? { excludeInstancedAndSkinned: true, minSize } : {}),
+    } as Parameters<typeof reflector>[0]);
     this.reflectionLayers = reflection.layers;
     this.reflectionRefreshInterval = refreshInterval;
     // `reflector()` returns the texture node; the pass itself — and the virtual cameras and render
@@ -211,16 +217,25 @@ export class WaterSurface3D {
         return virtual;
       };
     }
-    if (!jsPass && (reflection.layers === undefined || refreshInterval > 1))
+    if (!jsPass && (automatic || refreshInterval > 1))
       console.info(
-        `TN_WATER_REFLECTION_NATIVE: ${JSON.stringify({ minSizeFilter: false, refreshInterval: 1, reason: "the engine draws the mirror pass natively" })}`,
+        `TN_WATER_REFLECTION_NATIVE: ${JSON.stringify({ minSizeFilter: automatic ? minSize : false, refreshInterval, reason: "the engine draws the mirror pass natively" })}`,
       );
-    if (jsPass && reflection.layers === undefined) {
-      const minSize = finite("reflection.minSize", reflection.minSize ?? 10);
-      if (minSize <= 0) throw new Error("WaterSurface3D.reflection.minSize must be positive.");
+    if (jsPass && automatic) {
       const render = pass.updateBefore.bind(pass);
       const bounds = new Box3();
       const size = new Vector3();
+      const isIncluded = (
+        mesh: Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean },
+      ): boolean => {
+        if (mesh.isInstancedMesh === true || mesh.isSkinnedMesh === true) return false;
+        if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
+        if (mesh.geometry.boundingBox === null) return false;
+        bounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld).getSize(size);
+        const horizontal = Math.max(size.x, size.z);
+        const terrain = horizontal >= minSize && size.y <= Math.min(size.x, size.z) * 0.5;
+        return terrain || (mesh.castShadow && Math.max(size.x, size.y, size.z) >= minSize);
+      };
       let reported = false;
       pass.updateBefore = (frame: IReflectionFrame): void => {
         const hidden: { object: Object3D; mask: number }[] = [];
@@ -230,21 +245,12 @@ export class WaterSurface3D {
         frame.scene.traverse((object) => {
           const mesh = object as Mesh & { isInstancedMesh?: boolean; isSkinnedMesh?: boolean };
           if (mesh.isMesh !== true || !mesh.visible) return;
-          let keep = false;
-          if (mesh.isInstancedMesh !== true && mesh.isSkinnedMesh !== true) {
-            if (mesh.geometry.boundingBox === null) mesh.geometry.computeBoundingBox();
-            if (mesh.geometry.boundingBox !== null) {
-              bounds.copy(mesh.geometry.boundingBox).applyMatrix4(mesh.matrixWorld).getSize(size);
-              const horizontal = Math.max(size.x, size.z);
-              const terrain = horizontal >= minSize && size.y <= Math.min(size.x, size.z) * 0.5;
-              keep = terrain || (mesh.castShadow && Math.max(size.x, size.y, size.z) >= minSize);
-            }
+          if (isIncluded(mesh)) {
+            included += 1;
+            return;
           }
-          if (keep) included += 1;
-          else {
-            hidden.push({ object: mesh, mask: mesh.layers.mask });
-            mesh.layers.mask = 0;
-          }
+          hidden.push({ object: mesh, mask: mesh.layers.mask });
+          mesh.layers.mask = 0;
         });
         if (!reported) {
           console.info(

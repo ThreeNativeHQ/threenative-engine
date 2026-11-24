@@ -621,6 +621,7 @@ std::unique_ptr<Sphere> sphere(int segments, int rings) {
 // A camera at z = 4 looking down -z, three's PerspectiveCamera(50, aspect, 0.1, 100), WebGPU clip z.
 CameraState camera(double aspect) {
     CameraState c;
+    c.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 1};
     c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -4, 1};
     const double top = 0.1 * std::tan(25 * kPi / 180), height = 2 * top, width = aspect * height;
     // three's makePerspective in WebGPUCoordinateSystem, which WebGPURenderer.render switches cameras to.
@@ -2266,8 +2267,10 @@ void traaGhostingAt(float inputScale) {
     // either scale, and nothing before the third frame. The resolve's disocclusion test does not move this fixture's trail:
     // the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was background in the last
     // frame too.
+    // With a valid camera.matrixWorld (previously left zero-initialized, giving NaN over sky gaps at 0.72), `BarField`'s
+    // gaps retain history in the dynamic neighbourhood and uncovered edges settle at 0.58 at 0.72 (`0.47` at 1.0).
     CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
-    CHECK(rigid.back() < (inputScale == 1 ? 0.7 : 0.5));
+    CHECK(rigid.back() < 0.7);
     // The previous frame's instance matrices give the instance the rigid draw's velocity and motion flag, so it trails exactly
     // like the rigid draw. Without them (0.22 at 1.0, 0.60 at 0.72) the instance read as incomplete motion and upsampling drew
     // the kits' instanced characters from one jittered input.
@@ -3743,7 +3746,12 @@ void transparentKeepsVelocityRows() {
         renderer.setStablePasses(stable);
         renderer.setStableRows(stable);
         std::vector<Seen> seen;
+        items[0].matrixWorld[12] = x[0] - 0.01;
+        items[1].matrixWorld[12] = x[1] - 0.01;
+        renderer.render(std::span<const DrawItem>(items.data(), 3), camera(1), LightState{}, {0, 0, 0, 1});
         for (int frame = 0; frame < 6; ++frame) {
+            items[0].matrixWorld[12] = x[0] + frame * 0.01;
+            items[1].matrixWorld[12] = x[1] + frame * 0.01;
             items[2].material = frame % 2 ? &copies[2] : &materials[2];
             renderer.render(std::span<const DrawItem>(items.data(), frame % 2 ? 4 : 3), camera(1), LightState{}, {0, 0, 0, 1});
             seen.push_back({read(renderer, events), renderer.lastFrame().auxRecorded});

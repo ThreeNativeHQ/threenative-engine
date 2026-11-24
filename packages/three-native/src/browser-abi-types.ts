@@ -434,6 +434,7 @@ export function tslOf(
   let candidateAt = 0;
   let candidateRoom = 0;
   let candidatesWritten = 0;
+  let graphVersion = 0;
   // Writes tn_tsl_arg_t values; text is allocated first, since an allocation can grow the memory.
   const writeArgs = (args: readonly TslArgValue[]): number => {
     const pointer = h.alloc(Math.max(TSL_ARG, args.length * TSL_ARG));
@@ -479,8 +480,10 @@ export function tslOf(
           release(context, BigInt(node), diag);
           abi._tn_diagnostic_release(diag);
         }),
+      graphVersion: () => graphVersion,
       set: (material, path, node) =>
         h.scoped(() => {
+          graphVersion += 1;
           const diag = h.diagnostic();
           h.check(
             set(context, h.handleOf(material), h.string(path).pointer, BigInt(node), diag),

@@ -21,6 +21,9 @@ export interface IReflectorParameters {
   readonly bounces?: boolean;
   readonly depth?: boolean;
   readonly samples?: number;
+  readonly excludeInstancedAndSkinned?: boolean;
+  readonly minSize?: number;
+  readonly refreshInterval?: number;
 }
 
 /** The engine classes the reflector builds its target and virtual camera from. */
@@ -43,7 +46,17 @@ export function defineReflector(native: NativeReflector, classes: IReflectorClas
   return function reflector(parameters: IReflectorParameters = {}): object {
     const target = parameters.target ?? new classes.Object3D();
     const resolutionScale = parameters.resolutionScale ?? parameters.resolution ?? 1;
-    const { generateMipmaps = false, bounces = true, depth = false, samples = 0 } = parameters;
+    const {
+      generateMipmaps = false,
+      bounces = true,
+      depth = false,
+      samples = 0,
+      excludeInstancedAndSkinned = false,
+      minSize = 0,
+      refreshInterval = 1,
+    } = parameters;
+    if (!Number.isInteger(refreshInterval) || refreshInterval < 1)
+      throw new Error("defineReflector.refreshInterval must be a positive integer.");
     const camera = new classes.PerspectiveCamera();
     const node = native(
       target,
@@ -53,6 +66,9 @@ export function defineReflector(native: NativeReflector, classes: IReflectorClas
       generateMipmaps ? 1 : 0,
       depth ? 1 : 0,
       samples,
+      excludeInstancedAndSkinned ? 1 : 0,
+      minSize,
+      refreshInterval,
     );
     let getVirtualCamera: (camera?: object) => object = () => camera;
     const base = {
@@ -62,6 +78,9 @@ export function defineReflector(native: NativeReflector, classes: IReflectorClas
       bounces,
       depth,
       samples,
+      excludeInstancedAndSkinned,
+      minSize,
+      refreshInterval,
       // three's NodeUpdateType.NONE: no JS update runs, so a caller can tell before it wraps one.
       updateBeforeType: "none",
       get getVirtualCamera() {

@@ -33,6 +33,17 @@ export interface ILaunchFlagSpec {
  * for anything — while an empty value on any other seam means the seam named the flag and had no
  * value to give, which is a URL's way of saying yes.
  */
+let cachedQuery: string | undefined;
+let cachedParams: URLSearchParams | undefined;
+
+function queryParam(query: string, name: string): string | null {
+  if (query !== cachedQuery) {
+    cachedQuery = query;
+    cachedParams = new URLSearchParams(query);
+  }
+  return cachedParams?.get(name) ?? null;
+}
+
 function readLaunchSeams(spec: ILaunchFlagSpec, search?: string): readonly string[] {
   const values: string[] = [];
   if (spec.environment.length > 0) {
@@ -41,7 +52,7 @@ function readLaunchSeams(spec: ILaunchFlagSpec, search?: string): readonly strin
   }
   const query = search ?? globalThis.location?.search;
   if (typeof query === "string") {
-    const fromQuery = new URLSearchParams(query).get(spec.query);
+    const fromQuery = queryParam(query, spec.query);
     if (fromQuery !== null) values.push(fromQuery);
   }
   if (spec.global !== undefined) {

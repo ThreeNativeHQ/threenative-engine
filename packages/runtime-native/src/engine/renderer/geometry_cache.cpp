@@ -27,6 +27,21 @@ void GeometryCache::upload(Handle buffer, const BufferStore& store, uint64_t off
 
 Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     const uint64_t byteLength = (store.byteLength() + 3) & ~uint64_t{3};
+    // Steady-state fast path: when no BufferStore was destroyed or disposed since the last sweep,
+    // a tracked entry cannot be expired, so skip the atomic weak_ptr load and try_emplace.
+    if (auto existing = entries_.find(&store); existing != entries_.end()) {
+        Entry& e = existing->second;
+        if ((!e.tracked || sweptAt_ == BufferStore::released()) &&
+            (e.usage & usage) == usage &&
+            e.byteLength == byteLength &&
+            e.epoch == store.epoch() &&
+            e.releases == store.gpuReleases() &&
+            e.version == store.version()) {
+            e.bytes = store.byteLength();
+            e.scalar = store.scalar();
+            return e.buffer;
+        }
+    }
     auto [it, isNew] = entries_.try_emplace(&store);
     Entry& e = it->second;
     e.bytes = store.byteLength();
