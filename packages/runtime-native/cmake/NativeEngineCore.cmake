@@ -139,9 +139,11 @@ target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
 # stb_image is third-party C in a C++ unit: its own warnings are not this engine's.
 set_source_files_properties(src/engine/shader/graph/smaa_tables.cpp PROPERTIES COMPILE_OPTIONS "-w")
 if(EMSCRIPTEN)
-    # Compile cold shader emission/package units at -Os under Emscripten (native keeps -O3) to hold LIMITS.webEngineBytes.
+    # Compile cold shader emission/package/graph units at -Os under Emscripten (native keeps -O3) to hold LIMITS.webEngineBytes.
     set_source_files_properties(src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
-        src/engine/shader/graph/serialized.cpp PROPERTIES COMPILE_OPTIONS "-Os")
+        src/engine/shader/standard.cpp src/engine/shader/output.cpp src/engine/shader/tonemap.cpp
+        src/engine/shader/graph/graph.cpp src/engine/shader/graph/serialized.cpp
+        src/engine/shader/graph/post_effects.cpp PROPERTIES COMPILE_OPTIONS "-Os")
 endif()
 
 # meshoptimizer's decoders for EXT/KHR_meshopt_compression (provisioned by download-deps): MIT, three
@@ -245,6 +247,10 @@ function(tn_engine_renderer_target)
         "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL tn_engine_renderer_link_check \"${expected}\")")
 endfunction()
 if(EMSCRIPTEN)
+    # Cold renderer setup/PSO/GPU-VSM setup units under -Os on Wasm (hot frame loops remain -O3) to hold LIMITS.webEngineBytes.
+    set_source_files_properties(src/engine/renderer/device_state.cpp src/engine/renderer/package_loader.cpp
+        src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer_program.cpp
+        src/engine/renderer/shadows/virtual/gpu_pages.cpp PROPERTIES COMPILE_OPTIONS "-Os")
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
     tn_engine_renderer_target()
