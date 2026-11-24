@@ -3,8 +3,10 @@
 // names the source; the shell, viewers and API live once in create-threenative.
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
-import { createAssetLibraryPlugin } from "create-threenative/asset-library";
 import { defineConfig } from "vite";
+// By path, not by name: create-threenative depends on @threenative/assets, which depends on this
+// package, so a workspace dependency here would close a cycle. Build create-threenative first.
+import { createAssetLibraryPlugin } from "../../create-threenative/dist/asset-library.js";
 import { proceduralEnvironmentSource } from "../src/asset-library.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));

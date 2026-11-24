@@ -1560,9 +1560,6 @@ importers:
       '@types/three':
         specifier: 'catalog:'
         version: 0.187.0
-      create-threenative:
-        specifier: workspace:*
-        version: link:../create-threenative
       publint:
         specifier: 0.3.22
         version: 0.3.22

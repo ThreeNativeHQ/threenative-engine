@@ -1,10 +1,3 @@
-import type {
-  IAssetBake,
-  IAssetElement,
-  IAssetLibraryClient,
-  IAssetLoaded,
-  IAssetViewContext,
-} from "create-threenative/asset-library";
 // The procedural source's browser half for the shared Asset Library (PRD-915): Outcrop's rock
 // material over the maps a bake wrote, the `_WIND` sway, the stylized kits built in the page, their
 // lighting and backdrops, and the Toybox post stack. Everything else is the shell's.
@@ -14,6 +7,13 @@ import { GTAOPass } from "three/addons/postprocessing/GTAOPass.js";
 import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
 import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
 import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import type {
+  IAssetBake,
+  IAssetElement,
+  IAssetLibraryClient,
+  IAssetLoaded,
+  IAssetViewContext,
+} from "../../create-threenative/src/asset-library/types.js";
 import Outcrop from "../vendor/outcrop.js";
 import {
   createStylizedAsset,

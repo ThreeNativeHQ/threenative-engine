@@ -47,7 +47,6 @@
   "devDependencies": {
     "@types/node": "catalog:",
     "@types/three": "catalog:",
-    "create-threenative": "workspace:*",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",
