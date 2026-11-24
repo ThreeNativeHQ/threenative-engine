@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { build } from "vite";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { threenative } from "../src/kit-plugins.js";
 
 /**
@@ -88,30 +88,26 @@ describe("template vite configs", () => {
     // The native build sets one input and turns code splitting off, then calls build(); plugin
     // config hooks run inside build(), so the kit defaults merged main.html back in and Vite refused
     // two inputs without code splitting (merge queue, 2026-11-24, starter desktop artifact).
-    const root = await mkdtemp(path.join(tmpdir(), "tn-kit-input-"));
-    try {
-      for (const page of ["index.html", "main.html"])
-        await writeFile(path.join(root, page), "<!doctype html><title>t</title>");
-      const defaults = threenative().filter((p) => p.name === "threenative-kit-defaults");
-      const out = (await build({
-        root,
-        configFile: false,
-        logLevel: "silent",
-        plugins: defaults,
-        build: {
-          outDir: path.join(root, "dist"),
-          write: false,
-          rolldownOptions: {
-            input: { index: path.join(root, "index.html") },
-            output: { codeSplitting: false },
-          },
+    const root = await makeTempDir("tn-kit-input-");
+    for (const page of ["index.html", "main.html"])
+      await writeFile(path.join(root, page), "<!doctype html><title>t</title>");
+    const defaults = threenative().filter((p) => p.name === "threenative-kit-defaults");
+    const out = (await build({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: defaults,
+      build: {
+        outDir: path.join(root, "dist"),
+        write: false,
+        rolldownOptions: {
+          input: { index: path.join(root, "index.html") },
+          output: { codeSplitting: false },
         },
-      })) as { output: { fileName: string }[] };
-      expect(out.output.map((file) => file.fileName)).toContain("index.html");
-      expect(out.output.map((file) => file.fileName)).not.toContain("main.html");
-    } finally {
-      await rm(root, { recursive: true, force: true });
-    }
+      },
+    })) as { output: { fileName: string }[] };
+    expect(out.output.map((file) => file.fileName)).toContain("index.html");
+    expect(out.output.map((file) => file.fileName)).not.toContain("main.html");
   });
 
   it("holds the asset watch until the first cook settles, with the project's asset config", async () => {

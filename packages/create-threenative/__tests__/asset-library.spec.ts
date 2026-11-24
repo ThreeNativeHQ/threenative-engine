@@ -4,7 +4,7 @@
  * code stories, and the Scene Bundler's two outputs (a TypeScript module that typechecks and a
  * merged GLB that decodes and passes `inspectAsset`). The browser half is asset-library-browser.spec.ts.
  */
-import { copyFile, mkdir, readFile, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
@@ -140,6 +140,9 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await server?.close();
+  // A `beforeAll` directory is outside any test, so `makeTempDir` only removes it at process exit,
+  // which a Vitest worker may never reach: the suite's temp guard then counts it as a leak.
+  if (root) await rm(root, { recursive: true, force: true });
 });
 
 describe("asset library server", () => {
