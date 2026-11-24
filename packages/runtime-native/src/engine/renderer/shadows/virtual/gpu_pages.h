@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <vector>
 
@@ -170,6 +171,10 @@ private:
     WGPUPipelineLayout cullPipelineLayout_ = nullptr;
     RecentBindGroups pageClearGroups_{2};
     RecentBindGroups cullGroups_{4};
+    std::array<WGPUBuffer, 8> cullCachedBuffers_{};
+    WGPUBindGroup cullCachedGroup_ = nullptr;
+    WGPUBuffer pageClearCachedBuffer_ = nullptr;
+    WGPUBindGroup pageClearCachedGroup_ = nullptr;
     Handle descs_{}, uniforms_{}, levels_{}, tileLookup_{}, args_{};
     uint64_t descsCap_ = 0, uniformsCap_ = 0, levelsCap_ = 0, tileLookupCap_ = 0, argsCap_ = 0;
     WGPUBuffer pagesBuffer_ = nullptr;       // the renderer's `vsmGpuPages` storage, borrowed each prepare
@@ -254,6 +259,15 @@ private:
     WGPUBindGroupLayout updateLayout_ = nullptr, packLayout_ = nullptr, allocateLayout_ = nullptr;
     WGPUPipelineLayout updatePipelineLayout_ = nullptr, packPipelineLayout_ = nullptr, allocatePipelineLayout_ = nullptr;
     RecentBindGroups updateGroups_{2}, packGroups_{2}, allocateGroups_{2};
+    std::array<WGPUBuffer, 8> updateCachedBuffers_{};
+    WGPUBindGroup updateCachedGroup_ = nullptr;
+    std::array<WGPUBuffer, 5> packCachedBuffers_{};
+    WGPUBindGroup packCachedGroup_ = nullptr;
+    std::array<WGPUBuffer, 7> allocateCachedBuffers_{};
+    WGPUBindGroup allocateCachedGroup_ = nullptr;
+    std::vector<uint32_t> sentinelAvailable_;
+    std::vector<uint32_t> sentinelMatch_;
+    std::vector<VsmPageLookup> lookupScratch_;
     Handle requests_{}, lookup_{}, uniforms_{}, meta_{}, lru_{}, available_{}, empty_{}, requested_{}, counts_{}, match_{};
     uint64_t requestsCap_ = 0, lookupCap_ = 0, uniformCap_ = 0, metaCap_ = 0, listCap_ = 0, countsCap_ = 0,
              matchCap_ = 0;

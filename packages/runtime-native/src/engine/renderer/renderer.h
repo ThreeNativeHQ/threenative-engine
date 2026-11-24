@@ -1444,19 +1444,25 @@ private:
         ShadowMap map;
         std::shared_ptr<VirtualShadowCosts> costs = std::make_shared<VirtualShadowCosts>();
         std::map<int, uint64_t> consumedCosts;
-        // PRD-775 Phase 2: the caster stage's cache, so a frame where no caster changed reads none.
-        std::unordered_map<uint64_t, std::vector<std::size_t>> objectToIndices;  // shadowObject->id() -> items indices
-        std::unordered_map<uint64_t, std::vector<uint64_t>> objectKeys;          // shadowObject->id() -> draw keys
-        std::unordered_map<uint64_t, std::size_t> keyToIndex;                    // DrawItem::key -> items index
-        std::vector<uint64_t> itemKeys;                                          // last items[idx].key
+        // PRD-775 Phase 2: sorted flat vectors + reusable scratch buffers (zero per-frame hash allocations).
+        std::vector<std::pair<uint64_t, uint32_t>> objectToIndex;  // sorted (shadowObject->id(), item index)
+        std::vector<std::pair<uint64_t, uint32_t>> keyToIndex;     // sorted (DrawItem::key, item index)
+        std::vector<uint64_t> casterKeys, prevCasterKeys;          // sorted casting DrawItem::key sets
+        std::vector<std::size_t> candidateIndices;
+        std::vector<shadows::CasterState> changedStatesScratch, statesScratch;
+        std::vector<uint64_t> emptiedScratch, removedScratch;
+        std::vector<Box3> rungChangedScratch;
         std::vector<std::size_t> dynamicIndices;  // re-evaluated every frame: deformed, tracked or pinned casters
         std::vector<std::size_t> depthSlots, receiverSlots;
         std::vector<uint32_t> incrementalMarks;
         uint32_t incrementalMarkStamp = 0;
         std::vector<Box3> depthCastersCache, receiversCache;
-        /** PRD-775 Phase 3: the GPU page manager for this light, and the atlas pool generation it last reset for. */
+        /** PRD-775 Phase 3: the GPU page manager for this light, and the table/request state it last dispatched for. */
         std::unique_ptr<shadows::GpuPhysicalPagePool> pagePool;
         uint64_t pagePoolGeneration = 0;
+        Handle pagePoolLastTable{};
+        uint64_t pagePoolLastReqHash = 0;
+        std::size_t pagePoolLastReqCount = 0;
         uint64_t lastTopologyVersion = 0, lastControlEpoch = 0;
         std::size_t lastItemsCount = 0;
         bool incrementalCacheValid = false;

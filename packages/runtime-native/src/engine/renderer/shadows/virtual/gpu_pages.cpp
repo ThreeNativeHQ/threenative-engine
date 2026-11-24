@@ -483,6 +483,10 @@ WGPUBuffer GpuVsmResources::argsBuffer() const {
 void GpuVsmResources::clearBindGroups() {
     pageClearGroups_.clear();
     cullGroups_.clear();
+    cullCachedBuffers_.fill(nullptr);
+    cullCachedGroup_ = nullptr;
+    pageClearCachedBuffer_ = nullptr;
+    pageClearCachedGroup_ = nullptr;
 }
 
 void GpuVsmResources::release() {
@@ -627,11 +631,11 @@ bool GpuVsmResources::prepareBuffers(GpuResources& gpu, WGPUDevice device, const
     const uint64_t recordBytes = std::max<uint64_t>(4, uint64_t(pageRecordCount) * 2 * sizeof(uint32_t));
     const uint64_t argWords = std::max<uint64_t>(uint64_t(argsSlots) * 5, initialArgs.size());
     const uint64_t argsBytes = std::max<uint64_t>(20, argWords * sizeof(uint32_t));
-    bool grew = false;
+    bool internalGrew = false, outputGrew = false;
     const auto ensure = [&](Handle& handle, uint64_t& capacity, uint64_t bytes, WGPUBufferUsage usage) {
         bool more = false;
         if (!ensureBuffer(handle, capacity, bytes, usage, more)) return false;
-        grew = grew || more;
+        internalGrew = internalGrew || more;
         return true;
     };
     if (!ensure(descs_, descsCap_, descBytes, storage) ||
@@ -642,12 +646,12 @@ bool GpuVsmResources::prepareBuffers(GpuResources& gpu, WGPUDevice device, const
         !ensure(args_, argsCap_, argsBytes,
                 storage | WGPUBufferUsage_Indirect | WGPUBufferUsage_CopySrc))
         return false;
-    // The page and record storages belong to the renderer: a grow reallocates its handle, and the caller rebuilds
-    // every bind group around it. `grew` from the buffers above already asks for that rebuild.
-    if (!ensureBuffer(pagesBuffer, pagesCap, pageBytes, rendererStorage, grew) ||
-        !ensureBuffer(pageRecordsBuffer, pageRecordsCap, recordBytes, rendererStorage, grew))
+    // The page and record storages belong to the renderer: only their reallocation needs renderer.rebuildGroups().
+    if (!ensureBuffer(pagesBuffer, pagesCap, pageBytes, rendererStorage, outputGrew) ||
+        !ensureBuffer(pageRecordsBuffer, pageRecordsCap, recordBytes, rendererStorage, outputGrew))
         return false;
-    groupsGrew = grew;
+    groupsGrew = outputGrew;
+    (void)internalGrew;
     if (!draws.empty()) gpu.writeBuffer(descs_, 0, draws.data(), draws.size() * sizeof(VsmCullDrawDesc));
     gpu.writeBuffer(uniforms_, 0, &uniforms, sizeof uniforms);
     if (!levels.empty()) gpu.writeBuffer(levels_, 0, levels.data(), levels.size() * sizeof(VsmLevelGridGpu));
@@ -661,6 +665,26 @@ bool GpuVsmResources::prepareBuffers(GpuResources& gpu, WGPUDevice device, const
     return pagesBuffer_ != nullptr && pageRecordsBuffer_ != nullptr;
 }
 
+template <std::size_t N>
+static WGPUBindGroup getCachedBindGroup(WGPUDevice device, WGPUBindGroupLayout layout, RecentBindGroups& groups,
+                                        std::array<WGPUBuffer, N>& cachedBuffers, WGPUBindGroup& cachedGroup,
+                                        const std::array<WGPUBuffer, N>& buffers) {
+    if (cachedGroup != nullptr && cachedBuffers == buffers) return cachedGroup;
+    std::array<WGPUBindGroupEntry, N> entries{};
+    for (std::size_t i = 0; i < N; ++i) {
+        if (buffers[i] == nullptr) return nullptr;
+        entries[i].binding = uint32_t(i);
+        entries[i].buffer = buffers[i];
+        entries[i].size = wgpuBufferGetSize(buffers[i]);
+    }
+    WGPUBindGroup group = groups.get(device, layout, std::vector<WGPUBindGroupEntry>(entries.begin(), entries.end()));
+    if (group != nullptr) {
+        cachedBuffers = buffers;
+        cachedGroup = group;
+    }
+    return group;
+}
+
 void GpuVsmResources::dispatchCull(WGPUCommandEncoder encoder, WGPUBuffer instances) {
     if (!ready() || gpu_ == nullptr || encoder == nullptr || instances == nullptr) return;
     const std::array<WGPUBuffer, 8> buffers = {instances,
@@ -671,15 +695,7 @@ void GpuVsmResources::dispatchCull(WGPUCommandEncoder encoder, WGPUBuffer instan
                                                pagesBuffer_,
                                                pageRecordsBuffer_,
                                                gpu_->buffer(args_)};
-    std::array<WGPUBindGroupEntry, 8> entries = {};
-    for (std::size_t i = 0; i < entries.size(); ++i) {
-        if (buffers[i] == nullptr) return;
-        entries[i].binding = uint32_t(i);
-        entries[i].buffer = buffers[i];
-        entries[i].size = wgpuBufferGetSize(buffers[i]);
-    }
-    const WGPUBindGroup group =
-        cullGroups_.get(device_, cullLayout_, std::vector<WGPUBindGroupEntry>(entries.begin(), entries.end()));
+    const WGPUBindGroup group = getCachedBindGroup(device_, cullLayout_, cullGroups_, cullCachedBuffers_, cullCachedGroup_, buffers);
     if (group == nullptr) return;
     WGPUComputePassDescriptor desc = {};
     WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &desc);
@@ -695,11 +711,11 @@ void GpuVsmResources::encodePageClears(WGPURenderPassEncoder pass, WGPUBuffer pa
     if (pageClearPipeline_ == nullptr || gpu_ == nullptr || pass == nullptr || pageBuffer == nullptr ||
         pageCount == 0)
         return;
-    WGPUBindGroupEntry entry = {};
-    entry.binding = 0;
-    entry.buffer = pageBuffer;
-    entry.size = wgpuBufferGetSize(pageBuffer);
-    const WGPUBindGroup group = pageClearGroups_.get(device_, pageClearLayout_, {entry});
+    std::array<WGPUBuffer, 1> singleCache = {pageClearCachedBuffer_};
+    const WGPUBindGroup group =
+        getCachedBindGroup(device_, pageClearLayout_, pageClearGroups_, singleCache, pageClearCachedGroup_,
+                           std::array<WGPUBuffer, 1>{pageBuffer});
+    pageClearCachedBuffer_ = singleCache[0];
     if (group == nullptr) return;
     wgpuRenderPassEncoderSetPipeline(pass, pageClearPipeline_);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
@@ -747,6 +763,12 @@ void GpuPhysicalPagePool::clearBindGroups() {
     updateGroups_.clear();
     packGroups_.clear();
     allocateGroups_.clear();
+    updateCachedBuffers_.fill(nullptr);
+    updateCachedGroup_ = nullptr;
+    packCachedBuffers_.fill(nullptr);
+    packCachedGroup_ = nullptr;
+    allocateCachedBuffers_.fill(nullptr);
+    allocateCachedGroup_ = nullptr;
 }
 
 void GpuPhysicalPagePool::requestReset() { resetPending_ = true; }
@@ -878,9 +900,8 @@ bool GpuPhysicalPagePool::prepare(GpuResources& gpu, WGPUDevice device, const st
         return false;
     // The CPU owns three sentinels and the counters: a request's slot starts unmapped, an available entry starts
     // unused, and the four list counters start at zero. The kernels then only append and write real slots.
-    std::vector<VsmPhysicalPageMeta> zeroMeta;
     if (resetPending_) {
-        zeroMeta.assign(std::size_t(capacity_), {});
+        std::vector<VsmPhysicalPageMeta> zeroMeta(std::size_t(capacity_), VsmPhysicalPageMeta{});
         gpu.writeBuffer(meta_, 0, zeroMeta.data(), zeroMeta.size() * sizeof(VsmPhysicalPageMeta));
         if (vsmTable.type != 0 && tableEndByte > tableStartByte) {
             std::vector<uint8_t> zeroes(std::size_t(tableEndByte - tableStartByte), 0);
@@ -890,25 +911,28 @@ bool GpuPhysicalPagePool::prepare(GpuResources& gpu, WGPUDevice device, const st
     }
     const std::array<uint32_t, 4> zeroCounts{};
     gpu.writeBuffer(counts_, 0, zeroCounts.data(), sizeof(zeroCounts));
-    std::vector<uint32_t> sentinelAvailable(std::size_t(capacity_), 0xFFFFFFFFu);
-    if (!sentinelAvailable.empty())
-        gpu.writeBuffer(available_, 0, sentinelAvailable.data(), sentinelAvailable.size() * sizeof(uint32_t));
-    std::vector<uint32_t> sentinelMatch(std::max<std::size_t>(1, requests.size()) * 4, 0xFFFFFFFFu);
-    gpu.writeBuffer(match_, 0, sentinelMatch.data(), sentinelMatch.size() * sizeof(uint32_t));
+    if (sentinelAvailable_.size() != std::size_t(capacity_))
+        sentinelAvailable_.assign(std::size_t(capacity_), 0xFFFFFFFFu);
+    if (!sentinelAvailable_.empty())
+        gpu.writeBuffer(available_, 0, sentinelAvailable_.data(), sentinelAvailable_.size() * sizeof(uint32_t));
+    const std::size_t matchWords = std::max<std::size_t>(1, requests.size()) * 4;
+    if (sentinelMatch_.size() < matchWords) sentinelMatch_.assign(matchWords, 0xFFFFFFFFu);
+    gpu.writeBuffer(match_, 0, sentinelMatch_.data(), matchWords * sizeof(uint32_t));
     numRequests_ = uint32_t(requests.size());
     if (!requests.empty()) gpu.writeBuffer(requests_, 0, requests.data(), requests.size() * sizeof(VsmPageRequest));
     // The per-slot binary search walks a list sorted by (pageIdLo, pageIdHi). Equal keys keep the lowest request
     // index, as the CPU pool would allocate the first one and refresh the rest.
-    std::vector<VsmPageLookup> lookup;
-    lookup.reserve(requests.size());
+    lookupScratch_.clear();
+    lookupScratch_.reserve(requests.size());
     for (std::size_t i = 0; i < requests.size(); ++i)
-        lookup.push_back({requests[i].pageIdLo, requests[i].pageIdHi, uint32_t(i), 0u});
-    std::sort(lookup.begin(), lookup.end(), [](const VsmPageLookup& a, const VsmPageLookup& b) {
+        lookupScratch_.push_back({requests[i].pageIdLo, requests[i].pageIdHi, uint32_t(i), 0u});
+    std::sort(lookupScratch_.begin(), lookupScratch_.end(), [](const VsmPageLookup& a, const VsmPageLookup& b) {
         return a.pageIdLo != b.pageIdLo ? a.pageIdLo < b.pageIdLo
                                        : a.pageIdHi != b.pageIdHi ? a.pageIdHi < b.pageIdHi
                                                                   : a.requestIdx < b.requestIdx;
     });
-    if (!lookup.empty()) gpu.writeBuffer(lookup_, 0, lookup.data(), lookup.size() * sizeof(VsmPageLookup));
+    if (!lookupScratch_.empty())
+        gpu.writeBuffer(lookup_, 0, lookupScratch_.data(), lookupScratch_.size() * sizeof(VsmPageLookup));
     VsmPoolUniforms frameUniforms = uniforms;
     frameUniforms.capacity = capacity_;
     frameUniforms.numRequests = numRequests_;
@@ -919,24 +943,13 @@ bool GpuPhysicalPagePool::prepare(GpuResources& gpu, WGPUDevice device, const st
 
 void GpuPhysicalPagePool::dispatch(WGPUCommandEncoder encoder, WGPUBuffer vsmTable, WGPUBuffer vsmGpuPages) {
     if (!ready() || encoder == nullptr || gpu_ == nullptr || capacity_ == 0) return;
-    const auto makeGroup = [&](WGPUBindGroupLayout layout, RecentBindGroups& groups,
-                               std::vector<WGPUBuffer> buffers) {
-        std::vector<WGPUBindGroupEntry> entries(buffers.size());
-        for (std::size_t i = 0; i < buffers.size(); ++i) {
-            if (buffers[i] == nullptr) return WGPUBindGroup{};
-            entries[i].binding = uint32_t(i);
-            entries[i].buffer = buffers[i];
-            entries[i].size = wgpuBufferGetSize(buffers[i]);
-        }
-        return groups.get(device_, layout, std::move(entries));
-    };
-    const WGPUBindGroup updateGroup = makeGroup(
-        updateLayout_, updateGroups_,
-        {buffer(uniforms_), buffer(lookup_), buffer(meta_), buffer(counts_), buffer(lru_), buffer(empty_),
-         buffer(requested_), buffer(match_)});
-    const WGPUBindGroup packGroup =
-        makeGroup(packLayout_, packGroups_,
-                  {buffer(uniforms_), buffer(meta_), buffer(available_), buffer(match_), buffer(counts_)});
+    const WGPUBindGroup updateGroup = getCachedBindGroup(
+        device_, updateLayout_, updateGroups_, updateCachedBuffers_, updateCachedGroup_,
+        std::array<WGPUBuffer, 8>{buffer(uniforms_), buffer(lookup_), buffer(meta_), buffer(counts_), buffer(lru_),
+                                  buffer(empty_), buffer(requested_), buffer(match_)});
+    const WGPUBindGroup packGroup = getCachedBindGroup(
+        device_, packLayout_, packGroups_, packCachedBuffers_, packCachedGroup_,
+        std::array<WGPUBuffer, 5>{buffer(uniforms_), buffer(meta_), buffer(available_), buffer(match_), buffer(counts_)});
     if (updateGroup == nullptr || packGroup == nullptr) return;
     const uint32_t workgroups = (capacity_ + 63u) / 64u;
     {
@@ -958,10 +971,10 @@ void GpuPhysicalPagePool::dispatch(WGPUCommandEncoder encoder, WGPUBuffer vsmTab
         wgpuComputePassEncoderRelease(pass);
     }
     if (vsmTable == nullptr) return;
-    const WGPUBindGroup allocateGroup =
-        makeGroup(allocateLayout_, allocateGroups_,
-                  {buffer(uniforms_), buffer(requests_), buffer(match_), buffer(meta_), buffer(available_), vsmTable,
-                   vsmGpuPages != nullptr ? vsmGpuPages : buffer(empty_)});
+    const WGPUBindGroup allocateGroup = getCachedBindGroup(
+        device_, allocateLayout_, allocateGroups_, allocateCachedBuffers_, allocateCachedGroup_,
+        std::array<WGPUBuffer, 7>{buffer(uniforms_), buffer(requests_), buffer(match_), buffer(meta_), buffer(available_),
+                                  vsmTable, vsmGpuPages != nullptr ? vsmGpuPages : buffer(empty_)});
     if (allocateGroup == nullptr) return;
     WGPUComputePassDescriptor desc = {};
     WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &desc);

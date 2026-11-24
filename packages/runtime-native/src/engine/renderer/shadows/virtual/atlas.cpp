@@ -182,10 +182,12 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
     std::vector<AtlasPage> pages;
     // Protect all held levels until their own replacement has been rendered.
     std::unordered_set<uint64_t> protectedIds;
-    for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
-        for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
-            protectedIds.insert(pageId(l, levels_[l].window.minX + x * options_.pageTexels,
-                                       levels_[l].window.minY + y * options_.pageTexels));
+    if (!gpuManaged_) {
+        for (int l = 0; l < int(levels_.size()); ++l) if (levels_[l].mapped)
+            for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
+                protectedIds.insert(pageId(l, levels_[l].window.minX + x * options_.pageTexels,
+                                           levels_[l].window.minY + y * options_.pageTexels));
+    }
     // The shipped TS node requests an entire granted clip window (its prototype's sparse
     // receiver-feedback path is not used by virtual-shadow.ts). Tile that same request into
     // physical pages; cached levels are neither cleared nor rendered.
@@ -202,7 +204,7 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         const double gpuDelay = options_.adaptiveRefresh ? level.costMs / (1000 * options_.expensiveRefreshShare) : 0;
         const bool matured = level.dirty && (level.urgent || now_ - level.lastRender >= std::max(at(options_.invalidationDelay, l), gpuDelay));
         if ((!moved && !matured) || (granted && !level.urgent)) continue;
-        if (level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
+        if (!gpuManaged_ && level.mapped) for (int y = 0; y < tiles(l); ++y) for (int x = 0; x < tiles(l); ++x)
             protectedIds.erase(pageId(l, level.window.minX + x * options_.pageTexels, level.window.minY + y * options_.pageTexels));
         const Matrix4 oldMatrix = level.matrix;
         bool partial = !moved && level.mapped && !level.dirtyAll && options_.partialRedraw;
@@ -212,7 +214,8 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         const double oldCenterW = level.centerW, oldEye = level.eye;
         const double oldDepthOrigin = level.centerW + level.eye, oldNear = level.near, oldFar = level.far;
         const double oldPageWorldSize = level.window.pageWorldSize;
-        const std::set<int> oldSlots(level.slots.begin(), level.slots.end());
+        std::set<int> oldSlots;
+        if (!gpuManaged_ && level.mapped) oldSlots.insert(level.slots.begin(), level.slots.end());
         std::unordered_set<uint64_t> oldIds;
         if (gpuManaged_ && level.mapped)
             for (const AtlasPage& page : level.pages) oldIds.insert(virtualPageId(l, page));
@@ -454,18 +457,26 @@ void PageAtlas::updateCastersChanged(const std::vector<CasterState>& changed, co
                                      const std::vector<uint64_t>& emptied) {
     seeded_ = true;
     lastCasterVisits_ = 0;
-    std::unordered_set<uint64_t> visited;
-    visited.reserve(changed.size());
+    if (changed.empty() && removed.empty() && emptied.empty() && activeMovers_.empty()) return;
+    visitedKeysScratch_.clear();
+    visitedKeysScratch_.reserve(changed.size());
     for (const auto& caster : changed) {
         ++lastCasterVisits_;
         applyCaster(caster, 0);
-        visited.insert(caster.key);
+        visitedKeysScratch_.push_back(caster.key);
     }
+    const bool sortVisited = visitedKeysScratch_.size() > 16;
+    if (sortVisited) std::sort(visitedKeysScratch_.begin(), visitedKeysScratch_.end());
+    const auto wasVisited = [&](uint64_t key) {
+        return sortVisited ? std::binary_search(visitedKeysScratch_.begin(), visitedKeysScratch_.end(), key)
+                           : std::find(visitedKeysScratch_.begin(), visitedKeysScratch_.end(), key) !=
+                                 visitedKeysScratch_.end();
+    };
     // Every mover the change set did not name advances exactly as an unchanged still frame of that caster would.
     // Snapshot the keys: settling erases from the set while this loop runs.
-    const std::vector<uint64_t> movers(activeMovers_.begin(), activeMovers_.end());
-    for (const uint64_t key : movers) {
-        if (visited.count(key)) continue;
+    moversScratch_.assign(activeMovers_.begin(), activeMovers_.end());
+    for (const uint64_t key : moversScratch_) {
+        if (wasVisited(key)) continue;
         const auto it = motion_.find(key);
         if (it == motion_.end()) { activeMovers_.erase(key); continue; }
         ++lastCasterVisits_;
@@ -485,9 +496,16 @@ void PageAtlas::updateCastersChanged(const std::vector<CasterState>& changed, co
         }
         if (!m.moving && m.settling == 0) activeMovers_.erase(key);
     }
-    const std::unordered_set<uint64_t> emptiedKeys(emptied.begin(), emptied.end());
+    emptiedKeysScratch_ = emptied;
+    const bool sortEmptied = emptiedKeysScratch_.size() > 16;
+    if (sortEmptied) std::sort(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end());
+    const auto isEmptied = [&](uint64_t key) {
+        return sortEmptied ? std::binary_search(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end(), key)
+                           : std::find(emptiedKeysScratch_.begin(), emptiedKeysScratch_.end(), key) !=
+                                 emptiedKeysScratch_.end();
+    };
     for (const uint64_t key : removed) {
-        if (emptiedKeys.count(key)) continue;
+        if (isEmptied(key)) continue;
         const auto it = motion_.find(key);
         if (it == motion_.end()) continue;
         ++lastCasterVisits_;

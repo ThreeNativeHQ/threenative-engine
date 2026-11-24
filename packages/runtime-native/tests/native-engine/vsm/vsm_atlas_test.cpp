@@ -3,6 +3,7 @@
 #include "engine/renderer/shadows/virtual/caster_plan.h"
 #include "engine/shader/standard.h"
 #include "engine/shader/package.h"
+#include "engine/shader/wgsl.h"
 #include "engine/abi/bindings.h"
 #include "engine/foundation/waste_counters.h"
 #include "engine/scene/geometry.h"
@@ -1234,4 +1235,37 @@ void gpuPageTableMatchesCpuAtlas() {
 }
 #endif
 
-TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved}, {"gpu_page_table_matches_cpu_atlas", gpuPageTableMatchesCpuAtlas})
+// PRD-775: TSL node depth programs (masked foliage / Strata terrain) with `vsmBatched = true` emit `vsmPageClip`
+// as a computed vertex-to-fragment varying; `linkNodeVaryings` must never synthesize it as a geometry attribute.
+void vsmBatchedDepthSkipsVsmPageClipAttribute() {
+    namespace g = tn::engine::shader::graph;
+    const auto hasVsmPageClipAttr = [](const tn::engine::shader::StageModule& vertex) {
+        return std::any_of(vertex.attributes.begin(), vertex.attributes.end(),
+                           [](const tn::engine::shader::VertexAttribute& attr) { return attr.name == "vsmPageClip"; });
+    };
+
+    shader::VertexVariant masked;
+    masked.alphaTest = true;
+    masked.vsmBatched = true;
+    masked.nodes.colorNode = g::uniform("nodeTint", shader::Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    masked.nodes.alphaTestNode = g::uniform("nodeCut", shader::Type::f32(), {0.2f});
+    const auto maskedProgs = shader::buildMaskedDepth(masked);
+    const auto maskedVertex = shader::buildStage(maskedProgs.vertex, 0, false);
+    const auto maskedFragment = shader::buildStage(maskedProgs.fragment, 1, false);
+    CHECK(maskedVertex.wgsl.ok());
+    CHECK(maskedFragment.wgsl.ok());
+    CHECK(!hasVsmPageClipAttr(maskedVertex));
+
+    shader::VertexVariant depth;
+    depth.alphaHash = true;
+    depth.vsmBatched = true;
+    depth.nodes.positionNode = g::add(g::positionLocal(), g::uniform("nodeOffset", shader::Type::vec(3), {0.0f, 0.1f, 0.0f}));
+    const auto depthProgs = shader::buildDepth(depth);
+    const auto depthVertex = shader::buildStage(depthProgs.vertex, 0, false);
+    const auto depthFragment = shader::buildStage(depthProgs.fragment, 1, false);
+    CHECK(depthVertex.wgsl.ok());
+    CHECK(depthFragment.wgsl.ok());
+    CHECK(!hasVsmPageClipAttr(depthVertex));
+}
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved}, {"gpu_page_table_matches_cpu_atlas", gpuPageTableMatchesCpuAtlas}, {"vsm_batched_depth_skips_vsm_page_clip_attr", vsmBatchedDepthSkipsVsmPageClipAttribute})

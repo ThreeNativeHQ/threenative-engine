@@ -518,10 +518,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool incrementalDirtyFast = incrementalUpdate && layoutHolds && record.size() == items.size() &&
                                           shadow.depthSlots.size() == items.size() &&
                                           shadow.receiverSlots.size() == items.size();
-        std::vector<Box3> depthCasters, receivers;
-        std::vector<uint64_t> emptied, removed;
-        std::vector<shadows::CasterState> states, changedStates;
-        std::vector<Box3> rungChanged;
+        shadow.emptiedScratch.clear();
+        shadow.removedScratch.clear();
+        shadow.changedStatesScratch.clear();
+        shadow.rungChangedScratch.clear();
+        auto& emptied = shadow.emptiedScratch;
+        auto& removed = shadow.removedScratch;
+        auto& changedStates = shadow.changedStatesScratch;
+        auto& rungChanged = shadow.rungChangedScratch;
         const auto buildInputs = [&](const DrawItem& item) {
             shadows::CasterInputs inputs;
             inputs.positions = item.positions;
@@ -567,8 +571,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 shadow.incrementalMarkStamp = 1;
             }
             const uint32_t mark = shadow.incrementalMarkStamp;
-            std::vector<std::size_t> candidateIndices;
-            candidateIndices.reserve(dirtyPrimitives.size() + shadow.dynamicIndices.size() + shadow.atlas.activeMoverKeys().size());
+            auto& candidateIndices = shadow.candidateIndices;
+            candidateIndices.clear();
+            const std::size_t want = dirtyPrimitives.size() + shadow.dynamicIndices.size() + shadow.atlas.activeMoverKeys().size();
+            if (candidateIndices.capacity() < want) candidateIndices.reserve(want);
             const auto queueIndex = [&](std::size_t index) {
                 if (index < items.size() && shadow.incrementalMarks[index] != mark) {
                     shadow.incrementalMarks[index] = mark;
@@ -576,13 +582,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
             };
             for (const DirtyPrimitive& d : dirtyPrimitives) {
-                if (const auto found = shadow.objectToIndices.find(d.objectId); found != shadow.objectToIndices.end())
-                    for (const std::size_t idx : found->second) queueIndex(idx);
+                if (d.objectId == 0) continue;
+                auto it = std::lower_bound(shadow.objectToIndex.begin(), shadow.objectToIndex.end(), d.objectId,
+                                           [](const auto& entry, uint64_t id) { return entry.first < id; });
+                for (; it != shadow.objectToIndex.end() && it->first == d.objectId; ++it) queueIndex(it->second);
             }
             for (const std::size_t idx : shadow.dynamicIndices) queueIndex(idx);
             for (const uint64_t key : shadow.atlas.activeMoverKeys()) {
-                if (const auto found = shadow.keyToIndex.find(key); found != shadow.keyToIndex.end())
-                    queueIndex(found->second);
+                auto it = std::lower_bound(shadow.keyToIndex.begin(), shadow.keyToIndex.end(), key,
+                                           [](const auto& entry, uint64_t k) { return entry.first < k; });
+                for (; it != shadow.keyToIndex.end() && it->first == key; ++it) queueIndex(it->second);
             }
             for (const std::size_t index : candidateIndices) {
                 const DrawItem& item = items[index];
@@ -613,17 +622,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         } else {
             record.assign(items.size(), {});
             plan.begin(items.size());
-            std::unordered_map<uint64_t, std::vector<std::size_t>> objectToIndices;
-            std::unordered_map<uint64_t, std::vector<uint64_t>> objectKeys;
-            std::unordered_map<uint64_t, std::size_t> keyToIndex;
-            std::vector<uint64_t> itemKeys(items.size(), 0);
-            std::vector<std::size_t> depthSlots(items.size(), ~std::size_t{0});
-            std::vector<std::size_t> receiverSlots(items.size(), ~std::size_t{0});
-            std::vector<std::size_t> dynamicIndices;
-            std::unordered_set<uint64_t> currentKeys;
+            shadow.objectToIndex.clear();
+            shadow.keyToIndex.clear();
+            shadow.prevCasterKeys.swap(shadow.casterKeys);
+            shadow.casterKeys.clear();
+            shadow.depthSlots.assign(items.size(), ~std::size_t{0});
+            shadow.receiverSlots.assign(items.size(), ~std::size_t{0});
+            shadow.dynamicIndices.clear();
+            shadow.depthCastersCache.clear();
+            shadow.receiversCache.clear();
+            auto& states = shadow.statesScratch;
+            states.clear();
             for (const DrawItem& item : items) {
                 const auto index = std::size_t(&item - items.data());
-                itemKeys[index] = item.key;
                 if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
                 if (item.instanceCount == 0) {
                     if (item.castShadow) emptied.push_back(item.key);
@@ -637,44 +648,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 bool stale = false;
                 shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
                 if (stale) refreshCasterSlot(index, item, caster);
-                keyToIndex[item.key] = index;
-                if (item.shadowObject) objectToIndices[item.shadowObject->id()].push_back(index);
+                shadow.keyToIndex.emplace_back(item.key, uint32_t(index));
+                if (item.shadowObject) shadow.objectToIndex.emplace_back(item.shadowObject->id(), uint32_t(index));
                 const bool dynamic = item.boneMatrices != nullptr || item.morphGeometry != nullptr ||
                                      item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints ||
                                      caster.state.tracked || caster.state.pinned;
-                if (dynamic) dynamicIndices.push_back(index);
+                if (dynamic) shadow.dynamicIndices.push_back(index);
                 if (caster.casts) {
                     record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
                     if (stale) changedStates.push_back(caster.state);
-                    states.push_back(caster.state);
-                    currentKeys.insert(item.key);
-                    if (item.shadowObject) objectKeys[item.shadowObject->id()].push_back(item.key);
+                    if (!incrementalUpdate) states.push_back(caster.state);
+                    shadow.casterKeys.push_back(item.key);
                     const auto& lodChanged = planControl.lodChanged;
                     if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
                         rungChanged.push_back(caster.bounds);
                 }
-                depthSlots[index] = depthCasters.size();
-                depthCasters.push_back(caster.bounds);
+                shadow.depthSlots[index] = shadow.depthCastersCache.size();
+                shadow.depthCastersCache.push_back(caster.bounds);
                 if (item.receiveShadow) {
-                    receiverSlots[index] = receivers.size();
-                    receivers.push_back(caster.bounds);
+                    shadow.receiverSlots[index] = shadow.receiversCache.size();
+                    shadow.receiversCache.push_back(caster.bounds);
                 }
             }
+            const auto byFirstThenSecond = [](const auto& a, const auto& b) {
+                return a.first != b.first ? a.first < b.first : a.second < b.second;
+            };
+            std::sort(shadow.objectToIndex.begin(), shadow.objectToIndex.end(), byFirstThenSecond);
+            std::sort(shadow.keyToIndex.begin(), shadow.keyToIndex.end(), byFirstThenSecond);
+            std::sort(shadow.casterKeys.begin(), shadow.casterKeys.end());
             if (incrementalUpdate) {
-                // A draw that left the caster stage invalidates its last region, exactly as the full scan's sweep
-                // would. `emptied` keys are handled by the atlas itself, so they are not removals here.
-                const std::unordered_set<uint64_t> emptiedKeys(emptied.begin(), emptied.end());
-                for (const auto& [object, keys] : shadow.objectKeys)
-                    for (const uint64_t key : keys)
-                        if (!currentKeys.count(key) && !emptiedKeys.count(key)) removed.push_back(key);
+                std::sort(emptied.begin(), emptied.end());
+                std::size_t cur = 0, emp = 0;
+                const std::size_t curEnd = shadow.casterKeys.size(), empEnd = emptied.size();
+                for (const uint64_t prevKey : shadow.prevCasterKeys) {
+                    if (!removed.empty() && removed.back() == prevKey) continue;
+                    while (cur < curEnd && shadow.casterKeys[cur] < prevKey) ++cur;
+                    if (cur < curEnd && shadow.casterKeys[cur] == prevKey) continue;
+                    while (emp < empEnd && emptied[emp] < prevKey) ++emp;
+                    if (emp < empEnd && emptied[emp] == prevKey) continue;
+                    removed.push_back(prevKey);
+                }
             }
-            shadow.objectToIndices = std::move(objectToIndices);
-            shadow.objectKeys = std::move(objectKeys);
-            shadow.keyToIndex = std::move(keyToIndex);
-            shadow.itemKeys = std::move(itemKeys);
-            shadow.depthSlots = std::move(depthSlots);
-            shadow.receiverSlots = std::move(receiverSlots);
-            shadow.dynamicIndices = std::move(dynamicIndices);
             shadow.lastTopologyVersion = topologyVersion;
             shadow.lastItemsCount = items.size();
             shadow.lastControlEpoch = controlEpoch;
@@ -708,21 +722,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
 
-        // A steady or in-place updated frame reads the caster bounds it cached; a layout scan rebuilt them.
-        const bool usedCachedBounds = steadyDirtyFast || incrementalDirtyFast;
-        const std::vector<Box3>& depthCasterList = usedCachedBounds ? shadow.depthCastersCache : depthCasters;
-        const std::vector<Box3>& receiverList = usedCachedBounds ? shadow.receiversCache : receivers;
         Vector3 focus(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
         if (shadow.atlas.options().followViewFocus && !control.focus) {
             Vector3 forward(-camera.matrixWorld[8], -camera.matrixWorld[9], -camera.matrixWorld[10]); forward.normalize();
-            focus = shadows::PageAtlas::viewFocus(focus, forward, camera.far, shadow.atlas.options().clipExtents.front(), receiverList);
+            focus = shadows::PageAtlas::viewFocus(focus, forward, camera.far, shadow.atlas.options().clipExtents.front(),
+                                                  shadow.receiversCache);
         }
-        virtualPages[i] = shadow.atlas.update(focus, towards, virtualCut_, depthCasterList, frameDelta_);
+        virtualPages[i] = shadow.atlas.update(focus, towards, virtualCut_, shadow.depthCastersCache, frameDelta_);
         shadow.atlas.appendMoverPages(virtualPages[i]);
-        if (!usedCachedBounds) {
-            shadow.depthCastersCache = std::move(depthCasters);
-            shadow.receiversCache = std::move(receivers);
-        }
     }
 
     if (!compilation) virtualCut_ = false;
@@ -2914,6 +2921,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
                 if (cache) { cache->depthTargetKey = depthTargetKey; cache->depthPipeline = pipeline; }
             }
+            // PRD-775: warm the batched depth pipeline while an async-loaded caster renders as a mover so settling
+            // onto static pages does not compile a late `vsmBatched` shader/pipeline.
+            if (virtualMap && !compilation && page && page->mover && vsmGpuPagesEnabled() && cache &&
+                (!cache->vsmDepthProgram || cache->vsmDepthStamp != item.variantStamp || cache->vsmDepthKey != rowKey ||
+                 !cache->vsmDepthPipeline)) {
+                shader::VertexVariant batchedVariant = variantOf(item);
+                if (cache->program) batchedVariant.gpuCulled = cache->variant.gpuCulled;
+                batchedVariant.vsmBatched = true;
+                Program& batched = depthProgram(batchedVariant, masked);
+                const shader::StageModule* batchedFragment =
+                    (masked || batchedVariant.alphaHash || batched.variant.vsmBatched) ? &batched.fragment : nullptr;
+                PipelineTarget batchedTarget = target;
+                batchedTarget.layout = batched.pipelineLayout;
+                batchedTarget.instanceStepMask = instanceStepMask(batched.vertex, item);
+                const uint64_t batchedTargetKey =
+                    drawTargetKey(item, batched.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);
+                WGPURenderPipeline batchedPipeline = pipelines_->get(batched.vertex, batchedFragment, batchedTarget);
+                if (!batchedPipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+                cache->vsmDepthProgram = &batched;
+                cache->vsmDepthPipeline = batchedPipeline;
+                cache->vsmDepthTargetKey = batchedTargetKey;
+                cache->vsmDepthMasked = masked;
+                cache->vsmDepthStamp = item.variantStamp;
+                cache->vsmDepthKey = rowKey;
+            }
             // packed below, after the lamp cache decides which passes run
             const DrawItem* rowItem = &item;
             double rowBase = item.instanceMatrices ? instanceBases.at(drawn) : 0.0;
@@ -3284,14 +3316,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // PRD-775 Phase 3: each virtual light's GPU page manager maps this frame's virtual pages before the shadow
     // passes. It is the only writer of the table's page entries; the renderer's storage upload skips that range.
     if (!compilation) {
+        const auto sameHandle = [](Handle a, Handle b) {
+            return a.type == b.type && a.context == b.context && a.index == b.index && a.generation == b.generation;
+        };
         for (auto& [i, shadow] : virtualShadows_) {
             auto& atlas = shadow.atlas;
             if (!atlas.gpuManaged() || !shadow.pagePool) continue;
-            if (shadow.pagePoolGeneration != atlas.poolGeneration()) {
+            FrameStorage& tableStorage = storages_["vsmTable" + std::to_string(i)];
+            if (shadow.pagePoolGeneration != atlas.poolGeneration() ||
+                (shadow.pagePoolLastTable.type != 0 && !sameHandle(tableStorage.buffer, shadow.pagePoolLastTable))) {
                 shadow.pagePool->requestReset();
                 shadow.pagePoolGeneration = atlas.poolGeneration();
             }
             const auto& requests = atlas.frameRequests();
+            bool anyActive = false;
+            uint64_t reqHash = 0xcbf29ce484222325ull;
+            for (const shadows::PlannedPageRequest& request : requests) {
+                anyActive = anyActive || (request.flags != 0u);
+                reqHash = (reqHash ^ request.id) * 0x100000001b3ull;
+                reqHash = (reqHash ^ (uint64_t(request.tableEntry) | (uint64_t(request.flags) << 32))) * 0x100000001b3ull;
+                reqHash = (reqHash ^ uint64_t(request.gpuPageIndex)) * 0x100000001b3ull;
+            }
+            if (!shadow.pagePool->resetPending() && !anyActive && shadow.pagePoolLastTable.type != 0 &&
+                sameHandle(tableStorage.buffer, shadow.pagePoolLastTable) && reqHash == shadow.pagePoolLastReqHash &&
+                requests.size() == shadow.pagePoolLastReqCount)
+                continue;
             const auto indexIt = lightPageIndex.find(i);
             const std::vector<uint32_t>* pageIndex = indexIt != lightPageIndex.end() ? &indexIt->second : nullptr;
             std::vector<shadows::VsmPageRequest> pageRequests;
@@ -3318,12 +3367,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             uniforms.invEdge = float(1.0 / double(atlas.edge()));
             uniforms.receiverPlaneBias = atlas.options().receiverPlaneBias ? 1.0f : 0.0f;
             uniforms.frameNumber = float(atlas.frameNumber());
-            FrameStorage& tableStorage = storages_["vsmTable" + std::to_string(i)];
             const uint64_t headerBytes = uint64_t(atlas.options().clipExtents.size()) * 9 * 16;
             const uint64_t pageEndByte = headerBytes + uint64_t(atlas.pageCount()) * 16;
             if (!shadow.pagePool->prepare(gpu_, device_, pageRequests, uniforms, tableStorage.buffer, headerBytes,
                                           pageEndByte))
                 throw std::runtime_error("TN_NATIVE_VSM_GPU_PAGES: the page table could not be prepared");
+            shadow.pagePoolLastTable = tableStorage.buffer;
+            shadow.pagePoolLastReqHash = reqHash;
+            shadow.pagePoolLastReqCount = requests.size();
             job.vsmPageDispatches.push_back({shadow.pagePool.get(), i});
         }
     }

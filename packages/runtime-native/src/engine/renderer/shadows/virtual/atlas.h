@@ -255,6 +255,9 @@ private:
     uint64_t presentEpoch_ = 0;
     /** PRD-775 Phase 2: the casters whose motion state a change-set frame must still advance. */
     std::unordered_set<uint64_t> activeMovers_;
+    std::vector<uint64_t> visitedKeysScratch_;
+    std::vector<uint64_t> moversScratch_;
+    std::vector<uint64_t> emptiedKeysScratch_;
     uint64_t lastCasterVisits_ = 0;
     bool seeded_ = false;
     /** One caster's state transition, shared by the full scan and the change-set path; `present` 0 skips the stamp. */

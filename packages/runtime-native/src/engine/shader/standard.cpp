@@ -879,7 +879,8 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
     variant.nodes.forEachGraph(collect);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
-            (name == "instanceColor" && variant.tinted()) || (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps || variant.anisotropy))) continue;
+            (name == "instanceColor" && variant.tinted()) || (name == "vsmPageClip" && variant.vsmBatched) ||
+            (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps || variant.anisotropy))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
             tsl::Build build(v);
