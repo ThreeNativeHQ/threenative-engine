@@ -63,8 +63,17 @@ export function createAssetsWatchPlugin() {
 function kitDefaults() {
   return {
     name: "threenative-kit-defaults",
-    config(user: { readonly root?: string }) {
+    config(user: {
+      readonly root?: string;
+      readonly build?: {
+        readonly rollupOptions?: { readonly input?: unknown };
+        readonly rolldownOptions?: { readonly input?: unknown };
+      };
+    }) {
       const root = path.resolve(user.root ?? process.cwd());
+      // A build that names its own input keeps it: the native HUD build sets one page with code
+      // splitting off, and this hook runs inside build(), after that override.
+      const named = user.build?.rollupOptions?.input ?? user.build?.rolldownOptions?.input;
       return {
         server: {
           watch: {
@@ -73,7 +82,7 @@ function kitDefaults() {
           },
         },
         // `index.html` runs the game in a worker (the default); `main.html` runs it on the page thread.
-        ...(existsSync(path.join(root, "main.html"))
+        ...(named === undefined && existsSync(path.join(root, "main.html"))
           ? { build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } } }
           : {}),
       };
