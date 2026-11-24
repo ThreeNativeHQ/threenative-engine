@@ -525,13 +525,13 @@ export function codecLadder(
     return [{ codec: forced }];
   }
   if (data) return [{ codec: "uastc" }, { codec: "none" }];
-  const lossless: readonly ICodecRung[] = [
+  const uastcRungs: readonly ICodecRung[] = [
     { codec: "uastc", rdoLambda: 3 },
     { codec: "uastc", rdoLambda: 1 },
     { codec: "uastc" },
     { codec: "none" },
   ];
-  return projected ? lossless : [{ codec: "etc1s" }, ...lossless];
+  return projected ? uastcRungs : [{ codec: "etc1s" }, ...uastcRungs];
 }
 
 /** Above this, a source ETC1S cannot beat skips the UASTC rungs; the RDO bound uses the same size. */
