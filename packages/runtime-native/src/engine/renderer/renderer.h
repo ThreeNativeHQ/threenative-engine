@@ -256,6 +256,7 @@ struct DrawItem {
     const BufferGeometry* morphGeometry = nullptr;
     const std::vector<double>* morphInfluences = nullptr;
     const std::vector<float>* boneMatrices = nullptr;
+    uint64_t boneVersion = 0;
     Matrix bindMatrix{}, bindMatrixInverse{};
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
     std::shared_ptr<GpuJointScene> gpuJoints;
@@ -1634,6 +1635,9 @@ private:
     std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
     std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
     std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDirectWrites_;  // PRD-913: exact byte spans pushed to GPU without sameBytes scan
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDiffSpans_;     // full-slot overwrites filtered via SIMD sameBytes on upload
+    std::vector<const BufferStore*> instanceClearedStores_;
     std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
     uint64_t instanceTop_ = 0;
     static constexpr uint64_t kInstanceSlotPlans = 4096;
@@ -1671,6 +1675,18 @@ private:
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
     bool sharedViewEnabled();
+    bool persistentGpuSceneEnabled();
+    struct BonePlacement {
+        const std::vector<float>* ptr = nullptr;
+        uint64_t version = 0;
+        uint64_t offsetBytes = 0;
+        uint64_t sizeBytes = 0;
+        bool operator==(const BonePlacement&) const = default;
+    };
+    std::vector<BonePlacement> bonePlacements_;
+    std::vector<BonePlacement> lastBonePlacements_;
+    Handle lastBoneBuffer_;
+    uint64_t lastBonePrefix_ = 0;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
     WGPUBindGroupLayout viewLayout_ = nullptr;

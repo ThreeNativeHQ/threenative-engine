@@ -317,6 +317,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_palette_lifetime=palette_lifetime
         native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_gpu_scene_dirty_uploads=gpu_scene_dirty_uploads
         native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
         native_engine_shadow_row_follows_on_before_render=shadow_row_follows_on_before_render
         native_engine_skin_attribute_delete_is_seen=skin_attribute_delete_is_seen

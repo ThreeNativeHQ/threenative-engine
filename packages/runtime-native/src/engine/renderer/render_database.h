@@ -79,6 +79,20 @@ class RenderDatabase {
     }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** Primitives whose transform, instance buffers, geometry, or scene membership changed in the last prepare (PRD-913). */
+    struct DirtyPrimitive {
+        uint64_t objectId = 0;
+        bool transformChanged = false;
+        bool instanceChanged = false;
+        bool geometryChanged = false;
+        bool added = false;
+        bool removed = false;
+        Box3 oldBounds{};
+        Box3 newBounds{};
+    };
+    [[nodiscard]] const std::vector<DirtyPrimitive>& dirtyPrimitives() const { return dirtyPrimitives_; }
+    void setTrackDirtyBounds(bool enabled) { trackDirtyBounds_ = enabled; }
+    [[nodiscard]] bool trackDirtyBounds() const { return trackDirtyBounds_; }
 
     /**
      * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material uniforms
@@ -205,13 +219,17 @@ class RenderDatabase {
         uint64_t cacheId = UINT64_MAX;  // its slot in byId_, cleared when the sweep erases it
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
-        bool drawable = false, materialized = false;
+        uint32_t lastDirtyRevision = 0;
         // What refresh()'s material half last wrote: its material's uniform signature and the geometry revision
         // the attribute list was read at. Equal means the draw still reads the same material state (FM1).
         std::size_t materialSignature = 0;
         uint64_t refreshRevision = 0;
+        bool drawable = false, materialized = false;
         bool materialResolved = false;
         bool convertedInputs = false;  // a colour or custom attribute is a converted (non-float) copy
+        bool dirtyTracked = false;
+        bool dirtyGeomChanged = false;
+        uint16_t lastDirtyFrame16 = 0;
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
@@ -247,6 +265,21 @@ class RenderDatabase {
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
+    struct BatchStoreCache {
+        uint64_t identity = 0;
+        uint64_t epoch = ~uint64_t(0);
+        uint64_t orderHash = 0;
+        uint32_t count = 0;
+        bool uniform = false;
+    };
+    std::vector<BatchStoreCache> batchStoreCaches_;
+    struct PaletteVersionCache {
+        uint64_t idHash = 0;
+        uint64_t version = 1;
+        uint32_t writes = ~uint32_t(0);
+        uint32_t count = 0;
+    };
+    std::vector<PaletteVersionCache> paletteVersionCaches_;
     std::vector<std::unique_ptr<shader::StandardMaterial>> batchParams_;  // boxed: a draw's material keeps its address as slots grow
     /** PRD-754: each batch keeps one slot (store, colours, cache, material) while its group lives, whichever groups
      *  are in view, so its buffers and draw key hold across culling. A slot unseen for 600 frames is reused. */
@@ -332,7 +365,10 @@ class RenderDatabase {
     struct MeshGroup {
         GeometryKey geometry;
         std::vector<std::size_t> members;
+        const Material* firstMaterial = nullptr;
         bool orderedIds = true;
+        bool uniform = false;
+        uint32_t dirtyCount = 0;
         uint64_t identity = 0;  // the group's hash and bucket place: the same group every frame it exists
     };
     std::vector<BatchMember> batchMeshes_;
@@ -366,6 +402,19 @@ class RenderDatabase {
     std::vector<uint64_t> depthKeys_;
     std::vector<uint32_t> floatKeys_;
     std::vector<std::string> diagnostics_;
+    std::vector<DirtyPrimitive> dirtyPrimitives_;
+    bool trackDirtyBounds_ = false;
+    struct InstanceDirtyState {
+        uint64_t matWrites = 0, matEpoch = 0, colWrites = 0, colEpoch = 0;
+        uint32_t count = 0;
+        bool valid = false;
+    };
+    std::vector<Box3> trackedBoundsById_;
+    std::vector<InstanceDirtyState> trackedInstancesById_;
+    std::vector<std::pair<uint64_t, Box3>> trackedOverflowBounds_;
+    std::vector<std::pair<uint64_t, InstanceDirtyState>> trackedOverflowInstances_;
+    void trackDirty(const Mesh& mesh, Record& r, std::string_view type, bool shadowCaster);
+    Box3 removeTrackedState(const Record& r);
     uint64_t rebuilds_ = 0;
     uint64_t recordLookups_ = 0, recordSweeps_ = 0, sphereMeasures_ = 0;
     // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a

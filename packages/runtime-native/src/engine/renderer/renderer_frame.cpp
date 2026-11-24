@@ -165,57 +165,129 @@ const DrawItem* Renderer::cullMainInstanceItem(const DrawItem& drawn, const Frus
 
     const auto matStamp = storeStampOf(srcMatrices);
     const auto colStamp = storeStampOf(srcColors);
-    bool changed = cache.srcCount != srcCount || cache.srcMatrixStamp != matStamp || cache.srcColorStamp != colStamp ||
-                   cache.lastIndices != ordered || cache.customStores.size() != customSources.size() ||
-                   cache.srcCustomStamps.size() != customSources.size();
-    if (!changed) {
-        for (std::size_t k = 0; k < customSources.size(); ++k) {
-            if (cache.srcCustomStamps[k] != storeStampOf(customSources[k].store)) {
-                changed = true;
-                break;
-            }
-        }
-    }
+    bool customChanged = cache.customStores.size() != customSources.size() ||
+                         cache.srcCustomStamps.size() != customSources.size();
+    for (std::size_t k = 0; !customChanged && k < customSources.size(); ++k)
+        customChanged = cache.srcCustomStamps[k] != storeStampOf(customSources[k].store);
+    const bool matChanged = matStamp != cache.srcMatrixStamp;
+    const bool colChanged = colStamp != cache.srcColorStamp;
+    const bool sameOrder = sameMembers || (cache.lastIndices == ordered);
+    const bool changed = cache.srcCount != srcCount || matChanged || colChanged || !sameOrder || customChanged;
     if (changed && !ordered.empty()) {
         const uint64_t needMat = std::max<uint64_t>(srcMatrices->count(), uint64_t{srcCount} * 16);
-        if (!cache.matrices || cache.matrices->count() < needMat)
-            cache.matrices = std::make_shared<BufferStore>(Scalar::F32, needMat);
-        auto* dstMat = reinterpret_cast<float*>(cache.matrices->data());
-        for (std::size_t k = 0; k < ordered.size(); ++k)
-            std::memcpy(dstMat + k * 16, matrices + std::size_t(ordered[k]) * 16, 16 * sizeof(float));
-        cache.matrices->needsUpdate();
-
-        if (srcColors) {
-            const uint64_t needCol = std::max<uint64_t>(srcColors->count(), uint64_t{srcCount} * 3);
-            if (!cache.colors || cache.colors->count() < needCol)
-                cache.colors = std::make_shared<BufferStore>(Scalar::F32, needCol);
-            const auto* srcCol = reinterpret_cast<const float*>(srcColors->data());
-            auto* dstCol = reinterpret_cast<float*>(cache.colors->data());
-            for (std::size_t k = 0; k < ordered.size(); ++k)
-                std::memcpy(dstCol + k * 3, srcCol + std::size_t(ordered[k]) * 3, 3 * sizeof(float));
-            cache.colors->needsUpdate();
-        } else {
-            cache.colors.reset();
-        }
-
-        cache.customStores.resize(customSources.size());
-        cache.srcCustomStamps.resize(customSources.size());
-        for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
-            const auto& cs = customSources[ci];
-            auto& dstStore = cache.customStores[ci];
-            if (!dstStore || dstStore->scalar() != cs.store->scalar() ||
-                dstStore->byteLength() < cs.store->byteLength()) {
-                dstStore = std::make_shared<BufferStore>(cs.store->scalar(), cs.store->count());
+        const uint64_t needCol = srcColors ? std::max<uint64_t>(srcColors->count(), uint64_t{srcCount} * 3) : 0;
+        const bool hasMatRanges = !matChanged || !srcMatrices->dirtyByteRanges().empty();
+        const bool hasColRanges = !colChanged || (srcColors && !srcColors->dirtyByteRanges().empty());
+        const auto spansCovered = [](std::span<const UpdateRange> spans, uint64_t maxBytes) {
+            uint64_t sum = 0;
+            for (const auto& s : spans) sum += s.count;
+            return sum * 4 >= maxBytes;
+        };
+        const bool incremental =
+            sameMembers && cache.srcCount == srcCount && sameOrder &&
+            !customChanged && cache.matrices && cache.matrices->count() >= needMat &&
+            cache.srcMatrixStamp[0] == matStamp[0] && !srcMatrices->dirtyAll() && hasMatRanges &&
+            (!matChanged || !spansCovered(srcMatrices->dirtyByteRanges(), uint64_t{srcCount} * 16 * sizeof(float))) &&
+            (!srcColors || (cache.colors && cache.colors->count() >= needCol &&
+                            cache.srcColorStamp[0] == colStamp[0] && !srcColors->dirtyAll() && hasColRanges &&
+                            (!colChanged || !spansCovered(srcColors->dirtyByteRanges(), uint64_t{srcCount} * 3 * sizeof(float)))));
+        if (incremental) {
+            std::vector<std::pair<uint64_t, uint64_t>> sortedSpans;
+            const auto prepareSpans = [&](std::span<const UpdateRange> spans) {
+                sortedSpans.clear();
+                for (const auto& s : spans) {
+                    if (s.count > 0) sortedSpans.emplace_back(s.start, s.start + s.count);
+                }
+                if (sortedSpans.size() <= 1) return;
+                std::sort(sortedSpans.begin(), sortedSpans.end());
+                std::size_t out = 0;
+                for (const auto& sp : sortedSpans) {
+                    if (out > 0 && sp.first <= sortedSpans[out - 1].second) {
+                        sortedSpans[out - 1].second = std::max(sortedSpans[out - 1].second, sp.second);
+                    } else {
+                        sortedSpans[out++] = sp;
+                    }
+                }
+                sortedSpans.resize(out);
+            };
+            const auto inRanges = [&](uint32_t index, uint64_t strideBytes) {
+                if (sortedSpans.empty()) return false;
+                const uint64_t at = uint64_t(index) * strideBytes;
+                const uint64_t end = at + strideBytes;
+                if (sortedSpans.size() == 1) {
+                    const auto& s = sortedSpans[0];
+                    return at < s.second && end > s.first;
+                }
+                auto it = std::upper_bound(sortedSpans.begin(), sortedSpans.end(), at,
+                                           [](uint64_t val, const auto& p) { return val < p.second; });
+                return it != sortedSpans.end() && it->first < end;
+            };
+            if (matChanged) {
+                bool wroteMat = false;
+                prepareSpans(srcMatrices->dirtyByteRanges());
+                for (std::size_t k = 0; k < ordered.size(); ++k) {
+                    if (inRanges(ordered[k], 16 * sizeof(float))) {
+                        cache.matrices->write(uint64_t(k) * 16 * sizeof(float),
+                                              matrices + std::size_t(ordered[k]) * 16, 16 * sizeof(float));
+                        wroteMat = true;
+                    }
+                }
+                if (wroteMat) cache.matrices->needsUpdate();
             }
-            const std::byte* srcBytes = cs.store->data();
-            std::byte* dstBytes = dstStore->data();
+            if (colChanged && srcColors) {
+                bool wroteCol = false;
+                const auto* srcCol = reinterpret_cast<const float*>(srcColors->data());
+                prepareSpans(srcColors->dirtyByteRanges());
+                for (std::size_t k = 0; k < ordered.size(); ++k) {
+                    if (inRanges(ordered[k], 3 * sizeof(float))) {
+                        cache.colors->write(uint64_t(k) * 3 * sizeof(float),
+                                            srcCol + std::size_t(ordered[k]) * 3, 3 * sizeof(float));
+                        wroteCol = true;
+                    }
+                }
+                if (wroteCol) cache.colors->needsUpdate();
+            }
+        } else {
+            if (!cache.matrices || cache.matrices->count() < needMat)
+                cache.matrices = std::make_shared<BufferStore>(Scalar::F32, needMat);
+            auto* dstMat = reinterpret_cast<float*>(cache.matrices->data());
             for (std::size_t k = 0; k < ordered.size(); ++k)
-                std::memcpy(dstBytes + k * cs.stride, srcBytes + std::size_t(ordered[k]) * cs.stride, cs.stride);
-            dstStore->needsUpdate();
-            cache.srcCustomStamps[ci] = storeStampOf(cs.store);
+                std::memcpy(dstMat + k * 16, matrices + std::size_t(ordered[k]) * 16, 16 * sizeof(float));
+            cache.matrices->needsUpdate();
+
+            if (srcColors) {
+                if (!cache.colors || cache.colors->count() < needCol)
+                    cache.colors = std::make_shared<BufferStore>(Scalar::F32, needCol);
+                const auto* srcCol = reinterpret_cast<const float*>(srcColors->data());
+                auto* dstCol = reinterpret_cast<float*>(cache.colors->data());
+                for (std::size_t k = 0; k < ordered.size(); ++k)
+                    std::memcpy(dstCol + k * 3, srcCol + std::size_t(ordered[k]) * 3, 3 * sizeof(float));
+                cache.colors->needsUpdate();
+            } else {
+                cache.colors.reset();
+            }
+
+            cache.customStores.resize(customSources.size());
+            cache.srcCustomStamps.resize(customSources.size());
+            for (std::size_t ci = 0; ci < customSources.size(); ++ci) {
+                const auto& cs = customSources[ci];
+                auto& dstStore = cache.customStores[ci];
+                if (!dstStore || dstStore->scalar() != cs.store->scalar() ||
+                    dstStore->byteLength() < cs.store->byteLength()) {
+                    dstStore = std::make_shared<BufferStore>(cs.store->scalar(), cs.store->count());
+                }
+                const std::byte* srcBytes = cs.store->data();
+                std::byte* dstBytes = dstStore->data();
+                for (std::size_t k = 0; k < ordered.size(); ++k)
+                    std::memcpy(dstBytes + k * cs.stride, srcBytes + std::size_t(ordered[k]) * cs.stride, cs.stride);
+                dstStore->needsUpdate();
+                cache.srcCustomStamps[ci] = storeStampOf(cs.store);
+            }
         }
     }
     if (changed) {
+        instanceClearedStores_.push_back(srcMatrices);
+        if (srcColors) instanceClearedStores_.push_back(srcColors);
         cache.srcCount = srcCount;
         cache.srcMatrixStamp = matStamp;
         cache.srcColorStamp = colStamp;
@@ -755,6 +827,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         job_->culledStores.clear();
         job_->culledAttributes.clear();
     }
+    instanceClearedStores_.clear();
     if (instanceCullEnabled() && !compilation && !traa_) {
         if (planSerial_ % 256 == 0) {
             for (auto it = culledInstances_.begin(); it != culledInstances_.end();) {
@@ -780,7 +853,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     instancePlanned_.clear();
     instanceDirty_.clear();
+    instanceDirectWrites_.clear();
+    instanceDiffSpans_.clear();
+    const bool persistentGpuScene = persistentGpuSceneEnabled();
     uint32_t instanceCopies = 0;
+    std::vector<std::pair<uint64_t, uint64_t>> dirtyInstanceRanges;
     const auto packInstance = [&](const DrawItem* drawn, uint32_t reserveInstances) {
         if (!drawn->instanceMatrices) return;
         if (drawn->indirect) {  // read in place as a vertex buffer; nothing to pack
@@ -815,6 +892,57 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const auto* matrices = reinterpret_cast<const float*>(matrixStore.data());
         const auto* colors = colorStore ? reinterpret_cast<const float*>(colorStore->data()) : nullptr;
         if (instances.size() < instanceTop_) instances.resize(instanceTop_);
+
+        const bool incrementalEligible =
+            persistentGpuScene && !placed && slot.stamped && drawn->instanceCount == slot.stamp[6] &&
+            matrixStore.epoch() == slot.stamp[0] &&
+            (colorStore ? colorStore->epoch() : 0) == slot.stamp[3] &&
+            !matrixStore.dirtyAll() && (!colorStore || !colorStore->dirtyAll());
+        if (incrementalEligible) {
+            dirtyInstanceRanges.clear();
+            const uint32_t instCount = drawn->instanceCount;
+            const auto addByteSpans = [&](std::span<const UpdateRange> spans, uint64_t strideBytes) {
+                for (const auto& s : spans) {
+                    if (s.count == 0) continue;
+                    const uint32_t first = static_cast<uint32_t>(std::min<uint64_t>(s.start / strideBytes, instCount));
+                    const uint32_t end =
+                        static_cast<uint32_t>(std::min<uint64_t>((s.start + s.count + strideBytes - 1) / strideBytes, instCount));
+                    if (first < end) dirtyInstanceRanges.emplace_back(first, end);
+                }
+            };
+            addByteSpans(matrixStore.dirtyByteRanges(), 16 * sizeof(float));
+            if (colorStore) addByteSpans(colorStore->dirtyByteRanges(), 3 * sizeof(float));
+            if (!dirtyInstanceRanges.empty()) {
+                std::sort(dirtyInstanceRanges.begin(), dirtyInstanceRanges.end());
+                std::size_t merged = 0;
+                for (const auto& r : dirtyInstanceRanges) {
+                    if (merged > 0 && r.first <= dirtyInstanceRanges[merged - 1].second) {
+                        dirtyInstanceRanges[merged - 1].second = std::max(dirtyInstanceRanges[merged - 1].second, r.second);
+                    } else {
+                        dirtyInstanceRanges[merged++] = r;
+                    }
+                }
+                dirtyInstanceRanges.resize(merged);
+                for (const auto& [first, end] : dirtyInstanceRanges) {
+                    float* out = instances.data() + slot.offset + uint64_t{first} * 20;
+                    for (uint32_t i = first; i < end; ++i, out += 20) {
+                        std::memcpy(out, matrices + i * 16, 16 * sizeof(float));
+                        out[16] = colors ? colors[i * 3] : 1;
+                        out[17] = colors ? colors[i * 3 + 1] : 1;
+                        out[18] = colors ? colors[i * 3 + 2] : 1;
+                        out[19] = 0;
+                    }
+                    instanceDirectWrites_.emplace_back((slot.offset + uint64_t{first} * 20) * sizeof(float),
+                                                         uint64_t{end - first} * 20 * sizeof(float));
+                }
+                instanceClearedStores_.push_back(&matrixStore);
+                if (colorStore) instanceClearedStores_.push_back(colorStore);
+                slot.stamped = false;
+                ++instanceCopies;
+                return;
+            }
+        }
+
         float* out = instances.data() + slot.offset;
         for (uint32_t i = 0; i < drawn->instanceCount; ++i, out += 20) {
             std::memcpy(out, matrices + i * 16, 16 * sizeof(float));
@@ -825,7 +953,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         slot.stamped = false;  // until the upload below has gone through
         ++instanceCopies;
-        instanceDirty_.emplace_back(slot.offset, floats);
+        if (persistentGpuScene) {
+            if (placed) {
+                instanceDirectWrites_.emplace_back(slot.offset * sizeof(float), floats * sizeof(float));
+            } else {
+                instanceDiffSpans_.emplace_back(slot.offset * sizeof(float), floats * sizeof(float));
+            }
+            instanceClearedStores_.push_back(&matrixStore);
+            if (colorStore) instanceClearedStores_.push_back(colorStore);
+        } else {
+            instanceDirty_.emplace_back(slot.offset, floats);
+        }
     };
     const bool anyShadowPass = !compilation && !skipShadows_ &&
                                std::any_of(lights.direct.begin(), lights.direct.end(),
@@ -841,6 +979,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
     }
     instances.resize(instanceTop_);
+    for (const BufferStore* s : instanceClearedStores_) s->clearDirtyByteRanges();
+    instanceClearedStores_.clear();
     struct Deform {
         double boneBase = 0, morphBase = 0, morphInfluenceBase = 0, morphVertexCount = 0, morphBaseInfluence = 1;
     };
@@ -858,7 +998,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         return key;
     };
     std::unordered_map<const std::vector<float>*, double> placedPalettes;  // a palette two draws read is compared once
-    const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride) {
+    bonePlacements_.clear();
+    const auto placePalette = [&](const std::vector<float>& matrices, uint32_t stride, uint64_t version) {
         const auto baseOf = [&](std::size_t at) { return double(jointPrefix / 64 + at / 16); };
         if (matrices.size() < 16) return baseOf(bones.size());
         if (const auto placed = placedPalettes.find(&matrices); placed != placedPalettes.end()) return placed->second;
@@ -873,13 +1014,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const std::size_t step = stride ? std::size_t{stride} * 16 : matrices.size();
         for (std::size_t o = 0; o + 16 <= matrices.size(); o += step)
             paletteStarts.emplace(firstMatrixKey(matrices.data() + o), uint32_t(at + o));
+        bonePlacements_.push_back({&matrices, version, jointPrefix + at * sizeof(float), matrices.size() * sizeof(float)});
         bones.insert(bones.end(), matrices.begin(), matrices.end());
         ++paletteWrites;
         return remember(baseOf(at));
     };
     for (const auto& [depthKey, drawn] : opaque) {
         if (drawn->boneMatrices && drawn->boneStride && !drawn->gpuJoints)
-            deforms[drawn].boneBase = placePalette(*drawn->boneMatrices, drawn->boneStride);
+            deforms[drawn].boneBase = placePalette(*drawn->boneMatrices, drawn->boneStride, drawn->boneVersion);
     }
     std::vector<uint32_t> jointOutputs(jointPrefix ? gpuJoints_->rigs.size() : 0, UINT32_MAX);
     uint32_t jointWritten = 0;
@@ -900,7 +1042,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 else for (uint32_t rig : drawn->gpuJointRigs) place(rig);
                 paletteWrites += drawn->gpuJointRigs.empty() ? 1u : uint32_t(drawn->gpuJointRigs.size());
             } else if (!drawn->boneStride) {
-                d.boneBase = placePalette(*drawn->boneMatrices, 0) + drawn->boneOffset;
+                d.boneBase = placePalette(*drawn->boneMatrices, 0, drawn->boneVersion) + drawn->boneOffset;
             }
         }
         if (const BufferGeometry* g = drawn->morphGeometry) {
@@ -3069,42 +3211,47 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // Every block is kUniformAlign bytes, so a run's length is a multiple of 4, as writeBuffer requires.
         static_assert(kUniformAlign % 4 == 0);
         uniformDirtyRanges_.clear();
-        uint64_t runStart = 0, runEnd = 0, dirty = 0;
+        uint64_t runStart = 0, runEnd = 0, dirty = uniformBytes > common ? (uniformBytes - common) : 0;
         const auto closeRun = [&] {
             if (runEnd != runStart) uniformDirtyRanges_.emplace_back(runStart, runEnd - runStart);
             runStart = runEnd = 0;
         };
-        if (common > 0 && std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), common) != 0) {
+        uint64_t scannedBytes = common;
+        const bool commonDiffers =
+            common > 0 && dirty * 2 < uniformBytes &&
+            (common == uniformBytes || std::memcmp(uploadedUniforms_.data(), frameUniforms_.data(), common) != 0);
+        if (commonDiffers) {
+            scannedBytes = 0;
             for (uint64_t at = 0; at < common; at += kUniformBlock) {
                 const uint64_t end = std::min(at + kUniformBlock, common);
+                scannedBytes = end;
                 if (std::memcmp(frameUniforms_.data() + at, uploadedUniforms_.data() + at, end - at) != 0) {
                     if (runEnd == runStart) runStart = at;
                     runEnd = end;
                     dirty += end - at;
-                    if (dirty * 5 >= uniformBytes * 4) break;  // nearly whole arena dirty: stop scanning early
+                    if (dirty * 2 >= uniformBytes) break;
                 } else {
                     closeRun();
                 }
             }
             closeRun();
-            if (uniformScanTimed) countUniformScan(common);  // the scan's cost stops at the compare loop, not at the writes
+            if (uniformScanTimed) countUniformScan(scannedBytes);  // the scan's cost stops at the compare loop, not at the writes
         } else if (uniformScanTimed && common > 0) {
             countUniformScan(common);
         }
-        if (uniformBytes > common) {
-            if (!uniformDirtyRanges_.empty() &&
-                uniformDirtyRanges_.back().first + uniformDirtyRanges_.back().second == common) {
-                uniformDirtyRanges_.back().second += uniformBytes - common;
-            } else {
-                uniformDirtyRanges_.emplace_back(common, uniformBytes - common);
-            }
-            dirty += uniformBytes - common;  // bytes past the old end are new: no compare finds them equal
-        }
-        if (dirty * 5 >= uniformBytes * 4) {  // nearly whole arena dirty: one write is cheaper than split calls
+        if (dirty * 2 >= uniformBytes) {  // mostly dirty: one write is cheaper than scanning & split calls
             gpu_.writeBuffer(uniformBuffer_, 0, frameUniforms_.data(), uniformBytes);
             uploadedUniforms_.assign(frameUniforms_.begin(), frameUniforms_.end());
             dirty = uniformBytes;
         } else {
+            if (uniformBytes > common) {
+                if (!uniformDirtyRanges_.empty() &&
+                    uniformDirtyRanges_.back().first + uniformDirtyRanges_.back().second == common) {
+                    uniformDirtyRanges_.back().second += uniformBytes - common;
+                } else {
+                    uniformDirtyRanges_.emplace_back(common, uniformBytes - common);
+                }
+            }
             uploadedUniforms_.resize(uniformBytes);
             for (const auto& [offset, length] : uniformDirtyRanges_) {
                 gpu_.writeBuffer(uniformBuffer_, offset, frameUniforms_.data() + offset, length);
@@ -3145,7 +3292,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // change (a still crowd, a draw that kept its place in `instances`) sends nothing, whatever its neighbours do.
         const uint64_t held = sameBuffer && storage.uploadedPrefix == prefix ? std::min<uint64_t>(storage.uploaded.size(), bytes) : 0;
         constexpr uint64_t kStorageBlock = 256;  // a multiple of 4: writeBuffer takes whole words
-        constexpr std::size_t kMaxWrites = 32, kMaxPaletteWrites = 256;
+        constexpr std::size_t kMaxWrites = 32, kMaxPaletteWrites = 32;
         auto& ranges = uniformDirtyRanges_;  // the uniform upload above is done with it
         ranges.clear();
         const auto dirty = [&](uint64_t at, uint64_t end) {
@@ -3156,35 +3303,144 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // matches the GPU) and the shadow rows past the places. A palette scans all it holds, one 4x4 at a time: a
         // crowd slot whose pose held kept its bytes, so only the moved slots cross (PRD-878).
         const bool instances = name == "instances";
+        const bool boneBuffer = name == "boneMatrices";
         const uint64_t block = instances ? kStorageBlock : 16 * sizeof(float);
-        auto& spans = instanceScan_;
-        spans.clear();
-        if (instances) {
-            std::sort(instanceDirty_.begin(), instanceDirty_.end());
-            for (const auto& [offset, count] : instanceDirty_) {
-                const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
-                if (at >= end) continue;
-                if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
-                else spans.emplace_back(at, end);
+        bool mostlyDirty = false;
+        if (persistentGpuScene && instances) {
+            const uint64_t tail = std::min(instanceTop_ * 4, held);
+            uint64_t dirtyBytes = (tail < held ? (held - tail) : 0) + (bytes > held ? (bytes - held) : 0);
+            const auto addRange = [&](uint64_t offset, uint64_t len) {
+                if (!ranges.empty() && offset <= ranges.back().first + ranges.back().second) {
+                    const uint64_t backEnd = ranges.back().first + ranges.back().second;
+                    const uint64_t nextEnd = std::max(backEnd, offset + len);
+                    ranges.back().second = nextEnd - ranges.back().first;
+                    return nextEnd - backEnd;
+                }
+                ranges.emplace_back(offset, len);
+                return len;
+            };
+            std::sort(instanceDirectWrites_.begin(), instanceDirectWrites_.end());
+            for (const auto& [offset, len] : instanceDirectWrites_) {
+                if (offset >= held || len == 0) continue;
+                const uint64_t clampedEnd = std::min(offset + len, held);
+                dirtyBytes += addRange(offset, clampedEnd - offset);
             }
-        }
-        const uint64_t tail = instances ? std::min(instanceTop_ * 4, held) : 0;
-        if (tail < held) spans.emplace_back(tail, held);
-        uint64_t dirtyBytes = bytes > held ? (bytes - held) : 0;
-        bool mostlyDirty = dirtyBytes * 2 >= bytes;
-        if (!mostlyDirty) {
+            mostlyDirty = dirtyBytes * 2 >= bytes;
+            if (!mostlyDirty && !instanceDiffSpans_.empty()) {
+                std::sort(instanceDiffSpans_.begin(), instanceDiffSpans_.end());
+                for (const auto& [offset, len] : instanceDiffSpans_) {
+                    if (offset >= held || len == 0) continue;
+                    const uint64_t clampedEnd = std::min(offset + len, held);
+                    for (uint64_t at = offset; at < clampedEnd; at += block) {
+                        const uint64_t end = std::min(at + block, clampedEnd);
+                        if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) {
+                            dirty(at, end);
+                            dirtyBytes += end - at;
+                            if (dirtyBytes * 2 >= bytes) {
+                                mostlyDirty = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (mostlyDirty) break;
+                }
+                if (!mostlyDirty && ranges.size() > 1) {
+                    std::sort(ranges.begin(), ranges.end());
+                    std::size_t merged = 0;
+                    for (const auto& r : ranges) {
+                        if (merged > 0 && r.first <= ranges[merged - 1].first + ranges[merged - 1].second) {
+                            const uint64_t end = std::max(ranges[merged - 1].first + ranges[merged - 1].second, r.first + r.second);
+                            ranges[merged - 1].second = end - ranges[merged - 1].first;
+                        } else {
+                            ranges[merged++] = r;
+                        }
+                    }
+                    ranges.resize(merged);
+                }
+            }
+            if (!mostlyDirty) {
+                if (tail < held) addRange(tail, held - tail);
+                if (bytes > held) addRange(held, bytes - held);
+            }
+        } else if (persistentGpuScene && boneBuffer) {
+            const bool sameBoneHandle = lastBoneBuffer_.type == target.type &&
+                                        lastBoneBuffer_.context == target.context &&
+                                        lastBoneBuffer_.index == target.index &&
+                                        lastBoneBuffer_.generation == target.generation;
+            bool layoutMatches = sameBuffer && sameBoneHandle && lastBonePrefix_ == prefix &&
+                                 storage.uploadedPrefix == prefix &&
+                                 lastBonePlacements_.size() == bonePlacements_.size() && bytes == held;
+            for (std::size_t bi = 0; layoutMatches && bi < bonePlacements_.size(); ++bi) {
+                if (bonePlacements_[bi].ptr != lastBonePlacements_[bi].ptr ||
+                    bonePlacements_[bi].offsetBytes != lastBonePlacements_[bi].offsetBytes ||
+                    bonePlacements_[bi].sizeBytes != lastBonePlacements_[bi].sizeBytes)
+                    layoutMatches = false;
+            }
+            constexpr uint64_t kBoneBytes = 16 * sizeof(float);
+            uint64_t dirtyBytes = bytes > held ? (bytes - held) : 0;
+            mostlyDirty = dirtyBytes * 2 >= bytes;
+            if (!mostlyDirty && layoutMatches) {
+                for (std::size_t bi = 0; bi < bonePlacements_.size(); ++bi) {
+                    if (bonePlacements_[bi].version == 0 || bonePlacements_[bi].version != lastBonePlacements_[bi].version) {
+                        const uint64_t rel = bonePlacements_[bi].offsetBytes - prefix;
+                        const uint64_t end = std::min(rel + bonePlacements_[bi].sizeBytes, held);
+                        for (uint64_t at = rel; at < end; at += kBoneBytes) {
+                            const uint64_t chunkEnd = std::min(at + kBoneBytes, end);
+                            if (!sameBytes(source + at, storage.uploaded.data() + at, chunkEnd - at)) {
+                                dirty(at, chunkEnd);
+                                dirtyBytes += chunkEnd - at;
+                                if (dirtyBytes * 2 >= bytes) {
+                                    mostlyDirty = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (mostlyDirty) break;
+                    }
+                }
+            } else if (!mostlyDirty) {
+                for (uint64_t at = 0; at < held; at += kBoneBytes) {
+                    const uint64_t chunkEnd = std::min(at + kBoneBytes, held);
+                    if (!sameBytes(source + at, storage.uploaded.data() + at, chunkEnd - at)) {
+                        dirty(at, chunkEnd);
+                        dirtyBytes += chunkEnd - at;
+                        if (dirtyBytes * 2 >= bytes) {
+                            mostlyDirty = true;
+                            break;
+                        }
+                    }
+                }
+                if (!mostlyDirty && bytes > held) dirty(held, bytes);
+            }
+        } else {
+            auto& spans = instanceScan_;
+            spans.clear();
+            if (instances) {
+                std::sort(instanceDirty_.begin(), instanceDirty_.end());
+                for (const auto& [offset, count] : instanceDirty_) {
+                    const uint64_t at = offset * 4, end = std::min((offset + count) * 4, held);
+                    if (at >= end) continue;
+                    if (!spans.empty() && at <= spans.back().second) spans.back().second = std::max(spans.back().second, end);
+                    else spans.emplace_back(at, end);
+                }
+            }
+            const uint64_t tail = instances ? std::min(instanceTop_ * 4, held) : 0;
+            if (tail < held) spans.emplace_back(tail, held);
+            uint64_t dirtyBytes = bytes > held ? (bytes - held) : 0;
+            mostlyDirty = dirtyBytes * 2 >= bytes;
             for (const auto& [from, to] : spans) {
+                if (mostlyDirty) break;
                 const auto spanScanStart =
                     storageScanTimed ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
-                bool spanScanned = true;
+                uint64_t scannedTo = from;
                 for (uint64_t at = from; at < to; at += block) {
                     const uint64_t end = std::min(at + block, to);
+                    scannedTo = end;
                     if (!sameBytes(source + at, storage.uploaded.data() + at, end - at)) {
                         dirty(at, end);
                         dirtyBytes += end - at;
                         if (dirtyBytes * 2 >= bytes) {
                             mostlyDirty = true;
-                            spanScanned = false;
                             break;
                         }
                     }
@@ -3192,22 +3448,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 if (storageScanTimed) {
                     storageScanNanos += static_cast<uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
                         std::chrono::steady_clock::now() - spanScanStart).count());
-                    if (spanScanned) storageScanBytes += to - from;  // every block was compared, so the span's bytes were read
+                    storageScanBytes += scannedTo - from;
                 }
-                if (mostlyDirty) break;
             }
             if (!mostlyDirty && bytes > held) dirty(held, bytes);
         }
         if (!mostlyDirty && ranges.empty()) {
             storage.uploaded.resize(bytes);  // it shrank: the bytes that remain are the ones the GPU holds
             instancesUploaded = instancesUploaded || instances;
+            if (persistentGpuScene && boneBuffer) {
+                lastBonePlacements_ = bonePlacements_;
+                lastBoneBuffer_ = target;
+                lastBonePrefix_ = prefix;
+            }
             continue;
         }
-        if (mostlyDirty) {
-            ranges.assign(1, {0, bytes});
-        } else {
-            coalesceDirtyRanges(ranges, instances ? kMaxWrites : kMaxPaletteWrites, dirtyGapScratch_);
-        }
+        if (mostlyDirty) ranges.assign(1, {0, bytes});
+        else coalesceDirtyRanges(ranges, instances ? kMaxWrites : kMaxPaletteWrites, dirtyGapScratch_);
         storage.uploaded.resize(bytes);
         bool written = true;
         for (const auto& [offset, length] : ranges) {
@@ -3218,9 +3475,18 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             storage.uploadedBuffer = target;
             storage.uploadedPrefix = prefix;
             instancesUploaded = instancesUploaded || instances;
+            if (persistentGpuScene && boneBuffer) {
+                lastBonePlacements_ = bonePlacements_;
+                lastBoneBuffer_ = target;
+                lastBonePrefix_ = prefix;
+            }
         } else {  // the copy no longer says what the GPU holds: the next frame sends all of it
             storage.uploaded.clear();
             storage.uploadedBuffer = Handle{};
+            if (boneBuffer) {
+                lastBonePlacements_.clear();
+                lastBoneBuffer_ = Handle{};
+            }
         }
     }
     if (storageScanTimed) {

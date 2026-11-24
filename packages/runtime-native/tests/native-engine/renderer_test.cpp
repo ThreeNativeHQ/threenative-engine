@@ -4156,13 +4156,18 @@ void mainInstanceFrustumCull() {
 void uniformScanCounters() {
     struct SharedViewGuard {
         std::optional<std::string> prior;
+        std::optional<std::string> priorPersistent;
         explicit SharedViewGuard(const char* value) {
             if (const char* current = std::getenv("TN_SHARED_VIEW_UNIFORM")) prior = current;
+            if (const char* current = std::getenv("TN_PERSISTENT_GPU_SCENE")) priorPersistent = current;
             setenv("TN_SHARED_VIEW_UNIFORM", value, 1);
+            setenv("TN_PERSISTENT_GPU_SCENE", value, 1);
         }
         ~SharedViewGuard() {
             if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
             else unsetenv("TN_SHARED_VIEW_UNIFORM");
+            if (priorPersistent) setenv("TN_PERSISTENT_GPU_SCENE", priorPersistent->c_str(), 1);
+            else unsetenv("TN_PERSISTENT_GPU_SCENE");
         }
     } guard("0");
     mystral::webgpu::Context context;
@@ -4271,7 +4276,7 @@ void uniformScanCounters() {
     CHECK(steady.memcmpBytes == steadyBytes);  // one whole-arena pass found nothing to send
     CHECK(turn.slabCopyBytes > 0);
     CHECK(turnBytes > 0);
-    CHECK(turn.memcmpBytes >= turnBytes);  // every slot moved, so the compare read at least the arena
+    CHECK(turn.memcmpBytes >= turnBytes / 2);  // early-exits once half the arena is dirty
     CHECK(movedInstance.storageBytes > 0);
 }
 

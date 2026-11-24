@@ -511,15 +511,23 @@ Renderer::~Renderer() {
     if (shadowViewCapacity_ != 0) gpu_.destroy(shadowViewBuffer_);
 }
 
-bool Renderer::sharedViewEnabled() {
-    const char* flag = flags::read<flags::SharedViewUniform>();
-    if (flag != nullptr && std::strcmp(flag, "0") == 0) {
-        static constexpr const char* kNote = "TN_SHARED_VIEW_UNIFORM=0: legacy per-draw frameSlab enabled";
-        if (std::find(diagnostics_.begin(), diagnostics_.end(), kNote) == diagnostics_.end())
-            diagnostics_.push_back(kNote);
+static bool flagEnabledOrLog(const char* value, const char* offNote, std::vector<std::string>& diagnostics) {
+    if (value != nullptr && std::strcmp(value, "0") == 0) {
+        if (std::find(diagnostics.begin(), diagnostics.end(), offNote) == diagnostics.end())
+            diagnostics.push_back(offNote);
         return false;
     }
     return true;
+}
+
+bool Renderer::sharedViewEnabled() {
+    return flagEnabledOrLog(flags::read<flags::SharedViewUniform>(),
+                            "TN_SHARED_VIEW_UNIFORM=0: legacy per-draw frameSlab enabled", diagnostics_);
+}
+
+bool Renderer::persistentGpuSceneEnabled() {
+    return flagEnabledOrLog(flags::read<flags::PersistentGpuScene>(),
+                            "TN_PERSISTENT_GPU_SCENE=0: legacy storage same-bytes scan enabled", diagnostics_);
 }
 
 void Renderer::releaseTargets() {
