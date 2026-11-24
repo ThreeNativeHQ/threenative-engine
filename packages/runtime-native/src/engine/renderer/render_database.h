@@ -79,20 +79,15 @@ class RenderDatabase {
     }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
-    /** Primitives whose transform, instance buffers, geometry, or scene membership changed in the last prepare (PRD-913). */
-    struct DirtyPrimitive {
-        uint64_t objectId = 0;
-        bool transformChanged = false;
-        bool instanceChanged = false;
-        bool geometryChanged = false;
-        bool added = false;
-        bool removed = false;
-        Box3 oldBounds{};
-        Box3 newBounds{};
-    };
+    /** Primitives whose transform, instance buffers, geometry, cast/layers state or scene membership changed in the
+     *  last prepare (PRD-913, PRD-775 Phase 2). */
+    using DirtyPrimitive = tn::engine::DirtyPrimitive;
     [[nodiscard]] const std::vector<DirtyPrimitive>& dirtyPrimitives() const { return dirtyPrimitives_; }
     void setTrackDirtyBounds(bool enabled) { trackDirtyBounds_ = enabled; }
     [[nodiscard]] bool trackDirtyBounds() const { return trackDirtyBounds_; }
+    /** Bumps whenever prepare() adds, removes or reorders draws or changes their caster flags: the VSM caster cache's
+     *  index mapping is only valid for one layout (PRD-775 Phase 2). */
+    [[nodiscard]] uint64_t topologyVersion() const { return topologyVersion_; }
 
     /**
      * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material uniforms
@@ -220,6 +215,8 @@ class RenderDatabase {
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
         uint32_t lastDirtyRevision = 0;
+        bool lastDirtyCastShadow = false;
+        uint32_t lastDirtyLayers = 0;
         // What refresh()'s material half last wrote: its material's uniform signature and the geometry revision
         // the attribute list was read at. Equal means the draw still reads the same material state (FM1).
         std::size_t materialSignature = 0;
@@ -404,6 +401,9 @@ class RenderDatabase {
     std::vector<std::string> diagnostics_;
     std::vector<DirtyPrimitive> dirtyPrimitives_;
     bool trackDirtyBounds_ = false;
+    uint64_t topologyVersion_ = 0;
+    uint64_t topologyLayoutHash_ = 0;
+    std::size_t topologyLayoutCount_ = 0;
     struct InstanceDirtyState {
         uint64_t matWrites = 0, matEpoch = 0, colWrites = 0, colEpoch = 0;
         uint32_t count = 0;

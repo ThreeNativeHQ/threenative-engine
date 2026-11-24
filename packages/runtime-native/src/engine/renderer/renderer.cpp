@@ -821,13 +821,17 @@ std::vector<std::pair<double, const DrawItem*>> Renderer::sortDraws(std::span<co
 }
 
 uint64_t Renderer::render(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                          std::array<double, 4> clear) {
-    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm);
+                          std::array<double, 4> clear, std::span<const DirtyPrimitive> dirtyPrimitives,
+                          bool hasDirtyTracking, uint64_t topologyVersion) {
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, false, dirtyPrimitives,
+                          hasDirtyTracking, topologyVersion);
 }
 
 uint64_t Renderer::renderDeferred(std::span<const DrawItem> items, const CameraState& camera, const LightState& lights,
-                                  std::array<double, 4> clear) {
-    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, true);
+                                  std::array<double, 4> clear, std::span<const DirtyPrimitive> dirtyPrimitives,
+                                  bool hasDirtyTracking, uint64_t topologyVersion) {
+    return renderPrepared(items, camera, lights, clear, nullptr, WGPUTextureFormat_RGBA8Unorm, true, dirtyPrimitives,
+                          hasDirtyTracking, topologyVersion);
 }
 
 void Renderer::encodePending() {
@@ -867,10 +871,18 @@ void Renderer::recordDeferred(bool sampled) {
 }
 
 std::vector<std::shared_ptr<PipelineCompilation>> Renderer::compileAsync(std::span<const DrawItem> items,
-    const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat) {
+    const CameraState& camera, const LightState& lights, WGPUTextureFormat outputFormat,
+    std::span<const DirtyPrimitive> dirtyPrimitives, bool hasDirtyTracking, uint64_t topologyVersion) {
     std::vector<std::shared_ptr<PipelineCompilation>> compilation;
-    renderPrepared(items, camera, lights, {}, &compilation, outputFormat);
+    renderPrepared(items, camera, lights, {}, &compilation, outputFormat, false, dirtyPrimitives, hasDirtyTracking,
+                   topologyVersion);
     return compilation;
+}
+
+uint64_t Renderer::lastVsmCasterVisits() const {
+    uint64_t visits = 0;
+    for (const auto& [light, shadow] : virtualShadows_) visits += shadow.atlas.lastCasterVisits();
+    return visits;
 }
 
 void Renderer::setCpuMeters(bool enabled) {

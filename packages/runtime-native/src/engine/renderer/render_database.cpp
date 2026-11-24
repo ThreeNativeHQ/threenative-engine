@@ -511,12 +511,16 @@ RenderDatabase::Record& RenderDatabase::record(const Mesh& mesh, Record& r, bool
         const bool dirtyGeomChanged = r.dirtyGeomChanged || (dirtyTracked && r.geometryRevision != geometryRevision);
         const uint32_t lastDR = r.lastDirtyRevision;
         const uint16_t lastDF = r.lastDirtyFrame16;
+        const bool lastDirtyCastShadow = r.lastDirtyCastShadow;
+        const uint32_t lastDirtyLayers = r.lastDirtyLayers;
         r = Record{};
         r.cacheId = cacheId;
         r.dirtyTracked = dirtyTracked;
         r.dirtyGeomChanged = dirtyGeomChanged;
         r.lastDirtyRevision = lastDR;
         r.lastDirtyFrame16 = lastDF;
+        r.lastDirtyCastShadow = lastDirtyCastShadow;
+        r.lastDirtyLayers = lastDirtyLayers;
         r.meshId = mesh.id();
         r.geometry = mesh.geometry;
         r.canonical = merges ? projection::canonicalGeometry(mesh.geometry) : mesh.geometry;
@@ -663,13 +667,19 @@ Box3 RenderDatabase::removeTrackedState(const Record& r) {
 void RenderDatabase::trackDirty(const Mesh& mesh, Record& r, std::string_view type, bool shadowCaster) {
     constexpr uint64_t kTrackSlots = uint64_t(1) << 20;
     const uint32_t rev = static_cast<uint32_t>(mesh.revision());
+    const uint32_t layers = Layers::bits(mesh.layers().mask);
     const bool instanced = (type == "InstancedMesh") || (mesh.geometry && mesh.geometry->instanced);
-    if (r.dirtyTracked && r.lastDirtyRevision == rev && !r.dirtyGeomChanged && !instanced)
+    if (r.dirtyTracked && r.lastDirtyRevision == rev && !r.dirtyGeomChanged && !instanced &&
+        shadowCaster == r.lastDirtyCastShadow && layers == r.lastDirtyLayers)
         return;
 
     const bool isNew = !r.dirtyTracked;
-    const bool transformChanged = !isNew && r.lastDirtyRevision != rev;
+    bool transformChanged = !isNew && r.lastDirtyRevision != rev;
     const bool geometryChanged = !isNew && r.dirtyGeomChanged;
+    // A caster that starts or stops casting, or moves to a layer the atlas does not see, is a state change even
+    // when the object's own revision did not move: the VSM stage must hear it on this frame (PRD-775 Phase 2).
+    const bool stateChanged = !isNew && (shadowCaster != r.lastDirtyCastShadow || layers != r.lastDirtyLayers);
+    transformChanged = transformChanged || stateChanged;
     const uint64_t trackKey = r.cacheId != UINT64_MAX ? r.cacheId : mesh.id();
     bool instanceChanged = false;
     InstanceDirtyState nextInst{};
@@ -746,6 +756,8 @@ void RenderDatabase::trackDirty(const Mesh& mesh, Record& r, std::string_view ty
     r.dirtyGeomChanged = false;
     r.lastDirtyFrame16 = static_cast<uint16_t>(frame_);
     r.lastDirtyRevision = rev;
+    r.lastDirtyCastShadow = shadowCaster;
+    r.lastDirtyLayers = layers;
 }
 
 DrawItem& RenderDatabase::refresh(const Mesh& mesh, Record& r) {
@@ -2256,6 +2268,27 @@ const std::vector<DrawItem>& RenderDatabase::prepare(Object3D& scene, Camera& ca
         std::chrono::duration<double, std::milli>(projected - matrices).count(),
         std::chrono::duration<double, std::milli>(batched - beforeBatch).count(),
         std::chrono::duration<double, std::milli>((beforeBatch - projected) + (Clock::now() - batched)).count()};
+    // PRD-775 Phase 2: the VSM caster cache is indexed by position in this list, so it is only valid while the
+    // list's layout and its caster flags hold. A fold over keys and those flags costs a few integer ops per draw
+    // and moves the version exactly when an index or a flag the caster stage reads moved.
+    uint64_t layout = 0xcbf29ce484222325ull;
+    for (const DrawItem& item : items) {
+        layout = (layout ^ item.key) * 0x100000001b3ull;
+        layout = (layout ^ uint64_t(item.shadowObject ? item.shadowObject->id() : 0)) * 0x100000001b3ull;
+        layout = (layout ^ (uint64_t(item.layers) | (uint64_t(item.castShadow) << 32) |
+                            (uint64_t(item.receiveShadow) << 33) | (uint64_t(item.mainPass) << 34) |
+                            (uint64_t(item.instanceCount) << 35))) * 0x100000001b3ull;
+        layout = (layout ^ reinterpret_cast<uint64_t>(item.positions)) * 0x100000001b3ull;
+        layout = (layout ^ reinterpret_cast<uint64_t>(item.instanceMatrices)) * 0x100000001b3ull;
+        layout = (layout ^ (uint64_t(bool(item.boneMatrices)) | (uint64_t(bool(item.morphGeometry)) << 1) |
+                            (uint64_t(bool(item.positionNode)) << 2) | (uint64_t(bool(item.gpuJoints)) << 3) |
+                            (uint64_t(bool(item.nodes->shadowPositionNode())) << 4))) * 0x100000001b3ull;
+    }
+    if (layout != topologyLayoutHash_ || items.size() != topologyLayoutCount_) {
+        topologyLayoutHash_ = layout;
+        topologyLayoutCount_ = items.size();
+        ++topologyVersion_;
+    }
     previousDrawCount_ = items.size();
     return items_;
 }
@@ -2274,7 +2307,7 @@ std::vector<std::shared_ptr<PipelineCompilation>> RenderDatabase::compileAsync(R
     state.matrixWorld = toArray(camera.matrixWorld);
     state.matrixWorldInverse = toArray(camera.matrixWorldInverse);
     state.projectionMatrix = toArray(camera.projectionMatrix);
-    auto compilations = renderer.compileAsync(items, state, lights, outputFormat);
+    auto compilations = renderer.compileAsync(items, state, lights, outputFormat, dirtyPrimitives_, true, topologyVersion_);
     if (!reflecting_) precacheReflections(renderer, root, camera, targetScene, compilations);
     return compilations;
 }
@@ -2297,6 +2330,14 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     using Clock = std::chrono::steady_clock;
     const auto start = (cpuMs || profiling) ? Clock::now() : Clock::time_point{};
     const bool metered = renderer.metered();
+    // PRD-775 Phase 2: a virtual shadow's VSM stage reads the change set, so the database must track the bounds
+    // of the casters it hands it. The explicit setTrackDirtyBounds(true) still stands; this only turns it on.
+    const auto anyVirtualLight = [&] {
+        return std::any_of(lights_.direct.begin(), lights_.direct.end(), [](const DirectLight& light) {
+            return light.shadow && light.kind == DirectLight::Kind::Directional && light.shadow->virtualShadow;
+        });
+    };
+    if (renderer.hasVirtualShadows() || anyVirtualLight()) trackDirtyBounds_ = true;
     const auto sceneStart = metered ? Clock::now() : Clock::time_point{};
     const auto chargeScene = [&] {
         if (metered) sceneMs_ += std::chrono::duration<double, std::milli>(Clock::now() - sceneStart).count();
@@ -2314,7 +2355,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     // The main view's tan(hfov / 2) is 1 / P[0]; a reflection pass is another view and measures nothing.
     const bool mainView = !reflecting_ && dynamic_cast<const PerspectiveCamera*>(&camera) && camera.projectionMatrix.elements[0] > 0;
     renderer.syncVirtualShadows(lights_, mainView ? 1.0 / camera.projectionMatrix.elements[0] : 0.0);
-    if (!hadVirtual && renderer.hasVirtualShadows()) prepare(scene, camera, lights_, nullptr, true);
+    if (!hadVirtual && renderer.hasVirtualShadows()) {
+        trackDirtyBounds_ = true;
+        prepare(scene, camera, lights_, nullptr, true);
+    }
     const auto preparedScene = profiling ? Clock::now() : Clock::time_point{};
     // Frame-pumped PMREM (PRD-573): until every environment this frame samples is fully baked,
     // advance one retained packet and skip the frame. No partial target is published and the covered
@@ -2344,10 +2388,10 @@ uint64_t RenderDatabase::render(Renderer& renderer, Object3D& scene, Camera& cam
     uint64_t result;
     const auto rendererStart = metered ? Clock::now() : Clock::time_point{};
     if (encodeJobs) {
-        result = renderer.renderDeferred(items_, cameraState_, lights_, clear);
+        result = renderer.renderDeferred(items_, cameraState_, lights_, clear, dirtyPrimitives_, true, topologyVersion_);
         encodeJobs->push_back([&renderer] { renderer.encodePending(); });
     } else {
-        result = renderer.render(items_, cameraState_, lights_, clear);
+        result = renderer.render(items_, cameraState_, lights_, clear, dirtyPrimitives_, true, topologyVersion_);
     }
     if (metered) rendererMs_ += std::chrono::duration<double, std::milli>(Clock::now() - rendererStart).count();
     if (!reflecting_ && Object3D::poseObservationReport) Object3D::poseObservationReport();

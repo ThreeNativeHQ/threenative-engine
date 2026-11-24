@@ -4,6 +4,8 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <unordered_set>
+#include <vector>
 #include "engine/foundation/math/Matrix.h"
 
 namespace tn::engine { class BufferGeometry; }
@@ -104,9 +106,23 @@ public:
     // their last state, so a count that crosses zero is the content change any count change is: the owner
     // names the region (the streamed world does, per changed batch) and the atlas redraws nothing for it.
     void updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied = {});
+    /**
+     * PRD-775 Phase 2: the change set path. `changed` holds the casters the frame touched, `removed` the keys
+     * whose draw left the caster stage; every other caster keeps its state and costs one quiet advance only
+     * while it is a mover. With no changed caster, no removed key and no active mover it visits none.
+     */
+    void updateCastersChanged(const std::vector<CasterState>& changed, const std::vector<uint64_t>& removed,
+                              const std::vector<uint64_t>& emptied = {});
     bool isMover(uint64_t key) const;
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;
+    /** Caster states the last update examined: every caster on a full scan, only the change set and the movers
+     *  on a change-set frame, and zero when nothing changed (PRD-775 Phase 2). */
+    uint64_t lastCasterVisits() const { return lastCasterVisits_; }
+    /** True once a caster update has run: the renderer may seed from a change set only after one did. */
+    bool seeded() const { return seeded_; }
+    bool hasActiveMovers() const { return !activeMovers_.empty(); }
+    const std::unordered_set<uint64_t>& activeMoverKeys() const { return activeMovers_; }
     std::pair<int, int> moverOrigin(int level) const;
     void recordCost(int level, double milliseconds, double frameSeconds);
     double refreshStep(int level) const;
@@ -207,6 +223,12 @@ private:
     };
     std::unordered_map<uint64_t, Motion> motion_;
     uint64_t presentEpoch_ = 0;
+    /** PRD-775 Phase 2: the casters whose motion state a change-set frame must still advance. */
+    std::unordered_set<uint64_t> activeMovers_;
+    uint64_t lastCasterVisits_ = 0;
+    bool seeded_ = false;
+    /** One caster's state transition, shared by the full scan and the change-set path; `present` 0 skips the stamp. */
+    void applyCaster(const CasterState& caster, uint64_t present);
     void writeTable();
     AtlasOptions options_;
     std::optional<DirectionalClipmap> clipmap_;

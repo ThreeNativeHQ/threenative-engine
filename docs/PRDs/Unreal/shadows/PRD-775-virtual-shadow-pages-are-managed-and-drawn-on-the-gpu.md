@@ -189,11 +189,11 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 2 — The VSM stage reads the caster change set
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native verification passed; stress-lab ABBA & judge pending)
 **Files:** `renderer.cpp` (VSM stage), `render_database.{h,cpp}` (change set), `shadows/virtual/atlas.{h,cpp}`
 (`updateCasters` over changed casters), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
-- [ ] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: new case `virtual_shadow_caster_changes_are_pushed` in `tn-native-engine-render-database-test` (RED: develop visits every caster; GREEN: 0 visits) plus every `tn-native-engine-vsm-atlas-test` case green
+- [x] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: new case `virtual_shadow_caster_changes_are_pushed` in `tn-native-engine-render-database-test` — verified 2026-11-24: seed 64 visits (0 pixel diff vs full-scan), steady frames = 0 visits / 0 static VSM passes, 1 moved = 1 visit (0 pixel diff, max channel 0), settled = 0 visits, 1 removed = 0 pixel diff / 0 following steady visits; all `tn-native-engine-vsm-atlas-test` cases and `ctest -L native-engine` 653/653 green on RTX 2080
 - [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout
 
 ### Phase 3 — The page table and physical pool live on the GPU

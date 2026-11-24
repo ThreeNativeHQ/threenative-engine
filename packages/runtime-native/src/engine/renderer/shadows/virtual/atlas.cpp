@@ -324,7 +324,13 @@ std::vector<AtlasPage> PageAtlas::update(const Vector3& viewEye, const Vector3& 
         level.dirtyAll = false; level.dirtySlots.clear();
         level.urgent = false;
         level.lastRender = now_;
-        for (auto& [key, motion] : motion_) motion.settling &= ~(1u << l);
+        for (auto it = activeMovers_.begin(); it != activeMovers_.end();) {
+            const auto found = motion_.find(*it);
+            if (found == motion_.end()) { it = activeMovers_.erase(it); continue; }
+            found->second.settling &= ~(1u << l);
+            if (!found->second.moving && found->second.settling == 0) it = activeMovers_.erase(it);
+            else ++it;
+        }
         granted = true;
         nextLevel_ = (l + 1) % int(levels_.size());
     }
@@ -347,6 +353,33 @@ bool PageAtlas::drawsStatic(uint64_t key) const {
     return it == motion_.end() || !it->second.moving;
 }
 
+void PageAtlas::applyCaster(const CasterState& caster, uint64_t present) {
+    auto [it, inserted] = motion_.try_emplace(caster.key);
+    auto& m = it->second;
+    if (present != 0) m.present = present;
+    const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || !(caster.signature == m.caster.signature));
+    const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
+    if (moving) {
+        waste::meterAdd(waste::counters().castersMoving);
+        if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
+        m.moving = true; m.quiet = 0; m.settling = 0;
+    } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
+        // UE 5.8.3 VirtualShadowMapCacheManager.cpp:1810: static once the age exceeds the threshold.
+        m.moving = false;
+        m.settling = 0;
+        for (int l = 0; l < int(levels_.size()); ++l)
+            if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
+                [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
+        invalidate(caster.bounds);
+    } else if (inserted) {
+        waste::debugAdd(waste::counters().shadowCasterChurn);
+        invalidate(caster.bounds);
+    }
+    m.caster = caster;
+    if (m.moving || m.settling != 0) activeMovers_.insert(caster.key);
+    else activeMovers_.erase(caster.key);
+}
+
 void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied) {
     // Presence is a stamp, not a `std::set` of every caster: an insert per caster per frame was the second cost of
     // this pass (PRD-872), and the sweep below needs only "did this frame list it".
@@ -355,44 +388,84 @@ void PageAtlas::updateCasters(const std::vector<CasterState>& casters, const std
         const auto it = motion_.find(key);
         if (it != motion_.end() && !it->second.moving && !it->second.caster.automatic) it->second.present = present;
     }
-    for (const auto& caster : casters) {
-        auto [it, inserted] = motion_.try_emplace(caster.key);
-        auto& m = it->second;
-        m.present = present;
-        const bool changed = !inserted && (caster.world.elements != m.caster.world.elements || !(caster.signature == m.caster.signature));
-        const bool moving = caster.tracked || (!caster.pinned && caster.automatic && (caster.deforming || changed));
-        if (moving) {
-            waste::meterAdd(waste::counters().castersMoving);
-            if (!m.moving && !inserted) invalidate(m.caster.bounds, true);
-            m.moving = true; m.quiet = 0; m.settling = 0;
-        } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
-            // UE 5.8.3 VirtualShadowMapCacheManager.cpp:1810: static once the age exceeds the threshold.
-            m.moving = false;
-            m.settling = 0;
-            for (int l = 0; l < int(levels_.size()); ++l)
-                if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
-                    [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
-            invalidate(caster.bounds);
-        } else if (inserted) {
-            waste::debugAdd(waste::counters().shadowCasterChurn);
-            invalidate(caster.bounds);
-        }
-        m.caster = caster;
-    }
+    for (const auto& caster : casters) applyCaster(caster, present);
     for (auto it = motion_.begin(); it != motion_.end();) {
         if (it->second.present == present) { ++it; continue; }
         if (!it->second.moving) {
             waste::debugAdd(waste::counters().shadowCasterChurn);
             invalidate(it->second.caster.bounds);
         }
+        activeMovers_.erase(it->first);
         it = motion_.erase(it);
+    }
+    seeded_ = true;
+    lastCasterVisits_ = casters.size();
+}
+
+void PageAtlas::updateCastersChanged(const std::vector<CasterState>& changed, const std::vector<uint64_t>& removed,
+                                     const std::vector<uint64_t>& emptied) {
+    seeded_ = true;
+    lastCasterVisits_ = 0;
+    std::unordered_set<uint64_t> visited;
+    visited.reserve(changed.size());
+    for (const auto& caster : changed) {
+        ++lastCasterVisits_;
+        applyCaster(caster, 0);
+        visited.insert(caster.key);
+    }
+    // Every mover the change set did not name advances exactly as an unchanged still frame of that caster would.
+    // Snapshot the keys: settling erases from the set while this loop runs.
+    const std::vector<uint64_t> movers(activeMovers_.begin(), activeMovers_.end());
+    for (const uint64_t key : movers) {
+        if (visited.count(key)) continue;
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) { activeMovers_.erase(key); continue; }
+        ++lastCasterVisits_;
+        Motion& m = it->second;
+        const CasterState& caster = m.caster;
+        const bool moving = caster.tracked || (!caster.pinned && caster.automatic && caster.deforming);
+        if (moving) {
+            waste::meterAdd(waste::counters().castersMoving);
+            m.moving = true; m.quiet = 0; m.settling = 0;
+        } else if (m.moving && (caster.pinned || ++m.quiet > options_.staticAfterFrames)) {
+            m.moving = false;
+            m.settling = 0;
+            for (int l = 0; l < int(levels_.size()); ++l)
+                if (levels_[l].mapped && std::any_of(levels_[l].pages.begin(), levels_[l].pages.end(),
+                    [&](const auto& page) { return overlaps(page, caster.bounds); })) m.settling |= 1u << l;
+            invalidate(caster.bounds);
+        }
+        if (!m.moving && m.settling == 0) activeMovers_.erase(key);
+    }
+    const std::unordered_set<uint64_t> emptiedKeys(emptied.begin(), emptied.end());
+    for (const uint64_t key : removed) {
+        if (emptiedKeys.count(key)) continue;
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) continue;
+        ++lastCasterVisits_;
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
+        activeMovers_.erase(key);
+        motion_.erase(it);
+    }
+    // An emptied owner-told caster keeps its last state; every other one leaves as the full scan's sweep would.
+    for (const uint64_t key : emptied) {
+        const auto it = motion_.find(key);
+        if (it == motion_.end()) continue;
+        if (!it->second.moving && !it->second.caster.automatic) continue;
+        if (!it->second.moving) {
+            waste::debugAdd(waste::counters().shadowCasterChurn);
+            invalidate(it->second.caster.bounds);
+        }
+        activeMovers_.erase(key);
+        motion_.erase(it);
     }
 }
 
 void PageAtlas::appendMoverPages(std::vector<AtlasPage>& pages) const {
-    if (std::none_of(motion_.begin(), motion_.end(), [](const auto& entry) {
-        return entry.second.moving || entry.second.settling;
-    })) return;
+    if (activeMovers_.empty()) return;
     for (int l = 0; l < int(levels_.size()); ++l) {
         const auto& level = levels_[l];
         if (!level.mapped) continue;

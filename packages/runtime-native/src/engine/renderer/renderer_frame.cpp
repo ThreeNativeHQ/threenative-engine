@@ -363,7 +363,9 @@ void Renderer::coalesceDirtyRanges(std::vector<std::pair<uint64_t, uint64_t>>& r
 uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraState& inputCamera,
                                   const LightState& lights, std::array<double, 4> clear,
                                   std::vector<std::shared_ptr<PipelineCompilation>>* compilation,
-                                  WGPUTextureFormat outputFormat, bool defer) {
+                                  WGPUTextureFormat outputFormat, bool defer,
+                                  std::span<const DirtyPrimitive> dirtyPrimitives, bool hasDirtyTracking,
+                                  uint64_t topologyVersion) {
     const double prepareStarted = meterStart(cpuMetered_);
     FrameGpuTimer::Scope timerScope(compilation ? nullptr : passTimer_.get());
     // One frame in flight per renderer: the game thread may not plan while the encode half is pending or running.
@@ -494,28 +496,31 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // this replaced were rebuilt from scratch every frame: a tree node allocated per caster, an insert per
         // caster into each, and two descents per draw to rebuild the states.
         auto& record = casterRecords_[i];
-        record.assign(items.size(), {});
         // A caster whose inputs did not move keeps last frame's bounds and state (PRD-872). `play` re-derives 1,145
         // casters every frame otherwise, and 902 of them are static: the plan is a comparison for those, not a rebuild.
         auto& plan = casterPlan_[i];
-        plan.begin(items.size());
         const auto& planControl = *shadow.atlas.options().control;
         const uint64_t controlEpoch = controlStamp(planControl);
+        // PRD-775 Phase 2: the caster stage is a change set. A frame whose layout, control and change set all hold
+        // reads no caster at all; a frame with changes updates only the casters it names (plus every active mover,
+        // whose quiet count must still advance) and hands the atlas the change set instead of the whole list.
+        const bool layoutHolds = topologyVersion == shadow.lastTopologyVersion && items.size() == shadow.lastItemsCount;
+        const bool steadyDirtyFast = !compilation && hasDirtyTracking && shadow.atlas.seeded() &&
+                                     shadow.incrementalCacheValid && layoutHolds &&
+                                     controlEpoch == shadow.lastControlEpoch && planControl.lodChanged.empty() &&
+                                     dirtyPrimitives.empty() && !shadow.atlas.hasActiveMovers() &&
+                                     shadow.dynamicIndices.empty();
+        const bool incrementalUpdate = !steadyDirtyFast && !compilation && hasDirtyTracking && shadow.atlas.seeded() &&
+                                       shadow.incrementalCacheValid && controlEpoch == shadow.lastControlEpoch &&
+                                       planControl.lodChanged.empty();
+        const bool incrementalDirtyFast = incrementalUpdate && layoutHolds && record.size() == items.size() &&
+                                          shadow.depthSlots.size() == items.size() &&
+                                          shadow.receiverSlots.size() == items.size();
         std::vector<Box3> depthCasters, receivers;
-        std::vector<uint64_t> emptied;
-        std::vector<shadows::CasterState> states;
+        std::vector<uint64_t> emptied, removed;
+        std::vector<shadows::CasterState> states, changedStates;
         std::vector<Box3> rungChanged;
-        for (const DrawItem& item : items) {
-            if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
-            if (item.instanceCount == 0) {
-                if (item.castShadow) emptied.push_back(item.key);
-                continue;
-            }
-            // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
-            if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
-                (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
-                throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
-            const auto index = std::size_t(&item - items.data());
+        const auto buildInputs = [&](const DrawItem& item) {
             shadows::CasterInputs inputs;
             inputs.positions = item.positions;
             inputs.positionsVersion = item.positions->version();
@@ -528,40 +533,154 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             inputs.controlEpoch = controlEpoch;
             inputs.nodeDeformed = item.positionNode || item.nodes->shadowPositionNode() || item.morphGeometry;
             inputs.skinned = item.boneMatrices != nullptr;
-            // One rig's own skeleton; a batch of rigs has no single version to read.
             if (item.skinnedRig && item.skinnedRig->skeleton && !item.instanceMatrices)
                 inputs.pose = item.skinnedRig->skeleton->poseVersion();
-            bool stale = false;
-            shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
-            if (stale) {
-                const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
-                caster.bounds = bounds;
-                caster.diameter = diameter;
-                caster.casts = item.castShadow;
-                // FG1: an uncached draw shares `uncachedBounds`, so it has no per-instance boxes to keep.
-                caster.instanceBoxes = item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr;
-                shadows::CasterState& state = caster.state;
-                state.key = item.key; state.bounds = bounds;
-                state.signature = shadows::CasterSignature{item.positions->version(), inputs.instanceVersion, item.instanceCount};
-                state.tracked = (item.layers & (1u << 29)) != 0;
-                state.automatic = (item.layers & 1u) != 0;
-                state.pinned = false;
-                // The parent chain is only walked when a control set says something about casters at all.
-                if (!planControl.tracked.empty() || !planControl.pinned.empty())
-                    for (auto* object = item.shadowObject; object; object = object->parent) {
-                        state.tracked |= planControl.tracked.count(object->id()) != 0;
-                        state.pinned |= planControl.pinned.count(object->id()) != 0;
+            return inputs;
+        };
+        const auto refreshCasterSlot = [&](std::size_t index, const DrawItem& item, shadows::PlannedCaster& caster) {
+            const shadows::CasterInputs inputs = buildInputs(item);
+            const auto& [bounds, diameter] = (item.cache ? *item.cache : uncachedBounds).virtualShadowBounds(item, planStamp);
+            caster.bounds = bounds;
+            caster.diameter = diameter;
+            caster.casts = item.castShadow;
+            caster.instanceBoxes = item.cache && item.cache->shadowInstanceBoxes.size() == item.instanceCount ? &item.cache->shadowInstanceBoxes : nullptr;
+            shadows::CasterState& state = caster.state;
+            state.key = item.key; state.bounds = bounds;
+            state.signature = shadows::CasterSignature{item.positions->version(), inputs.instanceVersion, item.instanceCount};
+            state.tracked = (item.layers & (1u << 29)) != 0;
+            state.automatic = (item.layers & 1u) != 0;
+            state.pinned = false;
+            if (!planControl.tracked.empty() || !planControl.pinned.empty())
+                for (auto* object = item.shadowObject; object; object = object->parent) {
+                    state.tracked |= planControl.tracked.count(object->id()) != 0;
+                    state.pinned |= planControl.pinned.count(object->id()) != 0;
+                }
+        };
+        if (steadyDirtyFast) {
+            shadow.atlas.updateCastersChanged({}, {}, {});
+        } else if (incrementalDirtyFast) {
+            shadow.incrementalMarks.resize(items.size(), 0);
+            if (++shadow.incrementalMarkStamp == 0) {
+                std::fill(shadow.incrementalMarks.begin(), shadow.incrementalMarks.end(), 0);
+                shadow.incrementalMarkStamp = 1;
+            }
+            const uint32_t mark = shadow.incrementalMarkStamp;
+            std::vector<std::size_t> candidateIndices;
+            candidateIndices.reserve(dirtyPrimitives.size() + shadow.dynamicIndices.size() + shadow.atlas.activeMoverKeys().size());
+            const auto queueIndex = [&](std::size_t index) {
+                if (index < items.size() && shadow.incrementalMarks[index] != mark) {
+                    shadow.incrementalMarks[index] = mark;
+                    candidateIndices.push_back(index);
+                }
+            };
+            for (const DirtyPrimitive& d : dirtyPrimitives) {
+                if (const auto found = shadow.objectToIndices.find(d.objectId); found != shadow.objectToIndices.end())
+                    for (const std::size_t idx : found->second) queueIndex(idx);
+            }
+            for (const std::size_t idx : shadow.dynamicIndices) queueIndex(idx);
+            for (const uint64_t key : shadow.atlas.activeMoverKeys()) {
+                if (const auto found = shadow.keyToIndex.find(key); found != shadow.keyToIndex.end())
+                    queueIndex(found->second);
+            }
+            for (const std::size_t index : candidateIndices) {
+                const DrawItem& item = items[index];
+                if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
+                if (item.instanceCount == 0) {
+                    if (item.castShadow) emptied.push_back(item.key);
+                    continue;
+                }
+                if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
+                    (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
+                    throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
+                const shadows::CasterInputs inputs = buildInputs(item);
+                bool stale = false;
+                shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
+                if (stale) {
+                    refreshCasterSlot(index, item, caster);
+                    if (shadow.depthSlots[index] < shadow.depthCastersCache.size())
+                        shadow.depthCastersCache[shadow.depthSlots[index]] = caster.bounds;
+                    if (shadow.receiverSlots[index] < shadow.receiversCache.size())
+                        shadow.receiversCache[shadow.receiverSlots[index]] = caster.bounds;
+                    if (caster.casts) {
+                        record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
+                        changedStates.push_back(caster.state);
                     }
+                }
             }
-            if (caster.casts) {
-                record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
-                const auto& lodChanged = planControl.lodChanged;
-                if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
-                    rungChanged.push_back(caster.bounds);
-                states.push_back(caster.state);
+            shadow.atlas.updateCastersChanged(changedStates, {}, emptied);
+        } else {
+            record.assign(items.size(), {});
+            plan.begin(items.size());
+            std::unordered_map<uint64_t, std::vector<std::size_t>> objectToIndices;
+            std::unordered_map<uint64_t, std::vector<uint64_t>> objectKeys;
+            std::unordered_map<uint64_t, std::size_t> keyToIndex;
+            std::vector<uint64_t> itemKeys(items.size(), 0);
+            std::vector<std::size_t> depthSlots(items.size(), ~std::size_t{0});
+            std::vector<std::size_t> receiverSlots(items.size(), ~std::size_t{0});
+            std::vector<std::size_t> dynamicIndices;
+            std::unordered_set<uint64_t> currentKeys;
+            for (const DrawItem& item : items) {
+                const auto index = std::size_t(&item - items.data());
+                itemKeys[index] = item.key;
+                if ((!item.castShadow && !item.receiveShadow) || !item.positions || (item.layers & (mask | (1u << 29) | (1u << 28))) == 0) continue;
+                if (item.instanceCount == 0) {
+                    if (item.castShadow) emptied.push_back(item.key);
+                    continue;
+                }
+                // Bind-pose bounds cannot fit a GPU-displaced caster without clipping its shadow.
+                if (item.castShadow && shadow.atlas.options().autoDepth && !displacedByGeometryBox(item) &&
+                    (item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints))
+                    throw std::runtime_error("TN_VIRTUAL_SHADOW_UNSUPPORTED: automatic depth for GPU-deformed casters; supply lightDistance and depthRange");
+                const shadows::CasterInputs inputs = buildInputs(item);
+                bool stale = false;
+                shadows::PlannedCaster& caster = plan.slot(index, item.matrixWorld, inputs, stale);
+                if (stale) refreshCasterSlot(index, item, caster);
+                keyToIndex[item.key] = index;
+                if (item.shadowObject) objectToIndices[item.shadowObject->id()].push_back(index);
+                const bool dynamic = item.boneMatrices != nullptr || item.morphGeometry != nullptr ||
+                                     item.positionNode || item.nodes->shadowPositionNode() || item.gpuJoints ||
+                                     caster.state.tracked || caster.state.pinned;
+                if (dynamic) dynamicIndices.push_back(index);
+                if (caster.casts) {
+                    record[index] = CasterRecord{caster.bounds, caster.diameter, true, caster.instanceBoxes};
+                    if (stale) changedStates.push_back(caster.state);
+                    states.push_back(caster.state);
+                    currentKeys.insert(item.key);
+                    if (item.shadowObject) objectKeys[item.shadowObject->id()].push_back(item.key);
+                    const auto& lodChanged = planControl.lodChanged;
+                    if (!lodChanged.empty() && item.shadowObject && lodChanged.count(item.shadowObject->id()))
+                        rungChanged.push_back(caster.bounds);
+                }
+                depthSlots[index] = depthCasters.size();
+                depthCasters.push_back(caster.bounds);
+                if (item.receiveShadow) {
+                    receiverSlots[index] = receivers.size();
+                    receivers.push_back(caster.bounds);
+                }
             }
-            depthCasters.push_back(caster.bounds);
-            if (item.receiveShadow) receivers.push_back(caster.bounds);
+            if (incrementalUpdate) {
+                // A draw that left the caster stage invalidates its last region, exactly as the full scan's sweep
+                // would. `emptied` keys are handled by the atlas itself, so they are not removals here.
+                const std::unordered_set<uint64_t> emptiedKeys(emptied.begin(), emptied.end());
+                for (const auto& [object, keys] : shadow.objectKeys)
+                    for (const uint64_t key : keys)
+                        if (!currentKeys.count(key) && !emptiedKeys.count(key)) removed.push_back(key);
+            }
+            shadow.objectToIndices = std::move(objectToIndices);
+            shadow.objectKeys = std::move(objectKeys);
+            shadow.keyToIndex = std::move(keyToIndex);
+            shadow.itemKeys = std::move(itemKeys);
+            shadow.depthSlots = std::move(depthSlots);
+            shadow.receiverSlots = std::move(receiverSlots);
+            shadow.dynamicIndices = std::move(dynamicIndices);
+            shadow.lastTopologyVersion = topologyVersion;
+            shadow.lastItemsCount = items.size();
+            shadow.lastControlEpoch = controlEpoch;
+            shadow.incrementalCacheValid = true;
+            // A full seed hands the atlas every caster; a change-set frame names only the casters it touched, and
+            // the atlas advances every active mover it did not name as an unchanged still frame would.
+            if (incrementalUpdate) shadow.atlas.updateCastersChanged(changedStates, removed, emptied);
+            else shadow.atlas.updateCasters(states, emptied);
         }
         const auto& direction = lights.direct[i].direction;
         const Vector3 towards(direction[0], direction[1], direction[2]);
@@ -578,8 +697,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A caster that left the scene with its chain is invalidated by updateCasters' removal pass.
         for (const Box3& bounds : rungChanged) shadow.atlas.invalidate(bounds);
         control.lodChanged.clear();
-        // A frame where no caster arrived, left or moved has nothing to hand the atlas: its state is last frame's.
-        if (plan.changed()) shadow.atlas.updateCasters(states, emptied);
         {
             std::lock_guard lock(shadow.costs->mutex);
             for (const auto& [level, reading] : shadow.costs->levels) {
@@ -589,13 +706,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             }
         }
 
+        // A steady or in-place updated frame reads the caster bounds it cached; a layout scan rebuilt them.
+        const bool usedCachedBounds = steadyDirtyFast || incrementalDirtyFast;
+        const std::vector<Box3>& depthCasterList = usedCachedBounds ? shadow.depthCastersCache : depthCasters;
+        const std::vector<Box3>& receiverList = usedCachedBounds ? shadow.receiversCache : receivers;
         Vector3 focus(camera.matrixWorld[12], camera.matrixWorld[13], camera.matrixWorld[14]);
         if (shadow.atlas.options().followViewFocus && !control.focus) {
             Vector3 forward(-camera.matrixWorld[8], -camera.matrixWorld[9], -camera.matrixWorld[10]); forward.normalize();
-            focus = shadows::PageAtlas::viewFocus(focus, forward, camera.far, shadow.atlas.options().clipExtents.front(), receivers);
+            focus = shadows::PageAtlas::viewFocus(focus, forward, camera.far, shadow.atlas.options().clipExtents.front(), receiverList);
         }
-        virtualPages[i] = shadow.atlas.update(focus, towards, virtualCut_, depthCasters, frameDelta_);
+        virtualPages[i] = shadow.atlas.update(focus, towards, virtualCut_, depthCasterList, frameDelta_);
         shadow.atlas.appendMoverPages(virtualPages[i]);
+        if (!usedCachedBounds) {
+            shadow.depthCastersCache = std::move(depthCasters);
+            shadow.receiversCache = std::move(receivers);
+        }
     }
 
     if (!compilation) virtualCut_ = false;
