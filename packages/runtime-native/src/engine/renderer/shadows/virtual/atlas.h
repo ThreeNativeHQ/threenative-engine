@@ -142,6 +142,37 @@ public:
     int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
+    /** Precomputed per-level clipmap projection constants so caster loops avoid repeated level lookups and divisions. */
+    struct PageGrid {
+        Vector3 axisU, axisV;
+        Vector3 absAxisU, absAxisV;
+        double lowU = 0, highU = 0, lowV = 0, highV = 0;
+        double invCellU = 0, invCellV = 0;
+        double slopU = 0, slopV = 0;
+        int last = -1;
+        bool valid = false;
+        void range(const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const {
+            if (!valid) { x0 = y0 = 1; x1 = y1 = 0; return; }
+            const double halfX = (bounds.max.x - bounds.min.x) * 0.5;
+            const double halfY = (bounds.max.y - bounds.min.y) * 0.5;
+            const double halfZ = (bounds.max.z - bounds.min.z) * 0.5;
+            const double centreX = (bounds.max.x + bounds.min.x) * 0.5;
+            const double centreY = (bounds.max.y + bounds.min.y) * 0.5;
+            const double centreZ = (bounds.max.z + bounds.min.z) * 0.5;
+            const double reachU = absAxisU.x * halfX + absAxisU.y * halfY + absAxisU.z * halfZ;
+            const double middleU = centreX * axisU.x + centreY * axisU.y + centreZ * axisU.z;
+            const double reachV = absAxisV.x * halfX + absAxisV.y * halfY + absAxisV.z * halfZ;
+            const double middleV = centreX * axisV.x + centreY * axisV.y + centreZ * axisV.z;
+            x0 = int(std::ceil((middleU - reachU - slopU - highU) * invCellU));
+            x1 = int(std::floor((middleU + reachU + slopU - lowU) * invCellU));
+            y0 = int(std::ceil((middleV - reachV - slopV - highV) * invCellV));
+            y1 = int(std::floor((middleV + reachV + slopV - lowV) * invCellV));
+            x0 = std::max(x0, 0); x1 = std::min(x1, last);
+            y0 = std::max(y0, 0); y1 = std::min(y1, last);
+            if (x1 < x0 || y1 < y0) { x0 = y0 = 1; x1 = y1 = 0; }
+        }
+    };
+    PageGrid pageGrid(int level) const;
     /**
      * The inverse of `overlaps`: the pages of `level` a caster's bounds can reach, as inclusive page indices,
      * clamped to the level's `tiles() - 1`. A page the scan would take is always in the range (the page rects

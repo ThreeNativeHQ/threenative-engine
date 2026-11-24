@@ -423,6 +423,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_record_retention=frustum_record_retention
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
         native_engine_renderer_reflection_reuse=reflection_reuse
+        native_engine_renderer_reflection_filter=reflection_filter
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
         native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once

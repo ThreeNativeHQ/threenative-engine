@@ -231,13 +231,13 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
     if (geometry->boundingBox && !local.intersectsBox(*geometry->boundingBox)) return true;
     const auto position = geometry->getAttribute("position");
     if (!position) return true;
-    const auto uv = geometry->getAttribute("uv"), uv1 = geometry->getAttribute("uv1"), normal = geometry->getAttribute("normal");
     const auto index = geometry->index;
     const double start = jsMax(0, geometry->drawRange.start);
     const double end = jsMin(double(index ? index->count() : position->count()), geometry->drawRange.start + geometry->drawRange.count);
     const bool accelerated = !caster.meshBruteForceForTesting && !posesVertices() &&
         std::none_of(morphTargetInfluences.begin(), morphTargetInfluences.end(), [](double v) { return v != 0; });
-    std::vector<double> candidates;
+    static thread_local std::vector<double> candidates;
+    candidates.clear();
     if (accelerated) {
         auto& tree = geometry->raycastBVH;
         if (!tree || !tree->position.matches(position) || !tree->index.matches(index) ||
@@ -263,8 +263,10 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
             else { self(self, node.left); self(self, node.right); }
         };
         if (!tree->nodes.empty()) visit(visit, 0);
-        std::sort(candidates.begin(), candidates.end());
+        if (candidates.size() > 1) std::sort(candidates.begin(), candidates.end());
     }
+    std::shared_ptr<BufferAttribute> uv, uv1, normal;
+    bool fetchedHitAttrs = false;
     size_t candidate = 0;
     for (double i = accelerated ? (candidates.empty() ? end : candidates[0]) : start; i < end;
          i = accelerated ? (++candidate < candidates.size() ? candidates[candidate] : end) : i + 3) {
@@ -282,6 +284,12 @@ bool Mesh::raycast(const Raycaster& caster, std::vector<Intersection>& hits) {
         hit.point.copy(point).applyMatrix4(matrixWorld);
         hit.distance = caster.ray.origin.distanceTo(hit.point);
         if (hit.distance < caster.near || hit.distance > caster.far) continue;
+        if (!fetchedHitAttrs) {
+            uv = geometry->getAttribute("uv");
+            uv1 = geometry->getAttribute("uv1");
+            normal = geometry->getAttribute("normal");
+            fetchedHitAttrs = true;
+        }
         hit.object = this;
         hit.barycoord = barycoord(point, vA, vB, vC);
         if (uv) hit.uv = interpolate<Vector2>(*uv, a, b, c, hit.barycoord);

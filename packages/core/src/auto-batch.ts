@@ -95,6 +95,7 @@ const MAX_GROUP_VERTICES = (4 * 1024 * 1024) / 32;
 const SNAPSHOT_LENGTH = 32;
 
 const ALLOWED_ATTRIBUTES = new Set(["position", "normal", "uv"]);
+const bakeableCache = new WeakMap<BufferGeometry, boolean>();
 
 /**
  * The `autoBatch` object form of the game config.
@@ -347,8 +348,17 @@ function bakeable(geometry: BufferGeometry): boolean {
   if ((geometry as { indirect?: unknown }).indirect != null) return false;
   const range = geometry.drawRange;
   if (range.start !== 0 || Number.isFinite(range.count)) return false;
-  for (const name in geometry.attributes) if (!ALLOWED_ATTRIBUTES.has(name)) return false;
-  return true;
+  const cached = bakeableCache.get(geometry);
+  if (cached !== undefined) return cached;
+  let ok = true;
+  for (const name in geometry.attributes) {
+    if (!ALLOWED_ATTRIBUTES.has(name)) {
+      ok = false;
+      break;
+    }
+  }
+  bakeableCache.set(geometry, ok);
+  return ok;
 }
 
 /**
@@ -358,8 +368,8 @@ function bakeable(geometry: BufferGeometry): boolean {
 function mergeable(mesh: Mesh): boolean {
   return (
     plainDraw(mesh) &&
-    bakeable(mesh.geometry) &&
     !isStreamedGeometry(mesh.geometry) &&
+    bakeable(mesh.geometry) &&
     mesh.matrixWorld.determinant() > 0
   );
 }

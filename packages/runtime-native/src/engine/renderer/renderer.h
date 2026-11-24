@@ -140,6 +140,10 @@ struct DrawCache {
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
+    uint64_t auxTargetKey = 0;
+    void* auxPipeline = nullptr;
+    uint64_t translucentTargetKey = 0;
+    void* translucentPipeline = nullptr;
     bool prepass = false;             // PRD-888: `pipeline` is the depth-Equal one, drawn after a masked depth prepass
     void* prepassPipeline = nullptr;  // ...and that prepass's depth-only pipeline, under `targetKey`
     std::pair<Box3, double> shadowBounds;
@@ -1066,6 +1070,7 @@ private:
         std::vector<const shader::UniformField*> vertexNodeUniforms;
         std::vector<const shader::UniformField*> fragmentNodeUniforms;
         bool hasDiscard = false;
+        bool hasNormalView = false, hasPositionView = false;
         // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
         // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
         // that filled it.
@@ -1449,6 +1454,8 @@ private:
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
     std::array<shader::StageModule, 3> surfaceFragments_;
+    shader::StageModule pageClearVertex_;
+    WGPURenderPipeline pageClearPipeline_ = nullptr;  // owned by pipelines_, never released by ~Renderer()
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
@@ -1594,6 +1601,11 @@ private:
         Program* program = nullptr;
         std::vector<uint64_t> buffers;
         std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
+        uint64_t instanceEpoch = 0;
+        uint64_t instanceWrites = 0;
+        uint32_t instanceVersion = 0;
+        double instanceBase = 0;
+        bool staticOnly = false;
         std::vector<uint8_t> uniforms;
     };
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.

@@ -721,11 +721,20 @@ export function defineBrowserClasses(
 
   const fromEngine = (value: EngineValue): unknown => {
     if (isRef(value)) return wrap(value);
-    if (Array.isArray(value)) return value.map(fromEngine);
-    if (typeof value === "object" && value !== null)
-      return Object.fromEntries(
-        Object.entries(value).map(([key, item]) => [key, fromEngine(item)]),
-      );
+    if (Array.isArray(value)) {
+      const out = new Array<unknown>(value.length);
+      for (let i = 0; i < value.length; i += 1) out[i] = fromEngine(value[i] as EngineValue);
+      return out;
+    }
+    if (typeof value === "object" && value !== null) {
+      const out: Record<string, unknown> = {};
+      for (const key in value) {
+        if (Object.hasOwn(value, key)) {
+          out[key] = fromEngine((value as Record<string, EngineValue>)[key] as EngineValue);
+        }
+      }
+      return out;
+    }
     return value;
   };
   // A geometry bulk mutator (`translate`, `applyMatrix4`, `computeVertexNormals`, ...) writes the
@@ -1015,6 +1024,11 @@ export function defineBrowserClasses(
             const slots = shaderNodes.get(refOf(from as object).key);
             if (slots === undefined) shaderNodes.delete(refOf(to as object).key);
             else shaderNodes.set(refOf(to as object).key, new Map(slots));
+            if (method === "copy") {
+              const host = globalThis as Record<symbol, unknown>;
+              const key = Symbol.for("threenative.materialGraphVersion");
+              host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+            }
           }
           if (method === "copy") {
             shapes.delete(this);
@@ -1206,6 +1220,9 @@ export function defineBrowserClasses(
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);
+            const host = globalThis as Record<symbol, unknown>;
+            const key = Symbol.for("threenative.materialGraphVersion");
+            host[key] = ((host[key] as number | undefined) ?? 0) + 1;
             return;
           }
           if (typeof value !== "object" || !(TSL_NODE in value) || !runtime.tsl)

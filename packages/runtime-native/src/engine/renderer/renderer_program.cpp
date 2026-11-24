@@ -109,6 +109,8 @@ void Renderer::buildLayouts(Program& program) {
         if (!fragmentBuiltIn[i] || program.fragment.uniforms[i].shadowLightId != shader::kNoShadowLight)
             program.fragmentNodeUniforms.push_back(&program.fragment.uniforms[i]);
     program.hasDiscard = program.fragment.wgsl.code.find("discard") != std::string::npos;
+    program.hasNormalView = program.vertex.wgsl.code.find("@location(0) o_normalView") != std::string::npos;
+    program.hasPositionView = program.vertex.wgsl.code.find("@location(1) o_positionView") != std::string::npos;
     // FM3: what the stage modules alone decide about a draw of this program, resolved once here beside the
     // slots above. A program is immutable once built, so every draw of every pass of every frame reads these
     // instead of scanning the bindings again (perDrawFragment and its siblings).
