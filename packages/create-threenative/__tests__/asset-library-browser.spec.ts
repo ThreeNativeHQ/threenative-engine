@@ -143,11 +143,18 @@ describe("asset library in a browser", () => {
     await page.waitForTimeout(1000);
     expect(library).toEqual([]);
     expect(await page.locator("iframe").count()).toBe(0);
+    // Collapsed to a DEV pill in a corner until pointed at, so it stays out of the game's view.
+    expect(await page.locator('#tn-dev-shell [data-view="assets"]').isVisible()).toBe(false);
+    const pill = await page.locator("#tn-dev-shell").boundingBox();
+    expect(pill && pill.y > 600 && pill.x > 1000).toBe(true);
+    await page.hover("#tn-dev-shell");
     await page.click('#tn-dev-shell [data-view="assets"]');
     await expect.poll(() => library.length, { timeout: 30_000 }).toBeGreaterThan(0);
     expect(await page.locator("#tn-asset-library-frame").isVisible()).toBe(true);
     await page.click('#tn-dev-shell [data-view="game"]');
     expect(await page.locator("#tn-asset-library-frame").isVisible()).toBe(false);
+    await page.mouse.move(0, 0);
+    expect(await page.locator('#tn-dev-shell [data-view="game"]').isVisible()).toBe(false);
     await context.close();
   }, 60_000);
 

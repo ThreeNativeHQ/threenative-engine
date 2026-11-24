@@ -171,7 +171,9 @@ export function devShellScript(mount: string): string {
   bar.id = "tn-dev-shell";
   bar.setAttribute("role", "tablist");
   bar.setAttribute("aria-label", "Dev view");
-  bar.style.cssText = "position:fixed;top:8px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;gap:2px;padding:2px;border-radius:999px;background:#020407e6;border:1px solid #2e3438;font:600 12px system-ui,sans-serif";
+  // A faint DEV pill in the bottom-right corner, out of the game's view; it opens into the two tabs
+  // when pointed at or focused, and stays open while the library shows.
+  bar.style.cssText = "position:fixed;right:8px;bottom:8px;z-index:2147483647;display:flex;gap:2px;padding:2px;border-radius:999px;background:#020407e6;border:1px solid #2e3438;font:600 12px system-ui,sans-serif;transition:opacity .15s";
   const tab = (label, library) => {
     const b = document.createElement("button");
     b.type = "button";
@@ -187,10 +189,22 @@ export function devShellScript(mount: string): string {
   bar.title = "Dev only: shown by pnpm dev, not in production builds";
   const badge = document.createElement("span");
   badge.textContent = "DEV";
+  badge.tabIndex = 0;
   badge.style.cssText = "align-self:center;padding:2px 6px 2px 8px;color:#e0fb50;font:700 10px system-ui,sans-serif;letter-spacing:.08em";
   bar.append(badge);
   const game = tab("Game", false);
   const library = tab("Asset Library", true);
+  let open = false, pointed = false;
+  const fold = () => {
+    const shown = open || pointed || !!bar.querySelector(":focus-visible");
+    for (const b of [game, library]) b.style.display = shown ? "" : "none";
+    badge.style.padding = shown ? "2px 6px 2px 8px" : "4px 10px";
+    bar.style.opacity = shown ? "1" : ".55";
+  };
+  bar.onmouseenter = () => { pointed = true; fold(); };
+  bar.onmouseleave = () => { pointed = false; fold(); };
+  bar.addEventListener("focusin", fold);
+  bar.addEventListener("focusout", () => setTimeout(fold));
   const mark = (lib) => {
     for (const [b, on] of [[game, !lib], [library, lib]]) {
       b.setAttribute("aria-selected", String(on));
@@ -213,8 +227,11 @@ export function devShellScript(mount: string): string {
     }
     hold(lib);
     mark(lib);
+    open = lib;
+    fold();
   };
   mark(false);
+  fold();
   const add = () => document.body.append(bar);
   if (document.body) add(); else document.addEventListener("DOMContentLoaded", add);
 })();`;
