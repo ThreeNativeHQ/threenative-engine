@@ -1284,11 +1284,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     FrameJob& job = compilation ? compileJob : *job_;
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.translucentPlan.clear();
     job.shadowPasses.clear(); job.shadowLodItems.clear();
+    job.vsmDrawItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
     job.previousBytes = {}; job.previousSeed = false; job.instancesMutated = false; job.traaSeedFrame = false;
     job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     job.gpuCullDraws.clear(); job.gpuCullDrawCounts.clear(); job.gpuCullTotalInstances = 0;
+    job.staticVsmPasses = 0; job.dispatchVsmCull = false;
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -2002,6 +2004,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const DrawItem* item;
         const Program* program;
         uint64_t instanceBase;
+        uint32_t recordBase = 0;  // PRD-775: each batched VSM draw's own records
         bool operator==(const ShadowDrawKey&) const = default;
     };
     struct ShadowDrawKeyHash {
@@ -2009,18 +2012,26 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             std::size_t h = std::hash<const DrawItem*>{}(k.item);
             h ^= std::hash<const Program*>{}(k.program) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
             h ^= std::hash<uint64_t>{}(k.instanceBase) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
+            h ^= std::hash<uint32_t>{}(k.recordBase) + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2);
             return h;
         }
     };
     std::unordered_map<ShadowDrawKey, std::pair<uint32_t, uint32_t>, ShadowDrawKeyHash> shadowSliceOffsets;
     std::vector<ViewSliceData> shadowViewSlices;
     std::vector<ShadowPass>& shadowPasses = job.shadowPasses;
+    // PRD-775 Phase 1: every virtual light's static pages, cull rows and records, shared by one cull dispatch.
+    std::vector<shadows::VsmGpuPage> vsmPages;
+    std::vector<const shadows::AtlasPage*> vsmPageSources;
+    std::vector<shadows::VsmLevelGridGpu> vsmLevels;
+    std::vector<uint32_t> vsmTileLookup;
+    std::vector<shadows::VsmCullDrawDesc> vsmDraws;
+    std::vector<uint32_t> vsmInitialArgs;
+    uint32_t vsmTotalInstances = 0, vsmTotalRecords = 0, vsmArgsSlots = 0;
     for (std::size_t i = 0; i < lights.direct.size(); ++i) {
         if (skipShadows_ || !lights.direct[i].shadow) continue;
         const DirectLight::Shadow& shadow = *lights.direct[i].shadow;
         const auto virtualIt = virtualShadows_.find(i);
         const bool virtualMap = virtualIt != virtualShadows_.end();
-        const int passCount = compilation ? 1 : virtualMap ? int(virtualPages[i].size()) : shadow.cube ? 6 : 1;
         const std::size_t firstPass = shadowPasses.size();
         const bool lampMap = lights.direct[i].kind != DirectLight::Kind::Directional && !virtualMap;
         const bool lamp = lampMap && !compilation;
@@ -2037,6 +2048,23 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (!drawn->castShadow || drawn->instanceCount == 0 || !drawn->positions) return false;
             return (drawn->layers & (shadow.layersMask | (virtualMap ? (1u << 29) | (1u << 28) : 0u))) != 0;
         };
+        // PRD-775 Phase 1: a virtual light's static pages are one batched pass driven by GPU records. Mover pages
+        // keep the per-page path (their rows are shared between levels). An indirect caster's instances are the GPU's
+        // own vertex stream, which the record path cannot re-index, so it keeps the whole light on the CPU path.
+        bool batchStatic = virtualMap && !compilation && vsmGpuPagesEnabled();
+        if (batchStatic) {
+            batchStatic = std::any_of(virtualPages[i].begin(), virtualPages[i].end(),
+                                      [](const shadows::AtlasPage& page) { return !page.mover; });
+            for (const auto& [depthKey, drawn] : opaque) {
+                if (!batchStatic) break;
+                if (mayCast(drawn) && drawn->indirect) batchStatic = false;
+            }
+        }
+        std::vector<const shadows::AtlasPage*> soloPages;  // the pages this loop plans one at a time
+        if (virtualMap && !compilation)
+            for (const shadows::AtlasPage& page : virtualPages[i])
+                if (!batchStatic || page.mover) soloPages.push_back(&page);
+        const int passCount = compilation ? 1 : virtualMap ? int(soloPages.size()) : shadow.cube ? 6 : 1;
         std::vector<std::size_t> lampCasters;
         std::vector<const DrawItem*> spotCasters;
         std::array<Frustum, 6> cubeFrustums;
@@ -2163,6 +2191,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             bool anyMover = false;
             for (const shadows::AtlasPage& page : virtualPages[i]) {
                 if (page.mover) { anyMover = true; continue; }
+                if (batchStatic) continue;  // the batched pass indexes the static pages itself
                 if (!levelSlot.emplace(page.level, levelPages.size()).second) continue;
                 const std::size_t side = std::size_t(atlas.tiles(page.level));
                 LevelPages& added = levelPages.emplace_back();
@@ -2218,12 +2247,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // floats would be the same bytes, once per level, every frame.
         int firstMoverFace = passCount;
         if (virtualMap && !compilation)
-            for (int face = passCount - 1; face >= 0 && virtualPages[i][std::size_t(face)].mover; --face) firstMoverFace = face;
+            for (int face = passCount - 1; face >= 0 && soloPages[std::size_t(face)]->mover; --face) firstMoverFace = face;
         std::size_t firstMoverPass = 0;
         const auto selectFace = [&](std::size_t face) {
             if (int(face) > firstMoverFace) return;
             try {
-                const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
+                const shadows::AtlasPage* page = virtualMap && !compilation ? soloPages[face] : nullptr;
                 std::vector<const DrawItem*>& selected = selectedCasters[face];
                 const std::vector<const DrawItem*>* candidates = nullptr;
                 if (pageIndex) {
@@ -2278,8 +2307,294 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         if (pool) pool->forEach(uint32_t(selectedCasters.size()), [&](uint32_t face) { selectFace(face); });
         else for (std::size_t face = 0; face < selectedCasters.size(); ++face) selectFace(face);
         for (const std::exception_ptr& failure : failedFace) if (failure) std::rethrow_exception(failure);
+        // PRD-775 Phase 1: one pass draws every static page of this light from records the cull kernel builds.
+        // The CPU still decides every caster row: it writes the level grids and the drawn-page lookup, and it drops
+        // a caster whose box reaches no drawn page of a level so the GPU never walks it. Movers keep the per-page
+        // path below, including the row sharing between their levels.
+        if (batchStatic) {
+            const auto& atlas = virtualIt->second.atlas;
+            const double pageTexels = double(atlas.options().pageTexels + 2 * atlas.options().border);
+            std::vector<int> grantedLevels;
+            for (const shadows::AtlasPage& page : virtualPages[i]) {
+                if (page.mover) continue;
+                if (std::find(grantedLevels.begin(), grantedLevels.end(), page.level) == grantedLevels.end())
+                    grantedLevels.push_back(page.level);
+            }
+            const uint32_t lightPageStart = uint32_t(vsmPages.size());
+            struct LevelInfo {
+                int level = 0;
+                uint32_t lookupOffset = 0, tiles = 0, pageStart = 0;
+                uint32_t levelIndex = 0;
+                double minCell = 0;
+                double lodBudget = 0;
+                std::size_t pageCount = 0;
+            };
+            std::vector<LevelInfo> levelInfo;
+            for (const int level : grantedLevels) {
+                const shadows::PageAtlas::PageGrid grid = atlas.pageGrid(level);
+                if (!grid.valid) continue;
+                const uint32_t tiles = uint32_t(std::max(0, atlas.tiles(level)));
+                if (tiles == 0) continue;
+                LevelInfo info;
+                info.level = level;
+                info.lookupOffset = uint32_t(vsmTileLookup.size());
+                info.tiles = tiles;
+                info.pageStart = uint32_t(vsmPages.size());
+                info.levelIndex = uint32_t(vsmLevels.size());
+                info.minCell = std::min(1.0 / grid.invCellU, 1.0 / grid.invCellV);
+                const shadows::AtlasPage* first = nullptr;
+                vsmTileLookup.resize(vsmTileLookup.size() + std::size_t(tiles) * tiles, 0xFFFFFFFFu);
+                for (const shadows::AtlasPage& page : virtualPages[i]) {
+                    if (page.mover || page.level != level) continue;
+                    if (first == nullptr) first = &page;
+                    const uint32_t pageIdx = uint32_t(vsmPages.size());
+                    shadows::VsmGpuPage gpuPage{};
+                    Matrix4 viewProj;
+                    viewProj.multiplyMatrices(page.projection, page.view);
+                    for (int e = 0; e < 16; ++e) gpuPage.viewProj[e] = float(viewProj.elements[e]);
+                    const auto [ox, oy] = atlas.origin(page.slot);
+                    const double stride = double(atlas.stride());
+                    const double invEdge = 1.0 / double(atlas.edge());
+                    gpuPage.slotRect[0] = float(ox);
+                    gpuPage.slotRect[1] = float(oy);
+                    gpuPage.slotRect[2] = float(stride);
+                    gpuPage.slotRect[3] = float(invEdge);
+                    gpuPage.pageScaleBias[0] = float(stride * invEdge);
+                    gpuPage.pageScaleBias[1] = float(2.0 * (double(ox) + 0.5 * stride) * invEdge - 1.0);
+                    gpuPage.pageScaleBias[2] = float(1.0 - 2.0 * (double(oy) + 0.5 * stride) * invEdge);
+                    gpuPage.pageScaleBias[3] = 0.0f;
+                    gpuPage.boundsUV[0] = float(page.lowU);
+                    gpuPage.boundsUV[1] = float(page.highU);
+                    gpuPage.boundsUV[2] = float(page.lowV);
+                    gpuPage.boundsUV[3] = float(page.highV);
+                    gpuPage.meta[0] = uint32_t(level);
+                    gpuPage.meta[1] = uint32_t(page.x);
+                    gpuPage.meta[2] = uint32_t(page.y);
+                    gpuPage.meta[3] = uint32_t(page.slot);
+                    vsmPages.push_back(gpuPage);
+                    vsmPageSources.push_back(&page);
+                    vsmTileLookup[info.lookupOffset + std::size_t(page.y) * tiles + std::size_t(page.x)] = pageIdx;
+                    ++info.pageCount;
+                }
+                if (first == nullptr) continue;
+                // The clipped page's texels in world units, as the per-page LOD check reads them (all pages of one
+                // level share the window, so the first page's rect is the level's).
+                info.lodBudget = (first->highU - first->lowU) / pageTexels * atlas.options().shadowLodTexels;
+                shadows::VsmLevelGridGpu gpuLevel{};
+                gpuLevel.axisU[0] = float(grid.axisU.x); gpuLevel.axisU[1] = float(grid.axisU.y);
+                gpuLevel.axisU[2] = float(grid.axisU.z); gpuLevel.axisU[3] = float(grid.invCellU);
+                gpuLevel.axisV[0] = float(grid.axisV.x); gpuLevel.axisV[1] = float(grid.axisV.y);
+                gpuLevel.axisV[2] = float(grid.axisV.z); gpuLevel.axisV[3] = float(grid.invCellV);
+                gpuLevel.bounds[0] = float(grid.lowU); gpuLevel.bounds[1] = float(grid.highU);
+                gpuLevel.bounds[2] = float(grid.lowV); gpuLevel.bounds[3] = float(grid.highV);
+                gpuLevel.params[0] = float(grid.slopU); gpuLevel.params[1] = float(grid.slopV);
+                gpuLevel.params[2] = float(tiles); gpuLevel.params[3] = float(info.lookupOffset);
+                gpuLevel.counts[0] = info.pageStart; gpuLevel.counts[1] = uint32_t(info.pageCount);
+                gpuLevel.counts[2] = tiles; gpuLevel.counts[3] = info.lookupOffset;
+                vsmLevels.push_back(gpuLevel);
+                levelInfo.push_back(info);
+            }
+            if (!levelInfo.empty()) {
+                ShadowPass& batched = shadowPasses.emplace_back();
+                batched.virtualLight = i;
+                batched.batchedVsm = true;
+                batched.virtualLevel = levelInfo.front().level;
+                batched.vsmLevels = grantedLevels;
+                batched.vsmPageOffset = lightPageStart;
+                batched.vsmPageCount = uint32_t(vsmPages.size()) - lightPageStart;
+                batched.view = virtualPages[i].front().view.elements;
+                batched.projection = virtualPages[i].front().projection.elements;
+                batched.target = virtualIt->second.map.view;
+                ++job.staticVsmPasses;
+                const auto recordsFor = [](uint64_t instances, uint32_t pages) {
+                    const uint64_t records = instances * pages;
+                    return records > UINT32_MAX ? UINT32_MAX : uint32_t(records);
+                };
+                for (const LevelInfo& info : levelInfo) {
+                    const int level = info.level;
+                    for (const auto& [depthKey, drawn] : opaque) {
+                        if (!mayCast(drawn) || !atlas.drawsStatic(drawn->key)) continue;
+                        const bool boundedItem = bounded(drawn);
+                        if (boundedItem && casterOf(drawn).diameter < atlas.casterGate(level)) continue;
+                        const bool instanced = drawn->instanceMatrices != nullptr;
+                        const bool perInstanceBoxes = instanced && !drawn->indirect && boundedItem && !drawn->gpuJoints &&
+                            drawn->cache && !drawn->cache->localShadowBox.isEmpty();
+                        const bool unboundedItem = !boundedItem || drawn->gpuJoints || (instanced && !perInstanceBoxes);
+                        int x0 = 0, x1 = -1, y0 = 0, y1 = -1;
+                        if (!unboundedItem) {
+                            const auto& grid = atlas.pageGrid(level);
+                            grid.range(casterOf(drawn).bounds, x0, x1, y0, y1);
+                            if (x1 < x0 || y1 < y0) continue;
+                            bool reaches = false;
+                            for (int y = y0; y <= y1 && !reaches; ++y)
+                                for (int x = x0; x <= x1 && !reaches; ++x) {
+                                    const uint32_t pageIdx =
+                                        vsmTileLookup[info.lookupOffset + std::size_t(y) * info.tiles + std::size_t(x)];
+                                    if (pageIdx == 0xFFFFFFFFu) continue;
+                                    reaches = atlas.overlaps(*vsmPageSources[pageIdx], casterOf(drawn).bounds);
+                                }
+                            if (!reaches) continue;  // no drawn page of this level is reachable: zero GPU cull work
+                        }
+                        const DrawItem* selected = drawn;
+                        if (level > 0 && atlas.options().shadowLodBias && drawn->shadowObject) {
+                            const auto& lods = atlas.options().control->lods;
+                            const auto lod = lods.find(drawn->shadowObject->id());
+                            if (lod != lods.end()) {
+                                const auto& chain = lod->second;
+                                int shown = 0;
+                                for (std::size_t r = 0; r < chain.rungs.size(); ++r)
+                                    if (chain.rungs[r]->index && chain.rungs[r]->index->store.get() == drawn->indices)
+                                        shown = int(r) + 1;
+                                Matrix4 model;
+                                model.elements = drawn->matrixWorld;
+                                const int rung = shadows::shadowLodRung(chain.errors, shown, info.lodBudget,
+                                                                        model.getMaxScaleOnAxis());
+                                if (rung > 0 && std::size_t(rung) <= chain.rungs.size() &&
+                                    chain.rungs[std::size_t(rung - 1)]->index) {
+                                    DrawItem& copy = job.shadowLodItems.emplace_back(*drawn);
+                                    copy.indices = chain.rungs[std::size_t(rung - 1)]->index->store.get();
+                                    copy.cache = nullptr;
+                                    selected = &copy;
+                                }
+                            }
+                        }
+                        const DrawItem& item = *selected;
+                        DrawCache* cache = item.cache;
+                        Program* cachedDepth = nullptr;
+                        bool masked = false, alphaHash = false;
+                        const DepthRowKey rowKey = depthRowKey(item);
+                        if (cache && cache->vsmDepthProgram && item.variantStamp != 0 &&
+                            cache->vsmDepthStamp == item.variantStamp && cache->vsmDepthKey == rowKey) {
+                            cachedDepth = static_cast<Program*>(cache->vsmDepthProgram);
+                            masked = cache->vsmDepthMasked;
+                            alphaHash = cache->variant.alphaHash;
+                        } else {
+                            shader::VertexVariant variant = variantOf(item);
+                            if (variant.alphaHash && (item.nodes->colorNode || item.nodes->opacityNode || variant.vertexColors == 4))
+                                throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
+                            masked = shadowMasked(*item.material, *item.nodes);
+                            alphaHash = variant.alphaHash;
+                            shader::VertexVariant depthVariant = variant;
+                            if (cache && cache->program) depthVariant.gpuCulled = cache->variant.gpuCulled;
+                            depthVariant.vsmBatched = true;
+                            cachedDepth = &depthProgram(depthVariant, masked);
+                            if (cache) {
+                                if (!cache->program) cache->variant = variant;
+                                cache->vsmDepthProgram = cachedDepth;
+                                cache->vsmDepthPipeline = nullptr;
+                                cache->vsmDepthTargetKey = 0;
+                                cache->vsmDepthMasked = masked;
+                                cache->vsmDepthStamp = item.variantStamp;
+                                cache->vsmDepthKey = rowKey;
+                            }
+                        }
+                        const shader::StageModule* depthFragment =
+                            (masked || alphaHash || cachedDepth->variant.vsmBatched) ? &cachedDepth->fragment : nullptr;
+                        const uint8_t derived = item.side == 2 ? 2 : item.side == 1 || virtualMap ? 0 : 1;
+                        const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : derived;
+                        const WGPUCullMode cull =
+                            faces == 2 ? WGPUCullMode_None : faces == 0 ? WGPUCullMode_Back : WGPUCullMode_Front;
+                        PipelineTarget target{WGPUTextureFormat_Undefined, WGPUTextureFormat_Depth24Plus, cull};
+                        target.layout = cachedDepth->pipelineLayout;
+                        target.frontFace = item.frontFace();
+                        target.skinIndex = skinIndexFormat(item);
+                        target.instanceStepMask = instanceStepMask(cachedDepth->vertex, item);
+                        const uint64_t depthTargetKey =
+                            drawTargetKey(item, cachedDepth->vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2);
+                        WGPURenderPipeline pipeline;
+                        if (cache && cache->vsmDepthPipeline && cache->vsmDepthTargetKey == depthTargetKey) {
+                            pipeline = static_cast<WGPURenderPipeline>(cache->vsmDepthPipeline);
+                        } else {
+                            pipeline = pipelines_->get(cachedDepth->vertex, depthFragment, target);
+                            if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: shadow depth program");
+                            if (cache) { cache->vsmDepthTargetKey = depthTargetKey; cache->vsmDepthPipeline = pipeline; }
+                        }
+                        uint32_t flags = 0;
+                        const uint32_t levelPageCount = uint32_t(info.pageCount);
+                        uint32_t maxPagesPerInst = levelPageCount;
+                        uint32_t maxRecords = 0;
+                        if (unboundedItem) {
+                            flags |= 2u;
+                            if (instanced) flags |= 1u;
+                            if (displaced(drawn) && instanced && !drawn->boneMatrices && !drawn->morphGeometry &&
+                                !drawn->gpuJoints && unboundedNoted_.insert(drawn->key).second) {
+                                const std::string note = "TN_SHADOW_UNBOUNDED_CASTER: " + std::to_string(drawn->instanceCount) +
+                                    " instances of a positionNode caster" + (drawn->shadowObject && !drawn->shadowObject->name.empty() ? " '" + drawn->shadowObject->name + "'" : std::string()) +
+                                    " draw on every virtual shadow page; set its material's maxPositionOffset to the farthest the positionNode moves a vertex, in metres";
+                                diagnostics_.push_back(note);
+                            }
+                            maxRecords = recordsFor(item.instanceCount, maxPagesPerInst);
+                        } else if (instanced) {
+                            flags |= 1u;
+                            const double span = std::ceil(casterOf(drawn).diameter / std::max(1e-9, info.minCell)) + 3.0;
+                            const uint32_t square = span >= 65535.0 ? UINT32_MAX : uint32_t(span) * uint32_t(span);
+                            maxPagesPerInst = std::min<uint32_t>(maxPagesPerInst, std::max<uint32_t>(1u, square));
+                            maxRecords = recordsFor(item.instanceCount, maxPagesPerInst);
+                        } else {
+                            const uint64_t cells = uint64_t(x1 - x0 + 1) * uint64_t(y1 - y0 + 1);
+                            maxPagesPerInst = std::min<uint32_t>(maxPagesPerInst,
+                                                                 cells > UINT32_MAX ? UINT32_MAX : uint32_t(cells));
+                            maxRecords = maxPagesPerInst;
+                        }
+                        if (maxRecords == 0) continue;
+                        const uint32_t argsSlot = vsmArgsSlots;
+                        const uint32_t recordBase = vsmTotalRecords;
+                        const uint32_t dispatchBase = vsmTotalInstances;
+                        shadows::VsmCullDrawDesc desc{};
+                        for (int e = 0; e < 16; ++e) desc.model[e] = float(drawn->matrixWorld[e]);
+                        if (unboundedItem) {
+                            desc.localMin[3] = 0.0f;
+                            desc.localMax[3] = 0.0f;
+                        } else if (instanced) {
+                            const Box3& local = drawn->cache->localShadowBox;
+                            desc.localMin[0] = float(local.min.x);
+                            desc.localMin[1] = float(local.min.y);
+                            desc.localMin[2] = float(local.min.z);
+                            desc.localMin[3] = float(drawn->material ? drawn->material->maxPositionOffset : 0.0);
+                            desc.localMax[0] = float(local.max.x);
+                            desc.localMax[1] = float(local.max.y);
+                            desc.localMax[2] = float(local.max.z);
+                            desc.localMax[3] = 0.0f;
+                        } else {
+                            const Box3& bounds = casterOf(drawn).bounds;
+                            desc.localMin[0] = float(bounds.min.x);
+                            desc.localMin[1] = float(bounds.min.y);
+                            desc.localMin[2] = float(bounds.min.z);
+                            desc.localMin[3] = 0.0f;
+                            desc.localMax[0] = float(bounds.max.x);
+                            desc.localMax[1] = float(bounds.max.y);
+                            desc.localMax[2] = float(bounds.max.z);
+                            desc.localMax[3] = 0.0f;
+                        }
+                        const double instanceBase = item.instanceMatrices ? instanceBases.at(drawn) : 0.0;
+                        desc.drawMeta[0] = uint32_t(instanceBase);
+                        desc.drawMeta[1] = item.instanceCount;
+                        desc.drawMeta[2] = recordBase;
+                        desc.drawMeta[3] = argsSlot;
+                        desc.dispatch[0] = dispatchBase;
+                        desc.dispatch[1] = info.levelIndex;
+                        desc.dispatch[2] = maxRecords;
+                        desc.dispatch[3] = flags;
+                        vsmDraws.push_back(desc);
+                        const uint32_t indexCount = item.indices
+                            ? uint32_t(item.indices->byteLength() / (item.indices->scalar() == Scalar::U32 ? 4 : 2))
+                            : uint32_t(item.positions->byteLength() / 12);
+                        vsmInitialArgs.insert(vsmInitialArgs.end(), {indexCount, 0u, 0u, 0u, 0u});
+                        vsmTotalInstances += item.instanceCount;
+                        vsmTotalRecords = uint32_t(std::min<uint64_t>(uint64_t(vsmTotalRecords) + maxRecords, UINT32_MAX));
+                        ++vsmArgsSlots;
+                        DrawItem& row = job.vsmDrawItems.emplace_back(item);
+                        row.instanceCount = maxRecords;
+                        row.cache = nullptr;
+                        Planned& planned = batched.draws.emplace_back(Planned{&row, cachedDepth, pipeline, 0, 0, instanceBase});
+                        planned.vsmRecordBase = recordBase;
+                        planned.vsmArgsSlot = argsSlot;
+                    }
+                }
+            }
+        }
         for (int face = 0; face < passCount; ++face) {
-        const shadows::AtlasPage* page = virtualMap && !compilation ? &virtualPages[i][face] : nullptr;
+        const shadows::AtlasPage* page = virtualMap && !compilation ? soloPages[face] : nullptr;
         const Matrix& view = page ? page->view.elements : shadow.cube ? shadow.faceViews[face] : shadow.view;
         ShadowPass& pass = shadowPasses.emplace_back();
         pass.lamp = lamp; pass.virtualLight = i;
@@ -2426,6 +2741,28 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (lampBackFace) target.depthBias = -kLampBackFaceBias;
             if (compilation) {
                 compilation->push_back(pipelines_->getAsync(program.vertex, depthFragment, target));
+                // PRD-775 Phase 1: warm the batched page-record depth pipeline too, so the first granting frame
+                // after startup finds it compiled. The batched variant is kept apart from the mover/lamp cache.
+                if (virtualMap && vsmGpuPagesEnabled()) {
+                    shader::VertexVariant batchedVariant = variantOf(item);
+                    if (cache && cache->program) batchedVariant.gpuCulled = cache->variant.gpuCulled;
+                    batchedVariant.vsmBatched = true;
+                    Program& batched = depthProgram(batchedVariant, masked);
+                    PipelineTarget batchedTarget = target;
+                    batchedTarget.layout = batched.pipelineLayout;
+                    batchedTarget.instanceStepMask = instanceStepMask(batched.vertex, item);
+                    const shader::StageModule* batchedFragment =
+                        (masked || batchedVariant.alphaHash || batched.variant.vsmBatched) ? &batched.fragment : nullptr;
+                    compilation->push_back(pipelines_->getAsync(batched.vertex, batchedFragment, batchedTarget));
+                    if (cache) {
+                        cache->vsmDepthProgram = &batched;
+                        cache->vsmDepthPipeline = nullptr;
+                        cache->vsmDepthTargetKey = 0;
+                        cache->vsmDepthMasked = masked;
+                        cache->vsmDepthStamp = item.variantStamp;
+                        cache->vsmDepthKey = rowKey;
+                    }
+                }
                 continue;
             }
             const uint64_t depthTargetKey = drawTargetKey(item, program.vertex) * 6 + (faces == 2 ? 0 : faces == 0 ? 1 : 2) + (lampBackFace ? 3 : 0);  // a virtual page and a lamp cull one caster differently
@@ -2719,12 +3056,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
                 const bool masked = shadowMasked(*item.material, *item.nodes);
-                const bool fragmentBlock = masked || program.variant.alphaHash;
+                const bool fragmentBlock = masked || program.variant.alphaHash || program.variant.vsmBatched;
                 if (sharedView) {
                     maxViewLights = std::max(maxViewLights, program.viewLightCount);
                     planned.viewOffset = shadowSliceIdx;
                     planned.shadowViewSlice = !passNeedsLights;
-                    const ShadowDrawKey dk{&item, &program, static_cast<uint64_t>(planned.instanceBase)};
+                    const ShadowDrawKey dk{&item, &program, static_cast<uint64_t>(planned.instanceBase), planned.vsmRecordBase};
                     if (const auto dup = shadowSliceOffsets.find(dk); dup != shadowSliceOffsets.end()) {
                         planned.vertexOffset = dup->second.first;
                         planned.fragmentOffset = dup->second.second;
@@ -2747,6 +3084,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 }
                 put(frameUniforms_, v, program.vertexSlots[kModelMatrix], item.matrixWorld);
                 if (item.instanceMatrices) put(frameUniforms_, v, program.vertexSlots[kInstanceBase], std::array<double, 1>{planned.instanceBase});
+                if (program.variant.vsmBatched)
+                    put(frameUniforms_, v, program.vertexSlots[kVsmRecordBase], std::array<double, 1>{double(planned.vsmRecordBase)});
                 if (!sharedView) {
                     put(frameUniforms_, v, program.vertexSlots[kViewMatrix], kept.view);
                     put(frameUniforms_, v, program.vertexSlots[kProjectionMatrix], kept.projection);
@@ -2759,14 +3098,49 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 planned.vertexOffset = static_cast<uint32_t>(v);
                 planned.fragmentOffset = static_cast<uint32_t>(fragmentBlock ? f : 0);
                 if (sharedView) {
-                    shadowSliceOffsets.emplace(ShadowDrawKey{&item, &program, static_cast<uint64_t>(planned.instanceBase)},
-                                               std::pair{planned.vertexOffset, planned.fragmentOffset});
+                    shadowSliceOffsets.emplace(
+                        ShadowDrawKey{&item, &program, static_cast<uint64_t>(planned.instanceBase), planned.vsmRecordBase},
+                        std::pair{planned.vertexOffset, planned.fragmentOffset});
                 }
             }
         }
     }
 
     addCpuStage(CpuShadowBuild, stageStarted);
+    // PRD-775 Phase 1: the batched passes read the pages and records this prepares, through the renderer's own
+    // `vsmGpuPages` and `vsmPageRecords` storages. A grow reallocates those handles, so the cached bind groups and
+    // bundles go before any draw is encoded against them.
+    if (!compilation && !vsmPages.empty()) {
+        if (!gpuVsm_) gpuVsm_ = std::make_unique<shadows::GpuVsmResources>();
+        shadows::VsmCullUniforms uniforms{};
+        uniforms.totalDraws = uint32_t(vsmDraws.size());
+        uniforms.totalInstances = vsmTotalInstances;
+        uniforms.totalPages = uint32_t(vsmPages.size());
+        uniforms.levelCount = uint32_t(vsmLevels.size());
+        bool groupsGrew = false;
+        FrameStorage& pageStorage = storages_["vsmGpuPages"];
+        FrameStorage& recordStorage = storages_["vsmPageRecords"];
+        if (!gpuVsm_->prepareBuffers(gpu_, device_, vsmDraws, uniforms, vsmLevels, vsmTileLookup, vsmPages,
+                                     vsmInitialArgs, vsmArgsSlots, vsmTotalRecords, pageStorage.buffer,
+                                     pageStorage.capacity, recordStorage.buffer, recordStorage.capacity,
+                                     groupsGrew))
+            throw std::runtime_error("TN_NATIVE_VSM_GPU_PAGES: the page records could not be prepared");
+        if (groupsGrew) {
+            rebuildGroups();
+            pageStorage.uploadedBuffer = Handle{};
+            recordStorage.uploadedBuffer = Handle{};
+        }
+        const WGPUBuffer args = gpuVsm_->argsBuffer();
+        if (!vsmDraws.empty() && args == nullptr)
+            throw std::runtime_error("TN_NATIVE_VSM_GPU_PAGES: the indirect records are unavailable");
+        for (ShadowPass& pass : shadowPasses)
+            if (pass.batchedVsm)
+                for (Planned& draw : pass.draws) {
+                    draw.gpuIndirect = args;
+                    draw.gpuIndirectOffset = uint64_t(draw.vsmArgsSlot) * 20;
+                }
+        job.dispatchVsmCull = !vsmDraws.empty();
+    }
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
     // Transparent draws replayed into the motion target, appended once their bind groups are chosen.

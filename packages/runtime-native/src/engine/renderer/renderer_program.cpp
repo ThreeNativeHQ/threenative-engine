@@ -435,6 +435,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     ++programLookups_;
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.vsmBatched = variant.vsmBatched;
     kind.gpuCulled = false;  // the shadow pass visits the full instance store; only a main draw reads the culled ids
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
@@ -492,14 +493,17 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
                 throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv, the diffuse map and the node's own textures only");
         return built(std::move(vertex), std::move(fragment));
     }
-    // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
+    // three's shadow pass draws with the default positionNode, the same transform as a basic material. A batched
+    // VSM draw instead takes its page projection from the page record, and its fragment clips to the page rect.
+    const auto source = kind.alphaHash ? shader::buildDepth(kind)
+                        : kind.vsmBatched ? shader::buildVsmBatchedDepth(kind)
+                                          : shader::buildBasic(kind);
     shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program: " +
         (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
-    if (kind.alphaHash) {
+    if (kind.alphaHash || kind.vsmBatched) {
         fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
     }
@@ -590,6 +594,7 @@ void Renderer::rebuildGroups() {
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
     gpuCullGroups_.clear();  // they bind the instance and id storages too
+    if (gpuVsm_) gpuVsm_->clearBindGroups();  // they bind the page and record storages
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program

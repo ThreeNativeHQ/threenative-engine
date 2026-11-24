@@ -254,7 +254,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "anisotropyMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector", "gpuCullIdBase"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector", "gpuCullIdBase", "vsmRecordBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -506,6 +506,9 @@ struct Renderer::Planned {
     /** PRD-914 Phase 3: the GPU cull's indirect record for this draw, drawn in place of `instanceCount`. */
     WGPUBuffer gpuIndirect = nullptr;
     uint64_t gpuIndirectOffset = 0;
+    /** PRD-775: a batched VSM draw's base in `vsmPageRecords` and its five-word indirect record's slot. */
+    uint32_t vsmRecordBase = 0;
+    uint32_t vsmArgsSlot = 0;
 };
 
 /**
@@ -590,6 +593,10 @@ struct Renderer::ShadowPass {
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     bool mover = false;  // one light's mover map, drawn for the casters that are moving this frame
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
+    // PRD-775: one pass clears and draws every static page of a light from GPU-built (instance, page) records.
+    bool batchedVsm = false;
+    uint32_t vsmPageOffset = 0, vsmPageCount = 0;
+    std::vector<int> vsmLevels;  // the granted levels this batched pass writes, for cost attribution
     // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
     Matrix view{}, projection{};
     std::vector<Planned> draws;
@@ -615,6 +622,9 @@ struct Renderer::FrameJob {
     uint32_t shadowGroupRows = 0;  // FrameStats::shadowGroupRows, counted by the plan
     uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
+    // PRD-775: each batched VSM draw's row (its instance count is the record capacity, its indirect record the
+    // GPU's count). A deque: a planned draw points at its row until the frame is encoded.
+    std::deque<DrawItem> vsmDrawItems;
     // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
     // deques: a plan's row points at its members' array until the frame is encoded.
     std::deque<DrawItem> shadowGroupItems;
@@ -655,6 +665,9 @@ struct Renderer::FrameJob {
     std::vector<uint32_t> gpuCullDrawCounts;  // per draw, in `gpuCullDraws` order: its index or vertex count
     std::array<float, 28> gpuCullFrustum{};  // 6 vec4 planes + u32 vec4(totalDraws, totalInstances, 0, 0) via memcpy
     uint32_t gpuCullTotalInstances = 0;
+    /** PRD-775 Phase 1: one batched static VSM pass per light, and the compute dispatch that fills its records. */
+    uint32_t staticVsmPasses = 0;
+    bool dispatchVsmCull = false;
 };
 
 

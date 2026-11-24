@@ -217,6 +217,7 @@ set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
     src/engine/renderer/renderer_frame.cpp src/engine/renderer/renderer_material.cpp src/engine/renderer/renderer_output.cpp
     src/engine/renderer/renderer_program.cpp src/engine/renderer/renderer_shadow.cpp
+    src/engine/renderer/shadows/virtual/gpu_pages.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
     src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
     src/engine/renderer/render_target_pass.cpp)

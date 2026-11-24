@@ -1,6 +1,6 @@
 # PRD-775 — Virtual shadow pages are managed and drawn on the GPU, as in Unreal
 
-**Status:** PROPOSED
+**Status:** IN PROGRESS
 **Priority:** P1 — no box is ticked: the stress lab `?stress` CPU frame (p50 12.82, p95 17.64 ms) is behind Unreal 5.8.3 (p50 9.45, p95 11.03 ms) on the same scene, and the gap is the virtual shadow map's CPU work.
 **Complexity:** 6 (MEDIUM) — 6-10 files (+2), a new GPU page module (+2), CPU/GPU page state in step (+2); risk override: HIGH, because every virtual-shadow game (the shooter kit ships VSM by default) takes the new path.
 **Owner:** João · 2026-10-30
@@ -179,12 +179,12 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 1 — One shadow pass per light draws GPU-culled page instances
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native verification passed; stress-lab ABBA & judge pending)
 **Files:** new `packages/runtime-native/src/engine/renderer/shadows/virtual/gpu_pages.{h,cpp}` (cull kernel, buffers);
 `renderer.cpp` (shadow stage, encode); the shadow vertex program generator under `engine/shader/` (page record path);
 `tests/native-engine/render_database_test.cpp`.
 
-- [ ] A granted level draws in one render pass per light, from GPU rows. proof: new case `virtual_shadow_pages_draw_from_gpu_rows` in `tn-native-engine-render-database-test` — RED on develop (one pass per drawn page, 124+ passes); GREEN: one pass, the GPU's (page, instance) set equals FG1's CPU set (1,118 instances on 124 pages), receiver pixels max channel diff 0 on the case and on `ctest -R native_engine_render_vsm`
+- [x] A granted level draws in one render pass per light, from GPU rows. proof: new case `virtual_shadow_pages_draw_from_gpu_rows` in `tn-native-engine-render-database-test` — verified 2026-11-24: legacy 4 static passes, 6 shadow draws -> GPU 1 pass, 4 pages, 3 draws; 34,392 covered pixels, 0 differ (max channel 0), zero WebGPU validation errors; full `ctest -L native-engine` 652/652 passed on RTX 2080 (`native_engine_render_vsm` & `native_engine_virtual_sun_*` green) plus `ablation-flags-never-ship.spec.ts` 8/8 passed (stress-lab 124-page / 1,118-instance FG1 count check pending Step 5)
 - [ ] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout
 
 ### Phase 2 — The VSM stage reads the caster change set

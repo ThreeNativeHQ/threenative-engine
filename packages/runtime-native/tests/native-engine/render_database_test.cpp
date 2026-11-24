@@ -49,6 +49,23 @@ using namespace tn::engine;
 
 namespace {
 
+// Restores one environment flag when the case or block leaves it, so a per-frame lever test never leaks.
+struct RestoreEnv {
+    std::string name;
+    std::string prior;
+    bool had = false;
+    RestoreEnv(const char* key, const char* value) : name(key) {
+        if (const char* current = std::getenv(key)) { prior = current; had = true; }
+        setenv(key, value, 1);
+    }
+    ~RestoreEnv() {
+        if (had) setenv(name.c_str(), prior.c_str(), 1);
+        else unsetenv(name.c_str());
+    }
+    RestoreEnv(const RestoreEnv&) = delete;
+    RestoreEnv& operator=(const RestoreEnv&) = delete;
+};
+
 // Palette storage follows resource/hierarchy versions, not a frame or a pose.
 void paletteLifetime() {
     Scene scene;
@@ -8498,6 +8515,7 @@ void setShadowInstanceCullLever(bool on) {
 }
 
 void virtualShadowPageDrawsOnlyItsInstances() {
+    RestoreEnv gpuPages("TN_VSM_GPU_PAGES", "0");  // this case inspects the legacy per-page CPU rows
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     const char* external = std::getenv("TN_SHADOW_INSTANCE_CULL");
@@ -8892,7 +8910,8 @@ void shadowPagesInstanceSkinnedCasters() {
                     capture[1].uniformBytes, capture[1].stats.shadowGroupRows, capture[1].rows.size());
     }
     // (e) the static arm: a caster that straddles two pages groups inside each page, a page that selects one
-    // caster keeps its plain row, and the pixels do not move.
+    // caster keeps its plain row, and the pixels do not move. The legacy per-page rows are the CPU path's.
+    RestoreEnv gpuPages("TN_VSM_GPU_PAGES", "0");
     std::array<ShadowInstanceArm, 2> still;
     std::array<ShadowPlanCapture, 2> stillCapture;
     for (int arm = 0; arm < 2; ++arm) buildStaticShadowInstanceArm(still[arm], context);
@@ -9232,6 +9251,7 @@ void virtualShadowBoundsCache() {
 }
 
 void virtualShadowInstancePages() {
+    RestoreEnv gpuPages("TN_VSM_GPU_PAGES", "0");  // this case counts the legacy per-page draws
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     const auto draws = [&](bool instanced, uint32_t count, double offset) {
@@ -9529,6 +9549,7 @@ void shadowPageRangeCoversEveryOverlappingPage() {
 }
 
 void virtualShadowPageJobs() {
+    RestoreEnv gpuPages("TN_VSM_GPU_PAGES", "0");  // this case compares the legacy per-page plans
     mystral::webgpu::Context context;
     CHECK(context.initializeHeadless());
     std::array<ShadowPageArm, 2> arms;
@@ -10970,7 +10991,127 @@ void gpuSceneDirtyUploads() {
     waste::setDebugEnabled(false);
 }
 
-TN_TEST_MAIN({"reflection_filter", reflectionFilter}, {"lamp_footprint_box_parity", lampFootprintBoxParity}, {"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
+// PRD-775 Phase 1: a virtual shadow light's static pages draw in one pass from the GPU's (instance, page) records.
+// The legacy arm plans one pass and one row per page and caster; the GPU arm plans one row per caster and lets the
+// cull kernel decide the pages. Both arms must reach the receiver with the same pixels.
+void virtualShadowPagesDrawFromGpuRows() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (tn_check_failures != 0) return;
+    struct Arm {
+        Scene scene;
+        PerspectiveCamera camera{60, 1, 0.1, 200};
+        DirectionalLight sun{Color(1, 1, 1), 3};
+        EventQueue events;
+        std::unique_ptr<Renderer> renderer;
+        RenderDatabase database;
+    };
+    const auto build = [&](Arm& arm) {
+        arm.renderer = std::make_unique<Renderer>(context.getInstance(), context.getDevice(), context.getQueue(), arm.events);
+        arm.renderer->setSize(192, 192);
+        arm.camera.position.set(0, 14, 0.001);
+        arm.camera.lookAt(0, 0, 0);
+        arm.camera.updateProjectionMatrix();
+        arm.database.shadowMapEnabled = true;
+        arm.database.batching = false;
+        arm.sun.position.set(6, 14, 4);
+        arm.sun.setCastShadow(true);
+        // Four pages over a 32 m window: the instanced grid straddles all of them.
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {16};
+        atlas.mapSize = 256;
+        atlas.pageTexels = 128;
+        atlas.adaptiveRefresh = false;
+        atlas.adaptiveCasterGate = false;
+        atlas.lightDistance = 60;
+        atlas.depthRange = 120;
+        arm.sun.shadow.virtualShadow = std::make_shared<const shadows::AtlasOptions>(std::move(atlas));
+        arm.scene.add(arm.sun);
+        auto plain = std::make_shared<Material>(MaterialType::Standard);
+        auto ground = std::make_shared<Mesh>(makeBoxGeometry(48, 0.2, 48), plain);
+        ground->position.y = -0.1;
+        ground->setReceiveShadow(true);
+        arm.scene.add(*ground);
+        auto forest = std::make_shared<InstancedMesh>(makeBoxGeometry(1.5, 1.5, 1.5), plain, 16);
+        for (uint32_t i = 0; i < 16; ++i) {
+            Matrix4 matrix;
+            matrix.makeTranslation(-7.5 + double(i % 4) * 5.0, 0.75, -7.5 + double(i / 4) * 5.0);
+            forest->setMatrixAt(i, matrix);
+        }
+        forest->setCastShadow(true);
+        arm.scene.add(*forest);
+        auto maskedMaterial = std::make_shared<Material>(MaterialType::Standard);
+        maskedMaterial->alphaTest = 0.5;
+        auto masked = std::make_shared<Mesh>(makeBoxGeometry(2.5, 2.5, 2.5), maskedMaterial);
+        masked->position.set(-9, 1.25, 8);
+        masked->setCastShadow(true);
+        arm.scene.add(*masked);
+        auto single = std::make_shared<Mesh>(makeBoxGeometry(1.2, 3.0, 1.2), plain);
+        single->position.set(8, 1.5, -8);
+        single->setCastShadow(true);
+        arm.scene.add(*single);
+    };
+    Arm legacy, gpu;
+    build(legacy);
+    build(gpu);
+    Renderer::FrameStats legacyFrame{}, gpuFrame{};
+    std::vector<uint8_t> legacyPixels, gpuPixels;
+    std::size_t legacyPasses = 0;
+    {
+        RestoreEnv guard("TN_VSM_GPU_PAGES", "0");
+        legacy.database.render(*legacy.renderer, legacy.scene, legacy.camera, {0, 0, 0, 1});
+        legacyFrame = legacy.renderer->lastFrame();
+        legacyPixels = read(*legacy.renderer, legacy.events);
+        std::set<std::size_t> passes;
+        for (const Renderer::ShadowPlanRow& row : legacy.renderer->shadowPlan())
+            if (row.virtualLevel >= 0 && !row.mover) passes.insert(row.pass);
+        legacyPasses = passes.size();
+    }
+    {
+        RestoreEnv guard("TN_VSM_GPU_PAGES", "1");
+        wgpuDevicePushErrorScope(context.getDevice(), WGPUErrorFilter_Validation);
+        gpu.database.render(*gpu.renderer, gpu.scene, gpu.camera, {0, 0, 0, 1});
+        gpuFrame = gpu.renderer->lastFrame();
+        gpuPixels = read(*gpu.renderer, gpu.events);
+        ScopeVerdict verdict;
+        popScope(context.getDevice(), *gpu.renderer, gpu.events, verdict);
+        if (!verdict.clean())
+            std::fprintf(stderr, "gpu VSM pages WebGPU validation error: %s\n", verdict.message.c_str());
+        CHECK(verdict.clean());
+    }
+    std::size_t differing = 0, maxChannel = 0, covered = 0;
+    int low = 255, high = 0;
+    if (legacyPixels.size() == gpuPixels.size())
+        for (std::size_t p = 0; p + 3 < legacyPixels.size(); p += 4) {
+            int diff = 0;
+            for (int c = 0; c < 4; ++c)
+                diff = std::max(diff, std::abs(int(legacyPixels[p + c]) - int(gpuPixels[p + c])));
+            if (diff != 0) {
+                ++differing;
+                maxChannel = std::max(maxChannel, std::size_t(diff));
+            }
+            covered += legacyPixels[p] + legacyPixels[p + 1] + legacyPixels[p + 2] > 0;
+            low = std::min(low, int(legacyPixels[p]));
+            high = std::max(high, int(legacyPixels[p]));
+        }
+    std::printf("gpu VSM pages: legacy %zu static passes, %u shadow draws; GPU %u pass(es), %u pages, %u draws; "
+                "%zu covered pixels, %zu differ (max channel %zu), red %d..%d\n",
+                legacyPasses, legacyFrame.shadowDraws, gpu.renderer->lastStaticVsmPasses(),
+                gpu.renderer->lastStaticVsmPages(), gpuFrame.shadowDraws, covered, differing, maxChannel,
+                low, high);
+    CHECK(legacyPasses > 1);  // the legacy path planned one pass per drawn page
+    CHECK(gpu.renderer->lastStaticVsmPasses() == 1);
+    CHECK(gpu.renderer->lastStaticVsmPages() > 1);
+    CHECK(gpuFrame.shadowDraws < legacyFrame.shadowDraws);  // one row per caster, not one row per (page, caster)
+    CHECK(gpuFrame.shadowDraws <= 4);
+    CHECK(gpu.renderer->vsmArgsBufferForTest() != nullptr);
+    CHECK(!legacyPixels.empty() && legacyPixels.size() == gpuPixels.size());
+    CHECK(differing == 0);
+    CHECK(covered > 10000);
+    CHECK(high > 32 && low < high / 2);  // a lit floor and the casters' shadows on it, not a blank frame
+}
+
+TN_TEST_MAIN({"reflection_filter", reflectionFilter}, {"lamp_footprint_box_parity", lampFootprintBoxParity}, {"virtual_shadow_bounds_arvo_parity", virtualShadowBoundsArvoParity}, {"palette_lifetime", paletteLifetime}, {"spot_light_frustum_cull_and_grouping", spotLightFrustumCullAndGrouping}, {"shadow_row_follows_on_before_render", shadowRowFollowsOnBeforeRender}, {"skin_attribute_delete_is_seen", skinAttributeDeleteIsSeen}, {"shadow_row_follows_material_change", shadowRowFollowsMaterialChange}, {"held_pose_skips_the_world_palette", heldPoseSkipsTheWorldPalette}, {"virtual_shadow_pending_levels", virtualShadowPendingLevels}, {"virtual_shadow_depth_holds", virtualShadowDepthHoldsWhileCastersFit}, {"virtual_shadow_pan_redraws_entering_rects", virtualShadowPanRedrawsTheRectsThatEnter}, {"virtual_shadow_page_jobs", virtualShadowPageJobs}, {"lamp_size_ignores_temporal_jitter", lampSizeIgnoresTemporalJitter}, {"caster_record_allocates_per_frame", casterRecordAllocatesPerFrame}, {"virtual_shadow_instance_pages", virtualShadowInstancePages}, {"virtual_shadow_page_draws_only_its_instances", virtualShadowPageDrawsOnlyItsInstances}, {"virtual_shadow_pages_draw_from_gpu_rows", virtualShadowPagesDrawFromGpuRows}, {"virtual_shadow_bounds_cache", virtualShadowBoundsCache}, {"morphed_shadow_bounds_hold_every_influence", morphedShadowBoundsHoldEveryInfluence}, {"gpu_joint_production", gpuJointProduction}, {"virtual_shadow_casters_batch_in_main_pass", virtualShadowCastersBatchInMainPass}, {"virtual_shadow_rigs_batch_in_main_pass", virtualShadowRigsBatchInMainPass}, {"virtual_shadow_pages_instance_skinned_casters", shadowPagesInstanceSkinnedCasters}, {"skinned_palettes_share_by_bytes", skinnedPalettesShareByBytes}, {"clone_keeps_shared_skeletons", cloneKeepsSharedSkeletons}, {"compute_kernel_walks_once", computeKernelWalksOnce}, {"compute_run_shares_one_pass", computeRunSharesOnePass}, {"bone_reach_bounds_hold_posed_vertices", boneReachBoundsHoldPosedVertices}, {"rigid_rig_keeps_its_reach_bounds", rigidRigKeepsItsReachBounds}, {"multi_material_groups", multiMaterialGroups}, {"uniform_batch_preparation", uniformBatchPreparation}, {"content_identical_geometry_batches", contentIdenticalGeometryBatches}, {"steady_state", steadyState}, {"steady_state_draw_refresh_work", steadyStateDrawRefreshWork}, {"draw_refresh_guard_holes", drawRefreshGuardHoles}, {"color_write_masks_the_draw", colorWriteMasksTheDraw}, {"depth_test_off_draws_over_nearer", depthTestOffDrawsOverNearer}, {"normal_pass_is_not_tallied", normalPassIsNotTallied}, {"gtao_screen_reach", gtaoScreenReach}, {"gtao_fade_distance", gtaoFadeDistance}, {"steady_cache_invalidation", steadyCacheInvalidation}, {"render_target", renderTarget}, {"array_render_target", arrayRenderTarget}, {"float_render_target_keeps_float32", floatRenderTargetKeepsFloat32}, {"float_render_target_falls_back_to_half", floatRenderTargetFallsBackToHalf}, {"post_texture_resize_keeps_draw_groups", postTextureResizeKeepsDrawGroups}, {"deferred_target_follows_post_rtt", deferredTargetFollowsPostRtt}, {"deferred_target_samples_post_rtt_node", deferredTargetSamplesPostRttNode}, {"screen_size_reaches_the_vertex_stage", screenSizeReachesTheVertexStage}, {"depth_node_sets_fragment_depth", depthNodeSetsFragmentDepth}, {"depth_node_reaches_every_material_program", depthNodeReachesEveryMaterialProgram}, {"scene_environment", sceneEnvironment}, {"background_refusal", backgroundRefusal}, {"lit_scene", litScene}, {"scene_stage_is_metered", sceneStageIsMetered}, {"overlay_leaves_stage_totals", overlayLeavesStageTotals}, {"present_direct", presentDirect}, {"canvas_layer_overlay", canvasLayerOverlay}, {"post_survives_overlay", postSurvivesOverlay}, {"invariant_scope", invariantScope}, {"instance_counts", instanceCounts}, {"target_samples_late_traa_output", targetSamplesLateTraaOutput}, {"unchanged_frame_storage", unchangedFrameStorage}, {"points_rewrite_keeps_one_buffer", pointsRewriteKeepsOneBuffer}, {"static_instances_are_not_recopied", staticInstancesAreNotRecopied}, {"instance_places_survive_a_draw_leaving_the_view", instancePlacesSurviveADrawLeavingTheView}, {"instance_upload_is_stable_across_a_camera_turn", instanceUploadIsStableAcrossACameraTurn}, {"flat_lane_equivalence", flatLaneEquivalence}, {"directional_target", directionalTarget}, {"directional_target_outside_scene", directionalTargetOutsideScene}, {"scene_fog_node", sceneFogNode}, {"env_node_without_env_map", envNodeWithoutEnvMapLightsTheMaterial}, {"env_node_beats_scene_environment", envNodeBeatsSceneEnvironment}, {"lit_mesh_without_normals", litMeshWithoutNormals}, {"invalidation", invalidation}, {"alpha_scene", alphaScene}, {"translucent_target", translucentTarget}, {"frame_slab_is_per_program", frameSlabIsPerProgram}, {"transparent_sort_uses_geometry_center", transparentSortUsesTheGeometryCenter}, {"sort_center_walks_once_per_geometry_edit", sortCenterWalksTheVerticesOncePerGeometryEdit}, {"morph_targets_pack_once_per_target_write", morphTargetsPackOncePerTargetWrite}, {"skin_attributes_on_a_plain_mesh", skinAttributesOnAPlainMesh},
              {"material_unsupported", materialUnsupported}, {"shader_invalid", shaderInvalid}, {"time_uniform", timeUniform}, {"gpu_mipmaps", gpuMipmaps}, {"updates", updates},
              {"multi_camera_layers", multiCameraLayers}, {"render_callback", renderCallback}, {"instanced", instanced},
              {"virtual_sun_room_seam", virtualSunRoomSeam},
