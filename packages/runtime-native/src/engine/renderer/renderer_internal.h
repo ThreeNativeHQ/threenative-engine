@@ -631,6 +631,11 @@ struct Renderer::FrameJob {
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     std::vector<std::string> auxMrt;  // the custom MRT slots the aux pass writes after them, in name order
+    // PRD-914: the main pass writes the post targets after its colour (one unified base pass at sampleCount 1).
+    bool unifiedAux = false;
+    uint8_t unifiedAuxMask = 0;
+    std::vector<std::string> unifiedAuxMrt;
+    uint64_t mainAuxKey = 0;  // the aux layout the main bundles were recorded for
     bool translucentActive = false;  // the post graph reads "translucent": the transparent draws have their own pass
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.

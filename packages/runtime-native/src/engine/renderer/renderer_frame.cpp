@@ -1438,6 +1438,65 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // copies cost. The clock is read only under `tnDebug`; a frame's copies are summed and counted once after the plan.
     const bool slabCopyTimed = waste::debugEnabled().load(std::memory_order_relaxed);
     uint64_t slabCopyNanos = 0, slabCopyBytes = 0;
+    // The post targets besides colour and velocity: three's MRT `normal` (GTAO, denoise, SSR), metalness/roughness
+    // (SSR), `diffuseColor` albedo (GTAO's indirect occlusion) and emissive (SSGI). Like Unreal's base pass writing its
+    // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
+    // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
+    // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
+    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
+    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
+    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
+    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
+    const bool normalPass = postEffects_ && postEffects_->reads("normal");
+    const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
+    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
+    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    const bool indirectPass = postEffects_ && postEffects_->reads("indirectDiffuse");
+    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
+    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
+    const bool translucentPass =
+        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
+    const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
+                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0) |
+                                    (indirectPass ? kAuxIndirect : 0));
+    // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
+    // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
+    // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
+    std::vector<std::string> mrtSlots;
+    for (std::size_t i = 0; i < opaque.size(); ++i) {
+        const DrawItem& item = *mainItems[i];
+        if (!item.nodes) continue;
+        for (const auto& slot : item.nodes->mrt) {
+            const shader::Type type = slot.node ? slot.node->type : shader::Type{};
+            if (!slot.node || type.scalar != shader::Type::Scalar::F32 || type.isMatrix() || type.rows > 4)
+                throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + slot.name + "' writes " +
+                                         type.name() + ", not a float or float vector");
+            if (std::find(mrtSlots.begin(), mrtSlots.end(), slot.name) == mrtSlots.end()) mrtSlots.push_back(slot.name);
+        }
+    }
+    std::sort(mrtSlots.begin(), mrtSlots.end());
+    // PRD-914: at sampleCount 1 the main pass can hold the post targets itself, beside `color`, so the frame draws
+    // once instead of the separate aux pass. It needs one attachment per named target and custom slot on top of the
+    // colour, within the device's eight; at 4x the separate pass stays. `mainAuxKey` is the layout the main bundles
+    // were recorded for, mixed into each draw's pipeline key.
+    const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
+    const std::size_t auxTotal = namedTargets + mrtSlots.size();
+    const bool unifiedAux =
+        unifiedAuxEnabled() && sampleCount_ == 1 && auxTotal > 0 && (1 + auxTotal <= kMaxColourTargets);
+    uint64_t mainAuxKey = 0;
+    if (unifiedAux) {
+        mainAuxKey = hashBytes(&auxMask, sizeof(auxMask)) ^ 0x9e3779b97f4a7c15ull;
+        for (const std::string& slotName : mrtSlots) {
+            mainAuxKey = (mainAuxKey * 0x100000001b3ull) ^ hashBytes(slotName.data(), slotName.size());
+        }
+        if (mainAuxKey == 0) mainAuxKey = 1;
+    }
+    job.unifiedAux = unifiedAux;
+    job.unifiedAuxMask = unifiedAux ? auxMask : 0;
+    job.unifiedAuxMrt = unifiedAux ? mrtSlots : std::vector<std::string>{};
+    job.mainAuxKey = mainAuxKey;
+    job.auxMask = unifiedAux ? 0 : auxMask;
+    job.auxMrt = unifiedAux ? std::vector<std::string>{} : mrtSlots;
     for (std::size_t opaqueIdx = 0; opaqueIdx < opaque.size(); ++opaqueIdx) {
         const DrawItem& item = *mainItems[opaqueIdx];
         if (!item.mainPass) continue;
@@ -1469,6 +1528,41 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals && !item.flatShading) || !item.material) continue;
         PipelineTarget target = colourTarget(item, program);
+        // PRD-914: the unified base pass keeps `color` at location 0 and adds the post targets after it, so one draw
+        // writes the scene and its GBuffer. A draw that writes no named target (unlit, transparent without its own
+        // slot, sprite) masks them: its colour still draws, the targets keep the opaque values behind it.
+        const shader::StageModule* mainFragment = &program.fragment;
+        if (unifiedAux) {
+            for (std::size_t i = 0; i < auxTotal; ++i) target.moreColors[i] = WGPUTextureFormat_RGBA16Float;
+            target.materialColorWrite = item.colorWrite;
+            const bool custom = !mrtSlots.empty() && item.nodes &&
+                std::any_of(item.nodes->mrt.begin(), item.nodes->mrt.end(), [&](const shader::MrtOutput& slot) {
+                    return std::binary_search(mrtSlots.begin(), mrtSlots.end(), slot.name);
+                });
+            const bool customOnly = item.transparent || item.sprite || item.kind == MaterialKind::Basic;
+            if (item.background || (customOnly && !custom)) {
+                target.moreWrites = 0;
+                // The fragment still writes `color` at location 0; the zeroed targets stay masked, and a builder that
+                // refuses leaves the program's own fragment, safe for the same reason.
+                if (const shader::StageModule* zFrag = basePassAuxFragment(program, auxMask, mrtSlots, true)) mainFragment = zFrag;
+                if (customOnly && !custom && !item.background && item.kind != MaterialKind::Basic && normalPass) {
+                    const std::string reason = item.transparent ? "transparent" : "sprite";
+                    const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
+                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                }
+            } else {
+                // A custom-only draw masks the named attachments and writes its own slots; `color` stays written.
+                if (customOnly) target.moreWrites = namedTargets < 8 ? uint8_t(0xffu << namedTargets) : uint8_t(0);
+                else target.moreWrites = 0xff;
+                if (const shader::StageModule* unifiedFrag = basePassAuxFragment(program, auxMask, mrtSlots, customOnly)) {
+                    mainFragment = unifiedFrag;
+                } else {
+                    const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
+                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                    target.moreWrites = 0;
+                }
+            }
+        }
         // PRD-888: the depth-only prepass pipeline (every colour channel masked, the same cull, bias, face and samples),
         // then the shipped program at Equal with no depth write. Its discards stay: they cost nothing once early depth
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
@@ -1479,19 +1573,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool equalDraw = (solidCandidate || maskedCandidate) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
-            compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
+            compilation->push_back(pipelines_->getAsync(program.vertex, mainFragment, target));
             if (equalDraw) compilation->push_back(pipelines_->getAsync(program.vertex, prepassFragment(program), depthOnly));
             plan.push_back({&item, &program, nullptr, 0, 0});
             continue;
         }
-        const uint64_t targetKey = drawTargetKey(item, program.vertex);
+        const uint64_t targetKey = drawTargetKey(item, program.vertex) ^ (mainAuxKey * 0x9e3779b97f4a7c15ull);
         WGPURenderPipeline pipeline;
         if (cache && cache->pipeline && cache->targetKey == targetKey && cache->prepass == equalDraw) {
             pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
         } else {
             bool deferred = false;
-            pipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, &program.fragment, target, deferred)
-                                        : pipelines_->get(program.vertex, &program.fragment, target);
+            pipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, mainFragment, target, deferred)
+                                        : pipelines_->get(program.vertex, mainFragment, target);
             if (deferred) continue;  // drawn, with its post targets, the frame its pipeline lands
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; cache->prepass = equalDraw; cache->prepassPipeline = nullptr; }
@@ -2654,44 +2748,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // A post pass that reads "velocity" (motion blur) samples the target the temporal pass draws.
         if (!compilation && postEffects_ && postEffects_->reads("velocity")) postEffects_->input("velocity", traa_->velocityView());
     }
-    // The post targets besides colour and velocity: three's MRT `normal` (GTAO, denoise, SSR), metalness/roughness
-    // (SSR), `diffuseColor` albedo (GTAO's indirect occlusion) and emissive (SSGI). Like Unreal's base pass writing its
-    // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
-    // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
-    // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
-    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
-    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
-    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
-    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
-    const bool normalPass = postEffects_ && postEffects_->reads("normal");
-    const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
-    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
-    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
-    const bool indirectPass = postEffects_ && postEffects_->reads("indirectDiffuse");
-    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
-    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
-    const bool translucentPass =
-        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
-    const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
-                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0) |
-                                    (indirectPass ? kAuxIndirect : 0));
-    // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
-    // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
-    // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
-    std::vector<std::string> mrtSlots;
-    for (const Planned& draw : plan) {
-        const DrawItem& item = *draw.item;
-        if (!item.nodes) continue;
-        for (const auto& slot : item.nodes->mrt) {
-            const shader::Type type = slot.node ? slot.node->type : shader::Type{};
-            if (!slot.node || type.scalar != shader::Type::Scalar::F32 || type.isMatrix() || type.rows > 4)
-                throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + slot.name + "' writes " +
-                                         type.name() + ", not a float or float vector");
-            if (std::find(mrtSlots.begin(), mrtSlots.end(), slot.name) == mrtSlots.end()) mrtSlots.push_back(slot.name);
-        }
-    }
-    std::sort(mrtSlots.begin(), mrtSlots.end());
-    job.auxMrt = mrtSlots;
     // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
     const auto normalFragment = [&](const Planned& draw) -> const shader::StageModule* {
         const DrawItem& item = *draw.item;
@@ -2717,9 +2773,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto planAux = [&] {
         if (!auxMask && mrtSlots.empty() && !translucentPass) return;
         // The pass holds one attachment per named target the post graph reads, then one per custom MRT slot, and
-        // writes no `color` of its own: they are the pass's whole colour-attachment list (aux_targets.h).
-        const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
-        if (!auxTargetsFit(namedTargets, mrtSlots.size()))
+        // writes no `color` of its own: they are the pass's whole colour-attachment list (aux_targets.h). The unified
+        // base pass already checked its own limit (colour plus all of them).
+        if (!unifiedAux && !auxTargetsFit(namedTargets, mrtSlots.size()))
             throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: " + std::to_string(namedTargets + mrtSlots.size()) +
                                      " colour attachments exceed the device limit " + std::to_string(kMaxColourTargets));
         for (const Planned& draw : plan) {
@@ -2769,6 +2825,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     job.translucentPlan.push_back(sheet);
                 }
             }
+            // The unified base pass writes every post target itself; only the translucent plan above stays a pass.
+            if (unifiedAux) continue;
             // A draw writes a custom MRT slot when it names one: three draws a transparent sea's or an unlit
             // quad's own output with the same fragment, and leaves the named targets as the opaque draws left them.
             const bool custom = !mrtSlots.empty() && item.nodes &&
@@ -4084,7 +4142,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.debugTimestampRequested = debugTimestampRequested_;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
-    job.auxMask = auxMask;
+    job.auxMask = unifiedAux ? 0 : auxMask;
     job.translucentActive = translucentPass;
     // At 4x the velocity pass draws into a multisampled attachment and resolves it; allocated on first
     // use, so a frame without it pays nothing.

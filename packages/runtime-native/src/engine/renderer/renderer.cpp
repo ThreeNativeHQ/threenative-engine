@@ -530,6 +530,11 @@ bool Renderer::persistentGpuSceneEnabled() {
                             "TN_PERSISTENT_GPU_SCENE=0: legacy storage same-bytes scan enabled", diagnostics_);
 }
 
+bool Renderer::unifiedAuxEnabled() {
+    return flagEnabledOrLog(flags::read<flags::UnifiedAuxMrt>(),
+                            "TN_UNIFIED_AUX_MRT=0: separate aux pass enabled", diagnostics_);
+}
+
 bool Renderer::staticVelocityEnabled() {
     const char* value = flags::read<flags::StaticVelocity>();
     if (value != nullptr && std::strcmp(value, "0") != 0 && std::strlen(value) != 0) {
@@ -1062,19 +1067,52 @@ void Renderer::encodeFrame(FrameJob& job) {
         recorded += uint32_t(pass.rows->size() - pass.sorted);
         lastFrame_.recordMs += meterMs() - recordStarted;
     };
-    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them. Inside
-    // one arm the plan's own key carries the frame: a split bundle is reused while the plan holds, as a one-pass one is.
-    if (splitPrepass != splitRecorded_) {
+    // PRD-914: the main pass's colour attachments — the scene colour first, then (one unified base pass) every post
+    // target the graph reads and every custom MRT slot, in planAux's order.
+    std::array<WGPURenderPassColorAttachment, kMaxColourTargets> mainColors{};
+    std::array<WGPUTextureFormat, kMaxColourTargets> mainFormats{};
+    size_t mainColorCount = 1;
+    mainColors[0] = color;
+    mainFormats[0] = sceneFormat_;
+    if (job.unifiedAux) {
+        const auto appendMainAux = [&](WGPUTextureView view, WGPUColor clear) {
+            if (mainColorCount >= mainColors.size() || !view) return;
+            WGPURenderPassColorAttachment& att = mainColors[mainColorCount];
+            att = {};
+            att.view = view;
+            att.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+            att.storeOp = WGPUStoreOp_Store;
+            att.clearValue = clear;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+            mainFormats[mainColorCount++] = WGPUTextureFormat_RGBA16Float;
+        };
+        if (job.unifiedAuxMask & kAuxNormal) appendMainAux(normalView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxMaterial) appendMainAux(materialView_, {0, 1, 0, 1});
+        if (job.unifiedAuxMask & kAuxAlbedo) appendMainAux(albedoView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxEmissive) appendMainAux(emissiveView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxIndirect) appendMainAux(indirectView_, {0, 0, 0, 0});
+        for (const auto& name : job.unifiedAuxMrt) {
+            const auto found = mrtViews_.find(name);
+            appendMainAux(found == mrtViews_.end() ? nullptr : found->second, {0, 0, 0, 0});
+        }
+    }
+    passDesc.colorAttachmentCount = mainColorCount;
+    passDesc.colorAttachments = mainColors.data();
+    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them; a frame
+    // whose aux layout moved records the main bundles again too. Inside one arm the plan's own key carries the frame.
+    if (splitPrepass != splitRecorded_ || job.mainAuxKey != mainAuxKey_) {
         for (WGPURenderBundle* bundle : {&mainBundle_, &prepassBundle_, &prepassTailBundle_, &viewportBundle_, &tailBundle_, &mainDelta_}) {
             if (*bundle) wgpuRenderBundleRelease(*bundle);
             *bundle = nullptr;
         }
         splitRecorded_ = splitPrepass;
+        mainAuxKey_ = job.mainAuxKey;
     }
     if (features().stableRows && job.mainRows.on) {
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = sceneFormat_;
-        descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+        descriptor.colorFormatCount = mainColorCount; descriptor.colorFormats = mainFormats.data();
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         // The draws from the first transparent one to the viewport copy: a bundle keyed by their rows of the per-draw key.
         if (job.tail == viewportSplit) {
@@ -1144,8 +1182,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (mainDelta_) wgpuRenderBundleRelease(mainDelta_);
         mainBundle_ = viewportBundle_ = tailBundle_ = mainDelta_ = prepassBundle_ = prepassTailBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = sceneFormat_;
-        descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+        descriptor.colorFormatCount = mainColorCount; descriptor.colorFormats = mainFormats.data();
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
         const auto shadowDraws = lastFrame_.shadowDraws;
@@ -1209,18 +1246,22 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.prepassDraws = mainBundleStats_.prepassDraws;
     }
     if (splitPrepass && prepassBundle_) {
-        // Nothing writes the colour target (the depth pipelines mask every channel), so it is neither loaded nor stored
-        // on the shipped path; the depth the prepass writes is what this pass is for.
-        WGPURenderPassColorAttachment unread = color;
-        unread.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
-        unread.storeOp = keepColor_ ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
-        unread.resolveTarget = nullptr;
+        // Nothing writes the colour targets (the depth pipelines mask every channel), so they are neither loaded nor
+        // stored on the shipped path; the depth the prepass writes is what this pass is for. The unified base pass's
+        // extra attachments ride along the same way: their pipeline masks are off, so no fragment output reaches them.
+        std::array<WGPURenderPassColorAttachment, kMaxColourTargets> unreadColors{};
+        for (std::size_t i = 0; i < mainColorCount; ++i) {
+            unreadColors[i] = mainColors[i];
+            unreadColors[i].loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+            unreadColors[i].storeOp = keepColor_ ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
+            unreadColors[i].resolveTarget = nullptr;
+        }
         WGPURenderPassDepthStencilAttachment prepassDepth = depth;
         prepassDepth.depthLoadOp = keepDepth_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
         prepassDepth.depthStoreOp = WGPUStoreOp_Store;
         WGPURenderPassDescriptor prepassDesc = {};
-        prepassDesc.colorAttachmentCount = 1;
-        prepassDesc.colorAttachments = &unread;
+        prepassDesc.colorAttachmentCount = mainColorCount;
+        prepassDesc.colorAttachments = unreadColors.data();
         prepassDesc.depthStencilAttachment = &prepassDepth;
         WGPURenderPassEncoder prepassPass =
             beginTimedRenderPass(encoder, &prepassDesc, 2, {"prepass", inputWidth_, inputHeight_});
@@ -1247,13 +1288,17 @@ void Renderer::encodeFrame(FrameJob& job) {
         from.texture = depth_; to.texture = viewportDepth_;
         from.aspect = to.aspect = WGPUTextureAspect_DepthOnly;
         wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
-        WGPURenderPassColorAttachment loadColor = color;
-        loadColor.loadOp = WGPULoadOp_Load;
+        std::array<WGPURenderPassColorAttachment, kMaxColourTargets> loadColors{};
+        for (std::size_t i = 0; i < mainColorCount; ++i) {
+            loadColors[i] = mainColors[i];
+            loadColors[i].loadOp = WGPULoadOp_Load;
+            loadColors[i].storeOp = WGPUStoreOp_Store;
+        }
         WGPURenderPassDepthStencilAttachment loadDepth = depth;
         loadDepth.depthLoadOp = WGPULoadOp_Load;
         WGPURenderPassDescriptor viewportDesc = {};
-        viewportDesc.colorAttachmentCount = 1;
-        viewportDesc.colorAttachments = &loadColor;
+        viewportDesc.colorAttachmentCount = mainColorCount;
+        viewportDesc.colorAttachments = loadColors.data();
         viewportDesc.depthStencilAttachment = &loadDepth;
         WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc, 2, {"viewport", inputWidth_, inputHeight_});
         if (prepassTailBundle_) wgpuRenderPassEncoderExecuteBundles(rest, 1, &prepassTailBundle_);

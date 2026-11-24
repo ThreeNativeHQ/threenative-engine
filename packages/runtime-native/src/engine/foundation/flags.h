@@ -36,6 +36,7 @@ inline constexpr Flag GpuJointDrawUse{"TN_GPU_JOINT_DRAW_USE", Read::Once};
 inline constexpr Flag SharedViewUniform{"TN_SHARED_VIEW_UNIFORM", Read::Live};
 inline constexpr Flag PersistentGpuScene{"TN_PERSISTENT_GPU_SCENE", Read::Live};
 inline constexpr Flag StaticVelocity{"TN_STATIC_VELOCITY", Read::Live};
+inline constexpr Flag UnifiedAuxMrt{"TN_UNIFIED_AUX_MRT", Read::Live};
 
 // Player (the native host).
 inline constexpr Flag GameSpans{"TN_GAME_SPANS", Read::Live};

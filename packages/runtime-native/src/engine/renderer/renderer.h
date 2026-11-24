@@ -1048,6 +1048,8 @@ private:
     bool pendingEncode_ = false;
     /** PRD-888 lever 0: whether the bundles held are a split arm's, so a switch of arm re-records them. */
     bool splitRecorded_ = false;
+    /** PRD-914: the unified base pass's aux layout the retained main bundles were recorded for. */
+    uint64_t mainAuxKey_ = 0;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;
     FrameStats frameMail_, published_;
@@ -1094,6 +1096,8 @@ private:
         uint32_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
         std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
+        /** PRD-914: the base-pass fragment that keeps `color` and adds the post targets, keyed like auxMrt. */
+        std::map<std::string, std::unique_ptr<shader::StageModule>> baseAux;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
         DrawProbes probes;
         /** PRD-888: the program's masked depth-only fragment (prepassFragment), built on first request. */
@@ -1112,6 +1116,13 @@ private:
      */
     const shader::StageModule* auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
                                            bool zeroNamed = false);
+    /**
+     * PRD-914: the program's fragment with `color` kept at location 0 and the targets in `mask` and `slots` added
+     * after it, so the one base pass writes the scene colour and every post target (sampleCount 1). Never prunes, so
+     * the colour output's statements stay; null when the builder refuses or the layout differs.
+     */
+    const shader::StageModule* basePassAuxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
+                                                   bool zeroNamed = false);
     /**
      * PRD-888: a masked program's prepass fragment: its own fragment built again with a zero colour, pruned to the mask
      * and cutoff its discards read. Same builder call, so the layout equals the program's and the draw's bind groups
@@ -1682,6 +1693,7 @@ private:
     bool sharedViewEnabled();
     bool persistentGpuSceneEnabled();
     bool staticVelocityEnabled();
+    bool unifiedAuxEnabled();
     struct BonePlacement {
         const std::vector<float>* ptr = nullptr;
         uint64_t version = 0;

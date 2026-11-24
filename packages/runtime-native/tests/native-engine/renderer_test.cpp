@@ -3834,7 +3834,8 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
                 renderer.lastFrame().auxRecorded);
-    CHECK(renderer.lastFrame().auxPasses == 1);
+    // PRD-914: at 1x the main pass writes the post targets itself; only 4x keeps the separate single-sampled pass.
+    CHECK(renderer.lastFrame().auxPasses == (samples == 1 ? 0u : 1u));
     CHECK(renderer.lastFrame().auxRecorded == 0);
     const auto centre = [&](GpuStatus (Renderer::*read)(ReadbackCallback)) {
         std::vector<uint8_t> pixels;
@@ -3950,6 +3951,17 @@ void auxTargetsNormalNode() {
 // to its own aux fragment built a whole lit MRT program per draw for the geometry normal the shared pass already
 // writes, so the count of aux fragments is the observable: zero for Lambert, one for Standard.
 void auxRoutesWrittenNormals() {
+    // The separate aux pass is the route this counts: pin the flag off for the fallback `auxFragment` path.
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+    setenv("TN_UNIFIED_AUX_MRT", "0", 1);
     const auto auxFragments = [](bool authored, MaterialKind kind) {
         mystral::webgpu::Context context;
         const bool initialized = context.initializeHeadless();
@@ -4551,9 +4563,199 @@ void traaDynamicOnlyVelocity() {
     }
     std::filesystem::remove_all(directory);
 }
+// PRD-914: at sampleCount 1 one unified base pass writes the scene colour and every post target the graph reads,
+// named targets and custom slots alike, instead of a second aux pass over the same draws. The named fallback
+// (TN_UNIFIED_AUX_MRT=0) must produce the same pixels on every target, and a draw that writes no surface (an unlit
+// Basic patch) must keep the named targets clear while its colour still draws.
+void unifiedBasepassMrt() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 32, height = 32;
+    namespace g = shader::graph;
+    const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+    // Reads all five named targets plus one custom MRT slot: 5 + 1 fits beside `color` in the eight attachments.
+    const auto sources = g::vec4({g::add(lane("normal"), lane("metalness")), g::add(lane("roughness"), lane("albedo")),
+                                  g::add(lane("emissive"), lane("indirectDiffuse")), lane("customSlot")});
+
+    const auto big = plane(2, 2), small = plane(1.6, 1.6);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    big->normals.resize(12);
+    big->normals.write(0, facing, sizeof facing);
+    small->normals.resize(12);
+    small->normals.write(0, facing, sizeof facing);
+
+    shader::StandardMaterial litMaterial;
+    litMaterial.color = {0.25f, 0.5f, 1};
+    litMaterial.metalness = 1; litMaterial.roughness = 0.5f;
+    litMaterial.emissive = {1, 0.5f, 0}; litMaterial.emissiveIntensity = 4;
+    shader::StandardMaterial cutMaterial = litMaterial;
+    cutMaterial.alphaTest = 0.5f; cutMaterial.opacity = 0.4f;
+    shader::StandardMaterial basicMaterial;
+    basicMaterial.color = {1, 0, 0};
+    shader::StandardMaterial blendMaterial = litMaterial;
+    blendMaterial.opacity = 0.5f;
+
+    shader::MaterialNodes litNodes;
+    litNodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+    litNodes.mrt = {{"customSlot", g::vec4({g::float_(0.5), g::float_(0.75), g::float_(1), g::float_(1)})}};
+    std::array<DrawItem, 4> items;
+    items[0].key = items[0].id = 1;
+    items[0].kind = MaterialKind::Standard;
+    items[0].positions = &big->positions; items[0].normals = &big->normals; items[0].indices = &big->indices;
+    items[0].material = &litMaterial;
+    items[0].nodes = &litNodes;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[1].key = items[1].id = 2;
+    items[1].kind = MaterialKind::Standard;
+    items[1].positions = &small->positions; items[1].normals = &small->normals; items[1].indices = &small->indices;
+    items[1].material = &cutMaterial;
+    items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, -3, -3, 1};
+    items[2].key = items[2].id = 3;
+    items[2].kind = MaterialKind::Basic;
+    items[2].positions = &small->positions; items[2].indices = &small->indices;
+    items[2].material = &basicMaterial;
+    items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 3, -3, 1};
+    items[3].key = items[3].id = 4;
+    items[3].kind = MaterialKind::Standard;
+    items[3].positions = &small->positions; items[3].normals = &small->normals; items[3].indices = &small->indices;
+    items[3].material = &blendMaterial;
+    items[3].transparent = true;
+    items[3].depthWrite = false;
+    items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, -3, -3, 1};
+
+    const auto pixelOf = [&](double x, double y, double z) {
+        const double depth = 4.0 - z;  // camera(1) sits at z = 4 looking down -z
+        const double tanHalf = std::tan(25.0 * kPi / 180.0);
+        const auto px = static_cast<std::size_t>((x / (depth * tanHalf) * 0.5 + 0.5) * width);
+        const auto py = static_cast<std::size_t>((1.0 - (y / (depth * tanHalf) * 0.5 + 0.5)) * height);
+        return py * width + px;
+    };
+    const auto decodeHalf = [](const std::vector<uint8_t>& bytes, std::size_t component) {
+        const uint16_t half = uint16_t(bytes[component * 2]) | uint16_t(bytes[component * 2 + 1] << 8);
+        const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+        return (half >> 15 ? -1.f : 1.f) *
+               (exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14));
+    };
+    struct Arm {
+        uint32_t auxPasses = 0;
+        std::vector<std::string> diagnostics;
+        std::vector<uint8_t> colour, normal, albedo, emissive, indirect, custom;
+    };
+    const auto run = [&](const char* flag) {
+        if (flag) setenv("TN_UNIFIED_AUX_MRT", flag, 1);
+        else unsetenv("TN_UNIFIED_AUX_MRT");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setSampleCount(1);
+        // The final frame keeps the scene colour and adds the aux reads, so the Basic patch's colour is visible.
+        renderer.setPostGraph(g::add(g::texture("scene", g::uv()), g::bloom(sources, 0, 0, 0)));
+        for (int frame = 0; frame < 3; ++frame)
+            renderer.render(std::span<const DrawItem>(items.data(), items.size()), camera(1), LightState{}, {0.1, 0.1, 0.1, 1});
+        Arm arm;
+        arm.auxPasses = renderer.lastFrame().auxPasses;
+        arm.diagnostics = renderer.diagnostics();
+        const auto fetch = [&](GpuStatus (Renderer::*method)(ReadbackCallback)) {
+            std::vector<uint8_t> out;
+            bool done = false;
+            CHECK((renderer.*method)([&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                out = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll(); events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done);
+            return out;
+        };
+        arm.colour = fetch(&Renderer::readPixels);
+        arm.normal = fetch(&Renderer::readNormalPixels);
+        arm.albedo = fetch(&Renderer::readAlbedoPixels);
+        arm.emissive = fetch(&Renderer::readEmissivePixels);
+        arm.indirect = fetch(&Renderer::readIndirectPixels);
+        bool done = false;
+        CHECK(renderer.readMrtPixels("customSlot", 0, 0, width, height,
+            [&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                arm.custom = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(done);
+        return arm;
+    };
+    const Arm unified = run(nullptr), separate = run("0");
+    std::printf("unified base pass: %u aux pass(es) beside %u; colour %zu/%zu bytes, custom slot %zu/%zu\n",
+                unified.auxPasses, separate.auxPasses, unified.colour.size(), separate.colour.size(),
+                unified.custom.size(), separate.custom.size());
+    CHECK(unified.auxPasses == 0);
+    CHECK(separate.auxPasses == 1);
+    CHECK(std::find(separate.diagnostics.begin(), separate.diagnostics.end(),
+                    "TN_UNIFIED_AUX_MRT=0: separate aux pass enabled") != separate.diagnostics.end());
+    CHECK(unified.colour.size() == std::size_t(width) * height * 4 && separate.colour.size() == unified.colour.size());
+    if (unified.colour.size() != separate.colour.size()) return;
+    std::size_t colourDiff = 0;
+    for (std::size_t i = 0; i < unified.colour.size(); ++i)
+        colourDiff += std::abs(int(unified.colour[i]) - int(separate.colour[i])) > 1;
+    CHECK(colourDiff == 0);
+    const auto sameFloats = [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        if (a.size() != b.size() || a.empty() || a.size() % 2) return false;
+        for (std::size_t c = 0; c < a.size() / 2; ++c)
+            if (std::abs(decodeHalf(a, c) - decodeHalf(b, c)) > 1e-3f) return false;
+        return true;
+    };
+    CHECK(unified.normal.size() == std::size_t(width) * height * 8);
+    CHECK(sameFloats(unified.normal, separate.normal));
+    CHECK(sameFloats(unified.albedo, separate.albedo));
+    CHECK(sameFloats(unified.emissive, separate.emissive));
+    CHECK(sameFloats(unified.indirect, separate.indirect));
+    CHECK(sameFloats(unified.custom, separate.custom));
+    // The lit plane's authored normal and custom slot land in the unified pass, exactly as the aux pass wrote them.
+    const std::size_t litPixel = pixelOf(0, 0, 0);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 1) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 2) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4) - 0.5f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4 + 1) - 0.75f) < 1e-3f);
+    // The unlit Basic patch draws its colour and leaves every named target (and the custom slot) clear.
+    const std::size_t basic = pixelOf(-3, 3, -3);
+    CHECK(unified.colour[basic * 4] > 200 && unified.colour[basic * 4 + 1] < 40 && unified.colour[basic * 4 + 2] < 40);
+    const auto clearAt = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, basic * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(clearAt(unified.normal) && clearAt(unified.albedo) && clearAt(unified.emissive) &&
+          clearAt(unified.indirect) && clearAt(unified.custom));
+    // The cut alpha-tested patch writes nothing: its background stays clear too.
+    const std::size_t cut = pixelOf(3, -3, -3);
+    const auto cutClear = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, cut * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(cutClear(unified.normal) && cutClear(unified.albedo) && cutClear(unified.emissive) &&
+          cutClear(unified.indirect) && cutClear(unified.custom));
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"unified_basepass_mrt", unifiedBasepassMrt}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_resolve_blend", traaResolveBlend},
