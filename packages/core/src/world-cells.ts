@@ -340,6 +340,7 @@ export class WorldCells extends Group implements IComputeDriven {
 
   private constructor(init: IWorldCellsInit) {
     super();
+    this.userData.batch = "off";
     this.#onPublication = init.onPublication;
     this.#prewarm = new CellPrewarm({
       released: () => this.#released,
@@ -1461,8 +1462,9 @@ export class WorldCells extends Group implements IComputeDriven {
    * parentage without walking a material graph per key per frame. See `bundleSafe`.
    */
   #bundleHome(shared: SharedBatch): Object3D | null {
-    if (this.#bundlesWanted === false || shared.bundlable === false) return this;
-    return this.#render.bundleGroup(mainShard(shared.mesh.name)) ?? null;
+    if (this.#bundlesWanted === false || this.#render.ownsBundles() || shared.bundlable === false)
+      return this;
+    return this.#render.bundleGroup(mainShard(shared.publishedName)) ?? null;
   }
 
   /**

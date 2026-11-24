@@ -208,6 +208,8 @@ std::atomic<uint64_t> nextObjectId{0};
 // Atomic for the same reason: a lost increment would hide a main-thread hierarchy change. The facade
 // reads it as a plain u64 at hierarchyVersionAddress(), which a lock-free atomic lays out the same.
 std::atomic<uint64_t> hierarchyRevision{0};
+// Starts at 1 so `gpuJointSkinnedEpoch == 0` stays reserved for direct legacy callers in tests.
+std::atomic<uint64_t> skinnedHierarchyRevision{1};
 static_assert(std::atomic<uint64_t>::is_always_lock_free && sizeof(std::atomic<uint64_t>) == sizeof(uint64_t));
 
 // three's module-level scratch values.
@@ -279,6 +281,28 @@ void EventDispatcher::dispatchEvent(Event& event) {
 // ------------------------------------------------------------------------------ Object3D
 
 uint64_t Object3D::hierarchyVersion() { return hierarchyRevision.load(std::memory_order_relaxed); }
+uint64_t Object3D::skinnedHierarchyVersion() { return skinnedHierarchyRevision.load(std::memory_order_relaxed); }
+void Object3D::markSkinnedHierarchy() { skinnedHierarchyRevision.fetch_add(1, std::memory_order_relaxed); }
+void Object3D::adjustSkinnedSubtree(int32_t delta) {
+    for (Object3D* node = this; node != nullptr; node = node->parent) {
+        node->skinnedSubtreeCount_ = uint32_t(int64_t(node->skinnedSubtreeCount_) + delta);
+    }
+}
+void Object3D::markSkinnedNode() {
+    if (isSkinnedNode_) return;
+    isSkinnedNode_ = true;
+    adjustSkinnedSubtree(1);
+    if (parent != nullptr) {
+        ++parent->directSkinnedChildren_;
+        markSkinnedHierarchy();
+    }
+}
+void Object3D::markBoneNode() {
+    if (isBoneNode_) return;
+    isBoneNode_ = true;
+    adjustSkinnedSubtree(1);
+    if (parent != nullptr) markSkinnedHierarchy();
+}
 void Object3D::markHierarchy(Object3D* node) {
     const uint64_t revision = hierarchyRevision.fetch_add(1, std::memory_order_relaxed) + 1;
     for (; node != nullptr; node = node->parent) node->subtreeVersion_ = revision;
@@ -599,6 +623,15 @@ Object3D::~Object3D() {
     // Only a linked object's death changes a children list. A scratch object (InstancedMesh::raycast
     // builds a Mesh per ray) left the counter alone, or every cache keyed on it dropped once per ray.
     if (parent != nullptr || !children.empty()) markHierarchy(parent);
+    const uint32_t selfContrib = (isSkinnedNode_ ? 1u : 0u) + (isBoneNode_ ? 1u : 0u);
+    bool affectsSkin = !children.empty() && (skinnedSubtreeCount_ > selfContrib || isBoneNode_ || directSkinnedChildren_ > 0);
+    if (parent != nullptr) {
+        if (skinnedSubtreeCount_ > 0 || parent->isBoneNode_ || parent->directSkinnedChildren_ > 0 || isSkinnedNode_)
+            affectsSkin = true;
+        if (isSkinnedNode_ && parent->directSkinnedChildren_ > 0) --parent->directSkinnedChildren_;
+        if (skinnedSubtreeCount_ > 0) parent->adjustSkinnedSubtree(-int32_t(skinnedSubtreeCount_));
+    }
+    if (affectsSkin) markSkinnedHierarchy();
     for (Object3D* child : children) child->parent = nullptr;  // owned children die after this body
     if (parent != nullptr) {
         auto& siblings = parent->children;
@@ -625,6 +658,12 @@ Object3D& Object3D::add(Object3D& object) {
     object.parent = this;
     children.push_back(&object);
     markHierarchy(this);
+    {
+        const bool affectsSkin = object.skinnedSubtreeCount_ > 0 || isBoneNode_ || directSkinnedChildren_ > 0;
+        if (object.isSkinnedNode_) ++directSkinnedChildren_;
+        if (object.skinnedSubtreeCount_ > 0) adjustSkinnedSubtree(int32_t(object.skinnedSubtreeCount_));
+        if (affectsSkin) markSkinnedHierarchy();
+    }
     own(object);
     object.dispatchEvent(addedEvent);
     childAddedEvent.child = &object;
@@ -646,6 +685,13 @@ Object3D& Object3D::remove(Object3D& object) {
     waste::debugAdd(waste::counters().sceneRemoves);
     children.erase(found);
     markHierarchy(this);
+    {
+        const bool affectsSkin =
+            object.skinnedSubtreeCount_ > 0 || isBoneNode_ || directSkinnedChildren_ > 0 || object.isSkinnedNode_;
+        if (object.isSkinnedNode_ && directSkinnedChildren_ > 0) --directSkinnedChildren_;
+        if (object.skinnedSubtreeCount_ > 0) adjustSkinnedSubtree(-int32_t(object.skinnedSubtreeCount_));
+        if (affectsSkin) markSkinnedHierarchy();
+    }
     disown(object);
     object.parent = nullptr;
     object.dispatchEvent(removedEvent);
@@ -689,6 +735,12 @@ Object3D& Object3D::attach(Object3D& object) {
     object.parent = this;
     children.push_back(&object);
     markHierarchy(this);
+    {
+        const bool affectsSkin = object.skinnedSubtreeCount_ > 0 || isBoneNode_ || directSkinnedChildren_ > 0;
+        if (object.isSkinnedNode_) ++directSkinnedChildren_;
+        if (object.skinnedSubtreeCount_ > 0) adjustSkinnedSubtree(int32_t(object.skinnedSubtreeCount_));
+        if (affectsSkin) markSkinnedHierarchy();
+    }
     own(object);
 
     object.updateWorldMatrix(false, true);

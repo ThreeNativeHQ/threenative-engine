@@ -32,7 +32,7 @@ namespace tn::engine {
 /** three's Bone: an Object3D whose `type` is "Bone" and whose `isBone` flag is true. */
 class Bone : public Object3D {
   public:
-    Bone() = default;
+    Bone() { markBoneNode(); }
     ~Bone() override { localTransformWritten(); prepareLocalTransformWrite(); if (publication_) --publicationCount_; ++deathVersion_; }
     /** Bumps the pose version of every skeleton that holds this bone (PRD-878). */
     void localTransformWritten() override {
@@ -186,7 +186,11 @@ class Skeleton {
  */
 class SkinnedMesh : public Mesh {
   public:
-    using Mesh::Mesh;
+    SkinnedMesh() { markSkinnedNode(); }
+    SkinnedMesh(std::shared_ptr<BufferGeometry> geometry, std::shared_ptr<Material> material)
+        : Mesh(std::move(geometry), std::move(material)) {
+        markSkinnedNode();
+    }
     [[nodiscard]] std::string_view type() const override { return "SkinnedMesh"; }
     /** three's bind: without a matrix, the mesh's current world matrix after computing the inverses. */
     void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);

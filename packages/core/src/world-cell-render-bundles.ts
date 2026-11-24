@@ -137,22 +137,22 @@ export class CellBundles {
    * path and the coarse gate that hides it, which is the path it was already on. See `bundleSafe`.
    */
   bundleIn(shared: SharedBatch, reuseSafety = false): void {
-    if (this.#bundlesWanted === false) return;
+    if (this.#bundlesWanted === false || this.ownsBundles()) return;
     // Shared batches normally carry one material. A mutable array keeps the existing per-object path
     // rather than compressing several material identities/revisions into an incomplete signature.
-    const arrayMaterial = Array.isArray(shared.mesh.material);
+    const material = shared.mesh.material;
+    const arrayMaterial = Array.isArray(material);
     const checked =
       reuseSafety && !arrayMaterial
-        ? this.#bundleSafety.test(shared.mesh.material as Material, !this.ownsBundles())
+        ? this.#bundleSafety.test(material, !this.ownsBundles())
         : undefined;
     shared.bundlable =
-      lodChainOf(shared.mesh.geometry) === undefined &&
+      lodChainOf(shared.currentGeometry) === undefined &&
       (reuseSafety
         ? checked !== undefined &&
           !ownHook(shared.mesh, "onBeforeRender") &&
           !ownHook(shared.mesh, "onAfterRender") &&
-          Reflect.get(shared.mesh, "isSkinnedMesh") !== true &&
-          shared.mesh.morphTargetInfluences === undefined &&
+          (!shared.hasMorphs || shared.mesh.morphTargetInfluences === undefined) &&
           checked.safe
         : bundleSafe(shared.mesh));
     if (shared.bundlable === false) {
@@ -172,11 +172,11 @@ export class CellBundles {
       if (reuseSafety) this.bumpBundle(group);
     }
     shared.bundled = true;
-    shared.bundledCount = shared.mesh.count;
+    shared.bundledCount = shared.publishedCount;
     // A recorded draw was cut from this camera's frustum, so the mesh's own whole-mesh test would drop
     // it the moment the camera turned away from a window the record still holds. Off, like a chunk's.
-    shared.mesh.frustumCulled = false;
-    shared.mesh.visible = true;
+    shared.setFrustumCulled(false);
+    shared.setVisible(true);
     // Read by `VirtualShadowNode#probe`, which must not hide a bundled mesh: the render list a bundle
     // recorded is fixed, and `visible = false` would take the mesh out of every record after the next
     // re-record. See `bundled`.
@@ -195,8 +195,8 @@ export class CellBundles {
     shared.bundledCount = -1;
     shared.mesh.userData.tnBundled = false;
     // Back on the per-object path, so the mesh's own whole-mesh test is its gate again.
-    shared.mesh.frustumCulled = true;
-    const group = this.#bundles.get(mainShard(shared.mesh.name));
+    shared.setFrustumCulled(true);
+    const group = this.#bundles.get(mainShard(shared.publishedName));
     if (group === undefined) return;
     if (shared.mesh.parent === group) group.remove(shared.mesh);
     this.bumpBundle(group);
@@ -237,9 +237,9 @@ export class CellBundles {
    * batch whose window is half the view draws the half that faced the camera when the record was cut.
    */
   recordCpuMain(shared: SharedBatch, outcome: "settled" | "narrowed" | "repacked"): void {
-    if (this.#bundlesWanted === false) return;
-    // `#publish` has just written this frame's answer onto the mesh, which is the only place it is.
-    if (shared.mesh.visible === false) {
+    if (this.#bundlesWanted === false || this.ownsBundles()) return;
+    // `#publish` has just written this frame's answer onto the batch, which is the only place it is.
+    if (shared.publishedVisible === false) {
       this.bundleOut(shared);
       return;
     }
@@ -247,8 +247,8 @@ export class CellBundles {
     if (shared.bundled === false) return;
     // The count a record freezes, and the layout behind it: a repack moves records inside the window
     // without moving its length, so the epoch answer and the count are both read here.
-    if (outcome === "settled" && shared.mesh.count === shared.bundledCount) return;
-    shared.bundledCount = shared.mesh.count;
+    if (outcome === "settled" && shared.publishedCount === shared.bundledCount) return;
+    shared.bundledCount = shared.publishedCount;
     this.bumpBundle(this.shardOf(shared));
   }
 
@@ -264,7 +264,7 @@ export class CellBundles {
    * frozen cull with them; the rest keep the per-object path. See `bundleSafe`.
    */
   addChunk(cell: IResidentCell, chunk: Object3D): void {
-    if (this.#bundlesWanted === false) {
+    if (this.#bundlesWanted === false || this.ownsBundles()) {
       this.#host.add(chunk);
       return;
     }
@@ -340,7 +340,7 @@ export class CellBundles {
 
   /** The main-record shard a batch's key lands in, minted as a child of the world on first use. */
   shardOf(shared: SharedBatch): BundleGroup {
-    const shard = mainShard(shared.mesh.name);
+    const shard = mainShard(shared.publishedName);
     let group = this.#bundles.get(shard);
     if (group === undefined) {
       group = new BundleGroup();
@@ -372,8 +372,8 @@ export class CellBundles {
     // A record holds the object it was cut from, so a mesh that arrived by a rebind or a grow is not
     // the one the last record named: one re-record, and the record counts this mesh from here.
     if (shared.bundled === true) {
-      shared.mesh.frustumCulled = false;
-      shared.bundledCount = shared.mesh.count;
+      shared.setFrustumCulled(false);
+      shared.bundledCount = shared.publishedCount;
       this.bumpBundle(this.shardOf(shared));
     }
   }
@@ -395,7 +395,10 @@ export class CellBundles {
   bundleStats(): IWorldCellsStats["bundle"] {
     return {
       children: this.mainBundleChildren() + this.#chunkBundleChildren,
-      on: this.#bundlesWanted && (this.mainBundleChildren() > 0 || this.#chunkBundleChildren > 0),
+      on:
+        this.#bundlesWanted &&
+        !this.ownsBundles() &&
+        (this.mainBundleChildren() > 0 || this.#chunkBundleChildren > 0),
       cpuMeshes: [...this.#host.shared().values()].filter(
         (shared) => shared.bundled && shared.gpu === undefined,
       ).length,

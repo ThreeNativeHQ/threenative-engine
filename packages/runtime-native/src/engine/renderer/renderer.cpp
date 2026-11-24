@@ -301,7 +301,7 @@ void GpuJointScene::revoke() {
 
 bool GpuJointScene::current() const {
     if (!*valid) { return false; }
-    if (hierarchy != Object3D::hierarchyVersion()) { return false; }
+    if (hierarchy != Object3D::skinnedHierarchyVersion()) { return false; }
     for (const auto& saved : rigs) {
         const auto rig = saved.mesh.lock();
         const auto placement = saved.placement.lock();
@@ -363,7 +363,7 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
     }
     if (gpuJoints_ && gpuJointScene_ == &scene && gpuJoints_->current()) return gpuJoints_;
     if (gpuJoints_) { gpuJoints_->revoke(); gpuJoints_.reset(); gpuJointPass_.reset(); }
-    const auto epoch = Object3D::hierarchyVersion();
+    const auto epoch = Object3D::skinnedHierarchyVersion();
     if (gpuJointScene_ == &scene && gpuJointScan_ == epoch) return nullptr;
     gpuJointScene_ = &scene; gpuJointScan_ = epoch;
     auto plan = std::make_shared<GpuJointScene>();
@@ -451,7 +451,7 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
         ++Object3D::gpuMaintenanceVisits_;
         auto bone = plan->bones[i].lock();
         if (!bone || !bone->enableDeferredTransform(plan->locals, i * 12, plan->valid)) { plan->revoke(); return nullptr; }
-        bone->gpuJointBoundary = plan->valid; bone->gpuJointHierarchy = epoch;
+        bone->gpuJointBoundary = plan->valid; bone->gpuJointSkinnedEpoch = epoch;
     }
     for (const auto& saved : plan->rigs) if (auto rig = saved.mesh.lock()) {
         ++Object3D::gpuMaintenanceVisits_;
