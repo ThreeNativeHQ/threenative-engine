@@ -31,6 +31,9 @@ export interface IAssetLibraryVitePlugin {
   readonly name: string;
   readonly apply: "serve";
   readonly enforce: "pre";
+  config(user: { readonly optimizeDeps?: { readonly entries?: string | readonly string[] } }): {
+    optimizeDeps?: { entries: string[] };
+  };
   configResolved(config: { readonly root: string }): void;
   readonly resolveId: {
     readonly order: "pre";
@@ -235,6 +238,17 @@ export function createAssetLibraryPlugin(
     name: "threenative-asset-library",
     apply: "serve",
     enforce: "pre",
+    // Vite's start-up scan crawls only the HTML pages, so a module first met in a story was
+    // optimized late, and its `full-reload` reloaded the game page under the library as well.
+    // Scanning the stories too bundles their imports before the first page loads.
+    config(user) {
+      if (options.project === false) return {};
+      return {
+        optimizeDeps: {
+          entries: [...(user.optimizeDeps?.entries ? [] : ["**/*.html"]), "src/**/*.story.ts"],
+        },
+      };
+    },
     configResolved(config) {
       root = config.root;
     },

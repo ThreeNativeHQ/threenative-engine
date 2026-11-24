@@ -224,6 +224,12 @@ describe("asset library server", () => {
     expect(await (await fetch(`${base}${frame}`)).text()).toContain("threenative:web-engine");
   });
 
+  it("pre-bundles what code stories import at startup, so the first story opens without a reload", () => {
+    // A dependency Vite meets first in a story was optimized late, and its `full-reload` reloaded
+    // the game page under the library too: the switcher fell back to Game.
+    expect(server.config.optimizeDeps.entries).toEqual(["**/*.html", "src/**/*.story.ts"]);
+  });
+
   it("ships defineAssetStory as browser code, with no Node import", async () => {
     // A story imports it in the page: tsup's Node `require` banner threw there.
     const shipped = await readFile(

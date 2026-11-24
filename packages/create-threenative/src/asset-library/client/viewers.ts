@@ -83,14 +83,14 @@ export interface IViewerHost extends IViewerBase {
 
 export function createViewerHost(base: IViewerBase): IViewerHost {
   let active: IViewerMode = {};
-  let catalog: IAssetCatalog = { elements: [], styles: {} };
+  // One object, filled in place when the catalog arrives: `Object.assign` copies a getter's value,
+  // not the getter, so a getter here handed every viewer the empty catalog forever.
+  const catalog: IAssetCatalog = { elements: [], styles: {} };
   const overlays: HTMLElement[] = [];
   const host: IViewerHost = Object.assign(base, {
-    get catalog() {
-      return catalog;
-    },
+    catalog,
     ready(next: IAssetCatalog) {
-      catalog = next;
+      Object.assign(catalog, next);
     },
     use(mode: IViewerMode) {
       active = mode;
