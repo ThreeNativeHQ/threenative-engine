@@ -464,6 +464,8 @@ std::shared_ptr<GpuJointScene> Renderer::prepareGpuJoints(Object3D& scene, std::
 
 Renderer::~Renderer() {
     // The VSM resources own pipelines, bind groups and buffers; release them while the device and GpuResources live.
+    for (auto& [light, shadow] : virtualShadows_)
+        if (shadow.pagePool) shadow.pagePool->release();
     if (gpuVsm_) gpuVsm_->release();
     gpuVsm_.reset();
     if (gpuJoints_) gpuJoints_->revoke();
@@ -1077,6 +1079,18 @@ void Renderer::encodeFrame(FrameJob& job) {
     // Keep the shadow diagnostic while timing each shadow pass separately.
     const bool shadowTimed = timed && !shadowPasses.empty();
     if (timed) timerBeganAtShadow_ = shadowTimed;
+    // PRD-775 Phase 3: the page managers map this frame's pages and write each table entry and GPU page's slot rect,
+    // scale/bias, bounds and identity first, so the cull emits no record for a kept panning page and the clear draws
+    // nothing for one; the main pass then samples the GPU-written table.
+    const auto vsmGpuPages = storages_.find("vsmGpuPages");
+    WGPUBuffer vsmGpuPagesBuffer = vsmGpuPages != storages_.end() && vsmGpuPages->second.buffer.type != 0
+        ? gpu_.buffer(vsmGpuPages->second.buffer) : nullptr;
+    for (const FrameJob::VsmPageDispatch& dispatch : job.vsmPageDispatches) {
+        if (dispatch.pool == nullptr) continue;
+        const auto table = storages_.find("vsmTable" + std::to_string(dispatch.light));
+        if (table == storages_.end()) continue;
+        dispatch.pool->dispatch(encoder, gpu_.buffer(table->second.buffer), vsmGpuPagesBuffer);
+    }
     // PRD-775 Phase 1: the cull kernel writes every batched VSM draw's (instance, page) records and indirect count
     // before any shadow pass reads them. It reads the same packed `instances` storage the plan uploaded.
     if (job.dispatchVsmCull && gpuVsm_)

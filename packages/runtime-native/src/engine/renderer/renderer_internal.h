@@ -668,6 +668,12 @@ struct Renderer::FrameJob {
     /** PRD-775 Phase 1: one batched static VSM pass per light, and the compute dispatch that fills its records. */
     uint32_t staticVsmPasses = 0;
     bool dispatchVsmCull = false;
+    /** PRD-775 Phase 3: the page managers that write their light's table and page entries before the cull runs. */
+    struct VsmPageDispatch {
+        shadows::GpuPhysicalPagePool* pool = nullptr;
+        std::size_t light = 0;
+    };
+    std::vector<VsmPageDispatch> vsmPageDispatches;
 };
 
 

@@ -1454,6 +1454,9 @@ private:
         std::vector<uint32_t> incrementalMarks;
         uint32_t incrementalMarkStamp = 0;
         std::vector<Box3> depthCastersCache, receiversCache;
+        /** PRD-775 Phase 3: the GPU page manager for this light, and the atlas pool generation it last reset for. */
+        std::unique_ptr<shadows::GpuPhysicalPagePool> pagePool;
+        uint64_t pagePoolGeneration = 0;
         uint64_t lastTopologyVersion = 0, lastControlEpoch = 0;
         std::size_t lastItemsCount = 0;
         bool incrementalCacheValid = false;
@@ -1844,6 +1847,8 @@ private:
         std::vector<uint8_t> uploaded;
         Handle uploadedBuffer;
         uint64_t uploadedPrefix = 0;
+        /** PRD-775 Phase 3: a byte range the GPU owns (the VSM table's page entries), never written by an upload. */
+        uint64_t gpuOwnedStartByte = 0, gpuOwnedEndByte = 0;
     };
     struct ProbeTexture {
         WGPUTexture texture = nullptr;

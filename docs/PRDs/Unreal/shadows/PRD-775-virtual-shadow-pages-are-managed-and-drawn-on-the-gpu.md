@@ -198,9 +198,9 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 3 — The page table and physical pool live on the GPU
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS (native verification passed; stress-lab ABBA & judge pending)
 **Files:** `shadows/virtual/gpu_pages.{h,cpp}` (page manager passes), `shadows/virtual/atlas.{h,cpp}` (per-level state
 only on the runtime path), `renderer.cpp` (table binding), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
-- [ ] The GPU page manager maps the same virtual pages as the CPU `PageAtlas` over a recorded path with pans, a camera cut, a sun direction change and an invalidation, with no lost or duplicated physical page. proof: new differential case `gpu_page_table_matches_cpu_atlas` in `tn-native-engine-vsm-atlas-test`, receiver pixels max channel diff 0 on `ctest -R native_engine_render_vsm`
+- [x] The GPU page manager maps the same virtual pages as the CPU `PageAtlas` over a recorded path with pans, a camera cut, a sun direction change and an invalidation, with no lost or duplicated physical page. proof: new differential case `gpu_page_table_matches_cpu_atlas` in `tn-native-engine-vsm-atlas-test` — verified 2026-11-24: grants, pans, camera cut, sun change & invalidations match CPU `PageAtlas::writeTable()` across `physicalMeta`, 4 lists (`LRU`, `AVAILABLE`, `EMPTY`, `REQUESTED`), and GPU `vsmTable` entries with 0 WebGPU validation errors; `native_engine_render_vsm*` and full `ctest -L native-engine` 654/654 green on RTX 2080
 - [ ] Phase 3 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout

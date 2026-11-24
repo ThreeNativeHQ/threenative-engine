@@ -595,6 +595,8 @@ void Renderer::rebuildGroups() {
     mapGroups_.clear();
     gpuCullGroups_.clear();  // they bind the instance and id storages too
     if (gpuVsm_) gpuVsm_->clearBindGroups();  // they bind the page and record storages
+    for (auto& [light, shadow] : virtualShadows_)
+        if (shadow.pagePool) shadow.pagePool->clearBindGroups();  // they bind vsmTable and vsmGpuPages
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program

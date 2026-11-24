@@ -14,6 +14,17 @@
 #include <cstdint>
 #include <limits>
 
+#if defined(TN_NATIVE_ENGINE_GPU_PAGE_TEST)
+#include "engine/renderer/gpu_resources.h"
+#include "engine/renderer/shadows/virtual/gpu_pages.h"
+#include "mystral/webgpu/context.h"
+
+#include <chrono>
+#include <cstring>
+#include <thread>
+#include <unordered_map>
+#endif
+
 using namespace tn::engine;
 using namespace tn::engine::shadows;
 
@@ -984,4 +995,243 @@ void casterPlanRebuildsOnlyWhatMoved() {
     { bool stale = false; plan1(world, node, stale); bool again = true; CHECK(plan1(world, node, again).state.deforming && !again); }
 }
 
-TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved})
+
+#if defined(TN_NATIVE_ENGINE_GPU_PAGE_TEST)
+namespace {
+bool readBack(tn::engine::GpuResources& gpu, tn::engine::EventQueue& events, tn::engine::Handle handle,
+              uint64_t bytes, std::vector<uint8_t>& out) {
+    bool done = false, ok = false;
+    gpu.readBuffer(handle, 0, size_t(bytes), [&](tn::engine::GpuStatus status, std::vector<uint8_t> data) {
+        ok = status == tn::engine::GpuStatus::Ok;
+        out = std::move(data);
+        done = true;
+    });
+    for (int i = 0; i < 4000 && !done; ++i) {
+        gpu.poll();
+        events.drain();
+        if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    return done && ok;
+}
+}  // namespace
+
+// PRD-775 Phase 3: the GPU page manager maps the same virtual pages as the CPU `PageAtlas` over pans, a camera cut, a
+// sun direction change and an invalidation, with no lost or duplicated physical page. The CPU atlas is the oracle: its
+// pool's (page id, slot) pairs and its table must equal the GPU's physical meta and table at every frame.
+void gpuPageTableMatchesCpuAtlas() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    if (context.getDevice() == nullptr) return;
+    EventQueue events;
+    GpuResources gpu(context.getInstance(), context.getDevice(), context.getQueue(), events, 1);
+
+    AtlasOptions options;
+    options.clipExtents = {8, 24};
+    options.mapSize = 256;
+    options.pageTexels = 128;
+    options.border = 2;
+    options.lightDistance = 20;
+    options.depthRange = 40;
+    options.maxPhysicalPages = 8;  // two levels of 2 x 2 pages: a pool exactly as large as the mapped pages
+    std::string error;
+    auto cpuAtlas = PageAtlas::create(options, error);
+    auto gpuAtlas = PageAtlas::create(options, error);
+    CHECK(cpuAtlas.has_value() && gpuAtlas.has_value());
+    if (!cpuAtlas || !gpuAtlas) return;
+    cpuAtlas->setGpuManaged(false);
+    gpuAtlas->setGpuManaged(true);
+    const uint32_t capacity = uint32_t(gpuAtlas->pageCount());
+    CHECK(capacity == 8);
+    GpuPhysicalPagePool pool(capacity);
+
+    const auto usage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc;
+    const Handle tableHandle = gpu.createBuffer(4096, usage);
+    const Handle pagesHandle = gpu.createBuffer(4096, usage);
+    std::vector<uint8_t> zeroes(4096, 0);
+    gpu.writeBuffer(tableHandle, 0, zeroes.data(), zeroes.size());
+    gpu.writeBuffer(pagesHandle, 0, zeroes.data(), zeroes.size());
+    const uint64_t headerBytes = uint64_t(options.clipExtents.size()) * 9 * 16;
+    const uint64_t pageEndByte = headerBytes + uint64_t(capacity) * 16;
+
+    wgpuDevicePushErrorScope(context.getDevice(), WGPUErrorFilter_Validation);
+    uint64_t generation = 0;
+    int frameChecks = 0;
+
+    const auto drive = [&](const Vector3& eye, const Vector3& direction, bool cameraCut) {
+        cpuAtlas->update(eye, direction, cameraCut);
+        const auto gpuPages = gpuAtlas->update(eye, direction, cameraCut);
+        CHECK(cpuAtlas->initialized() == gpuAtlas->initialized());
+        CHECK(cpuAtlas->table().size() == gpuAtlas->table().size());
+        if (gpuAtlas->poolGeneration() != generation) {
+            pool.requestReset();
+            generation = gpuAtlas->poolGeneration();
+        }
+        // Mimic the renderer's upload: headers before the GPU-owned page region and the mover/filter rows after it.
+        const std::vector<float>& table = gpuAtlas->table();
+        const uint64_t tableBytes = table.size() * 4;
+        if (tableBytes >= headerBytes)
+            gpu.writeBuffer(tableHandle, 0, table.data(), headerBytes);
+        if (tableBytes > pageEndByte)
+            gpu.writeBuffer(tableHandle, pageEndByte, table.data() + pageEndByte / 4, tableBytes - pageEndByte);
+        std::vector<shadows::VsmPageRequest> requests;
+        requests.reserve(gpuAtlas->frameRequests().size());
+        for (const PlannedPageRequest& request : gpuAtlas->frameRequests()) {
+            shadows::VsmPageRequest out;
+            out.pageIdLo = uint32_t(request.id & 0xFFFFFFFFu);
+            out.pageIdHi = uint32_t(request.id >> 32);
+            out.tableVec4Offset = request.tableEntry;
+            out.gpuPageIndex = request.gpuPageIndex;  // this test's page vector is the GPU page vector, in order
+            out.requestFlags = request.flags;
+            requests.push_back(out);
+        }
+        shadows::VsmPoolUniforms uniforms;
+        uniforms.slotsPerAxis = uint32_t(gpuAtlas->slotsPerAxis());
+        uniforms.stride = uint32_t(gpuAtlas->stride());
+        uniforms.invEdge = float(1.0 / double(gpuAtlas->edge()));
+        uniforms.receiverPlaneBias = options.receiverPlaneBias ? 1.0f : 0.0f;
+        uniforms.frameNumber = float(gpuAtlas->frameNumber());
+        uniforms.hasVsmGpuPages = gpuPages.empty() ? 0u : 1u;
+        CHECK(pool.prepare(gpu, context.getDevice(), requests, uniforms, tableHandle, headerBytes, pageEndByte));
+        WGPUCommandEncoderDescriptor encoderDesc = {};
+        WGPUCommandEncoder encoder = wgpuDeviceCreateCommandEncoder(context.getDevice(), &encoderDesc);
+        pool.dispatch(encoder, gpu.buffer(tableHandle), gpu.buffer(pagesHandle));
+        WGPUCommandBufferDescriptor commandDesc = {};
+        gpu.submit(wgpuCommandEncoderFinish(encoder, &commandDesc));
+        wgpuCommandEncoderRelease(encoder);
+
+        std::vector<uint8_t> tableOut, metaOut, countsOut;
+        CHECK(readBack(gpu, events, tableHandle, tableBytes, tableOut));
+        CHECK(readBack(gpu, events, pool.metaHandle(), uint64_t(capacity) * sizeof(shadows::VsmPhysicalPageMeta), metaOut));
+        CHECK(readBack(gpu, events, pool.countsHandle(), 4 * sizeof(uint32_t), countsOut));
+        if (tableOut.size() != tableBytes || metaOut.size() != size_t(capacity) * sizeof(shadows::VsmPhysicalPageMeta) ||
+            countsOut.size() != 4 * sizeof(uint32_t))
+            return;
+        // The whole table equals the CPU's: page entries are (originX, originY, 1, bias), headers are the same level
+        // state, and the tail rows are the same mover records.
+        CHECK(std::memcmp(tableOut.data(), cpuAtlas->table().data(), size_t(tableBytes)) == 0);
+        const auto* meta = reinterpret_cast<const shadows::VsmPhysicalPageMeta*>(metaOut.data());
+        const auto* counts = reinterpret_cast<const uint32_t*>(countsOut.data());
+        CHECK(counts[0] + counts[2] + counts[3] == capacity);
+        CHECK(counts[1] == capacity - counts[3]);
+        const auto residents = cpuAtlas->residentPages();
+        std::vector<uint64_t> cpuAtSlot(capacity, 0);
+        std::vector<char> cpuOccupied(capacity, 0);
+        for (const PhysicalPageEntry& entry : residents) {
+            CHECK(entry.slot >= 0 && uint32_t(entry.slot) < capacity);
+            if (entry.slot < 0 || uint32_t(entry.slot) >= capacity) continue;
+            cpuAtSlot[std::size_t(entry.slot)] = entry.id;
+            cpuOccupied[std::size_t(entry.slot)] = 1;
+        }
+        uint32_t occupied = 0, mappedTableEntries = 0;
+        std::unordered_map<uint64_t, int> gpuSlot;
+        for (uint32_t slot = 0; slot < capacity; ++slot) {
+            const uint64_t cpuId = cpuAtSlot[slot];
+            const bool gpuHas = meta[slot].flags != 0;
+            CHECK(gpuHas == (cpuOccupied[slot] != 0));
+            if (!gpuHas) continue;
+            ++occupied;
+            const uint64_t gpuId = (uint64_t(meta[slot].pageIdHi) << 32) | meta[slot].pageIdLo;
+            CHECK(gpuId == cpuId);
+            CHECK(meta[slot].lastUsedFrame == float(gpuAtlas->frameNumber()));
+            CHECK(gpuSlot.emplace(gpuId, int(slot)).second);  // one slot per virtual page
+        }
+        CHECK(occupied == residents.size());
+        // The page manager also patched every drawn page's GPU entry: its identity names the slot the table uses,
+        // and a kept panning page carries a zero-size slot rect.
+        const uint64_t pagesBytes = uint64_t(gpuPages.size()) * sizeof(shadows::VsmGpuPage);
+        if (pagesBytes > 0) {
+            std::vector<uint8_t> pagesOut;
+            CHECK(readBack(gpu, events, pagesHandle, pagesBytes, pagesOut));
+            if (pagesOut.size() == pagesBytes) {
+                const auto* words = reinterpret_cast<const uint32_t*>(pagesOut.data());
+                for (const shadows::VsmPageRequest& request : requests) {
+                    if (request.gpuPageIndex == 0xFFFFFFFFu) continue;
+                    const uint32_t* entry = words + std::size_t(request.gpuPageIndex) * 32;
+                    const uint32_t slot = entry[31];  // identity.w
+                    CHECK(slot < capacity);
+                    if (slot >= capacity) continue;
+                    CHECK(((uint64_t(meta[slot].pageIdHi) << 32) | meta[slot].pageIdLo) ==
+                          ((uint64_t(request.pageIdHi) << 32) | request.pageIdLo));
+                    // slotRect.z: zero for a kept panning page, else the page stride (stored as a float's bits).
+                    CHECK(entry[18] == 0u || std::bit_cast<float>(entry[18]) == float(gpuAtlas->stride()));
+                }
+            }
+        }
+        // Every mapped page has a valid slot and a nonzero table entry, and the counts agree with the residents.
+        const auto& expected = cpuAtlas->table();
+        for (int level = 0; level < int(options.clipExtents.size()); ++level) {
+            if (!gpuAtlas->initialized()) continue;
+            const int n = gpuAtlas->tiles(level);
+            for (int y = 0; y < n; ++y)
+                for (int x = 0; x < n; ++x) {
+                    const float* entry = expected.data() +
+                        (int(options.clipExtents.size()) * 9 + gpuAtlas->pageBase(level) + (n - 1 - y) * n + x) * 4;
+                    CHECK(entry[2] == 1.0f);
+                    if (entry[2] != 1.0f) continue;
+                    ++mappedTableEntries;
+                    const int slot = int(entry[1]) / gpuAtlas->stride() * gpuAtlas->slotsPerAxis() +
+                                     int(entry[0]) / gpuAtlas->stride();
+                    CHECK(slot >= 0 && uint32_t(slot) < capacity);
+                    CHECK(meta[slot].flags != 0);
+                }
+        }
+        if (gpuAtlas->initialized()) CHECK(mappedTableEntries == residents.size());
+        ++frameChecks;
+    };
+
+    const Vector3 direction(0, 1, 0.35);
+    // A: the first grants: one level per frame, until both levels are mapped.
+    drive(Vector3(0, 0, 0), direction, false);
+    drive(Vector3(0, 0, 0), direction, false);
+    drive(Vector3(0, 0, 0), direction, false);
+    drive(Vector3(0, 0, 0), direction, false);
+    CHECK(cpuAtlas->initialized() && gpuAtlas->initialized());
+    // B: small pans: pages still covered keep their slots and are not redrawn; the new edge pages reuse evicted slots.
+    drive(Vector3(6, 0, 0), direction, false);
+    drive(Vector3(12, 0, 0), direction, false);
+    drive(Vector3(18, 0, 0), direction, false);
+    drive(Vector3(24, 0, 0), direction, false);
+    drive(Vector3(30, 0, 0), direction, false);
+    // C: a camera cut: every level invalidates and rebuilds from the LRU.
+    drive(Vector3(200, 0, 0), direction, true);
+    drive(Vector3(200, 0, 0), direction, false);
+    drive(Vector3(200, 0, 0), direction, false);
+    // D: a sun direction change resets both pools; each level is granted again.
+    Vector3 sun = Vector3(1, 2, -1);
+    sun.normalize();
+    drive(Vector3(200, 0, 0), sun, false);
+    drive(Vector3(200, 0, 0), sun, false);
+    drive(Vector3(200, 0, 0), sun, false);
+    // E: a region invalidation redraws only the pages it overlaps, at the same slots.
+    Box3 region;
+    region.set(Vector3(194, -2, -6), Vector3(206, 4, 6));
+    cpuAtlas->invalidate(region);
+    gpuAtlas->invalidate(region);
+    drive(Vector3(200, 0, 0), sun, false);
+    drive(Vector3(200, 0, 0), sun, false);
+    drive(Vector3(200, 0, 0), sun, false);
+    CHECK(frameChecks >= 18);
+
+    bool popped = false;
+    WGPUErrorType errorType = WGPUErrorType_Unknown;
+    WGPUPopErrorScopeCallbackInfo info = {};
+    info.mode = WGPUCallbackMode_AllowProcessEvents;
+    info.userdata1 = &errorType;
+    info.userdata2 = &popped;
+    info.callback = [](WGPUPopErrorScopeStatus, WGPUErrorType type, WGPUStringView message, void* out, void* done) {
+        *static_cast<WGPUErrorType*>(out) = type;
+        *static_cast<bool*>(done) = true;
+        if (type != WGPUErrorType_NoError && message.data)
+            std::fprintf(stderr, "VSM page table validation: %.*s\n", int(message.length), message.data);
+    };
+    wgpuDevicePopErrorScope(context.getDevice(), info);
+    for (int i = 0; i < 1000 && !popped; ++i) wgpuInstanceProcessEvents(context.getInstance());
+    CHECK(popped && errorType == WGPUErrorType_NoError);
+}
+#else
+void gpuPageTableMatchesCpuAtlas() {
+    CHECK(false);  // the GPU page table case needs the native WebGPU backend
+}
+#endif
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved}, {"gpu_page_table_matches_cpu_atlas", gpuPageTableMatchesCpuAtlas})

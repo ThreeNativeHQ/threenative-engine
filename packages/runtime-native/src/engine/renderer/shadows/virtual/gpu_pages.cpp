@@ -3,6 +3,7 @@
 #include <algorithm>
 #include <array>
 #include <cstring>
+#include <initializer_list>
 
 #include "engine/renderer/gpu_resources.h"
 #include "mystral/webgpu_compat.h"
@@ -187,6 +188,278 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             if (uMin <= page.boundsUV.y && uMax >= page.boundsUV.x && vMin <= page.boundsUV.w && vMax >= page.boundsUV.z) {
                 emitRecord(desc, instIdx, pageIdx);
             }
+        }
+    }
+}
+)WGSL";
+
+// PRD-775 Phase 3, matching UE 5.8.3: Engine/Shaders/Private/VirtualShadowMaps/
+// VirtualShadowMapPhysicalPageManagement.usf. One thread per physical slot binary-searches the frame's sorted request
+// list: a resident slot a request named is refreshed and listed requested; a resident slot no request named is LRU;
+// an empty slot is listed empty. The four counters start at zero, written by the CPU before this pass.
+constexpr char kUpdatePageListWgsl[] = R"WGSL(
+struct VsmPhysicalPageMeta {
+    pageIdLo: u32,
+    pageIdHi: u32,
+    flags: u32,
+    lastUsedFrame: f32,
+};
+struct VsmPageLookup {
+    pageIdLo: u32,
+    pageIdHi: u32,
+    requestIdx: u32,
+    pad: u32,
+};
+struct VsmPoolUniforms {
+    capacity: u32,
+    numRequests: u32,
+    vsmPageOffset: u32,
+    slotsPerAxis: u32,
+    stride: u32,
+    invEdge: f32,
+    receiverPlaneBias: f32,
+    frameNumber: f32,
+    hasVsmGpuPages: u32,
+    resetPool: u32,
+    pad0: u32,
+    pad1: u32,
+};
+
+@group(0) @binding(0) var<uniform> u: VsmPoolUniforms;
+@group(0) @binding(1) var<storage, read> lookup: array<VsmPageLookup>;
+@group(0) @binding(2) var<storage, read_write> physicalMeta: array<VsmPhysicalPageMeta>;
+@group(0) @binding(3) var<storage, read_write> counts: array<atomic<u32>>;
+@group(0) @binding(4) var<storage, read_write> listLru: array<u32>;
+@group(0) @binding(5) var<storage, read_write> listEmpty: array<u32>;
+@group(0) @binding(6) var<storage, read_write> listRequested: array<u32>;
+@group(0) @binding(7) var<storage, read_write> requestMatch: array<vec4<u32>>;
+
+fn findRequest(keyLo: u32, keyHi: u32) -> u32 {
+    var lo = 0u;
+    var hi = u.numRequests;
+    while (lo < hi) {
+        let mid = (lo + hi) / 2u;
+        let entry = lookup[mid];
+        if (entry.pageIdLo < keyLo || (entry.pageIdLo == keyLo && entry.pageIdHi < keyHi)) {
+            lo = mid + 1u;
+        } else {
+            hi = mid;
+        }
+    }
+    if (lo >= u.numRequests) {
+        return 0xFFFFFFFFu;
+    }
+    let found = lookup[lo];
+    if (found.pageIdLo != keyLo || found.pageIdHi != keyHi) {
+        return 0xFFFFFFFFu;
+    }
+    return found.requestIdx;
+}
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = gid.x;
+    if (p >= u.capacity) {
+        return;
+    }
+    let entry = physicalMeta[p];
+    if (entry.flags != 0u) {
+        let requestIdx = findRequest(entry.pageIdLo, entry.pageIdHi);
+        if (requestIdx != 0xFFFFFFFFu) {
+            physicalMeta[p].lastUsedFrame = u.frameNumber;
+            let slot = atomicAdd(&counts[3], 1u);
+            if (slot < u.capacity) {
+                listRequested[slot] = p;
+            }
+            requestMatch[requestIdx] = vec4<u32>(p, 0u, 0u, 0u);
+        } else {
+            let slot = atomicAdd(&counts[0], 1u);
+            if (slot < u.capacity) {
+                listLru[slot] = p;
+            }
+        }
+    } else {
+        let slot = atomicAdd(&counts[2], 1u);
+        if (slot < u.capacity) {
+            listEmpty[slot] = p;
+        }
+    }
+}
+)WGSL";
+
+// Packs the available list in `PhysicalPagePool::allocate`'s exact order: empty slots ascending, then LRU slots by
+// (lastUsedFrame ascending, slot ascending). Each slot computes its own rank by counting the slots that order before
+// it, so no atomic append order can reorder the list. Invocation zero then numbers the misses in request order.
+constexpr char kPackAvailableWgsl[] = R"WGSL(
+struct VsmPhysicalPageMeta {
+    pageIdLo: u32,
+    pageIdHi: u32,
+    flags: u32,
+    lastUsedFrame: f32,
+};
+struct VsmPoolUniforms {
+    capacity: u32,
+    numRequests: u32,
+    vsmPageOffset: u32,
+    slotsPerAxis: u32,
+    stride: u32,
+    invEdge: f32,
+    receiverPlaneBias: f32,
+    frameNumber: f32,
+    hasVsmGpuPages: u32,
+    resetPool: u32,
+    pad0: u32,
+    pad1: u32,
+};
+
+@group(0) @binding(0) var<uniform> u: VsmPoolUniforms;
+@group(0) @binding(1) var<storage, read> physicalMeta: array<VsmPhysicalPageMeta>;
+@group(0) @binding(2) var<storage, read_write> listAvailable: array<u32>;
+@group(0) @binding(3) var<storage, read_write> requestMatch: array<vec4<u32>>;
+@group(0) @binding(4) var<storage, read_write> counts: array<atomic<u32>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let p = gid.x;
+    if (p < u.capacity) {
+        let mine = physicalMeta[p];
+        if (mine.flags == 0u) {
+            var rank = 0u;
+            for (var q = 0u; q < u.capacity; q = q + 1u) {
+                if (q < p && physicalMeta[q].flags == 0u) {
+                    rank = rank + 1u;
+                }
+            }
+            listAvailable[rank] = p;
+        } else if (mine.lastUsedFrame < u.frameNumber) {
+            var empties = 0u;
+            var rank = 0u;
+            for (var q = 0u; q < u.capacity; q = q + 1u) {
+                let other = physicalMeta[q];
+                if (other.flags == 0u) {
+                    empties = empties + 1u;
+                } else if (other.lastUsedFrame < u.frameNumber &&
+                           (other.lastUsedFrame < mine.lastUsedFrame ||
+                            (other.lastUsedFrame == mine.lastUsedFrame && q < p))) {
+                    rank = rank + 1u;
+                }
+            }
+            listAvailable[empties + rank] = p;
+        }
+    }
+    if (gid.x == 0u) {
+        var miss = 0u;
+        for (var r = 0u; r < u.numRequests; r = r + 1u) {
+            if (requestMatch[r].x == 0xFFFFFFFFu) {
+                requestMatch[r].z = miss;
+                miss = miss + 1u;
+            }
+        }
+        atomicStore(&counts[1], u.capacity - atomicLoad(&counts[3]));
+    }
+}
+)WGSL";
+
+// One thread per request maps a hit or the miss at its packed rank, writes the page table's (originX, originY, 1, bias)
+// entry, and patches the GPU page record: a redraw writes the slot rect and clip scale/bias; a kept panning hit writes
+// a zero-size slot rect (so the clear kernel draws nothing) and inverted bounds (so the cull emits no record).
+constexpr char kAllocatePageMappingsWgsl[] = R"WGSL(
+struct VsmPhysicalPageMeta {
+    pageIdLo: u32,
+    pageIdHi: u32,
+    flags: u32,
+    lastUsedFrame: f32,
+};
+struct VsmPageRequest {
+    pageIdLo: u32,
+    pageIdHi: u32,
+    tableVec4Offset: u32,
+    gpuPageIndex: u32,
+    requestFlags: u32,
+    missOrder: u32,
+    pad0: u32,
+    pad1: u32,
+};
+struct VsmPoolUniforms {
+    capacity: u32,
+    numRequests: u32,
+    vsmPageOffset: u32,
+    slotsPerAxis: u32,
+    stride: u32,
+    invEdge: f32,
+    receiverPlaneBias: f32,
+    frameNumber: f32,
+    hasVsmGpuPages: u32,
+    resetPool: u32,
+    pad0: u32,
+    pad1: u32,
+};
+
+@group(0) @binding(0) var<uniform> u: VsmPoolUniforms;
+@group(0) @binding(1) var<storage, read> requests: array<VsmPageRequest>;
+@group(0) @binding(2) var<storage, read> requestMatch: array<vec4<u32>>;
+@group(0) @binding(3) var<storage, read_write> physicalMeta: array<VsmPhysicalPageMeta>;
+@group(0) @binding(4) var<storage, read> listAvailable: array<u32>;
+@group(0) @binding(5) var<storage, read_write> vsmTable: array<vec4<f32>>;
+@group(0) @binding(6) var<storage, read_write> vsmGpuPages: array<vec4<u32>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let r = gid.x;
+    if (r >= u.numRequests) {
+        return;
+    }
+    let req = requests[r];
+    let hit = requestMatch[r];
+    var slot = hit.x;
+    var redraw = false;
+    if (slot != 0xFFFFFFFFu) {
+        redraw = (req.requestFlags & 1u) != 0u && ((req.requestFlags & 2u) == 0u || (req.requestFlags & 4u) != 0u);
+    } else {
+        let missRank = hit.z;
+        if (missRank >= u.capacity) {
+            vsmTable[req.tableVec4Offset] = vec4<f32>(0.0);
+            if (u.hasVsmGpuPages != 0u && req.gpuPageIndex != 0xFFFFFFFFu) {
+                let base = (u.vsmPageOffset + req.gpuPageIndex) * 8u;
+                vsmGpuPages[base + 7u] = vec4<u32>(0u, 0u, 0u, 0xFFFFFFFFu);
+            }
+            return;
+        }
+        slot = listAvailable[missRank];
+        if (slot == 0xFFFFFFFFu || slot >= u.capacity) {
+            vsmTable[req.tableVec4Offset] = vec4<f32>(0.0);
+            if (u.hasVsmGpuPages != 0u && req.gpuPageIndex != 0xFFFFFFFFu) {
+                let base = (u.vsmPageOffset + req.gpuPageIndex) * 8u;
+                vsmGpuPages[base + 7u] = vec4<u32>(0u, 0u, 0u, 0xFFFFFFFFu);
+            }
+            return;
+        }
+        physicalMeta[slot].pageIdLo = req.pageIdLo;
+        physicalMeta[slot].pageIdHi = req.pageIdHi;
+        physicalMeta[slot].flags = 1u;
+        physicalMeta[slot].lastUsedFrame = u.frameNumber;
+        redraw = (req.requestFlags & 1u) != 0u;
+    }
+    let ox = f32((slot % u.slotsPerAxis) * u.stride);
+    let oy = f32((slot / u.slotsPerAxis) * u.stride);
+    let bias = select(0.0, 1.0, u.receiverPlaneBias > 0.5);
+    vsmTable[req.tableVec4Offset] = vec4<f32>(ox, oy, 1.0, bias);
+    if (u.hasVsmGpuPages != 0u && req.gpuPageIndex != 0xFFFFFFFFu) {
+        let base = (u.vsmPageOffset + req.gpuPageIndex) * 8u;
+        vsmGpuPages[base + 7u].w = slot;
+        if (redraw) {
+            vsmGpuPages[base + 4u] = vec4<u32>(
+                bitcast<u32>(ox), bitcast<u32>(oy), bitcast<u32>(f32(u.stride)), bitcast<u32>(u.invEdge));
+            let scale = f32(u.stride) * u.invEdge;
+            let biasX = 2.0 * (ox + 0.5 * f32(u.stride)) * u.invEdge - 1.0;
+            let biasY = 1.0 - 2.0 * (oy + 0.5 * f32(u.stride)) * u.invEdge;
+            vsmGpuPages[base + 5u] = vec4<u32>(
+                bitcast<u32>(scale), bitcast<u32>(biasX), bitcast<u32>(biasY), 0u);
+        } else {
+            vsmGpuPages[base + 4u] = vec4<u32>(
+                bitcast<u32>(ox), bitcast<u32>(oy), 0u, bitcast<u32>(u.invEdge));
+            vsmGpuPages[base + 6u] = vec4<u32>(
+                bitcast<u32>(f32(1.0e9)), bitcast<u32>(f32(-1.0e9)), bitcast<u32>(f32(1.0e9)), bitcast<u32>(f32(-1.0e9)));
         }
     }
 }
@@ -431,6 +704,272 @@ void GpuVsmResources::encodePageClears(WGPURenderPassEncoder pass, WGPUBuffer pa
     wgpuRenderPassEncoderSetPipeline(pass, pageClearPipeline_);
     wgpuRenderPassEncoderSetBindGroup(pass, 0, group, 0, nullptr);
     wgpuRenderPassEncoderDraw(pass, 6, pageCount, 0, firstPage);
+}
+
+// ---------------------------------------------------------------------------------------------
+// GpuPhysicalPagePool
+// ---------------------------------------------------------------------------------------------
+
+GpuPhysicalPagePool::GpuPhysicalPagePool(uint32_t capacity) : capacity_(capacity) {}
+
+GpuPhysicalPagePool::~GpuPhysicalPagePool() { release(); }
+
+WGPUBuffer GpuPhysicalPagePool::buffer(const Handle& handle) const {
+    return gpu_ != nullptr && handle.type != 0 ? gpu_->buffer(handle) : nullptr;
+}
+
+WGPUBuffer GpuPhysicalPagePool::metaBuffer() const { return buffer(meta_); }
+WGPUBuffer GpuPhysicalPagePool::countsBuffer() const { return buffer(counts_); }
+WGPUBuffer GpuPhysicalPagePool::requestsBuffer() const { return buffer(requests_); }
+WGPUBuffer GpuPhysicalPagePool::lookupBuffer() const { return buffer(lookup_); }
+
+WGPUBuffer GpuPhysicalPagePool::listBuffer(PageList list) const {
+    switch (list) {
+        case PageList::Lru: return buffer(lru_);
+        case PageList::Available: return buffer(available_);
+        case PageList::Empty: return buffer(empty_);
+        case PageList::Requested: return buffer(requested_);
+    }
+    return nullptr;
+}
+
+Handle GpuPhysicalPagePool::listHandle(PageList list) const {
+    switch (list) {
+        case PageList::Lru: return lru_;
+        case PageList::Available: return available_;
+        case PageList::Empty: return empty_;
+        case PageList::Requested: return requested_;
+    }
+    return Handle{};
+}
+
+void GpuPhysicalPagePool::clearBindGroups() {
+    updateGroups_.clear();
+    packGroups_.clear();
+    allocateGroups_.clear();
+}
+
+void GpuPhysicalPagePool::requestReset() { resetPending_ = true; }
+
+void GpuPhysicalPagePool::release() {
+    clearBindGroups();
+    if (updatePipeline_) wgpuComputePipelineRelease(updatePipeline_);
+    if (packPipeline_) wgpuComputePipelineRelease(packPipeline_);
+    if (allocatePipeline_) wgpuComputePipelineRelease(allocatePipeline_);
+    if (updateLayout_) wgpuBindGroupLayoutRelease(updateLayout_);
+    if (packLayout_) wgpuBindGroupLayoutRelease(packLayout_);
+    if (allocateLayout_) wgpuBindGroupLayoutRelease(allocateLayout_);
+    if (updatePipelineLayout_) wgpuPipelineLayoutRelease(updatePipelineLayout_);
+    if (packPipelineLayout_) wgpuPipelineLayoutRelease(packPipelineLayout_);
+    if (allocatePipelineLayout_) wgpuPipelineLayoutRelease(allocatePipelineLayout_);
+    updatePipeline_ = nullptr;
+    packPipeline_ = nullptr;
+    allocatePipeline_ = nullptr;
+    updateLayout_ = nullptr;
+    packLayout_ = nullptr;
+    allocateLayout_ = nullptr;
+    updatePipelineLayout_ = nullptr;
+    packPipelineLayout_ = nullptr;
+    allocatePipelineLayout_ = nullptr;
+    if (gpu_ != nullptr)
+        for (Handle* handle : {&requests_, &lookup_, &uniforms_, &meta_, &lru_, &available_, &empty_, &requested_,
+                               &counts_, &match_})
+            if (handle->type != 0) gpu_->destroy(*handle);
+    requests_ = lookup_ = uniforms_ = meta_ = lru_ = available_ = empty_ = requested_ = counts_ = match_ = Handle{};
+    requestsCap_ = lookupCap_ = uniformCap_ = metaCap_ = listCap_ = countsCap_ = matchCap_ = 0;
+    numRequests_ = 0;
+    device_ = nullptr;
+    gpu_ = nullptr;
+}
+
+bool GpuPhysicalPagePool::ensureBuffer(Handle& handle, uint64_t& capacity, uint64_t bytes, WGPUBufferUsage usage) {
+    if (gpu_ == nullptr) return false;
+    if (bytes == 0) bytes = 4;
+    if (handle.type != 0 && capacity >= bytes) return true;
+    uint64_t grown = 64 * 1024;
+    while (grown < bytes) grown *= 2;
+    if (handle.type != 0) {
+        gpu_->destroy(handle);
+        handle = Handle{};
+        capacity = 0;
+    }
+    handle = gpu_->createBuffer(grown, usage);
+    if (handle.type == 0) {
+        capacity = 0;
+        return false;
+    }
+    capacity = grown;
+    clearBindGroups();
+    return true;
+}
+
+bool GpuPhysicalPagePool::ensurePipelines() {
+    if (updatePipeline_ != nullptr && packPipeline_ != nullptr && allocatePipeline_ != nullptr) return true;
+    if (device_ == nullptr) return false;
+    const auto build = [&](WGPUComputePipeline& pipeline, WGPUBindGroupLayout& layout,
+                           WGPUPipelineLayout& pipelineLayout, const char* code, uint32_t count,
+                           std::initializer_list<uint32_t> readOnly) {
+        WGPUShaderModule module = shaderModule(device_, code);
+        if (module == nullptr) return false;
+        std::vector<WGPUBindGroupLayoutEntry> entries(count);
+        for (uint32_t i = 0; i < count; ++i) {
+            entries[i].binding = i;
+            entries[i].visibility = WGPUShaderStage_Compute;
+            entries[i].buffer.type = i == 0 ? WGPUBufferBindingType_Uniform
+                                            : std::find(readOnly.begin(), readOnly.end(), i) != readOnly.end()
+                                                  ? WGPUBufferBindingType_ReadOnlyStorage
+                                                  : WGPUBufferBindingType_Storage;
+        }
+        WGPUBindGroupLayoutDescriptor layoutDesc = {};
+        layoutDesc.entryCount = count;
+        layoutDesc.entries = entries.data();
+        layout = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+        WGPUPipelineLayoutDescriptor pipelineLayoutDesc = {};
+        pipelineLayoutDesc.bindGroupLayoutCount = layout ? 1 : 0;
+        pipelineLayoutDesc.bindGroupLayouts = &layout;
+        pipelineLayout = layout ? wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc) : nullptr;
+        WGPUComputePipelineDescriptor desc = {};
+        desc.layout = pipelineLayout;
+        desc.compute.module = module;
+        WGPU_SET_ENTRY_POINT(desc.compute, "main");
+        if (pipelineLayout) pipeline = wgpuDeviceCreateComputePipeline(device_, &desc);
+        wgpuShaderModuleRelease(module);
+        return pipeline != nullptr;
+    };
+    if (updatePipeline_ == nullptr &&
+        !build(updatePipeline_, updateLayout_, updatePipelineLayout_, kUpdatePageListWgsl, 8, {1}))
+        return false;
+    if (packPipeline_ == nullptr &&
+        !build(packPipeline_, packLayout_, packPipelineLayout_, kPackAvailableWgsl, 5, {1}))
+        return false;
+    if (allocatePipeline_ == nullptr &&
+        !build(allocatePipeline_, allocateLayout_, allocatePipelineLayout_, kAllocatePageMappingsWgsl, 7, {1, 2, 4}))
+        return false;
+    return true;
+}
+
+bool GpuPhysicalPagePool::prepare(GpuResources& gpu, WGPUDevice device, const std::vector<VsmPageRequest>& requests,
+                                  const VsmPoolUniforms& uniforms, Handle vsmTable, uint64_t tableStartByte,
+                                  uint64_t tableEndByte) {
+    if (device == nullptr || capacity_ == 0) return false;
+    if (device_ != nullptr && device_ != device) {
+        clearBindGroups();
+        device_ = nullptr;
+    }
+    gpu_ = &gpu;
+    device_ = device;
+    if (!ensurePipelines()) return false;
+    const auto storage = WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc;
+    const uint64_t requestBytes = std::max<uint64_t>(1, requests.size()) * sizeof(VsmPageRequest);
+    const uint64_t lookupBytes = std::max<uint64_t>(1, requests.size()) * sizeof(VsmPageLookup);
+    const uint64_t slotBytes = std::max<uint64_t>(1, uint64_t(capacity_)) * sizeof(uint32_t);
+    const uint64_t metaBytes = std::max<uint64_t>(1, uint64_t(capacity_)) * sizeof(VsmPhysicalPageMeta);
+    if (!ensureBuffer(requests_, requestsCap_, requestBytes, storage) ||
+        !ensureBuffer(lookup_, lookupCap_, lookupBytes, storage) ||
+        !ensureBuffer(uniforms_, uniformCap_, sizeof(VsmPoolUniforms),
+                      WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst) ||
+        !ensureBuffer(meta_, metaCap_, metaBytes, storage) ||
+        !ensureBuffer(lru_, listCap_, slotBytes, storage) ||
+        !ensureBuffer(available_, listCap_, slotBytes, storage) ||
+        !ensureBuffer(empty_, listCap_, slotBytes, storage) ||
+        !ensureBuffer(requested_, listCap_, slotBytes, storage) ||
+        !ensureBuffer(counts_, countsCap_, 4 * sizeof(uint32_t), storage) ||
+        !ensureBuffer(match_, matchCap_, std::max<uint64_t>(1, requests.size()) * 16, storage))
+        return false;
+    // The CPU owns three sentinels and the counters: a request's slot starts unmapped, an available entry starts
+    // unused, and the four list counters start at zero. The kernels then only append and write real slots.
+    std::vector<VsmPhysicalPageMeta> zeroMeta;
+    if (resetPending_) {
+        zeroMeta.assign(std::size_t(capacity_), {});
+        gpu.writeBuffer(meta_, 0, zeroMeta.data(), zeroMeta.size() * sizeof(VsmPhysicalPageMeta));
+        if (vsmTable.type != 0 && tableEndByte > tableStartByte) {
+            std::vector<uint8_t> zeroes(std::size_t(tableEndByte - tableStartByte), 0);
+            gpu.writeBuffer(vsmTable, tableStartByte, zeroes.data(), zeroes.size());
+        }
+        resetPending_ = false;
+    }
+    const std::array<uint32_t, 4> zeroCounts{};
+    gpu.writeBuffer(counts_, 0, zeroCounts.data(), sizeof(zeroCounts));
+    std::vector<uint32_t> sentinelAvailable(std::size_t(capacity_), 0xFFFFFFFFu);
+    if (!sentinelAvailable.empty())
+        gpu.writeBuffer(available_, 0, sentinelAvailable.data(), sentinelAvailable.size() * sizeof(uint32_t));
+    std::vector<uint32_t> sentinelMatch(std::max<std::size_t>(1, requests.size()) * 4, 0xFFFFFFFFu);
+    gpu.writeBuffer(match_, 0, sentinelMatch.data(), sentinelMatch.size() * sizeof(uint32_t));
+    numRequests_ = uint32_t(requests.size());
+    if (!requests.empty()) gpu.writeBuffer(requests_, 0, requests.data(), requests.size() * sizeof(VsmPageRequest));
+    // The per-slot binary search walks a list sorted by (pageIdLo, pageIdHi). Equal keys keep the lowest request
+    // index, as the CPU pool would allocate the first one and refresh the rest.
+    std::vector<VsmPageLookup> lookup;
+    lookup.reserve(requests.size());
+    for (std::size_t i = 0; i < requests.size(); ++i)
+        lookup.push_back({requests[i].pageIdLo, requests[i].pageIdHi, uint32_t(i), 0u});
+    std::sort(lookup.begin(), lookup.end(), [](const VsmPageLookup& a, const VsmPageLookup& b) {
+        return a.pageIdLo != b.pageIdLo ? a.pageIdLo < b.pageIdLo
+                                       : a.pageIdHi != b.pageIdHi ? a.pageIdHi < b.pageIdHi
+                                                                  : a.requestIdx < b.requestIdx;
+    });
+    if (!lookup.empty()) gpu.writeBuffer(lookup_, 0, lookup.data(), lookup.size() * sizeof(VsmPageLookup));
+    VsmPoolUniforms frameUniforms = uniforms;
+    frameUniforms.capacity = capacity_;
+    frameUniforms.numRequests = numRequests_;
+    frameUniforms.resetPool = 0;
+    gpu.writeBuffer(uniforms_, 0, &frameUniforms, sizeof frameUniforms);
+    return ready();
+}
+
+void GpuPhysicalPagePool::dispatch(WGPUCommandEncoder encoder, WGPUBuffer vsmTable, WGPUBuffer vsmGpuPages) {
+    if (!ready() || encoder == nullptr || gpu_ == nullptr || capacity_ == 0) return;
+    const auto makeGroup = [&](WGPUBindGroupLayout layout, RecentBindGroups& groups,
+                               std::vector<WGPUBuffer> buffers) {
+        std::vector<WGPUBindGroupEntry> entries(buffers.size());
+        for (std::size_t i = 0; i < buffers.size(); ++i) {
+            if (buffers[i] == nullptr) return WGPUBindGroup{};
+            entries[i].binding = uint32_t(i);
+            entries[i].buffer = buffers[i];
+            entries[i].size = wgpuBufferGetSize(buffers[i]);
+        }
+        return groups.get(device_, layout, std::move(entries));
+    };
+    const WGPUBindGroup updateGroup = makeGroup(
+        updateLayout_, updateGroups_,
+        {buffer(uniforms_), buffer(lookup_), buffer(meta_), buffer(counts_), buffer(lru_), buffer(empty_),
+         buffer(requested_), buffer(match_)});
+    const WGPUBindGroup packGroup =
+        makeGroup(packLayout_, packGroups_,
+                  {buffer(uniforms_), buffer(meta_), buffer(available_), buffer(match_), buffer(counts_)});
+    if (updateGroup == nullptr || packGroup == nullptr) return;
+    const uint32_t workgroups = (capacity_ + 63u) / 64u;
+    {
+        WGPUComputePassDescriptor desc = {};
+        WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &desc);
+        wgpuComputePassEncoderSetPipeline(pass, updatePipeline_);
+        wgpuComputePassEncoderSetBindGroup(pass, 0, updateGroup, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, workgroups, 1, 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+    }
+    {
+        WGPUComputePassDescriptor desc = {};
+        WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &desc);
+        wgpuComputePassEncoderSetPipeline(pass, packPipeline_);
+        wgpuComputePassEncoderSetBindGroup(pass, 0, packGroup, 0, nullptr);
+        wgpuComputePassEncoderDispatchWorkgroups(pass, workgroups, 1, 1);
+        wgpuComputePassEncoderEnd(pass);
+        wgpuComputePassEncoderRelease(pass);
+    }
+    if (vsmTable == nullptr) return;
+    const WGPUBindGroup allocateGroup =
+        makeGroup(allocateLayout_, allocateGroups_,
+                  {buffer(uniforms_), buffer(requests_), buffer(match_), buffer(meta_), buffer(available_), vsmTable,
+                   vsmGpuPages != nullptr ? vsmGpuPages : buffer(empty_)});
+    if (allocateGroup == nullptr) return;
+    WGPUComputePassDescriptor desc = {};
+    WGPUComputePassEncoder pass = wgpuCommandEncoderBeginComputePass(encoder, &desc);
+    wgpuComputePassEncoderSetPipeline(pass, allocatePipeline_);
+    wgpuComputePassEncoderSetBindGroup(pass, 0, allocateGroup, 0, nullptr);
+    wgpuComputePassEncoderDispatchWorkgroups(pass, (numRequests_ + 63u) / 64u, 1, 1);
+    wgpuComputePassEncoderEnd(pass);
+    wgpuComputePassEncoderRelease(pass);
 }
 
 }  // namespace tn::engine::shadows

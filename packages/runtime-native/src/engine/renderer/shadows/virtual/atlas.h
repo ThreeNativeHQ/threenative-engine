@@ -77,6 +77,18 @@ struct AtlasPage {
     double lowU = 0, highU = 0, lowV = 0, highV = 0;
 };
 
+/**
+ * PRD-775 Phase 3: one virtual page a frame keeps resident, as the GPU page manager consumes it. `id` is the packed
+ * `pageId`; `flags` bit 0 is granted, bit 1 a kept panning page and bit 2 invalidated; `gpuPageIndex` indexes the
+ * frame's drawn pages, or is ~0u for a page kept without a draw; `tableEntry` is the page's vec4 in the atlas table.
+ */
+struct PlannedPageRequest {
+    uint64_t id = 0;
+    uint32_t flags = 0;
+    uint32_t gpuPageIndex = 0xFFFFFFFFu;
+    uint32_t tableEntry = 0;
+};
+
 /** What a caster's geometry last was, as the virtual shadow planner compares it: a version triple rather than a
  *  string, because every caster of a scene is compared every frame (PRD-872: the `play` frame built 1,145 of them). */
 struct CasterSignature {
@@ -146,6 +158,22 @@ public:
     const AtlasOptions& options() const { return options_; }
     const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
+    /**
+     * PRD-775 Phase 3: the CPU keeps only per-level state and hands the GPU page manager this frame's requests; the
+     * table's `[header, header + pageCount())` region is left for the GPU to write. Off by default, so the CPU pool
+     * and `writeTable` remain the oracle and the `TN_VSM_GPU_PAGES=0` path.
+     */
+    void setGpuManaged(bool enabled) { gpuManaged_ = enabled; }
+    bool gpuManaged() const { return gpuManaged_; }
+    /** The last frame's requests, in the order the CPU pool would have allocated them (grant order, then y, x). */
+    const std::vector<PlannedPageRequest>& frameRequests() const { return requests_; }
+    /** The residents the CPU pool holds, ordered by slot; empty in gpu-managed mode. */
+    std::vector<PhysicalPageEntry> residentPages() const { return pool_ ? pool_->entries() : std::vector<PhysicalPageEntry>{}; }
+    /** Bumped whenever the CPU pool is recreated (a direction change): the GPU pool resets with it. */
+    uint64_t poolGeneration() const { return poolGeneration_; }
+    /** The frame number the last update ran, as `PhysicalPagePool::allocate` uses it. */
+    double frameNumber() const { return frame_; }
+    int slotsPerAxis() const { return slotsPerAxis_; }
     int mapSize(int level) const {
         return options_.levelMapSizes.empty() ? options_.mapSize
             : options_.levelMapSizes[std::min<std::size_t>(std::size_t(level), options_.levelMapSizes.size() - 1)];
@@ -209,6 +237,8 @@ private:
         Matrix4 projection;
         bool dirtyAll = false;
         std::set<int> dirtySlots;
+        /** GPU-managed mode's invalidation, by virtual page id: CPU slots are placeholders there. */
+        std::set<uint64_t> dirtyIds;
         std::vector<AtlasPage> pages;
         Matrix4 view, matrix;
         std::vector<int> slots;
@@ -229,15 +259,19 @@ private:
     bool seeded_ = false;
     /** One caster's state transition, shared by the full scan and the change-set path; `present` 0 skips the stamp. */
     void applyCaster(const CasterState& caster, uint64_t present);
-    void writeTable();
+    void writeTable(bool headersOnly = false);
+    /** The id of `page` as `update` allocated it: the window's page at its flipped (x, y) cell. */
+    uint64_t virtualPageId(int level, const AtlasPage& page) const;
     AtlasOptions options_;
     std::optional<DirectionalClipmap> clipmap_;
     std::optional<PhysicalPagePool> pool_;
     std::vector<Level> levels_;
     std::vector<float> table_;
+    std::vector<PlannedPageRequest> requests_;
     Vector3 direction_, previousEye_;
-    bool started_ = false;
+    bool started_ = false, gpuManaged_ = false;
     int slotsPerAxis_ = 0, staticRows_ = 0, nextLevel_ = 0;
+    uint64_t poolGeneration_ = 0;
     double frame_ = 0, now_ = 0, frameSeconds_ = 1.0 / 60;
 };
 

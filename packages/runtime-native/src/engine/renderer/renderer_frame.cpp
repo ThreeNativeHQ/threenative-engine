@@ -480,6 +480,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // not receive shadows takes the lower-case layout, as three keys a program on receiveShadow.
     DrawCache uncachedBounds;
     std::map<std::size_t, std::vector<shadows::AtlasPage>> virtualPages;
+    /** PRD-775 Phase 3: a light's AtlasPage index -> its index in the frame's GPU page entries (movers omitted). */
+    std::map<std::size_t, std::vector<uint32_t>> lightPageIndex;
     const bool anyLampShadow = !compilation && !skipShadows_ && std::any_of(lights.direct.begin(), lights.direct.end(), [&](const DirectLight& l) {
         if (!l.shadow || l.kind == DirectLight::Kind::Directional) return false;
         const auto index = std::size_t(&l - lights.direct.data());
@@ -917,8 +919,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     for (auto& [name, storage] : storages_)
         if (name.rfind("probe_", 0) != 0 && name != "instances") storage.data.clear();
     for (const auto& [i, shadow] : virtualShadows_) {
-        auto& table = storages_["vsmTable" + std::to_string(i)].data;
+        FrameStorage& tableStorage = storages_["vsmTable" + std::to_string(i)];
+        auto& table = tableStorage.data;
         table = shadow.atlas.table();
+        // PRD-775 Phase 3: the GPU page manager owns the table's page entries. An upload writes the level headers
+        // before them and the mover/filter rows after, never the bytes in between.
+        if (shadow.atlas.gpuManaged()) {
+            tableStorage.gpuOwnedStartByte = uint64_t(shadow.atlas.options().clipExtents.size()) * 9 * 16;
+            tableStorage.gpuOwnedEndByte = tableStorage.gpuOwnedStartByte + uint64_t(shadow.atlas.pageCount()) * 16;
+        } else {
+            tableStorage.gpuOwnedStartByte = tableStorage.gpuOwnedEndByte = 0;
+        }
         const auto& filter = lights.direct[i].shadow->sourceAngleFilter;
         table.insert(table.end(), {filter ? float(std::tan((*filter)[0])) : 0.0f,
             filter ? float((*filter)[1]) : 0.0f, filter ? float((*filter)[2]) : 0.0f,
@@ -1415,7 +1426,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
     job.gpuCullDraws.clear(); job.gpuCullDrawCounts.clear(); job.gpuCullTotalInstances = 0;
-    job.staticVsmPasses = 0; job.dispatchVsmCull = false;
+    job.staticVsmPasses = 0; job.dispatchVsmCull = false; job.vsmPageDispatches.clear();
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
@@ -2446,6 +2457,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     grantedLevels.push_back(page.level);
             }
             const uint32_t lightPageStart = uint32_t(vsmPages.size());
+            std::vector<uint32_t>& pageIndex = lightPageIndex[i];
+            pageIndex.assign(virtualPages[i].size(), 0xFFFFFFFFu);
             struct LevelInfo {
                 int level = 0;
                 uint32_t lookupOffset = 0, tiles = 0, pageStart = 0;
@@ -2469,10 +2482,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 info.minCell = std::min(1.0 / grid.invCellU, 1.0 / grid.invCellV);
                 const shadows::AtlasPage* first = nullptr;
                 vsmTileLookup.resize(vsmTileLookup.size() + std::size_t(tiles) * tiles, 0xFFFFFFFFu);
-                for (const shadows::AtlasPage& page : virtualPages[i]) {
+                for (std::size_t vi = 0; vi < virtualPages[i].size(); ++vi) {
+                    const shadows::AtlasPage& page = virtualPages[i][vi];
                     if (page.mover || page.level != level) continue;
                     if (first == nullptr) first = &page;
                     const uint32_t pageIdx = uint32_t(vsmPages.size());
+                    pageIndex[vi] = pageIdx;
                     shadows::VsmGpuPage gpuPage{};
                     Matrix4 viewProj;
                     viewProj.multiplyMatrices(page.projection, page.view);
@@ -3265,6 +3280,52 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     draw.gpuIndirectOffset = uint64_t(draw.vsmArgsSlot) * 20;
                 }
         job.dispatchVsmCull = !vsmDraws.empty();
+    }
+    // PRD-775 Phase 3: each virtual light's GPU page manager maps this frame's virtual pages before the shadow
+    // passes. It is the only writer of the table's page entries; the renderer's storage upload skips that range.
+    if (!compilation) {
+        for (auto& [i, shadow] : virtualShadows_) {
+            auto& atlas = shadow.atlas;
+            if (!atlas.gpuManaged() || !shadow.pagePool) continue;
+            if (shadow.pagePoolGeneration != atlas.poolGeneration()) {
+                shadow.pagePool->requestReset();
+                shadow.pagePoolGeneration = atlas.poolGeneration();
+            }
+            const auto& requests = atlas.frameRequests();
+            const auto indexIt = lightPageIndex.find(i);
+            const std::vector<uint32_t>* pageIndex = indexIt != lightPageIndex.end() ? &indexIt->second : nullptr;
+            std::vector<shadows::VsmPageRequest> pageRequests;
+            pageRequests.reserve(requests.size());
+            for (const shadows::PlannedPageRequest& request : requests) {
+                shadows::VsmPageRequest out;
+                out.pageIdLo = uint32_t(request.id & 0xFFFFFFFFu);
+                out.pageIdHi = uint32_t(request.id >> 32);
+                out.tableVec4Offset = request.tableEntry;
+                if (request.gpuPageIndex != 0xFFFFFFFFu && pageIndex != nullptr &&
+                    request.gpuPageIndex < pageIndex->size())
+                    out.gpuPageIndex = (*pageIndex)[request.gpuPageIndex];
+                out.requestFlags = request.flags;
+                pageRequests.push_back(out);
+            }
+            shadows::VsmPoolUniforms uniforms;
+            for (const ShadowPass& pass : shadowPasses)
+                if (pass.batchedVsm && pass.virtualLight == i) {
+                    uniforms.vsmPageOffset = pass.vsmPageOffset;
+                    uniforms.hasVsmGpuPages = pass.vsmPageCount > 0 ? 1u : 0u;
+                }
+            uniforms.slotsPerAxis = uint32_t(atlas.slotsPerAxis());
+            uniforms.stride = uint32_t(atlas.stride());
+            uniforms.invEdge = float(1.0 / double(atlas.edge()));
+            uniforms.receiverPlaneBias = atlas.options().receiverPlaneBias ? 1.0f : 0.0f;
+            uniforms.frameNumber = float(atlas.frameNumber());
+            FrameStorage& tableStorage = storages_["vsmTable" + std::to_string(i)];
+            const uint64_t headerBytes = uint64_t(atlas.options().clipExtents.size()) * 9 * 16;
+            const uint64_t pageEndByte = headerBytes + uint64_t(atlas.pageCount()) * 16;
+            if (!shadow.pagePool->prepare(gpu_, device_, pageRequests, uniforms, tableStorage.buffer, headerBytes,
+                                          pageEndByte))
+                throw std::runtime_error("TN_NATIVE_VSM_GPU_PAGES: the page table could not be prepared");
+            job.vsmPageDispatches.push_back({shadow.pagePool.get(), i});
+        }
     }
     // One buffer for the frame's uniforms, grown (and its bind groups rebuilt) when it is too small,
     // written once: a queue write, so it lands before this frame's commands and after the last's.
@@ -4164,6 +4225,22 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         if (mostlyDirty) ranges.assign(1, {0, bytes});
         else coalesceDirtyRanges(ranges, instances ? kMaxWrites : kMaxPaletteWrites, dirtyGapScratch_);
+        // PRD-775 Phase 3: never write the GPU-owned page entries. Split any range that straddles them.
+        if (storage.gpuOwnedEndByte > storage.gpuOwnedStartByte) {
+            const uint64_t gpuStart = std::min(storage.gpuOwnedStartByte, bytes);
+            const uint64_t gpuEnd = std::min(storage.gpuOwnedEndByte, bytes);
+            if (gpuStart < gpuEnd) {
+                std::vector<std::pair<uint64_t, uint64_t>> trimmed;
+                trimmed.reserve(ranges.size() + 1);
+                for (const auto& [offset, length] : ranges) {
+                    const uint64_t end = offset + length;
+                    if (end <= gpuStart || offset >= gpuEnd) { trimmed.emplace_back(offset, length); continue; }
+                    if (offset < gpuStart) trimmed.emplace_back(offset, gpuStart - offset);
+                    if (end > gpuEnd) trimmed.emplace_back(gpuEnd, end - gpuEnd);
+                }
+                ranges = std::move(trimmed);
+            }
+        }
         storage.uploaded.resize(bytes);
         bool written = true;
         for (const auto& [offset, length] : ranges) {
