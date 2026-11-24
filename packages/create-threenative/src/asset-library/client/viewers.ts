@@ -590,14 +590,24 @@ function turntable(host: IViewerHost, mode: string, render: () => void): HTMLCan
   for (const [i, angle] of ANGLES.slice(0, cells).entries()) {
     const yaw = three.MathUtils.degToRad(angle.yaw);
     const pitch = three.MathUtils.degToRad(angle.pitch);
+    // The figure stands on this camera's right at the subject's depth, so the two heights compare
+    // 1:1; the camera aims between them.
+    const right = new three.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+    const aim = sphere.center.clone();
+    figure.visible = angle.figure === true;
+    if (angle.figure) {
+      figure.position
+        .copy(right)
+        .multiplyScalar(sphere.radius + 0.6)
+        .add(sphere.center)
+        .setY(0);
+      aim.addScaledVector(right, (sphere.radius + 0.6) / 2);
+    }
     camera.position
       .set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch))
       .multiplyScalar(fit * (angle.figure ? 1.25 : 1))
-      .add(sphere.center);
-    camera.lookAt(sphere.center);
-    figure.visible = angle.figure === true;
-    if (angle.figure)
-      figure.position.set(sphere.center.x + sphere.radius + 0.5, 0, sphere.center.z);
+      .add(aim);
+    camera.lookAt(aim);
     for (const material of materials) material.wireframe = angle.wire === true;
     render();
     const x = (i % columns) * width;

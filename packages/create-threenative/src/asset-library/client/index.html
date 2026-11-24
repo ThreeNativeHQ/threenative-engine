@@ -60,10 +60,12 @@
       <div id="workspace" class="flex min-h-0 flex-1 flex-col data-right:md:flex-row">
         <main id="stage" class="relative min-h-[40dvh] min-w-0 flex-1 overflow-hidden">
           <canvas id="view" class="absolute inset-0 block size-full" aria-label="Asset preview"></canvas>
-          <div id="intro" class="absolute inset-0 grid place-content-center gap-2 p-6 text-center text-muted" hidden>
-            <h1 class="text-lg font-bold text-ink">Asset Library</h1>
-            <p>Pick an asset in the list to inspect it, or open an overview to see a whole section.</p>
-            <p>Search by name, or filter by style and biome tags.</p>
+          <div id="intro" class="absolute inset-0 grid place-content-center p-6 text-center text-muted" hidden>
+            <div class="grid gap-2 rounded border border-line bg-app/90 px-6 py-5">
+              <h1 class="text-lg font-bold text-ink">Asset Library</h1>
+              <p>Pick an asset in the list to inspect it, or open an overview to see a whole section.</p>
+              <p>Search by name, or filter by style and biome tags.</p>
+            </div>
           </div>
           <div id="status" role="status" class="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-line bg-app/90 px-2 py-1 text-muted data-error:text-danger">
             Loading the catalog

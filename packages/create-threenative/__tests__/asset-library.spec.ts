@@ -262,6 +262,9 @@ describe("asset library server", () => {
     expect(script).toContain("window.self !== window.top");
     expect(script).toContain('"noDevShell"');
     expect(script.indexOf("frame.src = mount")).toBeGreaterThan(script.indexOf("const show"));
+    // The switch says it is dev-only, so nobody expects it in a shipped game.
+    expect(script).toContain('badge.textContent = "DEV"');
+    expect(script).toContain("not in production builds");
   });
 });
 

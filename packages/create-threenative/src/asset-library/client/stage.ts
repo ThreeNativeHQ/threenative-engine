@@ -162,6 +162,7 @@ export async function stageView(_element: IAssetElement, host: IViewerHost): Pro
         return li;
       }),
     );
+    status();
     host.rowsInto(host.stats, [
       ["Staged models", String(nodes.length)],
       ["Triangles", nodes.reduce((n, node) => n + trianglesIn(node.object), 0).toLocaleString()],
@@ -305,7 +306,11 @@ export async function stageView(_element: IAssetElement, host: IViewerHost): Pro
       "Place project models, snap them to the grid and the floor, then save. The scene module is ordinary ThreeNative source that loads each model with ctx.assets.model and instances repeated props; the merged GLB is one static file with shared materials and textures deduplicated.",
     ),
   );
-  host.say(nodes.length ? `Stage · ${nodes.length} models` : "Stage · add a model to begin");
+  function status(): void {
+    const n = nodes.length;
+    host.say(n ? `Stage · ${n} model${n === 1 ? "" : "s"}` : "Stage · add a model to begin");
+  }
+  status();
   return {
     leave() {
       gizmo.detach();

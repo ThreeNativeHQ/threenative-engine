@@ -17,7 +17,7 @@ import type {
   IAssetReport,
   IAssetViewContext,
 } from "../types.js";
-import { BUILT_IN_KINDS, builtInView, createViewerHost } from "./viewers.js";
+import { BUILT_IN_KINDS, builtInView, createViewerHost, fileUrl } from "./viewers.js";
 
 export interface IShellConfig {
   /** Where the library is mounted, with a trailing slash (`/__assets/`, `/`). */
@@ -39,6 +39,7 @@ const embed = query.get("embed") === "1";
 const sheetMode = query.get("sheet");
 
 const $ = <T extends HTMLElement>(id: string): T => document.getElementById(id) as T;
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? "" : "s"}`;
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, className = "", text = "") => {
   const node = document.createElement(tag);
   node.className = className;
@@ -258,6 +259,10 @@ const invalidate = () => {
 /** The view the current story asked for (a whole scene story), else undefined. */
 let fixedView: IAssetLoaded["view"];
 
+/** Where the framing camera sits from the subject, and the screen's right along the ground. */
+const VIEW_DIRECTION = new three.Vector3(0.55, 0.32, 1).normalize();
+const SCREEN_RIGHT = new three.Vector3(1, 0, -0.55).normalize();
+
 function frame(): void {
   invalidate();
   if (fixedView) {
@@ -274,15 +279,26 @@ function frame(): void {
     return;
   }
   const box = new three.Box3().setFromObject(content);
-  if (box.isEmpty()) return;
+  // Nothing shown yet (the intro, an empty Stage): a raised view of the floor and the figure,
+  // not a camera left at floor height that sees the ground as a flat band.
+  if (box.isEmpty())
+    box.setFromCenterAndSize(new three.Vector3(0, 0.9, 0), new three.Vector3(1, 1.8, 1));
+  // The 1.8 m figure stands beside what is shown, whatever view built it, at the subject's depth on
+  // the screen's right (the camera looks along VIEW_DIRECTION), so its height compares 1:1; nearer
+  // the camera it looked taller than a 1.8 m model. The framing then fits both.
+  const subject = box.getBoundingSphere(new three.Sphere());
+  figure.position
+    .copy(SCREEN_RIGHT)
+    .multiplyScalar(subject.radius + 0.6)
+    .add(subject.center)
+    .setY(0);
+  if (figure.visible) box.union(new three.Box3().setFromObject(figure));
   const sphere = box.getBoundingSphere(new three.Sphere());
   const halfFov = three.MathUtils.degToRad(camera.fov / 2);
   const horizontal = Math.atan(Math.tan(halfFov) * camera.aspect);
   const fit = sphere.radius / Math.sin(Math.min(halfFov, horizontal));
   orbit.target.copy(sphere.center);
-  camera.position
-    .copy(sphere.center)
-    .add(new three.Vector3(0.55, 0.32, 1).normalize().multiplyScalar(fit));
+  camera.position.copy(sphere.center).add(VIEW_DIRECTION.clone().multiplyScalar(fit));
   camera.near = fit / 200;
   camera.far = fit * 20;
   camera.updateProjectionMatrix();
@@ -593,7 +609,6 @@ async function tiled(
     content.add(model);
     if (i === 1) renderDocs(element, baked, model);
   }
-  figure.position.set(width * 1.5 + 0.8, 0, 0);
   say(`${element.name} · ${key} -1, 0, 1 · ${width.toFixed(1)} m apart`);
   return windy;
 }
@@ -634,12 +649,37 @@ async function overview(mine: number, kindRows: IAssetElement[]): Promise<boolea
   }
   $("docs").replaceChildren(
     el("h2", "text-xl font-extrabold text-white", name),
-    el("p", "text-muted", `${shown.length} elements. Pick one for its preview and source call.`),
+    el(
+      "p",
+      "text-muted",
+      `${plural(shown.length, "element")}. Pick one for its preview and source call.`,
+    ),
     list,
   );
   const lineup = shown.filter((row) => !row.backdrop && !BUILT_IN_KINDS.has(row.kind));
   if (BUILT_IN_KINDS.has(route.kind) && route.kind !== "model") {
-    say(`${name} · ${shown.length} files`);
+    // A 2D kind has no 3D lineup: its overview is a card per file over the stage, not an empty floor.
+    const grid = viewerHost.overlay(
+      "inset-0 grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(10rem,1fr))] gap-3 overflow-y-auto bg-app p-4",
+    );
+    for (const e of shown) {
+      const card = el("a", "grid gap-1 rounded border border-line p-2 text-xs hover:border-accent");
+      card.href = hashOf(e.kind, e.id);
+      const file = e.path ?? e.id;
+      if (e.kind === "texture" && /\.(png|jpe?g|webp|svg)$/iu.test(file)) {
+        const img = el("img", "aspect-square w-full rounded bg-black/30 object-contain");
+        img.src = fileUrl(viewerHost, file);
+        img.alt = e.name;
+        img.loading = "lazy";
+        card.append(img);
+      }
+      card.append(
+        el("span", "truncate font-semibold text-ink", e.name),
+        el("span", "truncate text-muted", e.id),
+      );
+      grid.append(card);
+    }
+    say(`${name} · ${plural(shown.length, "file")}`);
     return false;
   }
   const opening = lineup.length === 0 ? shown.find((row) => row.backdrop) : undefined;
@@ -676,8 +716,7 @@ async function overview(mine: number, kindRows: IAssetElement[]): Promise<boolea
     x += maxX - minX + Math.max(0.4, (maxX - minX) * 0.25);
     frame();
   }
-  figure.position.set(-1, 0, 0);
-  say(`${name} · ${shown.length} elements`);
+  say(`${name} · ${plural(shown.length, "element")}`);
   return windy;
 }
 
@@ -697,10 +736,11 @@ async function single(mine: number, element: IAssetElement): Promise<boolean | u
   applyLighting(element, loaded);
   if (!fixed) applyBackground();
   content.add(model);
-  figure.position.set((baked.bounds.max[0] ?? 0) + 0.8, 0, 0);
   if (!BUILT_IN_KINDS.has(element.kind)) renderDocs(element, baked, model);
   const lod = baked.lod === undefined ? "" : ` · lod ${baked.lod}`;
-  say(`${element.name}${lod} · ${baked.triangles.toLocaleString()} triangles`);
+  say(
+    `${element.name}${lod} · ${baked.triangles.toLocaleString()} triangle${baked.triangles === 1 ? "" : "s"}`,
+  );
   return animated ?? false;
 }
 
@@ -712,6 +752,7 @@ async function show(): Promise<void> {
   invalidate();
   $("intro").hidden = Boolean(route.kind);
   if (!route.kind) {
+    frame();
     say("Pick an asset or an overview from the list");
     return;
   }

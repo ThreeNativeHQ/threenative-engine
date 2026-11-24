@@ -183,6 +183,12 @@ export function devShellScript(mount: string): string {
     bar.append(b);
     return b;
   };
+  // Say what this is: a dev-server tool, so nobody looks for it in a shipped game.
+  bar.title = "Dev only: shown by pnpm dev, not in production builds";
+  const badge = document.createElement("span");
+  badge.textContent = "DEV";
+  badge.style.cssText = "align-self:center;padding:2px 6px 2px 8px;color:#e0fb50;font:700 10px system-ui,sans-serif;letter-spacing:.08em";
+  bar.append(badge);
   const game = tab("Game", false);
   const library = tab("Asset Library", true);
   const mark = (lib) => {
