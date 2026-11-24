@@ -58,6 +58,7 @@ type Middleware = (req: IncomingMessage, res: ServerResponse, next: () => void) 
 interface IViteServer extends IAssetLibraryServer {
   readonly config: { readonly root: string; readonly logger?: { info(message: string): void } };
   readonly httpServer?: { once(event: "listening", listener: () => void): unknown } | null;
+  readonly resolvedUrls?: { readonly local?: readonly string[] } | null;
   readonly middlewares: { use(handler: Middleware): void };
   transformIndexHtml(url: string, html: string): Promise<string>;
 }
@@ -373,8 +374,7 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
           .catch((error: Error) => json(res, 500, { error: error.message }));
       });
       const banner = () => {
-        const local = (server as unknown as { resolvedUrls?: { local?: string[] } }).resolvedUrls
-          ?.local?.[0];
+        const local = server.resolvedUrls?.local?.[0];
         if (local) server.config.logger?.info(`  ➜  Asset Library: ${new URL(mount, local).href}`);
       };
       server.httpServer?.once("listening", () => setTimeout(banner, 0));

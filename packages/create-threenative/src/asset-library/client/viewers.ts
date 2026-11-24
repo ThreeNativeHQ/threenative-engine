@@ -237,7 +237,7 @@ function hierarchy(host: IViewerBase, root: three.Object3D): HTMLElement {
     details.append(summary);
     if (mesh.isMesh) {
       for (const material of [mesh.material].flat() as three.MeshStandardMaterial[]) {
-        const used = slots.filter((slot) => (material as unknown as Record<string, unknown>)[slot]);
+        const used = slots.filter((slot) => Reflect.get(material, slot));
         details.append(
           host.el(
             "div",

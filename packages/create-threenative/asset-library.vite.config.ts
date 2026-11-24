@@ -6,8 +6,8 @@ import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
 import { defineConfig } from "vite";
 
-const here = import.meta.dirname;
-const out = path.resolve(here, "../../../dist/asset-library");
+const here = path.join(import.meta.dirname, "src/asset-library/client");
+const out = path.join(import.meta.dirname, "dist/asset-library");
 
 export default defineConfig({
   root: here,
