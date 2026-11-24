@@ -403,7 +403,7 @@ struct Vertex { @builtin(position) position: vec4<f32> }
     let worldPoint = u.world * vec4(viewPoint.xyz / viewPoint.w, 1);
     let current = u.projection * (u.view * worldPoint);
     let previous = u.previousProjection * (u.previousView * worldPoint);
-    return vec4(current.xy / current.w - previous.xy / previous.w, select(0.f, 1.f, clip.z == 1), 1);
+    return vec4(current.xy / current.w - previous.xy / previous.w, 1.f, 1);
 }
 )WGSL";
     static constexpr auto stripped = wgslStrip<wgslStripLength(source)>(source);
@@ -539,11 +539,14 @@ void TraaPass::resize(uint32_t width, uint32_t height, uint32_t outputWidth, uin
 TraaPass::Matrix TraaPass::begin(const Matrix& projection, const Matrix& world, const Matrix& view,
                                  const Matrix* viewProjection) {
     history_.beginRender(0, true);
+    // Callers using raw Renderer::render (including test helpers) sometimes populate only matrixWorldInverse;
+    // fillVelocity and historyDepthRows require a non-singular camera world matrix.
+    const Matrix resolvedWorld = world[15] == 0 && view[15] != 0 ? inverse(view) : world;
     previousProjection_ = started_ ? projection_ : projection;
-    previousWorld_ = started_ ? world_ : world;
+    previousWorld_ = started_ ? world_ : resolvedWorld;
     previousView_ = started_ ? view_ : view;
     previousInverseProjection_ = started_ ? inverseProjection_ : inverse(projection);
-    projection_ = projection; world_ = world; view_ = view; started_ = true;
+    projection_ = projection; world_ = resolvedWorld; view_ = view; started_ = true;
     Matrix jittered = projection;
     const auto jitter = traaJitter(history_.frame(), jitterLength_);
     previousJitter_ = jitter_;

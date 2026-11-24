@@ -4791,6 +4791,20 @@ void ground_snap_apply() {
         CHECK(std::abs(plainSiblingAfter[i] - plainSiblingObj->matrixWorld.elements[i]) < 1e-9);
     }
 
+    // 7. Pose-cache hit on repeated call + tilted model hierarchy + GPU-joint subtree skip in shiftWorldYInPlace.
+    const tn_value_t callCacheHit[] = {ref(plainGroup), num(1.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(plainModel, "__tnGroundSnapApply", callCacheHit, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    auto plainModelObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(plainModel)->ptr);
+    plainModelObj->rotation.z = 0.25;
+    plainModelObj->updateMatrix();
+    const tn_value_t callTilted[] = {ref(plainGroup), num(2.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(plainModel, "__tnGroundSnapApply", callTilted, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    const std::array<double, 16> tiltedBoneAfter = plainBoneObj->matrixWorld.elements;
+    plainWorldObj->updateWorldMatrix(true, true, true);
+    for (int i = 0; i < 16; ++i) CHECK(std::abs(tiltedBoneAfter[i] - plainBoneObj->matrixWorld.elements[i]) < 1e-9);
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 

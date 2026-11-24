@@ -140,6 +140,10 @@ struct DrawCache {
     void* pipeline = nullptr;
     void* depthPipeline = nullptr;
     void* mapGroup = nullptr;
+    uint64_t auxTargetKey = 0;
+    void* auxPipeline = nullptr;
+    uint64_t translucentTargetKey = 0;
+    void* translucentPipeline = nullptr;
     bool prepass = false;             // PRD-888: `pipeline` is the depth-Equal one, drawn after a masked depth prepass
     void* prepassPipeline = nullptr;  // ...and that prepass's depth-only pipeline, under `targetKey`
     std::pair<Box3, double> shadowBounds;
@@ -252,6 +256,7 @@ struct DrawItem {
     const BufferGeometry* morphGeometry = nullptr;
     const std::vector<double>* morphInfluences = nullptr;
     const std::vector<float>* boneMatrices = nullptr;
+    uint64_t boneVersion = 0;
     Matrix bindMatrix{}, bindMatrixInverse{};
     SkinnedMesh* skinnedRig = nullptr; // authored rig, for projection eligibility and palette writes
     std::shared_ptr<GpuJointScene> gpuJoints;
@@ -811,6 +816,12 @@ public:
     };
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
+    /**
+     * PRD-914 Phase 3: the last frame's GPU instance-cull indirect records, five u32 words per draw (index or vertex
+     * count, surviving instance count, first index, base vertex, first instance), delivered from poll(). A test reads
+     * the count the compute pass wrote; the copies land after the frame that recorded them.
+     */
+    GpuStatus readGpuCullArgs(uint32_t drawCount, ReadbackCallback done);
     /** The last frame as presented, the UI overlay drawn over it (PRD-554), read back: what a player sees. */
     GpuStatus readPresented(ReadbackCallback done);
     void poll() { gpu_.poll(); }
@@ -851,6 +862,24 @@ public:
         uint32_t shadowGroupRows = 0;
         /** PRD-888: the masked depth-only draws the main pass ran before shading those draws depth-Equal. */
         uint32_t prepassDraws = 0;
+        /** PRD-914 Phase 1: the draws emitted into `velocityPlan` after skipping unchanged static meshes. */
+        uint32_t velocityDraws = 0;
+        /** PRD-914 Phase 3: the draws whose instance count this frame's GPU frustum cull wrote. */
+        uint32_t gpuCulledDraws = 0;
+    };
+    /**
+     * PRD-914 Phase 3: one GPU-culled draw as the compute pass reads it. `model` places the geometry, `localSphere`
+     * bounds it in local space (xyz centre, w radius), `margin` reserves x for the material's
+     * maxPositionOffset, `meta` holds the packed instance base in vec4s, the instance count, the persistent id
+     * output base and the persistent indirect record's slot, and `dispatch` holds the draw's dense candidate base
+     * the binary search maps a thread to.
+     */
+    struct GpuCullDrawDesc {
+        std::array<float, 16> model{};
+        std::array<float, 4> localSphere{};  // xyz center, w radius
+        std::array<float, 4> margin{};       // x dispMargin, yzw unused
+        std::array<uint32_t, 4> meta{};      // x instanceBaseVec4, y instanceCount, z idOutBase, w argsSlot
+        std::array<uint32_t, 4> dispatch{};  // x dispatchBase, yzw unused
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -1016,7 +1045,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAnisotropyMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kGpuCullIdBase, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -1041,6 +1070,8 @@ private:
     bool pendingEncode_ = false;
     /** PRD-888 lever 0: whether the bundles held are a split arm's, so a switch of arm re-records them. */
     bool splitRecorded_ = false;
+    /** PRD-914: the unified base pass's aux layout the retained main bundles were recorded for. */
+    uint64_t mainAuxKey_ = 0;
     std::atomic<bool> encoding_{false};
     mutable std::mutex frameMailMutex_;
     FrameStats frameMail_, published_;
@@ -1066,6 +1097,7 @@ private:
         std::vector<const shader::UniformField*> vertexNodeUniforms;
         std::vector<const shader::UniformField*> fragmentNodeUniforms;
         bool hasDiscard = false;
+        bool hasNormalView = false, hasPositionView = false;
         // FM2: this layout's share of the frame's light, camera and scene constants — one block, in a slot's
         // own layout, filled once per frame and copied into every draw's slot. `frameSlabSerial` is the plan
         // that filled it.
@@ -1079,10 +1111,15 @@ private:
          *  writes only their ambient and hemisphere terms. */
         bool selective = false;
         std::vector<uint64_t> lightSelection;
+        bool sharedView = false;
+        bool usesViewGroup = false;
+        uint32_t viewLightCount = 0;
         std::array<std::unique_ptr<shader::StageModule>, 32> aux;  // by AuxTarget mask, built on first request
         uint32_t auxBuilt = 0;  // bit `mask`: aux[mask] was asked for (it stays null when refused)
         /** The aux fragment that also writes custom MRT slots, keyed by the frame's slot list (mask included). */
         std::map<std::string, std::unique_ptr<shader::StageModule>> auxMrt;
+        /** PRD-914: the base-pass fragment that keeps `color` and adds the post targets, keyed like auxMrt. */
+        std::map<std::string, std::unique_ptr<shader::StageModule>> baseAux;
         /** What its stage modules alone decide about a draw of it (FM3): resolved once, never re-scanned. */
         DrawProbes probes;
         /** PRD-888: the program's masked depth-only fragment (prepassFragment), built on first request. */
@@ -1101,6 +1138,13 @@ private:
      */
     const shader::StageModule* auxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
                                            bool zeroNamed = false);
+    /**
+     * PRD-914: the program's fragment with `color` kept at location 0 and the targets in `mask` and `slots` added
+     * after it, so the one base pass writes the scene colour and every post target (sampleCount 1). Never prunes, so
+     * the colour output's statements stay; null when the builder refuses or the layout differs.
+     */
+    const shader::StageModule* basePassAuxFragment(Program& program, uint8_t mask, const std::vector<std::string>& slots,
+                                                   bool zeroNamed = false);
     /**
      * PRD-888: a masked program's prepass fragment: its own fragment built again with a zero colour, pruned to the mask
      * and cutoff its discards read. Same builder call, so the layout equals the program's and the draw's bind groups
@@ -1131,7 +1175,8 @@ private:
     struct MaterialTexture;
     /** blitTo's pass-through copy into `format`, blended by PipelineTarget's `blend`. */
     WGPURenderPipeline copyPipeline(WGPUTextureFormat format, uint8_t blend,
-        std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr);
+        std::vector<std::shared_ptr<PipelineCompilation>>* compilation = nullptr,
+        WGPUTextureFormat depthFormat = WGPUTextureFormat_Undefined, uint32_t sampleCount = 1);
     /** Records a texture's mip chain into the pending mip encoder; `submit` flushes it first. */
     void generateMipmaps(WGPUTexture texture, WGPUTextureFormat format, uint32_t levels, uint32_t layers = 1);
     /** Submits the mip passes of every texture uploaded since the last submit, as one command buffer. */
@@ -1420,6 +1465,8 @@ private:
     WGPUTextureView msaaColorView_ = nullptr;
     WGPUTexture msaaAuxColor_ = nullptr;
     WGPUTextureView msaaAuxColorView_ = nullptr;
+    WGPUTexture velocityCamera_ = nullptr;
+    WGPUTextureView velocityCameraView_ = nullptr;
     WGPUTexture msaaDepth_ = nullptr;
     WGPUTextureView msaaDepthView_ = nullptr;
     WGPURenderPipeline depthResolve_ = nullptr;  // built by the first 4x frame
@@ -1449,6 +1496,8 @@ private:
     std::array<shader::StageModule, 3> normalFragments_;
     /** normalFragments_ for Standard and Physical draws: the alpha also packs metalness and roughness. */
     std::array<shader::StageModule, 3> surfaceFragments_;
+    shader::StageModule pageClearVertex_;
+    WGPURenderPipeline pageClearPipeline_ = nullptr;  // owned by pipelines_, never released by ~Renderer()
     WGPUTexture materialTexture_ = nullptr;
     WGPUTextureView materialView_ = nullptr;
     std::vector<std::string> diagnostics_;
@@ -1593,9 +1642,14 @@ private:
     struct DeformationFrame {
         Program* program = nullptr;
         std::vector<uint64_t> buffers;
-        std::size_t instanceHash = 0;  // the instance matrices' contents: an instance moved since last frame when it differs
+        uint64_t instanceEpoch = 0;
+        uint64_t instanceWrites = 0;
+        uint64_t instanceVersion = 0;
+        double instanceBase = 0;
         std::vector<uint8_t> uniforms;
     };
+    std::array<bool, 2> previousStorageValid_{false, false};
+    std::array<uint64_t, 2> previousStorageBytes_{0, 0};
     // Only submitted frames supply previous deformation; preparing or compiling a frame does not.
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames_;
     std::vector<uint8_t> frameUniforms_;  // every draw's uniform blocks, written to the GPU once a frame
@@ -1615,10 +1669,20 @@ private:
      *  when the GPU last received this place; the same stamp next plan means the place's bytes are already in `instances`
      *  and on the GPU, so the copy and the compare both skip it. It is committed only after the upload went through. */
     using InstanceStamp = std::array<uint64_t, 7>;
-    struct InstanceSlot { uint64_t offset, count, seen; InstanceStamp stamp{}; bool stamped = false; };
+    /** `gpuCullDraw` is this place's persistent indirect record, so a depth reorder or a draw that leaves the view
+     *  moves neither its record nor any other draw's (PRD-914 Phase 3). */
+    struct InstanceSlot {
+        uint64_t offset, count, seen;
+        InstanceStamp stamp{};
+        bool stamped = false;
+        uint32_t gpuCullDraw = UINT32_MAX;
+    };
     std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
     std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
     std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDirectWrites_;  // PRD-913: exact byte spans pushed to GPU without sameBytes scan
+    std::vector<std::pair<uint64_t, uint64_t>> instanceDiffSpans_;     // full-slot overwrites filtered via SIMD sameBytes on upload
+    std::vector<const BufferStore*> instanceClearedStores_;
     std::vector<std::pair<uint64_t, uint64_t>> instanceScan_;  // byte spans the upload compares
     uint64_t instanceTop_ = 0;
     static constexpr uint64_t kInstanceSlotPlans = 4096;
@@ -1655,8 +1719,51 @@ private:
     uint64_t morphPacks_ = 0;
     std::vector<std::pair<uint64_t, uint64_t>> lateSlots_;  // slot key, bytes: asked for after the appended blocks
     static constexpr uint64_t kSlotFrames = 600;
+    bool sharedViewEnabled();
+    bool persistentGpuSceneEnabled();
+    bool staticVelocityEnabled();
+    bool unifiedAuxEnabled();
+    bool gpuInstanceCullEnabled();
+    /**
+     * PRD-914 Phase 3: the compute frustum-cull pipeline and its five-binding layout (`instances`, `descs`, uniforms,
+     * compacted ids, indirect args), built on the first frame that culls.
+     */
+    void ensureGpuCullPipeline();
+    Handle gpuCullArgs_{}, gpuCullDescs_{}, gpuCullUniforms_{};
+    uint64_t gpuCullArgsCap_ = 0, gpuCullDescsCap_ = 0;
+    /** The next persistent indirect record for a GPU-culled draw, given with its instance place; and the records the
+     *  last plan wrote, so the ones a draw left clear their instance count instead of drawing stale survivors. */
+    uint32_t gpuCullSlotTop_ = 0;
+    std::vector<uint32_t> gpuCullPrevSlots_;
+    WGPUComputePipeline gpuCullPipeline_ = nullptr;
+    WGPUBindGroupLayout gpuCullLayout_ = nullptr;
+    RecentBindGroups gpuCullGroups_{4};
+    struct BonePlacement {
+        const std::vector<float>* ptr = nullptr;
+        uint64_t version = 0;
+        uint64_t offsetBytes = 0;
+        uint64_t sizeBytes = 0;
+        bool operator==(const BonePlacement&) const = default;
+    };
+    std::vector<BonePlacement> bonePlacements_;
+    std::vector<BonePlacement> lastBonePlacements_;
+    Handle lastBoneBuffer_;
+    uint64_t lastBonePrefix_ = 0;
     Handle uniformBuffer_;
     uint64_t uniformCapacity_ = 0;
+    WGPUBindGroupLayout viewLayout_ = nullptr;
+    WGPUBindGroup viewGroup_ = nullptr;
+    Handle viewBuffer_;
+    uint64_t viewCapacity_ = 0;
+    uint64_t viewSliceBytes_ = 0;
+    std::vector<uint8_t> viewUniforms_;
+    std::vector<uint8_t> uploadedViewUniforms_;
+    WGPUBindGroup shadowViewGroup_ = nullptr;
+    Handle shadowViewBuffer_;
+    uint64_t shadowViewCapacity_ = 0;
+    uint64_t shadowViewSliceBytes_ = 0;
+    std::vector<uint8_t> shadowViewUniforms_;
+    std::vector<uint8_t> uploadedShadowViewUniforms_;
     /** FM2: the arena's bytes as the GPU last received them, and this frame's changed ranges in it. */
     std::vector<uint8_t> uploadedUniforms_;
     std::vector<std::pair<uint64_t, uint64_t>> uniformDirtyRanges_;
@@ -1713,3 +1820,5 @@ private:
 };
 
 }  // namespace tn::engine
+
+static_assert(sizeof(tn::engine::Renderer::GpuCullDrawDesc) == 128);

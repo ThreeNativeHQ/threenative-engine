@@ -202,9 +202,9 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     const float triangle[6] = {-1, -1, 3, -1, -1, 3};
     outputTriangle_ = gpu_.createBuffer(sizeof triangle, WGPUBufferUsage_Vertex | WGPUBufferUsage_CopyDst);
     // traaPrevious_boneMatrices and traaPrevious_instances: the previous frame's palette and instances, copied after the
-    // velocity pass.
-    for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances", "traaPrevious_boneMatrices",
-                             "traaPrevious_instances"}) {
+    // velocity pass. gpuCullIds: PRD-914 Phase 3's persistent original instance indices, written by the cull compute pass.
+    for (const char* name : {"boneMatrices", "morphData", "morphInfluences", "instances", "gpuCullIds",
+                             "traaPrevious_boneMatrices", "traaPrevious_instances"}) {
         FrameStorage& storage = storages_[name];
         storage.capacity = 64;
         storage.buffer = gpu_.createBuffer(storage.capacity,
@@ -212,6 +212,19 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
     }
     gpu_.writeBuffer(outputTriangle_, 0, triangle, sizeof triangle);
     outputUniforms_ = gpu_.createBuffer(16, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    gpuCullUniforms_ = gpu_.createBuffer(sizeof(float) * 28, WGPUBufferUsage_Uniform | WGPUBufferUsage_CopyDst);
+    {
+        WGPUBindGroupLayoutEntry viewEntry{};
+        viewEntry.binding = 0;
+        viewEntry.visibility = WGPUShaderStage_Vertex | WGPUShaderStage_Fragment;
+        viewEntry.buffer.type = WGPUBufferBindingType_Uniform;
+        viewEntry.buffer.hasDynamicOffset = true;
+        viewEntry.buffer.minBindingSize = 0;
+        WGPUBindGroupLayoutDescriptor viewLayoutDesc{};
+        viewLayoutDesc.entryCount = 1;
+        viewLayoutDesc.entries = &viewEntry;
+        viewLayout_ = wgpuDeviceCreateBindGroupLayout(device, &viewLayoutDesc);
+    }
     outputUploaded_.clear();
     WGPUSamplerDescriptor nearest = {};
     nearest.magFilter = WGPUFilterMode_Nearest;
@@ -469,6 +482,14 @@ Renderer::~Renderer() {
     }
     releaseTargets();
     outputGroups_.clear();
+    if (gpuCullPipeline_) wgpuComputePipelineRelease(gpuCullPipeline_);
+    if (gpuCullLayout_) wgpuBindGroupLayoutRelease(gpuCullLayout_);
+    gpuCullGroups_.clear();
+    gpuCullPrevSlots_.clear();
+    gpuCullSlotTop_ = 0;
+    if (gpuCullArgsCap_) gpu_.destroy(gpuCullArgs_);
+    if (gpuCullDescsCap_) gpu_.destroy(gpuCullDescs_);
+    if (gpuCullUniforms_.type) gpu_.destroy(gpuCullUniforms_);
     releaseOutputGroup();
     if (depthResolve_) wgpuRenderPipelineRelease(depthResolve_);
     if (overlayView_) wgpuTextureViewRelease(overlayView_);
@@ -492,6 +513,137 @@ Renderer::~Renderer() {
     wgpuTextureRelease(lut_);
     releaseEnvironments();
     releaseMaterialTextures();
+    if (viewGroup_) wgpuBindGroupRelease(viewGroup_);
+    if (shadowViewGroup_) wgpuBindGroupRelease(shadowViewGroup_);
+    if (viewLayout_) wgpuBindGroupLayoutRelease(viewLayout_);
+    if (viewCapacity_ != 0) gpu_.destroy(viewBuffer_);
+    if (shadowViewCapacity_ != 0) gpu_.destroy(shadowViewBuffer_);
+}
+
+static bool flagEnabledOrLog(const char* value, const char* offNote, std::vector<std::string>& diagnostics) {
+    if (value != nullptr && std::strcmp(value, "0") == 0) {
+        if (std::find(diagnostics.begin(), diagnostics.end(), offNote) == diagnostics.end())
+            diagnostics.push_back(offNote);
+        return false;
+    }
+    return true;
+}
+
+bool Renderer::sharedViewEnabled() {
+    return flagEnabledOrLog(flags::read<flags::SharedViewUniform>(),
+                            "TN_SHARED_VIEW_UNIFORM=0: legacy per-draw frameSlab enabled", diagnostics_);
+}
+
+bool Renderer::persistentGpuSceneEnabled() {
+    return flagEnabledOrLog(flags::read<flags::PersistentGpuScene>(),
+                            "TN_PERSISTENT_GPU_SCENE=0: legacy storage same-bytes scan enabled", diagnostics_);
+}
+
+bool Renderer::unifiedAuxEnabled() {
+    return flagEnabledOrLog(flags::read<flags::UnifiedAuxMrt>(),
+                            "TN_UNIFIED_AUX_MRT=0: separate aux pass enabled", diagnostics_);
+}
+
+bool Renderer::gpuInstanceCullEnabled() {
+    return flagEnabledOrLog(flags::read<flags::GpuInstanceCull>(),
+                            "TN_GPU_INSTANCE_CULL=0: legacy CPU instance culling enabled", diagnostics_);
+}
+
+void Renderer::ensureGpuCullPipeline() {
+    if (gpuCullPipeline_) return;
+    // One thread per candidate instance: a binary search picks its draw, the draw's model and its packed matrix
+    // place the local sphere, and the six frustum planes (`Frustum::intersectsSphere`) either reject it or a
+    // surviving instance appends its persistent original index and bumps the draw's indirect instance count.
+    static constexpr char kWgsl[] = R"WGSL(
+struct GpuCullDesc {
+    model: mat4x4<f32>,
+    localSphere: vec4<f32>,
+    margin: vec4<f32>,
+    drawMeta: vec4<u32>,
+    dispatch: vec4<u32>,
+};
+struct Uniforms {
+    planes: array<vec4<f32>, 6>,
+    counts: vec4<u32>,
+};
+@group(0) @binding(0) var<storage, read> instances: array<vec4<f32>>;
+@group(0) @binding(1) var<storage, read> descs: array<GpuCullDesc>;
+@group(0) @binding(2) var<uniform> u: Uniforms;
+@group(0) @binding(3) var<storage, read_write> ids: array<u32>;
+@group(0) @binding(4) var<storage, read_write> args: array<atomic<u32>>;
+
+@compute @workgroup_size(64)
+fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
+    let tid = gid.x;
+    if (tid >= u.counts.y) { return; }
+    var lo = 0u;
+    var hi = u.counts.x;
+    while (lo < hi) {
+        let mid = (lo + hi) / 2u;
+        if (descs[mid].dispatch.x <= tid) { lo = mid + 1u; } else { hi = mid; }
+    }
+    if (lo == 0u) { return; }
+    let d = lo - 1u;
+    let desc = descs[d];
+    let instIdx = tid - desc.dispatch.x;
+    let base = desc.drawMeta.x + instIdx * 5u;
+    let worldMat = desc.model * mat4x4<f32>(instances[base + 0u], instances[base + 1u], instances[base + 2u],
+                                             instances[base + 3u]);
+    let center = (worldMat * vec4<f32>(desc.localSphere.xyz, 1.0)).xyz;
+    let maxSq = max(max(dot(worldMat[0].xyz, worldMat[0].xyz), dot(worldMat[1].xyz, worldMat[1].xyz)),
+                    dot(worldMat[2].xyz, worldMat[2].xyz));
+    // A non-finite transform keeps its instance, as the CPU path does, rather than dropping a draw a game owns.
+    if (all(center == center) && maxSq == maxSq && abs(maxSq) < 1e30) {
+        let scale = sqrt(maxSq);
+        let radius = (desc.localSphere.w * scale + desc.margin.x * max(1.0, scale)) * 1.02 + 1e-3;
+        for (var i = 0u; i < 6u; i = i + 1u) {
+            if (dot(u.planes[i].xyz, center) + u.planes[i].w < -radius) { return; }
+        }
+    }
+    let slot = atomicAdd(&args[desc.drawMeta.w * 5u + 1u], 1u);
+    ids[desc.drawMeta.z + slot] = instIdx;
+}
+)WGSL";
+    WGPUShaderModuleWGSLDescriptor_Compat wgsl = {};
+    WGPUShaderModuleDescriptor moduleDesc = {};
+    setupShaderModuleWGSL(&moduleDesc, &wgsl, kWgsl);
+    WGPUShaderModule module = wgpuDeviceCreateShaderModule(device_, &moduleDesc);
+    if (!module) return;
+    std::array<WGPUBindGroupLayoutEntry, 5> entries{};
+    for (std::size_t i = 0; i < entries.size(); ++i) {
+        entries[i].binding = uint32_t(i);
+        entries[i].visibility = WGPUShaderStage_Compute;
+        entries[i].buffer.type = i == 2 ? WGPUBufferBindingType_Uniform
+                                  : i >= 3 ? WGPUBufferBindingType_Storage
+                                           : WGPUBufferBindingType_ReadOnlyStorage;
+    }
+    WGPUBindGroupLayoutDescriptor layoutDesc{};
+    layoutDesc.entryCount = entries.size();
+    layoutDesc.entries = entries.data();
+    gpuCullLayout_ = wgpuDeviceCreateBindGroupLayout(device_, &layoutDesc);
+    WGPUPipelineLayoutDescriptor pipelineLayoutDesc{};
+    pipelineLayoutDesc.bindGroupLayoutCount = gpuCullLayout_ ? 1 : 0;
+    pipelineLayoutDesc.bindGroupLayouts = &gpuCullLayout_;
+    WGPUPipelineLayout pipelineLayout =
+        gpuCullLayout_ ? wgpuDeviceCreatePipelineLayout(device_, &pipelineLayoutDesc) : nullptr;
+    WGPUComputePipelineDescriptor desc = {};
+    desc.layout = pipelineLayout;
+    desc.compute.module = module;
+    WGPU_SET_ENTRY_POINT(desc.compute, "main");
+    gpuCullPipeline_ = pipelineLayout ? wgpuDeviceCreateComputePipeline(device_, &desc) : nullptr;
+    if (pipelineLayout) wgpuPipelineLayoutRelease(pipelineLayout);
+    wgpuShaderModuleRelease(module);
+}
+
+bool Renderer::staticVelocityEnabled() {
+    const char* value = flags::read<flags::StaticVelocity>();
+    if (value != nullptr && std::strcmp(value, "0") != 0 && std::strlen(value) != 0) {
+        constexpr const char* note = "TN_STATIC_VELOCITY=1: drawing static meshes in velocity pass";
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end())
+            diagnostics_.push_back(note);
+        return true;
+    }
+    return false;
 }
 
 void Renderer::releaseTargets() {
@@ -507,6 +659,8 @@ void Renderer::releaseTargets() {
     if (msaaColor_) wgpuTextureRelease(msaaColor_);
     if (msaaAuxColorView_) wgpuTextureViewRelease(msaaAuxColorView_);
     if (msaaAuxColor_) wgpuTextureRelease(msaaAuxColor_);
+    if (velocityCameraView_) wgpuTextureViewRelease(velocityCameraView_);
+    if (velocityCamera_) wgpuTextureRelease(velocityCamera_);
     if (sceneView_) wgpuTextureViewRelease(sceneView_);
     if (sceneColor_) wgpuTextureRelease(sceneColor_);
     if (normalView_) wgpuTextureViewRelease(normalView_);
@@ -537,6 +691,8 @@ void Renderer::releaseTargets() {
     depth_ = msaaColor_ = msaaDepth_ = sceneColor_ = normalTexture_ = materialTexture_ = viewportColor_ = viewportDepth_ = nullptr;
     msaaAuxColor_ = nullptr;
     msaaAuxColorView_ = nullptr;
+    velocityCamera_ = nullptr;
+    velocityCameraView_ = nullptr;
     outputGroups_.clear();  // they hold the scene target
     releaseOutputGroup();
 }
@@ -792,16 +948,23 @@ void Renderer::encodeFrame(FrameJob& job) {
         // program whose providing scene was torn down may keep a null group, but an active draw must
         // never bind it: fail closed rather than send null or silently skip the draw. A stage with no
         // bindings has a valid empty layout, so its group is not required.
+        const bool vertexBlock = p.program->vertex.uniformBlockSize != 0;
         const WGPUBindGroup vertexGroup = p.vertexGroup ? p.vertexGroup : p.program->groups[0];
         if (vertexGroup == nullptr && !p.program->vertex.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no vertex bind group");
-        TN_ENCODE(SetBindGroup, 0, vertexGroup, 1, &p.vertexOffset);
+        TN_ENCODE(SetBindGroup, 0, vertexGroup, vertexBlock ? 1 : 0, &p.vertexOffset);
         // Plain depth draws have no fragment block; alpha coverage uses its own uniform slice.
         const bool fragmentBlock = p.program->fragment.uniformBlockSize != 0;
         const WGPUBindGroup fragmentGroup = p.mapGroup ? p.mapGroup : p.program->groups[1];
         if (fragmentGroup == nullptr && !p.program->fragment.bindings.empty())
             throw std::runtime_error("TN_NATIVE_BINDING_NULL: active draw has no fragment bind group");
         TN_ENCODE(SetBindGroup, 1, fragmentGroup, fragmentBlock ? 1 : 0, &p.fragmentOffset);
+        if (p.program->usesViewGroup) {
+            const WGPUBindGroup vg = p.shadowViewSlice ? shadowViewGroup_ : viewGroup_;
+            if (vg == nullptr)
+                throw std::runtime_error("TN_NATIVE_BINDING_NULL: shared view bind group");
+            TN_ENCODE(SetBindGroup, 2, vg, 1, &p.viewOffset);
+        }
         if (item.indices) {
             const auto indices = geometry_->cache.resolved(*item.indices);
             const bool wide = indices.scalar == Scalar::U32;
@@ -813,14 +976,18 @@ void Renderer::encodeFrame(FrameJob& job) {
             }
             const uint32_t count = static_cast<uint32_t>(indices.bytes / (wide ? 4 : 2));
             // The record's instance count is the GPU's; the tally below stays the CPU upper bound (capacity).
-            if (item.indirect)
+            if (p.gpuIndirect)
+                TN_ENCODE(DrawIndexedIndirect, p.gpuIndirect, p.gpuIndirectOffset);
+            else if (item.indirect)
                 TN_ENCODE(DrawIndexedIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
             else TN_ENCODE(DrawIndexed, count, item.instanceCount, 0, 0, 0);
             if (tally != Tally::Extra)
                 (counted ? lastFrame_.triangles : lastFrame_.shadowTriangles) += uint64_t{item.instanceCount} * (count / 3);  // three's Info.update
         } else {
             const uint32_t count = static_cast<uint32_t>(geometry_->cache.resolved(*item.positions).bytes / 12);
-            if (item.indirect)
+            if (p.gpuIndirect)
+                TN_ENCODE(DrawIndirect, p.gpuIndirect, p.gpuIndirectOffset);
+            else if (item.indirect)
                 TN_ENCODE(DrawIndirect, geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer), item.indirectOffset);
             else TN_ENCODE(Draw, count, item.instanceCount, 0, 0);
             if (tally != Tally::Extra)
@@ -840,6 +1007,37 @@ void Renderer::encodeFrame(FrameJob& job) {
         }
 #undef TN_ENCODE
     };
+    // PRD-914 Phase 3: one dispatch writes this frame's compacted instance ids and each culled draw's indirect count,
+    // before any geometry pass reads them. It reads the same packed `instances` storage the colour pass will, so a
+    // survivor keeps the matrix and colour the plan packed, and its ids keep current and previous history aligned.
+    if (!job.gpuCullDraws.empty() && job.gpuCullTotalInstances > 0) {
+        ensureGpuCullPipeline();
+        const WGPUBuffer instanceBuffer = gpu_.buffer(storages_.at("instances").buffer);
+        const WGPUBuffer idBuffer = gpu_.buffer(storages_.at("gpuCullIds").buffer);
+        const WGPUBuffer descBuffer = gpu_.buffer(gpuCullDescs_);
+        const WGPUBuffer argsBuffer = gpu_.buffer(gpuCullArgs_);
+        const WGPUBuffer uniformBuffer = gpu_.buffer(gpuCullUniforms_);
+        if (gpuCullPipeline_ && gpuCullLayout_ && instanceBuffer && idBuffer && descBuffer && argsBuffer && uniformBuffer) {
+            std::array<WGPUBindGroupEntry, 5> entries{};
+            const std::array<WGPUBuffer, 5> buffers{instanceBuffer, descBuffer, uniformBuffer, idBuffer, argsBuffer};
+            for (std::size_t k = 0; k < entries.size(); ++k) {
+                entries[k].binding = uint32_t(k);
+                entries[k].buffer = buffers[k];
+                entries[k].size = wgpuBufferGetSize(buffers[k]);
+            }
+            const WGPUBindGroup group = gpuCullGroups_.get(device_, gpuCullLayout_,
+                std::vector<WGPUBindGroupEntry>(entries.begin(), entries.end()));
+            if (group) {
+                WGPUComputePassDescriptor cullDesc = {};
+                WGPUComputePassEncoder cullPass = beginTimedComputePass(encoder, &cullDesc, {"gpuCull", 0, 0, 0});
+                wgpuComputePassEncoderSetPipeline(cullPass, gpuCullPipeline_);
+                wgpuComputePassEncoderSetBindGroup(cullPass, 0, group, 0, nullptr);
+                wgpuComputePassEncoderDispatchWorkgroups(cullPass, (job.gpuCullTotalInstances + 63u) / 64u, 1, 1);
+                wgpuComputePassEncoderEnd(cullPass);
+                wgpuComputePassEncoderRelease(cullPass);
+            }
+        }
+    }
     if (!virtualShadows_.empty()) {
         graph::RenderGraph graph;
         std::vector<graph::Read> reads;
@@ -970,8 +1168,9 @@ void Renderer::encodeFrame(FrameJob& job) {
                 wgpuRenderBundleEncoderSetVertexBuffer(bundle, v.location, v.buffer, v.offset, v.size);
                 if (v.location < 16) { vertexBuffers[v.location] = v.buffer; vertexOffsets[v.location] = v.offset; }
             }
-            wgpuRenderBundleEncoderSetBindGroup(bundle, 0, row.vertexGroup, 1, &row.vertexOffset);
+            wgpuRenderBundleEncoderSetBindGroup(bundle, 0, row.vertexGroup, row.vertexBlock ? 1 : 0, &row.vertexOffset);
             wgpuRenderBundleEncoderSetBindGroup(bundle, 1, row.mapGroup, row.fragmentBlock ? 1 : 0, &row.fragmentOffset);
+            if (row.viewGroup) wgpuRenderBundleEncoderSetBindGroup(bundle, 2, row.viewGroup, 1, &row.viewOffset);
             if (row.index) {
                 if (index != row.index) wgpuRenderBundleEncoderSetIndexBuffer(bundle, index = row.index, row.indexFormat, 0, row.indexSize);
                 wgpuRenderBundleEncoderDrawIndexedIndirect(bundle, row.indirect ? row.indirect : pass.indirect,
@@ -1003,19 +1202,52 @@ void Renderer::encodeFrame(FrameJob& job) {
         recorded += uint32_t(pass.rows->size() - pass.sorted);
         lastFrame_.recordMs += meterMs() - recordStarted;
     };
-    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them. Inside
-    // one arm the plan's own key carries the frame: a split bundle is reused while the plan holds, as a one-pass one is.
-    if (splitPrepass != splitRecorded_) {
+    // PRD-914: the main pass's colour attachments — the scene colour first, then (one unified base pass) every post
+    // target the graph reads and every custom MRT slot, in planAux's order.
+    std::array<WGPURenderPassColorAttachment, kMaxColourTargets> mainColors{};
+    std::array<WGPUTextureFormat, kMaxColourTargets> mainFormats{};
+    size_t mainColorCount = 1;
+    mainColors[0] = color;
+    mainFormats[0] = sceneFormat_;
+    if (job.unifiedAux) {
+        const auto appendMainAux = [&](WGPUTextureView view, WGPUColor clear) {
+            if (mainColorCount >= mainColors.size() || !view) return;
+            WGPURenderPassColorAttachment& att = mainColors[mainColorCount];
+            att = {};
+            att.view = view;
+            att.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+            att.storeOp = WGPUStoreOp_Store;
+            att.clearValue = clear;
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            att.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+            mainFormats[mainColorCount++] = WGPUTextureFormat_RGBA16Float;
+        };
+        if (job.unifiedAuxMask & kAuxNormal) appendMainAux(normalView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxMaterial) appendMainAux(materialView_, {0, 1, 0, 1});
+        if (job.unifiedAuxMask & kAuxAlbedo) appendMainAux(albedoView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxEmissive) appendMainAux(emissiveView_, {0, 0, 0, 0});
+        if (job.unifiedAuxMask & kAuxIndirect) appendMainAux(indirectView_, {0, 0, 0, 0});
+        for (const auto& name : job.unifiedAuxMrt) {
+            const auto found = mrtViews_.find(name);
+            appendMainAux(found == mrtViews_.end() ? nullptr : found->second, {0, 0, 0, 0});
+        }
+    }
+    passDesc.colorAttachmentCount = mainColorCount;
+    passDesc.colorAttachments = mainColors.data();
+    // A split arm and a one-pass arm record different bundles for the same plan, so switching arms drops them; a frame
+    // whose aux layout moved records the main bundles again too. Inside one arm the plan's own key carries the frame.
+    if (splitPrepass != splitRecorded_ || job.mainAuxKey != mainAuxKey_) {
         for (WGPURenderBundle* bundle : {&mainBundle_, &prepassBundle_, &prepassTailBundle_, &viewportBundle_, &tailBundle_, &mainDelta_}) {
             if (*bundle) wgpuRenderBundleRelease(*bundle);
             *bundle = nullptr;
         }
         splitRecorded_ = splitPrepass;
+        mainAuxKey_ = job.mainAuxKey;
     }
     if (features().stableRows && job.mainRows.on) {
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = sceneFormat_;
-        descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+        descriptor.colorFormatCount = mainColorCount; descriptor.colorFormats = mainFormats.data();
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         // The draws from the first transparent one to the viewport copy: a bundle keyed by their rows of the per-draw key.
         if (job.tail == viewportSplit) {
@@ -1085,8 +1317,7 @@ void Renderer::encodeFrame(FrameJob& job) {
         if (mainDelta_) wgpuRenderBundleRelease(mainDelta_);
         mainBundle_ = viewportBundle_ = tailBundle_ = mainDelta_ = prepassBundle_ = prepassTailBundle_ = nullptr;
         WGPURenderBundleEncoderDescriptor descriptor{};
-        const WGPUTextureFormat color = sceneFormat_;
-        descriptor.colorFormatCount = 1; descriptor.colorFormats = &color;
+        descriptor.colorFormatCount = mainColorCount; descriptor.colorFormats = mainFormats.data();
         descriptor.depthStencilFormat = WGPUTextureFormat_Depth32Float; descriptor.sampleCount = sampleCount_;
         const auto shadowStats = lastFrame_.shadowSkinned;
         const auto shadowDraws = lastFrame_.shadowDraws;
@@ -1150,18 +1381,22 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.prepassDraws = mainBundleStats_.prepassDraws;
     }
     if (splitPrepass && prepassBundle_) {
-        // Nothing writes the colour target (the depth pipelines mask every channel), so it is neither loaded nor stored
-        // on the shipped path; the depth the prepass writes is what this pass is for.
-        WGPURenderPassColorAttachment unread = color;
-        unread.loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
-        unread.storeOp = keepColor_ ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
-        unread.resolveTarget = nullptr;
+        // Nothing writes the colour targets (the depth pipelines mask every channel), so they are neither loaded nor
+        // stored on the shipped path; the depth the prepass writes is what this pass is for. The unified base pass's
+        // extra attachments ride along the same way: their pipeline masks are off, so no fragment output reaches them.
+        std::array<WGPURenderPassColorAttachment, kMaxColourTargets> unreadColors{};
+        for (std::size_t i = 0; i < mainColorCount; ++i) {
+            unreadColors[i] = mainColors[i];
+            unreadColors[i].loadOp = keepColor_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
+            unreadColors[i].storeOp = keepColor_ ? WGPUStoreOp_Store : WGPUStoreOp_Discard;
+            unreadColors[i].resolveTarget = nullptr;
+        }
         WGPURenderPassDepthStencilAttachment prepassDepth = depth;
         prepassDepth.depthLoadOp = keepDepth_ ? WGPULoadOp_Load : WGPULoadOp_Clear;
         prepassDepth.depthStoreOp = WGPUStoreOp_Store;
         WGPURenderPassDescriptor prepassDesc = {};
-        prepassDesc.colorAttachmentCount = 1;
-        prepassDesc.colorAttachments = &unread;
+        prepassDesc.colorAttachmentCount = mainColorCount;
+        prepassDesc.colorAttachments = unreadColors.data();
         prepassDesc.depthStencilAttachment = &prepassDepth;
         WGPURenderPassEncoder prepassPass =
             beginTimedRenderPass(encoder, &prepassDesc, 2, {"prepass", inputWidth_, inputHeight_});
@@ -1188,13 +1423,17 @@ void Renderer::encodeFrame(FrameJob& job) {
         from.texture = depth_; to.texture = viewportDepth_;
         from.aspect = to.aspect = WGPUTextureAspect_DepthOnly;
         wgpuCommandEncoderCopyTextureToTexture(encoder, &from, &to, &extent);
-        WGPURenderPassColorAttachment loadColor = color;
-        loadColor.loadOp = WGPULoadOp_Load;
+        std::array<WGPURenderPassColorAttachment, kMaxColourTargets> loadColors{};
+        for (std::size_t i = 0; i < mainColorCount; ++i) {
+            loadColors[i] = mainColors[i];
+            loadColors[i].loadOp = WGPULoadOp_Load;
+            loadColors[i].storeOp = WGPUStoreOp_Store;
+        }
         WGPURenderPassDepthStencilAttachment loadDepth = depth;
         loadDepth.depthLoadOp = WGPULoadOp_Load;
         WGPURenderPassDescriptor viewportDesc = {};
-        viewportDesc.colorAttachmentCount = 1;
-        viewportDesc.colorAttachments = &loadColor;
+        viewportDesc.colorAttachmentCount = mainColorCount;
+        viewportDesc.colorAttachments = loadColors.data();
         viewportDesc.depthStencilAttachment = &loadDepth;
         WGPURenderPassEncoder rest = beginTimedRenderPass(encoder, &viewportDesc, 2, {"viewport", inputWidth_, inputHeight_});
         if (prepassTailBundle_) wgpuRenderPassEncoderExecuteBundles(rest, 1, &prepassTailBundle_);
@@ -1325,23 +1564,11 @@ void Renderer::encodeFrame(FrameJob& job) {
         for (const Planned& p : job.translucentPlan) encode(sheetPass, p, Tally::Extra);
         wgpuRenderPassEncoderEnd(sheetPass); wgpuRenderPassEncoderRelease(sheetPass);
     }
+    lastFrame_.velocityDraws = 0;
     if (traa_) {
         traa_->fillVelocity(encoder, depthView_);
-        WGPURenderPassColorAttachment motion{};
-        motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Load; motion.storeOp = WGPUStoreOp_Store;
-        if (sampleCount_ == 4) {
-            motion.view = msaaAuxColorView_;
-            motion.loadOp = WGPULoadOp_Clear;
-            motion.resolveTarget = traa_->velocityView();
-        }
-#if defined(MYSTRAL_WEBGPU_DAWN)
-        motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
-#endif
-        WGPURenderPassDepthStencilAttachment motionDepth{};
-        motionDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; motionDepth.depthReadOnly = true;
-        WGPURenderPassDescriptor motionDesc{};
-        motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
-        motionDesc.depthStencilAttachment = &motionDepth;
+        lastFrame_.velocityDraws = uint32_t(velocityPlan.size());
+        if (job.traaSeedFrame) previousStorageValid_ = {false, false};
         const auto copyPrevious = [&] {
             for (std::size_t k = 0; k < kPreviousStorages.size(); ++k)
                 if (job.previousBytes[k])
@@ -1350,12 +1577,58 @@ void Renderer::encodeFrame(FrameJob& job) {
                         job.previousBytes[k]);
         };
         if (job.previousSeed) copyPrevious();
-        auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
-        const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
-        replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
-               job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
-        wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        if (!velocityPlan.empty()) {
+            WGPURenderPassColorAttachment motion{};
+            motion.view = traa_->velocityView(); motion.loadOp = WGPULoadOp_Load; motion.storeOp = WGPUStoreOp_Store;
+            if (sampleCount_ == 4) {
+                WGPUImageCopyTexture_Compat src{}, dst{};
+                src.texture = traa_->velocityTexture();
+                dst.texture = velocityCamera_;
+                const WGPUExtent3D extent{inputWidth_, inputHeight_, 1};
+                wgpuCommandEncoderCopyTextureToTexture(encoder, &src, &dst, &extent);
+                motion.view = msaaAuxColorView_;
+                motion.loadOp = WGPULoadOp_Clear;
+                motion.resolveTarget = traa_->velocityView();
+            }
+#if defined(MYSTRAL_WEBGPU_DAWN)
+            motion.depthSlice = WGPU_DEPTH_SLICE_UNDEFINED;
+#endif
+            WGPURenderPassDepthStencilAttachment motionDepth{};
+            motionDepth.view = sampleCount_ == 4 ? msaaDepthView_ : depthView_; motionDepth.depthReadOnly = true;
+            WGPURenderPassDescriptor motionDesc{};
+            motionDesc.colorAttachmentCount = 1; motionDesc.colorAttachments = &motion;
+            motionDesc.depthStencilAttachment = &motionDepth;
+            auto velocityPass = beginTimedRenderPass(encoder, &motionDesc, 2, {"velocityObjects", inputWidth_, inputHeight_});
+            if (sampleCount_ == 4) {
+                WGPURenderPipeline seedPipe = copyPipeline(
+                    WGPUTextureFormat_RGBA16Float, 0, nullptr, WGPUTextureFormat_Depth32Float, sampleCount_);
+                if (!seedPipe) throw std::runtime_error("TN_TRAA_CAMERA_SEED_PIPELINE_REFUSED");
+                WGPUBindGroupLayout seedLayout = wgpuRenderPipelineGetBindGroupLayout(seedPipe, 0);
+                WGPUBindGroup seedGroup = bindGroup(seedLayout, blitFragment_, outputUniforms_, velocityCameraView_,
+                    outputSampler_, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr, nullptr,
+                    nullptr, nullptr, &outputGroups_);
+                wgpuBindGroupLayoutRelease(seedLayout);
+                if (!seedGroup) throw std::runtime_error("TN_TRAA_CAMERA_SEED_GROUP_REFUSED");
+                wgpuRenderPassEncoderSetPipeline(velocityPass, seedPipe);
+                wgpuRenderPassEncoderSetBindGroup(velocityPass, 0, seedGroup, 0, nullptr);
+                wgpuRenderPassEncoderSetVertexBuffer(
+                    velocityPass, blitVertex_.attributes.at(0).location, gpu_.buffer(outputTriangle_), 0, 24);
+                wgpuRenderPassEncoderDraw(velocityPass, 3, 1, 0, 0);
+            }
+            const WGPUTextureFormat motionFormat = WGPUTextureFormat_RGBA16Float;
+            replay(velocityPass, velocityBundle_, velocityBundleKey_, job.velocityKey, velocityPlan, &motionFormat, 1, sampleCount_,
+                   job.velocityRows, velocityDelta_, velocityDeltaKey_, velocityTail_, velocityTailKey_);
+            wgpuRenderPassEncoderEnd(velocityPass); wgpuRenderPassEncoderRelease(velocityPass);
+        }
         copyPrevious();
+        for (std::size_t k = 0; k < kPreviousStorages.size(); ++k) {
+            if (job.previousBytes[k] > 0) {
+                previousStorageValid_[k] = true;
+                previousStorageBytes_[k] = job.previousBytes[k];
+            } else if (k == 1 && job.instancesMutated) {
+                previousStorageValid_[1] = false;
+            }
+        }
         if (!lateTraa_) traa_->resolve(encoder, sceneColor_, sceneView_, depth_, depthView_);
     }
     // A game's RenderTarget the post graph samples is drawn where the frame first reads it, after the render-to-texture
@@ -1474,6 +1747,8 @@ void Renderer::encodeFrame(FrameJob& job) {
         lastFrame_.paletteWrites = job.paletteWrites;
         lastFrame_.shadowGroupRows = job.shadowGroupRows;
         lastFrame_.instanceCopies = job.instanceCopies;
+        // After every bundle-record block: a bundle cache hit still drew this frame's culled draws.
+        lastFrame_.gpuCulledDraws = uint32_t(job.gpuCullDraws.size());
         waste::debugAdd(waste::counters().renderFrames);
         waste::debugAdd(waste::counters().renderDraws, lastFrame_.draws);
         waste::debugAdd(waste::counters().prepassDraws, lastFrame_.prepassDraws);

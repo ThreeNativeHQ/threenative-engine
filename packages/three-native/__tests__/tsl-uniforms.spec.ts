@@ -427,6 +427,39 @@ describe("uniform sync cost", () => {
     live.sync({ scene: "scene", frameId: 4 });
     expect(pushed).toEqual([uC.elements]);
   });
+
+  it("skips reads on nested renders when only frame hooks exist and scopes mesh object scans", () => {
+    const asked: unknown[] = [];
+    const pushed: number[][] = [];
+    const uA = new Proxy({ elements: [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1] }, {});
+    const uB = new Proxy({ elements: [2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 2, 0, 0, 0, 0, 1] }, {});
+    const live = liveUniforms<IFakeNode>(
+      (v) => ({ value: v }),
+      (_node, lanes) => pushed.push([...lanes]),
+      undefined,
+      (frame, hooked) => {
+        asked.push(hooked.length);
+        return frame.scene && typeof frame.scene === "object" && "isQuad" in frame.scene
+          ? [1]
+          : undefined;
+      },
+    );
+    let frames = 0;
+    const hooked = live.uniform(0) as IFakeNode & { onFrameUpdate(callback: () => unknown): void };
+    hooked.onFrameUpdate(() => ++frames);
+    live.uniform(uA);
+    live.uniform(uB);
+    live.sync({ scene: { isScene: true }, frameId: 1 });
+    pushed.length = 0;
+    asked.length = 0;
+    uA.elements[12] = 77;
+    uB.elements[12] = 88;
+    // Nested mesh draw with only frame hooks: skips updating-hook reads, scopes object scan to uB ([1]).
+    live.sync({ scene: { isQuad: true }, frameId: 1 });
+    expect(frames).toBe(1);
+    expect(asked).toEqual([2]);
+    expect(pushed).toEqual([uB.elements]);
+  });
 });
 
 afterEach(() => {

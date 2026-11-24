@@ -146,6 +146,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
+        native_engine_unified_basepass_mrt=unified_basepass_mrt
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
         native_engine_renderer_denoise_face_normal=denoise_face_normal
         native_engine_renderer_emissive_validation=emissive_validation
@@ -165,6 +166,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
+        native_engine_traa_dynamic_only_velocity=traa_dynamic_only_velocity
+        native_engine_traa_gpu_instance_cull=traa_gpu_instance_cull
         native_engine_renderer_frame_delta_skips_compiles=frame_delta_skips_compiles
         native_engine_traa_instanced_velocity=traa_instanced_velocity
         native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity
@@ -191,7 +194,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size
         native_engine_post_stage_is_metered=post_stage_is_metered
-        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges)
+        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges
+        native_engine_renderer_uniform_scan_counters=uniform_scan_counters
+        native_engine_shared_view_uniforms=shared_view_uniforms)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
     # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
     if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
@@ -315,6 +320,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_palette_lifetime=palette_lifetime
         native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_gpu_scene_dirty_uploads=gpu_scene_dirty_uploads
         native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
         native_engine_shadow_row_follows_on_before_render=shadow_row_follows_on_before_render
         native_engine_skin_attribute_delete_is_seen=skin_attribute_delete_is_seen
@@ -423,6 +429,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_record_retention=frustum_record_retention
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
         native_engine_renderer_reflection_reuse=reflection_reuse
+        native_engine_renderer_reflection_filter=reflection_filter
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
         native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once

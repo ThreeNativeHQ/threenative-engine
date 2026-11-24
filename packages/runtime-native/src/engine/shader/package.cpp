@@ -1,4 +1,5 @@
 #include "package.h"
+#include "engine/shader/view_uniforms.h"
 
 #include <algorithm>
 #include <array>
@@ -17,7 +18,7 @@ uint32_t roundUp(uint32_t value, uint32_t align) { return (value + align - 1) / 
 
 // Known sources the engine refreshes natively; anything else is material data.
 UpdateSchedule scheduleFor(std::string_view name) {
-    for (std::string_view object : {"modelMatrix", "modelViewMatrix", "modelViewProjection", "normalMatrix"}) {
+    for (std::string_view object : {"modelMatrix", "modelViewMatrix", "modelViewProjection", "normalMatrix", "modelNormalMatrix"}) {
         if (name == object) return UpdateSchedule::Object;
     }
     for (std::string_view camera : {"viewMatrix", "projectionMatrix", "viewProjection", "cameraPosition"}) {
@@ -69,21 +70,47 @@ const Variant* ShaderPackage::variant(uint32_t key) const {
     return nullptr;
 }
 
-StageModule buildStage(const Program& program, uint32_t group) {
+StageModule buildStage(const Program& program, uint32_t group, bool sharedView) {
     StageModule module{program.stage()};
-    module.wgsl = WgslEmitter::emit(program, group);
+    module.wgsl = WgslEmitter::emit(program, group, sharedView);
 
     // Mirrors the emitter's first-use order, so every offset and binding names what WGSL declares.
     uint32_t offset = 0;
     uint32_t structAlign = 1;
     uint32_t location = 0;
+    bool emittedModelNormal = false;
     for (ExprId id = 1; id < program.exprs_.size(); ++id) {
         const Expr& e = program.exprs_[id];
         if (e.op == Op::Uniform) {
-            const Layout layout = uniformLayout(e.type);
+            std::string name = program.names_[e.immediate];
+            Type uType = e.type;
+            if (sharedView) {
+                uint32_t lightIdx = 0;
+                std::string_view lightField;
+                if (view_uniforms::isHeaderField(name)) {
+                    module.usesViewGroup = true;
+                    continue;
+                }
+                if (view_uniforms::parseLightField(name, lightIdx, lightField)) {
+                    module.usesViewGroup = true;
+                    module.viewLightCount = std::max(module.viewLightCount, lightIdx + 1);
+                    continue;
+                }
+                if (name == "normalMatrix") {
+                    module.usesViewGroup = true;
+                    if (emittedModelNormal) continue;
+                    emittedModelNormal = true;
+                    name = "modelNormalMatrix";
+                    uType = Type::mat(3, 3);
+                } else if (name == "modelNormalMatrix") {
+                    if (emittedModelNormal) continue;
+                    emittedModelNormal = true;
+                }
+            }
+            const Layout layout = uniformLayout(uType);
             offset = roundUp(offset, layout.align);
-            const std::string& name = program.names_[e.immediate];
-            module.uniforms.push_back(UniformField{name, e.type, offset, layout.size, scheduleFor(name)});
+            const auto schedule = scheduleFor(name);
+            module.uniforms.push_back(UniformField{std::move(name), uType, offset, layout.size, schedule});
             offset += layout.size;
             structAlign = std::max(structAlign, layout.align);
         } else if (e.op == Op::Attribute) {
