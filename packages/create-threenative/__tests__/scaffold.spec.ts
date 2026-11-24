@@ -116,15 +116,15 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "48e35c43e023a3cc51924d1c22ec8cd26426b0c2d9168b359e53cc0127133bfe",
+    shared: "3b8df9abd6782902b899b000190958da586b33c81ad95a53f81612f29816f9ff",
     kit: "b481f869ef53eab5c55f9b99f7b8516cb914d49fda831c3697ddf07cdca77c63",
   },
   adventure: {
-    shared: "6012a5858aaaa245bd5dadc44cec256bb5e49953ec93223852c3c9f93a2a22b2",
+    shared: "006236095c8d1a1ac014743e0123b0ab4f02c709a9c6455b5bc4465bbed6904f",
     kit: "245f731799f22ab8a612a950b5a351c62f4ea58b231bf7c92282001011c618f3",
   },
   collectathon: {
-    shared: "fb06752c130c9504540a4b0c558d3d0ad06350cd99d26b718b29aaedd0f6f0a4",
+    shared: "eecb7837689f4a35faf49b555a0704dbe03a909f78c89b4e5b6bc3d80d62ecb7",
     kit: "effacfbf368f5b9d618d7e15c383b8a59bdf38ce02e9167d3257407998b31f4d",
   },
   kart: {
@@ -136,7 +136,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "760b581f80dbb6e324f292eedde8e80801296f3233f446ba3f830de7a3751a6d",
   },
   platformer: {
-    shared: "733fdd5752e304d6821f4b4cc341387fbe5855d0fee4c5d45a420efe8a270734",
+    shared: "985a0f6670045afdb8519292b943a806f5155dde62b1888f0db967ad25a84cb7",
     kit: "7fd109cf8e4529f0cd6f7861f184dd01551e49acd82d41c2ab53e547f1edab18",
   },
   puzzle: {
@@ -164,7 +164,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "5117ac473704046237f61a56d5898996e56b70d85f1d6ab16a6405f3aacb0f91",
   },
   shooter: {
-    shared: "4d5623bfc82f581e69ec22fb3b4cc97f1422c8074fb4fca0281d3db5bfe8cedc",
+    shared: "1f8e1ecb848c595600b91a41f435638bdd5c92d420003f4661946903f2a988af",
     kit: "333e32a53066c54345ab44e0371a324fdf339d6e63162398d274fed0d29df9d4",
   },
   snow: {
