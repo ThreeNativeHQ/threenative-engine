@@ -5177,6 +5177,17 @@ void velocityAndShadowGroupCaches() {
     const bool initialized = context.initializeHeadless();
     CHECK(initialized);
     if (!initialized) return;
+    // Grouped page rows are the legacy per-page CPU path; PRD-775's GPU pages draw one row per caster.
+    const char* priorRaw = std::getenv("TN_VSM_GPU_PAGES");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_VSM_GPU_PAGES", prior->c_str(), 1);
+            else unsetenv("TN_VSM_GPU_PAGES");
+        }
+    } restore{prior};
+    setenv("TN_VSM_GPU_PAGES", "0", 1);
     EventQueue events;
     Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
     renderer.setSize(16, 16);

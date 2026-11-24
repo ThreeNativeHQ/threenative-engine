@@ -2601,19 +2601,29 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             if (!reaches) continue;  // no drawn page of this level is reachable: zero GPU cull work
                         }
                         const DrawItem* selected = drawn;
-                        if (level > 0 && atlas.options().shadowLodBias && drawn->shadowObject) {
-                            const auto& lods = atlas.options().control->lods;
-                            const auto lod = lods.find(drawn->shadowObject->id());
-                            if (lod != lods.end()) {
-                                const auto& chain = lod->second;
+                        if (level > 0 && atlas.options().shadowLodBias &&
+                            (drawn->shadowLodChain != nullptr || drawn->shadowObject)) {
+                            // Same choice as the per-page path: a settled static batch carries its own chain and
+                            // merged scale; a plain caster reads its chain by object id.
+                            const shadows::ShadowLodChain* chainPtr = drawn->shadowLodChain;
+                            if (chainPtr == nullptr) {
+                                const auto& lods = atlas.options().control->lods;
+                                const auto lod = lods.find(drawn->shadowObject->id());
+                                chainPtr = lod != lods.end() ? &lod->second : nullptr;
+                            }
+                            if (chainPtr != nullptr) {
+                                const auto& chain = *chainPtr;
                                 int shown = 0;
                                 for (std::size_t r = 0; r < chain.rungs.size(); ++r)
                                     if (chain.rungs[r]->index && chain.rungs[r]->index->store.get() == drawn->indices)
                                         shown = int(r) + 1;
-                                Matrix4 model;
-                                model.elements = drawn->matrixWorld;
-                                const int rung = shadows::shadowLodRung(chain.errors, shown, info.lodBudget,
-                                                                        model.getMaxScaleOnAxis());
+                                double scale = drawn->shadowLodMaxScale;
+                                if (scale <= 0.0) {
+                                    Matrix4 model;
+                                    model.elements = drawn->matrixWorld;
+                                    scale = model.getMaxScaleOnAxis();
+                                }
+                                const int rung = shadows::shadowLodRung(chain.errors, shown, info.lodBudget, scale);
                                 if (rung > 0 && std::size_t(rung) <= chain.rungs.size() &&
                                     chain.rungs[std::size_t(rung - 1)]->index) {
                                     DrawItem& copy = job.shadowLodItems.emplace_back(*drawn);
