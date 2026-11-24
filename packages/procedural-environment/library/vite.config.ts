@@ -26,7 +26,7 @@ export default defineConfig({
   plugins: [
     createAssetLibraryPlugin({
       mountPath: "/",
-      title: "Procedural Asset Library",
+      title: "Asset Library",
       project: false,
       devShell: false,
       sources: [
