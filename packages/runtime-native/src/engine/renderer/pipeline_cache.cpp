@@ -218,7 +218,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32 ^ uint64_t(key.target.sampleCount) << 48);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
-        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58 | uint64_t(key.target.colorWrite) << 59);
+        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 60 | uint64_t(key.target.colorWrite) << 61);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);

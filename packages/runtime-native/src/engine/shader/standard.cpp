@@ -242,6 +242,17 @@ static ExprId nodeType(Program& p, ExprId id, Type type) {
     return p.construct(type, {id});
 }
 
+// The persistent original instance index a draw's compacted slot reads. A GPU-culled draw's vertex stage sees the
+// survivor ordinal in `instanceIndex`; `gpuCullIds` maps it back to the instance the plan packed, so current and
+// previous transforms of survivor k stay at the same original index and the ids and base never carry the previous
+// frame's prefix.
+static ExprId instanceSlotIndex(Program& v, const VertexVariant& variant) {
+    if (!variant.gpuCulled) return v.builtin("instanceIndex");
+    const uint32_t cullIds = v.storageBuffer("gpuCullIds", Type::u32());
+    const ExprId idBase = v.construct(Type::u32(), {v.uniform("gpuCullIdBase", Type::f32())});
+    return v.loadStorage(cullIds, v.add(idBase, v.builtin("instanceIndex")));
+}
+
 // The engine TSL instanceMatrix(): the drawn instance's matrix, as graph inputs tnInstanceMatrix0..3 (a mat4 cannot
 // cross stages; each vec4 column can). Each is the column applyInstance reads, or identity for a draw that is not
 // instanced, so one node material serves instanced and plain meshes: what three's Fn reads through builder.object.
@@ -254,7 +265,7 @@ static ExprId instanceColumn(Program& v, const VertexVariant& variant, int index
     if (!variant.instanceStorage) return v.attribute("instanceMatrix" + std::to_string(index), Type::vec(4));
     const uint32_t instances = v.storageBuffer(previous + "instances", Type::vec(4));
     const ExprId base = v.add(v.construct(Type::u32(), {v.uniform(previous + "instanceBase", Type::f32())}),
-                              v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
+                              v.mul(instanceSlotIndex(v, variant), v.construct(Type::u32(), {v.constant(5)})));
     return v.loadStorage(instances, v.add(base, v.construct(Type::u32(), {v.constant(index)})));
 }
 static constexpr std::string_view kInstanceColumn = "tnInstanceMatrix";
@@ -324,7 +335,7 @@ static LocalVertex localVertex(Program& v, const VertexVariant& variant, bool wi
     if (variant.instanceStorage) {
         instances = v.storageBuffer(previous + "instances", Type::vec(4));
         instanceBase = v.add(v.construct(Type::u32(), {v.uniform(previous + "instanceBase", Type::f32())}),
-                            v.mul(v.builtin("instanceIndex"), v.construct(Type::u32(), {v.constant(5)})));
+                            v.mul(instanceSlotIndex(v, variant), v.construct(Type::u32(), {v.constant(5)})));
     }
     const auto applyInstance = [&] {
         if (!variant.instanced)

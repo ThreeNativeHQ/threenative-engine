@@ -3834,7 +3834,8 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
                 renderer.lastFrame().auxRecorded);
-    CHECK(renderer.lastFrame().auxPasses == 1);
+    // PRD-914: at 1x the main pass writes the post targets itself; only 4x keeps the separate single-sampled pass.
+    CHECK(renderer.lastFrame().auxPasses == (samples == 1 ? 0u : 1u));
     CHECK(renderer.lastFrame().auxRecorded == 0);
     const auto centre = [&](GpuStatus (Renderer::*read)(ReadbackCallback)) {
         std::vector<uint8_t> pixels;
@@ -3950,6 +3951,17 @@ void auxTargetsNormalNode() {
 // to its own aux fragment built a whole lit MRT program per draw for the geometry normal the shared pass already
 // writes, so the count of aux fragments is the observable: zero for Lambert, one for Standard.
 void auxRoutesWrittenNormals() {
+    // The separate aux pass is the route this counts: pin the flag off for the fallback `auxFragment` path.
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+    setenv("TN_UNIFIED_AUX_MRT", "0", 1);
     const auto auxFragments = [](bool authored, MaterialKind kind) {
         mystral::webgpu::Context context;
         const bool initialized = context.initializeHeadless();
@@ -4395,9 +4407,511 @@ void sharedViewUniforms() {
         worst = std::max(worst, std::abs(int(shared.pixels[i]) - int(legacy.pixels[i])));
     CHECK(worst <= 2);
 }
+
+// PRD-914 Phase 1: an opaque draw whose model matrix, skinning, position node and instance revision are unchanged
+// since the previous frame takes fillVelocity()'s camera reprojection instead of redrawing into the velocity target.
+// Static meshes therefore emit no velocity draw and movers keep their own velocity, and TN_STATIC_VELOCITY=1 restores
+// the static draws and reports the override by name. A temporal effect replaces multisampling, so both requested
+// sample counts draw the scene through the same single-sampled velocity path.
+void traaDynamicOnlyVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    const std::size_t vertices = ball->positions.count() / 3;
+    BufferStore skinIndices(Scalar::U16, vertices * 4), skinWeights(Scalar::F32, vertices * 4);
+    const std::vector<uint16_t> zero(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, zero.data(), zero.size() * sizeof(uint16_t));
+    skinWeights.write(0, weights.data(), weights.size() * sizeof(float));
+    shader::StandardMaterial material;
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const char* priorRaw = std::getenv("TN_STATIC_VELOCITY");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_STATIC_VELOCITY", prior->c_str(), 1);
+            else unsetenv("TN_STATIC_VELOCITY");
+        }
+    } restore{prior};
+    const auto directory = std::filesystem::current_path() /
+        ("traa-dynamic-only-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    const auto readVelocity = [&](const std::filesystem::path& folder, int frame) {
+        std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    BufferStore staticMatrices(Scalar::F32, 16);
+    staticMatrices.write(0, identity, sizeof identity);
+    // One rigid and one instanced sphere that never move, under a camera sliding 0.02 along x per frame.
+    const auto staticArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(6, 6);
+        DrawItem items[2];
+        for (int i = 0; i < 2; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.9, 0, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.9, 0, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-static-only-forced" : "-static-only-default"));
+        bool reported = false;
+        for (int frame = 0; frame <= 6; ++frame) {
+            renderer.render(std::span<const DrawItem>(items, 2), slidingCamera(double(width) / height, frame),
+                            LightState{}, {0, 0, 0, 1});
+            if (forceStatic) {
+                CHECK(renderer.lastFrame().velocityDraws == 2);
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            } else if (frame >= 1) {
+                CHECK(renderer.lastFrame().velocityDraws == 0);
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 6);
+    };
+    // Two static spheres and three movers: a rigid sphere, a skinned sphere and an instanced sphere, each sliding 0.02
+    // along x per frame under a still camera.
+    const auto mixedArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        BufferStore movingMatrices(Scalar::F32, 16);
+        std::vector<float> bones(identity, identity + 16);
+        std::vector<DrawItem> items(5);
+        for (int i = 0; i < 5; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.4, 0.5, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.4, 0.5, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -0.4, 0, 1};
+        items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, -0.4, 0, 1};
+        items[3].skinIndices = &skinIndices; items[3].skinWeights = &skinWeights; items[3].boneMatrices = &bones;
+        items[3].bindMatrix = items[3].bindMatrixInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        items[4].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.5, -0.4, 0, 1};
+        items[4].instanceMatrices = &movingMatrices; items[4].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-mixed-forced" : "-mixed-default"));
+        std::array<float, 16> moving = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        bool reported = false;
+        for (int frame = 0; frame <= 20; ++frame) {
+            const float offset = 0.02f * float(frame);
+            items[2].matrixWorld[12] = offset;
+            bones[12] = offset;
+            moving[12] = offset;
+            movingMatrices.write(0, moving.data(), moving.size() * sizeof(float));
+            renderer.render(items, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
+            if (frame == 20) {
+                CHECK(renderer.lastFrame().velocityDraws == (forceStatic ? 5u : 3u));
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 20);
+    };
+    for (const uint32_t samples : {1u, 4u}) {
+        const std::string label = "samples-" + std::to_string(samples);
+        const auto staticDefault = staticArm(samples, label, false);
+        const auto staticForced = staticArm(samples, label, true);
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            CHECK(staticDefault[texel * 4 + 2] == 1.0f && staticDefault[texel * 4 + 3] == 1.0f);
+            CHECK(std::abs(staticDefault[texel * 4] - staticForced[texel * 4]) < 1e-4f);
+            CHECK(std::abs(staticDefault[texel * 4 + 1] - staticForced[texel * 4 + 1]) < 1e-4f);
+        }
+        const auto mixedDefault = mixedArm(samples, label, false);
+        const auto mixedForced = mixedArm(samples, label, true);
+        size_t moving = 0;
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            const float x = mixedDefault[texel * 4], y = mixedDefault[texel * 4 + 1];
+            const float z = mixedDefault[texel * 4 + 2], w = mixedDefault[texel * 4 + 3];
+            if (std::abs(x) > 0.004f || std::abs(y) > 0.004f || z == 3.0f) ++moving;
+            CHECK(w == 1.0f && mixedForced[texel * 4 + 3] == 1.0f);
+            CHECK(z == 1.0f || z == 3.0f);
+            CHECK(mixedForced[texel * 4 + 2] == z);
+            CHECK(std::abs(x - mixedForced[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(y - mixedForced[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 10);
+    }
+    std::filesystem::remove_all(directory);
+}
+// PRD-914: at sampleCount 1 one unified base pass writes the scene colour and every post target the graph reads,
+// named targets and custom slots alike, instead of a second aux pass over the same draws. The named fallback
+// (TN_UNIFIED_AUX_MRT=0) must produce the same pixels on every target, and a draw that writes no surface (an unlit
+// Basic patch) must keep the named targets clear while its colour still draws.
+void unifiedBasepassMrt() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 32, height = 32;
+    namespace g = shader::graph;
+    const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+    // Reads all five named targets plus one custom MRT slot: 5 + 1 fits beside `color` in the eight attachments.
+    const auto sources = g::vec4({g::add(lane("normal"), lane("metalness")), g::add(lane("roughness"), lane("albedo")),
+                                  g::add(lane("emissive"), lane("indirectDiffuse")), lane("customSlot")});
+
+    const auto big = plane(2, 2), small = plane(1.6, 1.6);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    big->normals.resize(12);
+    big->normals.write(0, facing, sizeof facing);
+    small->normals.resize(12);
+    small->normals.write(0, facing, sizeof facing);
+
+    shader::StandardMaterial litMaterial;
+    litMaterial.color = {0.25f, 0.5f, 1};
+    litMaterial.metalness = 1; litMaterial.roughness = 0.5f;
+    litMaterial.emissive = {1, 0.5f, 0}; litMaterial.emissiveIntensity = 4;
+    shader::StandardMaterial cutMaterial = litMaterial;
+    cutMaterial.alphaTest = 0.5f; cutMaterial.opacity = 0.4f;
+    shader::StandardMaterial basicMaterial;
+    basicMaterial.color = {1, 0, 0};
+    shader::StandardMaterial blendMaterial = litMaterial;
+    blendMaterial.opacity = 0.5f;
+
+    shader::MaterialNodes litNodes;
+    litNodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+    litNodes.mrt = {{"customSlot", g::vec4({g::float_(0.5), g::float_(0.75), g::float_(1), g::float_(1)})}};
+    std::array<DrawItem, 4> items;
+    items[0].key = items[0].id = 1;
+    items[0].kind = MaterialKind::Standard;
+    items[0].positions = &big->positions; items[0].normals = &big->normals; items[0].indices = &big->indices;
+    items[0].material = &litMaterial;
+    items[0].nodes = &litNodes;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[1].key = items[1].id = 2;
+    items[1].kind = MaterialKind::Standard;
+    items[1].positions = &small->positions; items[1].normals = &small->normals; items[1].indices = &small->indices;
+    items[1].material = &cutMaterial;
+    items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, -3, -3, 1};
+    items[2].key = items[2].id = 3;
+    items[2].kind = MaterialKind::Basic;
+    items[2].positions = &small->positions; items[2].indices = &small->indices;
+    items[2].material = &basicMaterial;
+    items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 3, -3, 1};
+    items[3].key = items[3].id = 4;
+    items[3].kind = MaterialKind::Standard;
+    items[3].positions = &small->positions; items[3].normals = &small->normals; items[3].indices = &small->indices;
+    items[3].material = &blendMaterial;
+    items[3].transparent = true;
+    items[3].depthWrite = false;
+    items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, -3, -3, 1};
+
+    const auto pixelOf = [&](double x, double y, double z) {
+        const double depth = 4.0 - z;  // camera(1) sits at z = 4 looking down -z
+        const double tanHalf = std::tan(25.0 * kPi / 180.0);
+        const auto px = static_cast<std::size_t>((x / (depth * tanHalf) * 0.5 + 0.5) * width);
+        const auto py = static_cast<std::size_t>((1.0 - (y / (depth * tanHalf) * 0.5 + 0.5)) * height);
+        return py * width + px;
+    };
+    const auto decodeHalf = [](const std::vector<uint8_t>& bytes, std::size_t component) {
+        const uint16_t half = uint16_t(bytes[component * 2]) | uint16_t(bytes[component * 2 + 1] << 8);
+        const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+        return (half >> 15 ? -1.f : 1.f) *
+               (exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14));
+    };
+    struct Arm {
+        uint32_t auxPasses = 0;
+        std::vector<std::string> diagnostics;
+        std::vector<uint8_t> colour, normal, albedo, emissive, indirect, custom;
+    };
+    const auto run = [&](const char* flag) {
+        if (flag) setenv("TN_UNIFIED_AUX_MRT", flag, 1);
+        else unsetenv("TN_UNIFIED_AUX_MRT");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setSampleCount(1);
+        // The final frame keeps the scene colour and adds the aux reads, so the Basic patch's colour is visible.
+        renderer.setPostGraph(g::add(g::texture("scene", g::uv()), g::bloom(sources, 0, 0, 0)));
+        for (int frame = 0; frame < 3; ++frame)
+            renderer.render(std::span<const DrawItem>(items.data(), items.size()), camera(1), LightState{}, {0.1, 0.1, 0.1, 1});
+        Arm arm;
+        arm.auxPasses = renderer.lastFrame().auxPasses;
+        arm.diagnostics = renderer.diagnostics();
+        const auto fetch = [&](GpuStatus (Renderer::*method)(ReadbackCallback)) {
+            std::vector<uint8_t> out;
+            bool done = false;
+            CHECK((renderer.*method)([&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                out = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll(); events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done);
+            return out;
+        };
+        arm.colour = fetch(&Renderer::readPixels);
+        arm.normal = fetch(&Renderer::readNormalPixels);
+        arm.albedo = fetch(&Renderer::readAlbedoPixels);
+        arm.emissive = fetch(&Renderer::readEmissivePixels);
+        arm.indirect = fetch(&Renderer::readIndirectPixels);
+        bool done = false;
+        CHECK(renderer.readMrtPixels("customSlot", 0, 0, width, height,
+            [&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                arm.custom = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(done);
+        return arm;
+    };
+    const Arm unified = run(nullptr), separate = run("0");
+    std::printf("unified base pass: %u aux pass(es) beside %u; colour %zu/%zu bytes, custom slot %zu/%zu\n",
+                unified.auxPasses, separate.auxPasses, unified.colour.size(), separate.colour.size(),
+                unified.custom.size(), separate.custom.size());
+    CHECK(unified.auxPasses == 0);
+    CHECK(separate.auxPasses == 1);
+    CHECK(std::find(separate.diagnostics.begin(), separate.diagnostics.end(),
+                    "TN_UNIFIED_AUX_MRT=0: separate aux pass enabled") != separate.diagnostics.end());
+    CHECK(unified.colour.size() == std::size_t(width) * height * 4 && separate.colour.size() == unified.colour.size());
+    if (unified.colour.size() != separate.colour.size()) return;
+    std::size_t colourDiff = 0;
+    for (std::size_t i = 0; i < unified.colour.size(); ++i)
+        colourDiff += std::abs(int(unified.colour[i]) - int(separate.colour[i])) > 1;
+    CHECK(colourDiff == 0);
+    const auto sameFloats = [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        if (a.size() != b.size() || a.empty() || a.size() % 2) return false;
+        for (std::size_t c = 0; c < a.size() / 2; ++c)
+            if (std::abs(decodeHalf(a, c) - decodeHalf(b, c)) > 1e-3f) return false;
+        return true;
+    };
+    CHECK(unified.normal.size() == std::size_t(width) * height * 8);
+    CHECK(sameFloats(unified.normal, separate.normal));
+    CHECK(sameFloats(unified.albedo, separate.albedo));
+    CHECK(sameFloats(unified.emissive, separate.emissive));
+    CHECK(sameFloats(unified.indirect, separate.indirect));
+    CHECK(sameFloats(unified.custom, separate.custom));
+    // The lit plane's authored normal and custom slot land in the unified pass, exactly as the aux pass wrote them.
+    const std::size_t litPixel = pixelOf(0, 0, 0);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 1) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 2) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4) - 0.5f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4 + 1) - 0.75f) < 1e-3f);
+    // The unlit Basic patch draws its colour and leaves every named target (and the custom slot) clear.
+    const std::size_t basic = pixelOf(-3, 3, -3);
+    CHECK(unified.colour[basic * 4] > 200 && unified.colour[basic * 4 + 1] < 40 && unified.colour[basic * 4 + 2] < 40);
+    const auto clearAt = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, basic * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(clearAt(unified.normal) && clearAt(unified.albedo) && clearAt(unified.emissive) &&
+          clearAt(unified.indirect) && clearAt(unified.custom));
+    // The cut alpha-tested patch writes nothing: its background stays clear too.
+    const std::size_t cut = pixelOf(3, -3, -3);
+    const auto cutClear = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, cut * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(cutClear(unified.normal) && cutClear(unified.albedo) && cutClear(unified.emissive) &&
+          cutClear(unified.indirect) && cutClear(unified.custom));
+}
+
+// PRD-914 Phase 3: with TRAA on, a compute pass frustum-culls an instanced mesh's instances and the main and velocity
+// passes draw exactly its survivors through one indirect record. Both passes index current and previous transforms by
+// the persistent original instance id, so a camera pan's motion vectors match the TN_GPU_INSTANCE_CULL=0 arm: culling
+// under temporal AA changes cost, never the picture.
+void traaGpuInstanceCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const char* priorRaw = std::getenv("TN_GPU_INSTANCE_CULL");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_GPU_INSTANCE_CULL", prior->c_str(), 1);
+            else unsetenv("TN_GPU_INSTANCE_CULL");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 48, height = 36, kCount = 64, kFront = 32;
+    const double aspect = double(width) / height;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial material;
+    shader::MaterialNodes nodes;
+    BufferStore matrices(Scalar::F32, kCount * 16);
+    std::vector<float> baseX(kCount, 0.0f);
+    std::vector<float> matData(kCount * 16, 0.0f);
+    for (uint32_t i = 0; i < kCount; ++i) {
+        float* m = matData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+        if (i < kFront) {  // in front of camera (0, 0, 4) looking down -z, every sphere well inside the 50-degree view
+            baseX[i] = (float(i % 4) - 1.5f) * 0.8f;
+            m[13] = (i / 4) % 2 == 0 ? 0.5f : -0.5f;
+            m[14] = -2.0f - float(i / 8) * 3.0f;
+        } else {  // behind the camera: z = +10 .. +30, so the near plane rejects all of them
+            baseX[i] = (float(i % 4) - 1.5f) * 0.5f;
+            m[14] = 10.0f + float(i - kFront) * 0.65f;
+        }
+        m[12] = baseX[i];
+    }
+    matrices.write(0, matData.data(), matData.size() * sizeof(float));
+
+    DrawItem item;
+    item.key = item.id = 42;
+    item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions;
+    item.indices = &ball->indices;
+    item.material = &material;
+    item.nodes = &nodes;
+    item.instanceMatrices = &matrices;
+    item.instanceCount = kCount;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.geometryBox = Box3();
+    item.geometryBox->min.set(-1, -1, -1);
+    item.geometryBox->max.set(1, 1, 1);
+
+    const auto directory = std::filesystem::current_path() /
+        ("traa-gpu-instance-cull-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Arm {
+        std::vector<uint32_t> survivors;
+        uint32_t culledDraws = 0, pastAll = UINT32_MAX;
+        bool reported = false;
+        std::vector<uint8_t> colour;
+        std::vector<float> velocity;
+    };
+    const auto run = [&](bool enabled) {
+        if (enabled) unsetenv("TN_GPU_INSTANCE_CULL");
+        else setenv("TN_GPU_INSTANCE_CULL", "0", 1);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        const auto folder = directory / (enabled ? "default" : "no-gpu-cull");
+        Arm arm;
+        // The record's second word is the instance count the compute pass wrote; frame 0..14 still, 15..20 a pan.
+        const auto readArgsCount = [&]() -> uint32_t {
+            std::vector<uint8_t> bytes;
+            bool done = false;
+            CHECK(renderer.readGpuCullArgs(1, [&](GpuStatus status, std::vector<uint8_t> out) {
+                if (status == GpuStatus::Ok) bytes = std::move(out);
+                done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done && bytes.size() == 20);
+            uint32_t words[5] = {};
+            if (bytes.size() == 20) std::memcpy(words, bytes.data(), sizeof words);
+            return words[1];
+        };
+        for (int frame = 0; frame <= 20; ++frame) {
+            for (uint32_t i = 0; i < kCount; ++i)
+                matData[std::size_t(i) * 16 + 12] = baseX[i] + 0.02f * float(frame);
+            matrices.write(0, matData.data(), matData.size() * sizeof(float));
+            matrices.needsUpdate();
+            renderer.render({&item, 1}, frame < 15 ? camera(aspect) : slidingCamera(aspect, frame - 15),
+                            LightState{}, {0, 0, 0, 1});
+            arm.culledDraws = renderer.lastFrame().gpuCulledDraws;
+            if (enabled) arm.survivors.push_back(readArgsCount());
+            for (const auto& note : renderer.diagnostics())
+                arm.reported = arm.reported || note.rfind("TN_GPU_INSTANCE_CULL=0", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        // A camera far to the side of both rows: the frustum holds no instance at all.
+        CameraState pastAll = camera(aspect);
+        pastAll.matrixWorld[12] = 200;
+        pastAll.matrixWorldInverse[12] = -200;
+        renderer.render({&item, 1}, pastAll, LightState{}, {0, 0, 0, 1});
+        arm.pastAll = enabled ? readArgsCount() : 0;
+        arm.colour = read(renderer, events);
+        std::ifstream file(folder / "frame-20-velocity.bin", std::ios::binary);
+        CHECK(file.good());
+        arm.velocity.resize(std::size_t{width} * height * 4);
+        if (file.good()) file.read(reinterpret_cast<char*>(arm.velocity.data()),
+                                   std::streamsize(arm.velocity.size() * sizeof(float)));
+        CHECK(file.good());
+        return arm;
+    };
+    const Arm culled = run(true), cpu = run(false);
+    std::printf("gpu instance cull under TRAA: %u draw(s), %u/%u survivors, past-all %u; no-cull %u\n",
+                culled.culledDraws, culled.survivors.front(), culled.survivors.back(), culled.pastAll,
+                cpu.culledDraws);
+    CHECK(culled.culledDraws == 1);
+    CHECK(cpu.culledDraws == 0);
+    CHECK(!culled.reported && cpu.reported);  // the override is reported, never silent
+    CHECK(culled.survivors.size() == 21);
+    for (std::size_t frame = 0; frame < 15 && frame < culled.survivors.size(); ++frame)
+        CHECK(culled.survivors[frame] == kFront);
+    CHECK(culled.pastAll == 0);
+    // Same picture: the survivors the compute pass kept are the instances the no-cull arm drew.
+    CHECK(culled.colour.size() == std::size_t{width} * height * 4 && cpu.colour.size() == culled.colour.size());
+    if (culled.colour.size() == cpu.colour.size()) {
+        int worst = 0;
+        for (std::size_t i = 0; i < culled.colour.size(); ++i)
+            worst = std::max(worst, std::abs(int(culled.colour[i]) - int(cpu.colour[i])));
+        CHECK(worst <= 2);
+    }
+    // Motion vectors: the moving instances keep TRAA's dynamic mark, and the two arms agree on every texel.
+    CHECK(culled.velocity.size() == std::size_t{width} * height * 4 && cpu.velocity.size() == culled.velocity.size());
+    if (culled.velocity.size() == cpu.velocity.size()) {
+        std::size_t moving = 0;
+        for (std::size_t texel = 0; texel < std::size_t{width} * height; ++texel) {
+            if (culled.velocity[texel * 4 + 2] == 3.0f && culled.velocity[texel * 4 + 3] == 1.0f) ++moving;
+            CHECK(std::abs(culled.velocity[texel * 4] - cpu.velocity[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(culled.velocity[texel * 4 + 1] - cpu.velocity[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 20);
+    }
+    std::filesystem::remove_all(directory);
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"unified_basepass_mrt", unifiedBasepassMrt}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_resolve_blend", traaResolveBlend},
@@ -4447,4 +4961,6 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
              {"main_instance_frustum_cull", mainInstanceFrustumCull},
              {"uniform_scan_counters", uniformScanCounters},
-             {"shared_view_uniforms", sharedViewUniforms})
+             {"shared_view_uniforms", sharedViewUniforms},
+              {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity},
+              {"traa_gpu_instance_cull", traaGpuInstanceCull})

@@ -146,6 +146,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
+        native_engine_unified_basepass_mrt=unified_basepass_mrt
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
         native_engine_renderer_denoise_face_normal=denoise_face_normal
         native_engine_renderer_emissive_validation=emissive_validation
@@ -165,6 +166,8 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
+        native_engine_traa_dynamic_only_velocity=traa_dynamic_only_velocity
+        native_engine_traa_gpu_instance_cull=traa_gpu_instance_cull
         native_engine_renderer_frame_delta_skips_compiles=frame_delta_skips_compiles
         native_engine_traa_instanced_velocity=traa_instanced_velocity
         native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity

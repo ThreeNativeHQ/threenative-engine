@@ -2,6 +2,7 @@
 #include "engine/renderer/renderer_internal.h"
 #include "engine/shader/view_uniforms.h"
 #include <chrono>  // PRD-913 Phase 1: the debug-only uniform and storage scan counters time their scans
+#include <unordered_set>
 
 namespace tn::engine {
 
@@ -816,7 +817,12 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (planSerial_ - slot->second.seen > kInstanceSlotPlans) slot = instanceSlots_.erase(slot);
             else live += (slot++)->second.count;
         }
-        if (instanceTop_ > 2 * live + 20 * 1024) { instanceSlots_.clear(); instanceTop_ = 0; }
+        if (instanceTop_ > 2 * live + 20 * 1024) {
+            instanceSlots_.clear(); instanceTop_ = 0;
+            // The cull's records follow the places they name: a started-over storage reuses those slots, so the
+            // retained rows that point at them must re-record.
+            gpuCullSlotTop_ = 0; gpuCullPrevSlots_.clear(); dropBundles();
+        }
     }
     std::vector<const DrawItem*> mainItems(opaque.size());
     std::vector<uint32_t> mainCapacities(opaque.size(), 0);
@@ -828,8 +834,33 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         job_->culledAttributes.clear();
     }
     instanceClearedStores_.clear();
-    if (instanceCullEnabled() && !compilation && !traa_) {
-        if (planSerial_ % 256 == 0) {
+    // PRD-914 Phase 3: a draw whose instances a compute pass can reject keeps its full packed store and draws its
+    // survivors through an indirect record. The CPU path stays for draws the GPU cannot place (a per-instance vertex
+    // attribute, a displaced draw with no bound margin) and for TN_GPU_INSTANCE_CULL=0; under TRAA it no longer runs,
+    // because the persistent instance ids keep previous-frame history coherent.
+    struct GpuCullLocal {
+        Vector3 center{};
+        double radius = 0, dispMargin = 0;
+    };
+    std::vector<bool> mainGpuCulled(opaque.size(), false);
+    std::vector<GpuCullLocal> gpuCullLocals(opaque.size());
+    const bool useGpuInstanceCull = instanceCullEnabled() && gpuInstanceCullEnabled();
+    const auto gpuCullEligible = [](const DrawItem& drawn, GpuCullLocal& local) {
+        if (!drawn.mainPass || drawn.transparent || drawn.indirect || drawn.boneMatrices || drawn.gpuJoints ||
+            drawn.morphGeometry || !drawn.instanceMatrices || drawn.instanceCount <= 1)
+            return false;
+        if (drawn.instanceMatrices->count() < uint64_t{drawn.instanceCount} * 16) return false;
+        if (drawn.instanceColors && drawn.instanceColors->count() < uint64_t{drawn.instanceCount} * 3) return false;
+        if (drawn.attributes)
+            for (const DrawItem::CustomAttribute& attr : *drawn.attributes)
+                if (attr.perInstance) return false;  // its own per-instance vertex stream cannot be compacted here
+        const bool hasDisp = bool(drawn.positionNode || drawn.nodes->shadowPositionNode());
+        local.dispMargin = drawn.material ? drawn.material->maxPositionOffset : 0.0;
+        if (hasDisp && local.dispMargin <= 0.0 && !displacedByGeometryBox(drawn)) return false;
+        return extractInstanceLocalSphere(drawn, local.center, local.radius);
+    };
+    if (instanceCullEnabled()) {
+        if (!compilation && planSerial_ % 256 == 0) {
             for (auto it = culledInstances_.begin(); it != culledInstances_.end();) {
                 if (planSerial_ - it->second.lastPlanSeen > kInstanceSlotPlans) it = culledInstances_.erase(it);
                 else ++it;
@@ -843,6 +874,11 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         std::vector<uint32_t> orderedScratch;
         for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
             const DrawItem* orig = opaque[idx].second;
+            if (useGpuInstanceCull && gpuCullEligible(*orig, gpuCullLocals[idx])) {
+                mainGpuCulled[idx] = true;
+                continue;
+            }
+            if (compilation || traa_) continue;
             const DrawItem* culled = cullMainInstanceItem(*orig, viewFrustum, view, *job_, survivorsScratch,
                                                           orderedScratch);
             if (culled != orig) {
@@ -1137,7 +1173,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         k.shadowGroup = item.shadowGroup;
         return k;
     };
-    auto variantOf = [invariantPosition](const DrawItem& item) {
+    auto variantOf = [invariantPosition](const DrawItem& item, bool gpuCulled = false) {
         shader::VertexVariant v;
         v.invariantPosition = invariantPosition;
         v.alphaHash = item.material && item.material->alphaHash;
@@ -1180,6 +1216,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         // three's useAnisotropy: a physical material with anisotropy > 0 builds the anisotropic GGX.
         v.anisotropy = item.kind == MaterialKind::Physical && item.material && item.material->anisotropy > 0;
         v.mapSRGB = false;  // WGSLNodeBuilder uses GPU sRGB formats; no shader colour conversion.
+        // Only a main-camera draw reads the cull's compacted ids: a shadow pass draws the full store through its own
+        // view frustum, so its depth program must keep indexing `instanceIndex` directly.
+        v.gpuCulled = gpuCulled && v.instanceStorage;
         return v;
     };
 
@@ -1246,11 +1285,61 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.plan.clear(); job.velocityPlan.clear(); job.auxPlan.clear(); job.translucentPlan.clear();
     job.shadowPasses.clear(); job.shadowLodItems.clear();
     job.shadowGroupItems.clear(); job.shadowGroups.clear();
-    job.previousBytes = {}; job.previousSeed = false; job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
+    job.previousBytes = {}; job.previousSeed = false; job.instancesMutated = false; job.traaSeedFrame = false;
+    job.keptShadowMaps = 0; job.shadowGroupRows = 0; job.paletteWrites = paletteWrites; job.instanceCopies = instanceCopies;
     job.deformationFrames.clear();
+    job.gpuCullDraws.clear(); job.gpuCullDrawCounts.clear(); job.gpuCullTotalInstances = 0;
     std::vector<Planned>& plan = job.plan;
     std::vector<Planned>& velocityPlan = job.velocityPlan;
     plan.reserve(opaque.size());
+    // PRD-914 Phase 3: the plan entries drawn from the GPU cull's indirect records, in `job.gpuCullDraws` order.
+    std::vector<std::size_t> gpuCullPlanDraws;
+    // Each GPU-culled draw keeps its indirect record and its id range where its instance place lives, so a depth
+    // reorder or a camera turn moves neither its record nor another draw's. Two draws that name one place take a
+    // record and a range of their own for the frame.
+    struct GpuCullPlace {
+        uint32_t idBase = 0;              // where its surviving ids go in `gpuCullIds`
+        uint32_t argsSlot = UINT32_MAX;   // its five-word record in `gpuCullArgs_`
+    };
+    std::vector<GpuCullPlace> gpuCullPlaces(opaque.size());
+    uint32_t gpuCullSlotNext = gpuCullSlotTop_;  // the highest record index this frame needs, persistent or temporary
+    if (!compilation) {
+        std::vector<InstanceSlot*> slotOf(opaque.size(), nullptr);
+        std::vector<std::size_t> culled;
+        uint32_t persistentIdEnd = 0;
+        for (std::size_t idx = 0; idx < opaque.size(); ++idx) {
+            if (!mainGpuCulled[idx]) continue;
+            const DrawItem& item = *mainItems[idx];
+            const auto found = instanceSlots_.find({item.instanceMatrices->id(),
+                                                    item.instanceColors ? item.instanceColors->id() : 0});
+            InstanceSlot* slot = found == instanceSlots_.end() ? nullptr : &found->second;
+            slotOf[idx] = slot;
+            culled.push_back(idx);
+            if (slot) {
+                gpuCullPlaces[idx].idBase = uint32_t(slot->offset / 20);
+                persistentIdEnd = std::max(persistentIdEnd, gpuCullPlaces[idx].idBase + item.instanceCount);
+            }
+        }
+        for (std::size_t idx : culled) {  // a persistent record per place, given the first frame that culls it
+            InstanceSlot* slot = slotOf[idx];
+            if (slot && slot->gpuCullDraw == UINT32_MAX) slot->gpuCullDraw = gpuCullSlotTop_++;
+        }
+        uint32_t fallbackId = persistentIdEnd, tempSlot = gpuCullSlotTop_;
+        std::unordered_set<const InstanceSlot*> placedId;
+        std::unordered_set<uint32_t> usedSlot;
+        for (std::size_t idx : culled) {
+            GpuCullPlace& place = gpuCullPlaces[idx];
+            InstanceSlot* slot = slotOf[idx];
+            if (!slot || !placedId.insert(slot).second) {
+                place.idBase = fallbackId;
+                fallbackId += mainItems[idx]->instanceCount;
+            }
+            if (slot) place.argsSlot = slot->gpuCullDraw;
+            if (place.argsSlot == UINT32_MAX || !usedSlot.insert(place.argsSlot).second)
+                place.argsSlot = tempSlot++;
+            gpuCullSlotNext = std::max(gpuCullSlotNext, place.argsSlot + 1);
+        }
+    }
     const auto colourTarget = [&](const DrawItem& item, const Program& program) {
         // material.side: FrontSide culls back faces, BackSide front faces, DoubleSide none.
         const WGPUCullMode cull = item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back;
@@ -1437,10 +1526,69 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // copies cost. The clock is read only under `tnDebug`; a frame's copies are summed and counted once after the plan.
     const bool slabCopyTimed = waste::debugEnabled().load(std::memory_order_relaxed);
     uint64_t slabCopyNanos = 0, slabCopyBytes = 0;
+    // The post targets besides colour and velocity: three's MRT `normal` (GTAO, denoise, SSR), metalness/roughness
+    // (SSR), `diffuseColor` albedo (GTAO's indirect occlusion) and emissive (SSGI). Like Unreal's base pass writing its
+    // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
+    // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
+    // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
+    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
+    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
+    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
+    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
+    const bool normalPass = postEffects_ && postEffects_->reads("normal");
+    const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
+    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
+    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
+    const bool indirectPass = postEffects_ && postEffects_->reads("indirectDiffuse");
+    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
+    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
+    const bool translucentPass =
+        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
+    const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
+                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0) |
+                                    (indirectPass ? kAuxIndirect : 0));
+    // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
+    // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
+    // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
+    std::vector<std::string> mrtSlots;
+    for (std::size_t i = 0; i < opaque.size(); ++i) {
+        const DrawItem& item = *mainItems[i];
+        if (!item.nodes) continue;
+        for (const auto& slot : item.nodes->mrt) {
+            const shader::Type type = slot.node ? slot.node->type : shader::Type{};
+            if (!slot.node || type.scalar != shader::Type::Scalar::F32 || type.isMatrix() || type.rows > 4)
+                throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + slot.name + "' writes " +
+                                         type.name() + ", not a float or float vector");
+            if (std::find(mrtSlots.begin(), mrtSlots.end(), slot.name) == mrtSlots.end()) mrtSlots.push_back(slot.name);
+        }
+    }
+    std::sort(mrtSlots.begin(), mrtSlots.end());
+    // PRD-914: at sampleCount 1 the main pass can hold the post targets itself, beside `color`, so the frame draws
+    // once instead of the separate aux pass. It needs one attachment per named target and custom slot on top of the
+    // colour, within the device's eight; at 4x the separate pass stays. `mainAuxKey` is the layout the main bundles
+    // were recorded for, mixed into each draw's pipeline key.
+    const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
+    const std::size_t auxTotal = namedTargets + mrtSlots.size();
+    const bool unifiedAux =
+        unifiedAuxEnabled() && sampleCount_ == 1 && auxTotal > 0 && (1 + auxTotal <= kMaxColourTargets);
+    uint64_t mainAuxKey = 0;
+    if (unifiedAux) {
+        mainAuxKey = hashBytes(&auxMask, sizeof(auxMask)) ^ 0x9e3779b97f4a7c15ull;
+        for (const std::string& slotName : mrtSlots) {
+            mainAuxKey = (mainAuxKey * 0x100000001b3ull) ^ hashBytes(slotName.data(), slotName.size());
+        }
+        if (mainAuxKey == 0) mainAuxKey = 1;
+    }
+    job.unifiedAux = unifiedAux;
+    job.unifiedAuxMask = unifiedAux ? auxMask : 0;
+    job.unifiedAuxMrt = unifiedAux ? mrtSlots : std::vector<std::string>{};
+    job.mainAuxKey = mainAuxKey;
+    job.auxMask = unifiedAux ? 0 : auxMask;
+    job.auxMrt = unifiedAux ? std::vector<std::string>{} : mrtSlots;
     for (std::size_t opaqueIdx = 0; opaqueIdx < opaque.size(); ++opaqueIdx) {
         const DrawItem& item = *mainItems[opaqueIdx];
         if (!item.mainPass) continue;
-        shader::VertexVariant variant = variantOf(item);
+        shader::VertexVariant variant = variantOf(item, mainGpuCulled[opaqueIdx]);
         const std::string selective = selectiveLights(item);
         const uint64_t lightsKey = drawLightsKey(item, selective);
         DrawCache* cache = item.cache;
@@ -1456,9 +1604,14 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                                                                   : unshadowedKinds);
             if (!built) continue;
             if (cache) {
+                // The shadow pass caches its depth program on this record with `gpuCulled` clear, so a main variant
+                // that differs only by the cull keeps it; a variant that moved anywhere else drops it.
+                shader::VertexVariant was = variant;
+                was.gpuCulled = cache->variant.gpuCulled;
+                const bool depthMoved = !(cache->variant == was);
                 cache->kind = item.kind; cache->variant = variant; cache->lightsKey = lightsKey;
                 cache->program = built; cache->pipeline = nullptr; cache->targetKey = 0;
-                cache->depthProgram = nullptr; cache->depthPipeline = nullptr;
+                if (depthMoved) { cache->depthProgram = nullptr; cache->depthPipeline = nullptr; }
                 cache->auxPipeline = nullptr; cache->auxTargetKey = 0;
                 cache->translucentPipeline = nullptr; cache->translucentTargetKey = 0;
             }
@@ -1468,6 +1621,41 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool lit = item.kind != MaterialKind::Basic;
         if (!item.positions || (lit && !item.normals && !item.flatShading) || !item.material) continue;
         PipelineTarget target = colourTarget(item, program);
+        // PRD-914: the unified base pass keeps `color` at location 0 and adds the post targets after it, so one draw
+        // writes the scene and its GBuffer. A draw that writes no named target (unlit, transparent without its own
+        // slot, sprite) masks them: its colour still draws, the targets keep the opaque values behind it.
+        const shader::StageModule* mainFragment = &program.fragment;
+        if (unifiedAux) {
+            for (std::size_t i = 0; i < auxTotal; ++i) target.moreColors[i] = WGPUTextureFormat_RGBA16Float;
+            target.materialColorWrite = item.colorWrite;
+            const bool custom = !mrtSlots.empty() && item.nodes &&
+                std::any_of(item.nodes->mrt.begin(), item.nodes->mrt.end(), [&](const shader::MrtOutput& slot) {
+                    return std::binary_search(mrtSlots.begin(), mrtSlots.end(), slot.name);
+                });
+            const bool customOnly = item.transparent || item.sprite || item.kind == MaterialKind::Basic;
+            if (item.background || (customOnly && !custom)) {
+                target.moreWrites = 0;
+                // The fragment still writes `color` at location 0; the zeroed targets stay masked, and a builder that
+                // refuses leaves the program's own fragment, safe for the same reason.
+                if (const shader::StageModule* zFrag = basePassAuxFragment(program, auxMask, mrtSlots, true)) mainFragment = zFrag;
+                if (customOnly && !custom && !item.background && item.kind != MaterialKind::Basic && normalPass) {
+                    const std::string reason = item.transparent ? "transparent" : "sprite";
+                    const std::string note = "TN_POST_NORMAL_SKIPPED: " + reason + " draws write no normal (depth-derived there)";
+                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                }
+            } else {
+                // A custom-only draw masks the named attachments and writes its own slots; `color` stays written.
+                if (customOnly) target.moreWrites = namedTargets < 8 ? uint8_t(0xffu << namedTargets) : uint8_t(0);
+                else target.moreWrites = 0xff;
+                if (const shader::StageModule* unifiedFrag = basePassAuxFragment(program, auxMask, mrtSlots, customOnly)) {
+                    mainFragment = unifiedFrag;
+                } else {
+                    const std::string note = "TN_POST_AUX_SKIPPED: a draw's program has no post-target fragment on its own layout";
+                    if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+                    target.moreWrites = 0;
+                }
+            }
+        }
         // PRD-888: the depth-only prepass pipeline (every colour channel masked, the same cull, bias, face and samples),
         // then the shipped program at Equal with no depth write. Its discards stay: they cost nothing once early depth
         // rejects the hidden fragments, and a fragment without them, or an @invariant position the shipped draw lacks,
@@ -1478,19 +1666,19 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         const bool equalDraw = (solidCandidate || maskedCandidate) && prepassFragment(program) != nullptr;
         const PipelineTarget depthOnly = equalDraw ? prepassTargets(target) : PipelineTarget{};
         if (compilation) {
-            compilation->push_back(pipelines_->getAsync(program.vertex, &program.fragment, target));
+            compilation->push_back(pipelines_->getAsync(program.vertex, mainFragment, target));
             if (equalDraw) compilation->push_back(pipelines_->getAsync(program.vertex, prepassFragment(program), depthOnly));
             plan.push_back({&item, &program, nullptr, 0, 0});
             continue;
         }
-        const uint64_t targetKey = drawTargetKey(item, program.vertex);
+        const uint64_t targetKey = drawTargetKey(item, program.vertex) ^ (mainAuxKey * 0x9e3779b97f4a7c15ull);
         WGPURenderPipeline pipeline;
         if (cache && cache->pipeline && cache->targetKey == targetKey && cache->prepass == equalDraw) {
             pipeline = static_cast<WGPURenderPipeline>(cache->pipeline);
         } else {
             bool deferred = false;
-            pipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, &program.fragment, target, deferred)
-                                        : pipelines_->get(program.vertex, &program.fragment, target);
+            pipeline = deferUncompiled_ ? pipelines_->getOrDefer(program.vertex, mainFragment, target, deferred)
+                                        : pipelines_->get(program.vertex, mainFragment, target);
             if (deferred) continue;  // drawn, with its post targets, the frame its pipeline lands
             if (!pipeline) throw std::runtime_error("TN_NATIVE_PIPELINE_REFUSED: material program");
             if (cache) { cache->targetKey = targetKey; cache->pipeline = pipeline; cache->prepass = equalDraw; cache->prepassPipeline = nullptr; }
@@ -1623,11 +1811,116 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         }
         putNodes(frameUniforms_, v, program.vertexNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
         putNodes(frameUniforms_, f, program.fragmentNodeUniforms, *item.nodes, frameTime_, frameDelta_, lights);
+        std::size_t gpuCullPlanIndex = 0;
+        if (!compilation && mainGpuCulled[opaqueIdx]) {
+            // PRD-914 Phase 3: the draw keeps its full packed store; the compute pass writes its surviving original
+            // indices here and the draw's indirect record counts them. `meta.x` is the store's base in vec4s, the same
+            // unit `put(instanceBase)` uses, `meta.z` is where this draw's ids start in `gpuCullIds` (its instance
+            // place, so it does not move when the draw order does), and `meta.w` is its persistent record's slot.
+            const GpuCullLocal& local = gpuCullLocals[opaqueIdx];
+            const GpuCullPlace& place = gpuCullPlaces[opaqueIdx];
+            const uint32_t dispatchBase = job.gpuCullTotalInstances;
+            GpuCullDrawDesc desc;
+            for (std::size_t e = 0; e < 16; ++e) desc.model[e] = float(item.matrixWorld[e]);
+            desc.localSphere = {float(local.center.x), float(local.center.y), float(local.center.z), float(local.radius)};
+            desc.margin = {float(local.dispMargin), 0, 0, 0};
+            desc.meta = {uint32_t(instanceBases.at(&item)), item.instanceCount, place.idBase, place.argsSlot};
+            desc.dispatch = {dispatchBase, 0u, 0u, 0u};
+            job.gpuCullDraws.push_back(desc);
+            const uint32_t vertOrIdxCount = item.indices
+                ? uint32_t(item.indices->byteLength() / (item.indices->scalar() == Scalar::U32 ? 4 : 2))
+                : uint32_t(item.positions->byteLength() / 12);
+            job.gpuCullDrawCounts.push_back(vertOrIdxCount);
+            job.gpuCullTotalInstances += item.instanceCount;
+            put(frameUniforms_, v, vs[kGpuCullIdBase], std::array<double, 1>{double(place.idBase)});
+            gpuCullPlanIndex = plan.size();
+        }
         plan.push_back({&item, &program, pipeline, static_cast<uint32_t>(v), static_cast<uint32_t>(f)});
         plan.back().slot = slotKey;
         plan.back().viewOffset = viewSliceIdx;
         plan.back().prepass = prepassPipeline;
         plan.back().prepassSolid = equalDraw && solidCandidate && !program.hasDiscard;
+        if (!compilation && mainGpuCulled[opaqueIdx]) gpuCullPlanDraws.push_back(gpuCullPlanIndex);
+    }
+    // PRD-914 Phase 3: once the plan knows every draw the cull serves, build its inputs and point each draw at its
+    // own five-word indirect record. The GPU writes the instance count; the plan's `instanceCount` stays the capacity.
+    if (!compilation && !job.gpuCullDraws.empty()) {
+        Matrix4 projViewMat;
+        projViewMat.elements = multiply(camera.projectionMatrix, view);
+        Frustum viewFrustum;
+        viewFrustum.setFromProjectionMatrix(projViewMat, CoordinateSystem::WebGPU, false);
+        for (std::size_t i = 0; i < 6; ++i) {
+            const Plane& plane = viewFrustum.planes[i];
+            job.gpuCullFrustum[i * 4 + 0] = float(plane.normal.x);
+            job.gpuCullFrustum[i * 4 + 1] = float(plane.normal.y);
+            job.gpuCullFrustum[i * 4 + 2] = float(plane.normal.z);
+            job.gpuCullFrustum[i * 4 + 3] = float(plane.constant);
+        }
+        const uint32_t counts[4] = {uint32_t(job.gpuCullDraws.size()), job.gpuCullTotalInstances, 0u, 0u};
+        std::memcpy(job.gpuCullFrustum.data() + 24, counts, sizeof counts);
+        FrameStorage& ids = storages_["gpuCullIds"];
+        uint32_t idEnd = 0, slotEnd = 0;
+        for (const GpuCullDrawDesc& desc : job.gpuCullDraws) {
+            idEnd = std::max(idEnd, desc.meta[2] + desc.meta[1]);
+            slotEnd = std::max(slotEnd, desc.meta[3] + 1);
+        }
+        for (uint32_t prev : gpuCullPrevSlots_) slotEnd = std::max(slotEnd, prev + 1);
+        slotEnd = std::max(slotEnd, gpuCullSlotNext);
+        const uint64_t idsBytes = uint64_t{idEnd} * 4;
+        if (idsBytes > ids.capacity) {
+            gpuCullGroups_.clear();
+            gpu_.destroy(ids.buffer);
+            ids.capacity = std::max<uint64_t>(idsBytes * 2, 64 * 1024);
+            ids.buffer = gpu_.createBuffer(ids.capacity,
+                WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+            ids.uploaded.clear();
+            ids.uploadedBuffer = Handle{};
+            rebuildGroups();
+        }
+        const uint64_t argsBytes = uint64_t{std::max(1u, slotEnd)} * 20;
+        if (argsBytes > gpuCullArgsCap_) {
+            gpuCullGroups_.clear();
+            if (gpuCullArgsCap_) gpu_.destroy(gpuCullArgs_);
+            gpuCullArgsCap_ = std::max<uint64_t>(argsBytes * 2, 64 * 1024);
+            gpuCullArgs_ = gpu_.createBuffer(gpuCullArgsCap_, WGPUBufferUsage_Indirect | WGPUBufferUsage_Storage |
+                WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
+        }
+        const uint64_t descBytes = uint64_t{job.gpuCullDraws.size()} * sizeof(GpuCullDrawDesc);
+        if (descBytes > gpuCullDescsCap_) {
+            gpuCullGroups_.clear();
+            if (gpuCullDescsCap_) gpu_.destroy(gpuCullDescs_);
+            gpuCullDescsCap_ = std::max<uint64_t>(descBytes * 2, 64 * 1024);
+            gpuCullDescs_ = gpu_.createBuffer(gpuCullDescsCap_, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+        }
+        gpu_.writeBuffer(gpuCullDescs_, 0, job.gpuCullDraws.data(), job.gpuCullDraws.size() * sizeof(GpuCullDrawDesc));
+        // Each record is written where its draw keeps it; a record the last plan wrote and this one does not (its draw
+        // left the view) counts no instance, because the retained row still points at it.
+        std::vector<uint32_t> activeSlots;
+        activeSlots.reserve(job.gpuCullDraws.size());
+        for (std::size_t k = 0; k < job.gpuCullDraws.size(); ++k) {
+            const uint32_t record[5] = {job.gpuCullDrawCounts[k], 0u, 0u, 0u, 0u};
+            gpu_.writeBuffer(gpuCullArgs_, uint64_t(job.gpuCullDraws[k].meta[3]) * 20, record, sizeof record);
+            activeSlots.push_back(job.gpuCullDraws[k].meta[3]);
+        }
+        for (uint32_t prev : gpuCullPrevSlots_) {
+            if (std::find(activeSlots.begin(), activeSlots.end(), prev) != activeSlots.end()) continue;
+            const uint32_t zero = 0;
+            gpu_.writeBuffer(gpuCullArgs_, uint64_t(prev) * 20 + 4, &zero, sizeof zero);
+        }
+        gpuCullPrevSlots_ = std::move(activeSlots);
+        gpu_.writeBuffer(gpuCullUniforms_, 0, job.gpuCullFrustum.data(), job.gpuCullFrustum.size() * sizeof(float));
+        for (std::size_t k = 0; k < gpuCullPlanDraws.size(); ++k) {
+            Planned& draw = plan[gpuCullPlanDraws[k]];
+            draw.gpuIndirect = gpu_.buffer(gpuCullArgs_);
+            draw.gpuIndirectOffset = uint64_t(job.gpuCullDraws[k].meta[3]) * 20;
+        }
+    } else if (!compilation && !gpuCullPrevSlots_.empty()) {
+        // Every record this cull wrote last plan now counts no instance; retained rows still point at them.
+        for (uint32_t prev : gpuCullPrevSlots_) {
+            const uint32_t zero = 0;
+            gpu_.writeBuffer(gpuCullArgs_, uint64_t(prev) * 20 + 4, &zero, sizeof zero);
+        }
+        gpuCullPrevSlots_.clear();
     }
     if (slabCopyTimed) {
         waste::debugAdd(waste::counters().uniformSlabCopyBytes, slabCopyBytes);
@@ -2097,12 +2390,16 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaHash shadow supports material opacity and diffuse-map alpha only");
                 masked = shadowMasked(*item.material, *item.nodes);
                 alphaHash = variant.alphaHash;
-                if (cache && cache->depthProgram && cache->variant == variant && cache->depthMasked == masked)
+                // The depth program never culls: it reads the full instance store, so the main draw's `gpuCulled`
+                // stays on the shared record without making the shadow pass rebuild it every frame.
+                shader::VertexVariant depthVariant = variant;
+                if (cache && cache->program) depthVariant.gpuCulled = cache->variant.gpuCulled;
+                if (cache && cache->depthProgram && cache->variant == depthVariant && cache->depthMasked == masked)
                     cachedDepth = static_cast<Program*>(cache->depthProgram);
                 else {
-                    cachedDepth = &depthProgram(variant, masked);
+                    cachedDepth = &depthProgram(depthVariant, masked);
                     if (cache) {
-                        cache->variant = variant;  // a shadow-only draw has no main program to set it
+                        if (!cache->program) cache->variant = variant;  // a shadow-only draw has no main program to set it
                         cache->depthProgram = cachedDepth; cache->depthPipeline = nullptr; cache->depthTargetKey = 0;
                         cache->depthMasked = masked;
                     }
@@ -2475,6 +2772,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     // Transparent draws replayed into the motion target, appended once their bind groups are chosen.
     std::vector<std::pair<size_t, WGPURenderPipeline>> responsiveDraws;
     if (traa_) {
+        const bool staticVelocity = staticVelocityEnabled();
+        job.traaSeedFrame = traa_->needsSeed();
         for (const Planned& draw : plan) {
             if (!compilation) waste::debugAdd(waste::counters().velocityCandidates);
             const DrawItem& item = *draw.item;
@@ -2484,19 +2783,21 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             const bool unsupported = item.morphGeometry || item.sprite || item.background ||
                 item.positionNode || item.nodes->vertexNode || item.transparent;
             const auto markIncomplete = [&] {
-                if (sampleCount_ != 1 || item.background || item.transparent || !item.colorWrite || !draw.pipeline) return;
-                PipelineTarget target = colourTarget(item, *draw.program);
-                target.color = WGPUTextureFormat_RGBA16Float;
-                target.blend = 6;
-                target.depthWrite = false;
-                target.depthCompare = WGPUCompareFunction_Equal;
+                if (item.background || item.transparent || !item.colorWrite || !draw.pipeline) return;
+                PipelineTarget incompleteTarget = colourTarget(item, *draw.program);
+                incompleteTarget.color = WGPUTextureFormat_RGBA16Float;
+                incompleteTarget.blend = 6;
+                incompleteTarget.depthWrite = false;
+                incompleteTarget.depthCompare = WGPUCompareFunction_Equal;
                 if (compilation) {
-                    compilation->push_back(pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, target));
+                    compilation->push_back(
+                        pipelines_->getAsync(draw.program->vertex, &draw.program->fragment, incompleteTarget));
                     return;
                 }
-                const auto pipeline = pipelines_->get(draw.program->vertex, &draw.program->fragment, target);
-                if (!pipeline) throw std::runtime_error("TN_TRAA_INCOMPLETE_PIPELINE_REFUSED");
-                responsiveDraws.emplace_back(size_t(&draw - plan.data()), pipeline);
+                const auto incompletePipe =
+                    pipelines_->get(draw.program->vertex, &draw.program->fragment, incompleteTarget);
+                if (!incompletePipe) throw std::runtime_error("TN_TRAA_INCOMPLETE_PIPELINE_REFUSED");
+                responsiveDraws.emplace_back(size_t(&draw - plan.data()), incompletePipe);
             };
             const auto skip = [&](const char* reason) {
                 if (!compilation) waste::debugAdd(waste::counters().velocitySkipped);
@@ -2520,89 +2821,6 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 continue;
             }
             if (unsupported) { skip("unsupported vertex/coverage"); markIncomplete(); continue; }
-            Matrix previousModel{};
-            bool havePreviousModel = false;
-            const DeformationFrame* seedPrevious = nullptr;
-            const BufferStore* instStore = item.instanceMatrices;
-            const auto computeInstanceHash = [&](const DeformationFrame* ref) -> std::size_t {
-                if (!instStore || item.indirect) return 0;
-                const bool stampMatch = ref && ref->buffers.size() >= 3 &&
-                    ref->buffers[0] == item.instanceCount &&
-                    ref->buffers[1] == reinterpret_cast<uintptr_t>(instStore) &&
-                    ref->buffers[2] == instStore->count() &&
-                    ref->instanceEpoch == instStore->epoch() &&
-                    ref->instanceWrites == instStore->writes() &&
-                    ref->instanceVersion == instStore->version();
-                if (stampMatch) return ref->instanceHash;
-                return std::hash<std::string_view>{}(std::string_view(
-                    reinterpret_cast<const char*>(instStore->data()),
-                    std::size_t{item.instanceCount} * 64));
-            };
-            std::optional<double> currentInstanceBase;
-            const auto lookupInstanceBase = [&] {
-                if (!item.instanceMatrices) return 0.0;
-                if (!currentInstanceBase) {
-                    const auto it = instanceBases.find(&item);
-                    currentInstanceBase = it != instanceBases.end() ? it->second : 0.0;
-                }
-                return *currentInstanceBase;
-            };
-            std::optional<std::size_t> cachedInstanceHash;
-            if (!compilation && sampleCount_ == 1) {
-                previousModel = traa_->previousModel(item.key, item.matrixWorld);
-                havePreviousModel = true;
-                const auto prior = deformationFrames_.find(item.key);
-                seedPrevious = !traa_->needsSeed() && prior != deformationFrames_.end() ? &prior->second : nullptr;
-                if (!item.boneMatrices && !instStore && !item.nodes->positionNode && previousModel == item.matrixWorld) {
-                    DeformationFrame current;
-                    current.staticOnly = true;
-                    current.buffers.push_back(item.instanceCount);
-                    for (const auto& attribute : draw.program->vertex.attributes) {
-                        BufferStore* store = vertexSourceOf(item, attribute);
-                        current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
-                            store ? store->epoch() : 0, store ? store->writes() : 0,
-                            store ? store->version() : 0, store ? store->count() : 0});
-                    }
-                    const bool changedBuffers = seedPrevious && seedPrevious->staticOnly && seedPrevious->buffers != current.buffers;
-                    job.deformationFrames[item.key] = std::move(current);
-                    if (changedBuffers) { skip("changed vertex data"); markIncomplete(); }
-                    continue;
-                }
-                if (!item.boneMatrices && instStore && !item.nodes->positionNode && previousModel == item.matrixWorld) {
-                    const std::size_t hash = computeInstanceHash(seedPrevious);
-                    cachedInstanceHash = hash;
-                    const double instBase = lookupInstanceBase();
-                    if (seedPrevious && seedPrevious->program != nullptr &&
-                        seedPrevious->instanceBase == instBase &&
-                        (item.indirect || seedPrevious->instanceHash == hash)) {
-                        DeformationFrame current;
-                        current.program = seedPrevious->program;
-                        current.uniforms = seedPrevious->uniforms;
-                        current.instanceHash = hash;
-                        current.instanceEpoch = instStore->epoch();
-                        current.instanceWrites = instStore->writes();
-                        current.instanceVersion = instStore->version();
-                        current.instanceBase = instBase;
-                        current.buffers.push_back(item.instanceCount);
-                        current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(instStore),
-                            instStore->count()});
-                        for (const auto& attribute : seedPrevious->program->vertex.attributes) {
-                            BufferStore* store = vertexSourceOf(item, attribute);
-                            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(store),
-                                store ? store->epoch() : 0, store ? store->writes() : 0,
-                                store ? store->version() : 0, store ? store->count() : 0});
-                        }
-                        const uint64_t instBytes = instances.size() * 4;
-                        job.previousBytes[1] = std::max(job.previousBytes[1], instBytes);
-                        const bool outgrew = instBytes > storages_[std::string("traaPrevious_") + kPreviousStorages[1]].capacity;
-                        const bool changedBuffers = seedPrevious->buffers != current.buffers;
-                        job.deformationFrames[item.key] = std::move(current);
-                        if (changedBuffers) { skip("changed vertex data"); markIncomplete(); }
-                        else if (outgrew) { skip("previous-frame storage outgrew its copy"); markIncomplete(); }
-                        continue;
-                    }
-                }
-            }
             const std::string key = "traa-velocity|" + variant.key() + (sharedView ? "|sv1" : "|sv0");
             if (!programs_.count(key)) {
                 auto source = shader::velocityPrograms(variant);
@@ -2615,7 +2833,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 return binding.kind != shader::BindingKind::Uniform &&
                     !(binding.kind == shader::BindingKind::Storage && (binding.name == "s_instances" ||
                         binding.name == "s_boneMatrices" || binding.name == "s_traaPrevious_instances" ||
-                        binding.name == "s_traaPrevious_boneMatrices"));
+                        binding.name == "s_traaPrevious_boneMatrices" || binding.name == "s_gpuCullIds"));
             })) { skip("storage/texture history"); markIncomplete(); continue; }
             PipelineTarget target{WGPUTextureFormat_RGBA16Float, WGPUTextureFormat_Depth32Float,
                 item.side == 2 ? WGPUCullMode_None : item.side == 1 ? WGPUCullMode_Front : WGPUCullMode_Back};
@@ -2630,6 +2848,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 compilation->push_back(pipelines_->getAsync(velocity.vertex, &velocity.fragment, target));
                 continue;
             }
+            const BufferStore* instStore = item.instanceMatrices;
             DeformationFrame current;
             current.program = &velocity;
             current.buffers.push_back(item.instanceCount);
@@ -2638,22 +2857,39 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     store ? store->epoch() : 0, store ? store->writes() : 0,
                     store ? store->version() : 0, store ? store->count() : 0});
             };
-            // Instance matrices move freely: the previous frame's copy places them. Only a changed count or store changes data.
-            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(item.instanceMatrices),
-                item.instanceMatrices ? item.instanceMatrices->count() : 0});
+            // Instance matrices move freely: BufferStore epoch/writes/version stamps detect edits with zero CPU hashing.
+            current.buffers.insert(current.buffers.end(), {reinterpret_cast<uintptr_t>(instStore),
+                instStore ? instStore->count() : 0});
+            current.instanceEpoch = instStore ? instStore->epoch() : 0;
+            current.instanceWrites = instStore ? instStore->writes() : 0;
+            current.instanceVersion = instStore ? instStore->version() : 0;
+            if (instStore) {
+                const auto it = instanceBases.find(&item);
+                current.instanceBase = it != instanceBases.end() ? it->second : 0.0;
+            }
+            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             const auto prior = deformationFrames_.find(item.key);
             const DeformationFrame* previous = !traa_->needsSeed() && prior != deformationFrames_.end() &&
                 prior->second.program == &velocity ? &prior->second : nullptr;
-            // A store rewritten with the same matrices did not move: compare the contents, not the writes.
-            if (instStore) {
-                current.instanceEpoch = instStore->epoch();
-                current.instanceWrites = instStore->writes();
-                current.instanceVersion = instStore->version();
-                current.instanceBase = lookupInstanceBase();
-                if (!item.indirect)
-                    current.instanceHash = cachedInstanceHash ? *cachedInstanceHash : computeInstanceHash(previous);
+            const auto previousModel = traa_->previousModel(item.key, item.matrixWorld);
+            const bool instanceStampSame = instStore && !item.indirect && previous && previous->buffers.size() >= 3 &&
+                previous->buffers[0] == item.instanceCount &&
+                previous->buffers[1] == reinterpret_cast<uintptr_t>(instStore) &&
+                previous->buffers[2] == instStore->count() &&
+                previous->instanceEpoch == current.instanceEpoch &&
+                previous->instanceWrites == current.instanceWrites &&
+                previous->instanceVersion == current.instanceVersion &&
+                previous->instanceBase == current.instanceBase;
+            const bool instancesMoved = instStore && !item.indirect && (!previous || !instanceStampSame);
+            const bool isDynamic =
+                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved;
+            const bool changedBuffers = previous && previous->buffers != current.buffers;
+            // PRD-914 Phase 1: static opaque draws reuse fillVelocity()'s camera reprojection directly without redrawing.
+            if (!isDynamic && !staticVelocity && !changedBuffers) {
+                if (previous) current.uniforms = previous->uniforms;
+                job.deformationFrames[item.key] = std::move(current);
+                continue;
             }
-            for (const auto& attribute : velocity.vertex.attributes) remember(vertexSourceOf(item, attribute));
             // PRD-754: a slot of its own beside the draw's colour blocks, else appended in plan order.
             const uint64_t velocitySlot = useUniformSlots && draw.slot ? draw.slot * 0x9e3779b97f4a7c15ull + 0x5654u : 0;
             const auto offset = static_cast<uint32_t>(uniformBlocks(velocitySlot, aligned(velocity.vertex.uniformBlockSize)));
@@ -2665,10 +2901,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                         frameUniforms_.data() + draw.vertexOffset + from->offset, field.size);
             }
             putNodes(frameUniforms_, offset, velocity.vertex, *item.nodes, frameTime_, frameDelta_, lights);
-            if (!havePreviousModel) previousModel = traa_->previousModel(item.key, item.matrixWorld);
-            const bool instancesMoved = instStore && (!previous || previous->instanceHash != current.instanceHash);
-            const std::array<double, 1> dynamic{
-                previousModel != item.matrixWorld || item.nodes->positionNode || item.boneMatrices || instancesMoved ? 1.0 : 0.0};
+            const std::array<double, 1> dynamic{isDynamic ? 1.0 : 0.0};
             for (const auto& field : velocity.vertex.uniforms) {
                 if (field.name == "unjitteredProjection") put(frameUniforms_, offset, &field, unjitteredCamera.projectionMatrix);
                 if (field.name == "previousModel") put(frameUniforms_, offset, &field, previousModel);
@@ -2688,73 +2921,38 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
             if (item.nodes->positionNode || item.boneMatrices || item.instanceMatrices)  // previous boneBase, instanceBase
                 current.uniforms.assign(frameUniforms_.begin() + offset,
                     frameUniforms_.begin() + offset + velocity.vertex.uniformBlockSize);
-            const bool changedBuffers = previous && previous->buffers != current.buffers;
             job.deformationFrames[item.key] = std::move(current);
             if (changedBuffers) { skip("changed vertex data"); markIncomplete(); continue; }
             // The previous palette and instances hold last frame's layout. A seeded frame copies this frame's there first, so
             // both positions match (and a copy that grows loses nothing). A draw new to an unseeded frame has no previous base,
-            // and storage that outgrew its previous copy replaces it: both draw no velocity for one frame.
+            // and storage that outgrew or skipped its previous copy replaces it: both draw no velocity for one frame.
             const std::array<bool, 2> reads{item.boneMatrices != nullptr, item.instanceMatrices != nullptr};
             const std::array<uint64_t, 2> bytes{jointPrefix + bones.size() * 4, instances.size() * 4};
-            bool outgrew = false;
+            bool notReady = false;
             for (std::size_t k = 0; k < reads.size(); ++k) {
                 if (!reads[k]) continue;
                 job.previousBytes[k] = std::max(job.previousBytes[k], bytes[k]);
-                outgrew = outgrew || bytes[k] > storages_[std::string("traaPrevious_") + kPreviousStorages[k]].capacity;
+                notReady = notReady || !previousStorageValid_[k] ||
+                    bytes[k] > storages_[std::string("traaPrevious_") + kPreviousStorages[k]].capacity;
             }
-            if (outgrew && !traa_->needsSeed()) { skip("previous-frame storage outgrew its copy"); markIncomplete(); continue; }
+            if (notReady && !traa_->needsSeed()) { skip("previous-frame storage outgrew or not seeded"); markIncomplete(); continue; }
             if (reads[0] || reads[1]) {
                 if (!previous && !traa_->needsSeed()) { skip("draw without a previous frame"); markIncomplete(); continue; }
-                job.previousSeed = job.previousSeed || !previous;
+                job.previousSeed = job.previousSeed || traa_->needsSeed();
             }
             const auto pipeline = pipelines_->get(velocity.vertex, &velocity.fragment, target);
             if (!pipeline) throw std::runtime_error("TN_TRAA_VELOCITY_PIPELINE_REFUSED");
             velocityPlan.push_back({&item, &velocity, pipeline, offset, 0});
             velocityPlan.back().slot = velocitySlot;
             velocityPlan.back().viewOffset = 0;
+            // PRD-914 Phase 3: the motion pass draws the same survivors the colour pass did, from the same record.
+            velocityPlan.back().gpuIndirect = draw.gpuIndirect;
+            velocityPlan.back().gpuIndirectOffset = draw.gpuIndirectOffset;
             if (sharedView) maxViewLights = std::max(maxViewLights, velocity.viewLightCount);
         }
         // A post pass that reads "velocity" (motion blur) samples the target the temporal pass draws.
         if (!compilation && postEffects_ && postEffects_->reads("velocity")) postEffects_->input("velocity", traa_->velocityView());
     }
-    // The post targets besides colour and velocity: three's MRT `normal` (GTAO, denoise, SSR), metalness/roughness
-    // (SSR), `diffuseColor` albedo (GTAO's indirect occlusion) and emissive (SSGI). Like Unreal's base pass writing its
-    // GBuffer (PRD-740), one pass over the opaque lit draws writes every target the post graph reads, each at its own
-    // colour attachment: each draw's own vertex stage (skinning, morphs, instancing and position nodes included, so
-    // the depth matches the colour pass exactly) with a fragment of one output per target, depth-tested Equal against
-    // the colour pass's depth. A draw the pass cannot write (unlit, transparent, sprite) leaves every target cleared
-    // there: the effects read a depth-derived normal, no surface, no albedo and no emission. An alpha-tested draw writes
-    // its targets where its fragment survives, as three's MRT and Unreal's masked base pass do: its own fragment
-    // discards, so the cut holds at 4x too, where the depth test alone would let it through.
-    const bool normalPass = postEffects_ && postEffects_->reads("normal");
-    const bool materialPass = postEffects_ && (postEffects_->reads("metalness") || postEffects_->reads("roughness"));
-    const bool albedoPass = postEffects_ && postEffects_->reads("albedo");
-    const bool emissivePass = postEffects_ && postEffects_->reads("emissive");
-    const bool indirectPass = postEffects_ && postEffects_->reads("indirectDiffuse");
-    // The target feeds a post pass: with no post graph there is nothing to bind it to, and the frame keeps its own
-    // colour alone. The graph asks for it by name (collectPostSources), in a pass or in the output program.
-    const bool translucentPass =
-        postEffects_ && (translucentRequested_ || postEffects_->reads("translucent"));
-    const uint8_t auxMask = uint8_t((normalPass ? kAuxNormal : 0) | (materialPass ? kAuxMaterial : 0) |
-                                    (albedoPass ? kAuxAlbedo : 0) | (emissivePass ? kAuxEmissive : 0) |
-                                    (indirectPass ? kAuxIndirect : 0));
-    // A material's own mrt() slots (three's custom MRT outputs): the frame's union, in name order so the pass's
-    // attachments and every fragment's outputs agree from one frame to the next. A slot the material names is a
-    // further colour target; one it does not name is zero there, which keeps every pipeline of the pass equal.
-    std::vector<std::string> mrtSlots;
-    for (const Planned& draw : plan) {
-        const DrawItem& item = *draw.item;
-        if (!item.nodes) continue;
-        for (const auto& slot : item.nodes->mrt) {
-            const shader::Type type = slot.node ? slot.node->type : shader::Type{};
-            if (!slot.node || type.scalar != shader::Type::Scalar::F32 || type.isMatrix() || type.rows > 4)
-                throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + slot.name + "' writes " +
-                                         type.name() + ", not a float or float vector");
-            if (std::find(mrtSlots.begin(), mrtSlots.end(), slot.name) == mrtSlots.end()) mrtSlots.push_back(slot.name);
-        }
-    }
-    std::sort(mrtSlots.begin(), mrtSlots.end());
-    job.auxMrt = mrtSlots;
     // A normal-only frame keeps the small normal fragment: the merged one is the whole lit program.
     const auto normalFragment = [&](const Planned& draw) -> const shader::StageModule* {
         const DrawItem& item = *draw.item;
@@ -2780,9 +2978,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     const auto planAux = [&] {
         if (!auxMask && mrtSlots.empty() && !translucentPass) return;
         // The pass holds one attachment per named target the post graph reads, then one per custom MRT slot, and
-        // writes no `color` of its own: they are the pass's whole colour-attachment list (aux_targets.h).
-        const std::size_t namedTargets = std::size_t(std::popcount(auxMask));
-        if (!auxTargetsFit(namedTargets, mrtSlots.size()))
+        // writes no `color` of its own: they are the pass's whole colour-attachment list (aux_targets.h). The unified
+        // base pass already checked its own limit (colour plus all of them).
+        if (!unifiedAux && !auxTargetsFit(namedTargets, mrtSlots.size()))
             throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: " + std::to_string(namedTargets + mrtSlots.size()) +
                                      " colour attachments exceed the device limit " + std::to_string(kMaxColourTargets));
         for (const Planned& draw : plan) {
@@ -2832,6 +3030,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     job.translucentPlan.push_back(sheet);
                 }
             }
+            // The unified base pass writes every post target itself; only the translucent plan above stays a pass.
+            if (unifiedAux) continue;
             // A draw writes a custom MRT slot when it names one: three draws a transparent sea's or an unlit
             // quad's own output with the same fragment, and leaves the named targets as the opaque draws left them.
             const bool custom = !mrtSlots.empty() && item.nodes &&
@@ -3512,6 +3712,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     }
     // Storage that outgrew its previous copy: the copy grows now, its draws skipped velocity this frame, and the copy after
     // the velocity pass fills it for the next.
+    if (!compilation) job.instancesMutated = instanceCopies > 0 || instances.size() * 4 != previousStorageBytes_[1];
     for (std::size_t k = 0; k < kPreviousStorages.size(); ++k) {
         FrameStorage& previous = storages_.at(std::string("traaPrevious_") + kPreviousStorages[k]);
         if (job.previousBytes[k] <= previous.capacity) continue;
@@ -3777,6 +3978,8 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const Handle handle = geometry_->cache.sync(*item.indirect, WGPUBufferUsage_Indirect);
                 key.insert(key.end(), {handle.type, handle.context, handle.index, handle.generation, item.indirectOffset});
             }
+            // PRD-914 Phase 3: a GPU-culled draw records the cull's own record; a new buffer or offset is a new row.
+            if (p.gpuIndirect) key.insert(key.end(), {reinterpret_cast<uintptr_t>(p.gpuIndirect), p.gpuIndirectOffset});
         }
     };
     bundleKeyOf(plan, job.bundleKey, &job.bundleRows);
@@ -3859,8 +4062,9 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const auto resolved = geometry_->cache.resolved(*source);
                 row.vertex.push_back({slot++, geometry_->gpu.buffer(resolved.buffer), 0, resolved.bytes});
             }
-            row.indirect = item.indirect ? geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer) : nullptr;
-            row.indirectOffset = item.indirectOffset;
+            row.indirect = p.gpuIndirect ? p.gpuIndirect
+                : item.indirect ? geometry_->gpu.buffer(geometry_->cache.resolved(*item.indirect).buffer) : nullptr;
+            row.indirectOffset = p.gpuIndirect ? p.gpuIndirectOffset : item.indirectOffset;
             row.index = nullptr;
             if (item.indices) {
                 const auto indices = geometry_->cache.resolved(*item.indices);
@@ -4146,7 +4350,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
     job.debugTimestampRequested = debugTimestampRequested_;
     job.source = sourceFrame_;
     job.groupEpoch = groupsChosenAt;
-    job.auxMask = auxMask;
+    job.auxMask = unifiedAux ? 0 : auxMask;
     job.translucentActive = translucentPass;
     // At 4x the velocity pass draws into a multisampled attachment and resolves it; allocated on first
     // use, so a frame without it pays nothing.
@@ -4157,6 +4361,17 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
         desc.usage = WGPUTextureUsage_RenderAttachment;
         msaaAuxColor_ = wgpuDeviceCreateTexture(device_, &desc);
         msaaAuxColorView_ = view2d(msaaAuxColor_, WGPUTextureFormat_RGBA16Float);
+    }
+    if (sampleCount_ == 4 && traa_ && !velocityCamera_) {
+        WGPUTextureDescriptor desc = {};
+        desc.dimension = WGPUTextureDimension_2D; desc.size = {inputWidth_, inputHeight_, 1};
+        desc.format = WGPUTextureFormat_RGBA16Float; desc.mipLevelCount = 1; desc.sampleCount = 1;
+        desc.usage = WGPUTextureUsage_CopyDst | WGPUTextureUsage_TextureBinding;
+        velocityCamera_ = wgpuDeviceCreateTexture(device_, &desc);
+        velocityCameraView_ = view2d(velocityCamera_, WGPUTextureFormat_RGBA16Float);
+    }
+    if (sampleCount_ == 4 && traa_ && !velocityPlan.empty()) {
+        copyPipeline(WGPUTextureFormat_RGBA16Float, 0, compilation, WGPUTextureFormat_Depth32Float, sampleCount_);
     }
     job.camera = camera; job.lights = lights;
     job.pageClear = pageClear;

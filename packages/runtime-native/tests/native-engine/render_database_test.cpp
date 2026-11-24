@@ -4352,7 +4352,7 @@ void cameraCull() {
         CHECK(postDirect[f].pixels.size() == postStable[f].pixels.size());
         for (std::size_t p = 0; p + 3 < postDirect[f].pixels.size() && postDirect[f].pixels.size() == postStable[f].pixels.size(); ++p)
             postDiffer += postDirect[f].pixels[p] != postStable[f].pixels[p];
-        CHECK(postDirect[f].stats.auxPasses == 1 && postStable[f].stats.auxPasses == 1);
+        CHECK(postDirect[f].stats.auxPasses == 0 && postStable[f].stats.auxPasses == 0);
         if (f >= 16) {
             auxSecond += postStable[f].stats.auxRecorded;
             auxDirect += postDirect[f].stats.auxRecorded;

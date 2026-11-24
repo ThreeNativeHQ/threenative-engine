@@ -304,6 +304,93 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
     }
 }
 
+// PRD-914: the same builder run again, keeping the built fragment's `color` at location 0 and appending one output per
+// post target, so the scene colour and every aux target leave in one base-pass draw at sampleCount 1. The colour is not
+// replaced and nothing is pruned: the pass still shades the scene. Every uniform, texture and varying is created in the
+// same order, so the layout equals the program's own and the draw's bind groups are valid for it; checked, not assumed.
+const shader::StageModule* Renderer::basePassAuxFragment(Program& program, uint8_t mask,
+                                                         const std::vector<std::string>& slots, bool zeroNamed) {
+    std::string slotKey = (zeroNamed ? "z" : "n") + std::to_string(mask) + "|";
+    for (const auto& name : slots) slotKey += std::to_string(name.size()) + ":" + name + ";";
+    const auto cached = program.baseAux.find(slotKey);
+    if (cached != program.baseAux.end()) return cached->second.get();
+    const auto store = [&](std::unique_ptr<shader::StageModule> module) -> const shader::StageModule* {
+        const auto* result = module.get();
+        program.baseAux.emplace(slotKey, std::move(module));
+        return result;
+    };
+    const shader::VertexVariant& variant = program.variant;
+    const shader::LightLayout layout{program.lightKinds};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: source = shader::buildBasic(variant); break;
+        }
+        auto& f = source.fragment;
+        if (!f.diagnostics().empty()) return store(nullptr);
+        const std::size_t varyings = f.varyings().size();
+        const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
+                             !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
+        std::vector<shader::ExprId> outputs;
+        const auto zero = [&] { return f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)}); };
+        if (mask & kAuxNormal)
+            outputs.push_back(zeroNamed ? zero()
+                : normalTarget(f, variant.flatShading, variant.doubleSide, surface,
+                               variant.nodes.normalNode ? source.normal : shader::kInvalid));
+        if (mask & kAuxMaterial)
+            outputs.push_back(zeroNamed ? zero() : source.materialProperties != shader::kInvalid ? source.materialProperties :
+                f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
+        if (mask & kAuxAlbedo) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
+        if (mask & kAuxEmissive) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
+        if (mask & kAuxIndirect)
+            outputs.push_back(zeroNamed || source.indirectDiffuse == shader::kInvalid ? zero()
+                : f.construct(shader::Type::vec(4), {source.indirectDiffuse, f.constant(1.f)}));
+        for (const auto& name : slots) {
+            const auto found = std::find_if(variant.nodes.mrt.begin(), variant.nodes.mrt.end(),
+                                            [&](const shader::MrtOutput& slot) { return slot.name == name; });
+            shader::ExprId value = shader::kInvalid;
+            if (found != variant.nodes.mrt.end()) {
+                const auto index = std::size_t(found - variant.nodes.mrt.begin());
+                if (index < source.mrt.size()) value = source.mrt[index];
+                if (value == shader::kInvalid)
+                    throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + name +
+                                             "' names a node this program lowered no value for");
+            }
+            outputs.push_back(value == shader::kInvalid
+                ? f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)})
+                : mrtColour(f, value));
+        }
+        // `color` keeps location 0 from the builder; the targets after it take 1, 2 and 3 in order, then the custom
+        // slots (wgsl.cpp assigns locations by insertion order).
+        static constexpr const char* kAuxOutputs[] = {"aux1", "aux2", "aux3"};
+        for (std::size_t i = 0; i < outputs.size(); ++i) {
+            const std::string name = i < std::size(kAuxOutputs) ? std::string(kAuxOutputs[i])
+                                                                : "mrt" + std::to_string(i - std::size(kAuxOutputs) + 1);
+            f.output(name, outputs[i]);
+        }
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return store(nullptr);
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
+        shader::positionalGraphTextures(*module);
+        shader::positionalSerialNames(*module);
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        if (!same) return store(nullptr);
+        return store(std::move(module));
+    } catch (const std::exception& error) {
+        const std::string note = std::string("TN_POST_AUX_REFUSED: ") + error.what();
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+        return store(nullptr);
+    }
+}
+
 const shader::StageModule* Renderer::prepassFragment(Program& program) {
     if (program.prepassBuilt) return program.prepass.get();
     program.prepassBuilt = true;
@@ -348,6 +435,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     ++programLookups_;
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.gpuCulled = false;  // the shadow pass visits the full instance store; only a main draw reads the culled ids
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
@@ -501,6 +589,7 @@ void Renderer::rebuildGroups() {
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    gpuCullGroups_.clear();  // they bind the instance and id storages too
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program

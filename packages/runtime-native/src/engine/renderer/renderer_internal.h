@@ -254,7 +254,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "anisotropyMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector", "gpuCullIdBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -503,6 +503,9 @@ struct Renderer::Planned {
     uint32_t memberCount = 0;
     uint32_t viewOffset = 0;
     bool shadowViewSlice = false;
+    /** PRD-914 Phase 3: the GPU cull's indirect record for this draw, drawn in place of `instanceCount`. */
+    WGPUBuffer gpuIndirect = nullptr;
+    uint64_t gpuIndirectOffset = 0;
 };
 
 /**
@@ -601,6 +604,8 @@ struct Renderer::FrameJob {
     // velocity pass (zero copies nothing), and whether a seeded frame copies them before it too.
     std::array<uint64_t, 2> previousBytes{};
     bool previousSeed = false;
+    bool instancesMutated = false;
+    bool traaSeedFrame = false;
     std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
     std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
     std::vector<ShadowPass> shadowPasses;
@@ -629,6 +634,11 @@ struct Renderer::FrameJob {
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     std::vector<std::string> auxMrt;  // the custom MRT slots the aux pass writes after them, in name order
+    // PRD-914: the main pass writes the post targets after its colour (one unified base pass at sampleCount 1).
+    bool unifiedAux = false;
+    uint8_t unifiedAuxMask = 0;
+    std::vector<std::string> unifiedAuxMrt;
+    uint64_t mainAuxKey = 0;  // the aux layout the main bundles were recorded for
     bool translucentActive = false;  // the post graph reads "translucent": the transparent draws have their own pass
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
@@ -640,6 +650,11 @@ struct Renderer::FrameJob {
     std::vector<uint64_t> tailKey;      // the draws from there to the viewport copy
     PassRows mainRows, auxRows, velocityRows;
     std::vector<std::vector<uint64_t>> shadowKeys;
+    /** PRD-914 Phase 3: this frame's GPU frustum cull, filled while the main plan resolves the draws it can cull. */
+    std::vector<GpuCullDrawDesc> gpuCullDraws;
+    std::vector<uint32_t> gpuCullDrawCounts;  // per draw, in `gpuCullDraws` order: its index or vertex count
+    std::array<float, 28> gpuCullFrustum{};  // 6 vec4 planes + u32 vec4(totalDraws, totalInstances, 0, 0) via memcpy
+    uint32_t gpuCullTotalInstances = 0;
 };
 
 
