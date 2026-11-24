@@ -4,7 +4,7 @@
  * answers a host's `postMessage`; the game page's `Game | Asset Library` switcher costs nothing
  * until it is picked and never appears under automation, in an iframe or with `?noDevShell=1`.
  */
-import { copyFile, mkdir, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { type Browser, chromium } from "playwright";
 import { type ViteDevServer, createServer } from "vite";
@@ -17,10 +17,11 @@ const STARTER = path.resolve("packages/create-threenative/templates/starter");
 let server: ViteDevServer;
 let browser: Browser;
 let base = "";
+let root = "";
 const MODEL = `#/model/${encodeURIComponent("assets/props/crate.glb")}`;
 
 beforeAll(async () => {
-  const root = await makeTempDir("tn-asset-library-browser-");
+  root = await makeTempDir("tn-asset-library-browser-");
   await mkdir(path.join(root, "assets/props"), { recursive: true });
   await copyFile(
     path.join(STARTER, "assets/native-proof.glb"),
@@ -61,6 +62,8 @@ addEventListener("message", (e) => window.got.push(e.data));
 afterAll(async () => {
   await browser?.close();
   await server?.close();
+  // `makeTempDir` outside a test falls back to a process-exit cleanup that a vitest worker may never run.
+  if (root) await rm(root, { recursive: true, force: true });
 });
 
 describe("asset library in a browser", () => {
