@@ -806,6 +806,13 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
+      // The web cook resolves three's Basis transcoder from the project, as a scaffold would.
+      await mkdir(path.join(root, "node_modules"));
+      await symlink(
+        await realpath(path.resolve("packages/create-threenative/node_modules/three")),
+        path.join(root, "node_modules", "three"),
+        "dir",
+      );
       // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
       const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);
