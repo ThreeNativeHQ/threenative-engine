@@ -254,7 +254,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "anisotropyMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector", "gpuCullIdBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -503,6 +503,9 @@ struct Renderer::Planned {
     uint32_t memberCount = 0;
     uint32_t viewOffset = 0;
     bool shadowViewSlice = false;
+    /** PRD-914 Phase 3: the GPU cull's indirect record for this draw, drawn in place of `instanceCount`. */
+    WGPUBuffer gpuIndirect = nullptr;
+    uint64_t gpuIndirectOffset = 0;
 };
 
 /**
@@ -647,6 +650,11 @@ struct Renderer::FrameJob {
     std::vector<uint64_t> tailKey;      // the draws from there to the viewport copy
     PassRows mainRows, auxRows, velocityRows;
     std::vector<std::vector<uint64_t>> shadowKeys;
+    /** PRD-914 Phase 3: this frame's GPU frustum cull, filled while the main plan resolves the draws it can cull. */
+    std::vector<GpuCullDrawDesc> gpuCullDraws;
+    std::vector<uint32_t> gpuCullDrawCounts;  // per draw, in `gpuCullDraws` order: its index or vertex count
+    std::array<float, 28> gpuCullFrustum{};  // 6 vec4 planes + u32 vec4(totalDraws, totalInstances, 0, 0) via memcpy
+    uint32_t gpuCullTotalInstances = 0;
 };
 
 

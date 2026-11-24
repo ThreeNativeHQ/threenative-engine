@@ -435,6 +435,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     ++programLookups_;
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.gpuCulled = false;  // the shadow pass visits the full instance store; only a main draw reads the culled ids
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
@@ -588,6 +589,7 @@ void Renderer::rebuildGroups() {
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    gpuCullGroups_.clear();  // they bind the instance and id storages too
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program

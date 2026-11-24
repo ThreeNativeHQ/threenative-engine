@@ -816,6 +816,12 @@ public:
     };
     /** The last frame's pixels, RGBA8 rows tightly packed, delivered from poll(). */
     GpuStatus readPixels(ReadbackCallback done);
+    /**
+     * PRD-914 Phase 3: the last frame's GPU instance-cull indirect records, five u32 words per draw (index or vertex
+     * count, surviving instance count, first index, base vertex, first instance), delivered from poll(). A test reads
+     * the count the compute pass wrote; the copies land after the frame that recorded them.
+     */
+    GpuStatus readGpuCullArgs(uint32_t drawCount, ReadbackCallback done);
     /** The last frame as presented, the UI overlay drawn over it (PRD-554), read back: what a player sees. */
     GpuStatus readPresented(ReadbackCallback done);
     void poll() { gpu_.poll(); }
@@ -858,6 +864,22 @@ public:
         uint32_t prepassDraws = 0;
         /** PRD-914 Phase 1: the draws emitted into `velocityPlan` after skipping unchanged static meshes. */
         uint32_t velocityDraws = 0;
+        /** PRD-914 Phase 3: the draws whose instance count this frame's GPU frustum cull wrote. */
+        uint32_t gpuCulledDraws = 0;
+    };
+    /**
+     * PRD-914 Phase 3: one GPU-culled draw as the compute pass reads it. `model` places the geometry, `localSphere`
+     * bounds it in local space (xyz centre, w radius), `margin` reserves x for the material's
+     * maxPositionOffset, `meta` holds the packed instance base in vec4s, the instance count, the persistent id
+     * output base and the persistent indirect record's slot, and `dispatch` holds the draw's dense candidate base
+     * the binary search maps a thread to.
+     */
+    struct GpuCullDrawDesc {
+        std::array<float, 16> model{};
+        std::array<float, 4> localSphere{};  // xyz center, w radius
+        std::array<float, 4> margin{};       // x dispMargin, yzw unused
+        std::array<uint32_t, 4> meta{};      // x instanceBaseVec4, y instanceCount, z idOutBase, w argsSlot
+        std::array<uint32_t, 4> dispatch{};  // x dispatchBase, yzw unused
     };
     /** Why a recorded pass's key moved: the same draws in another order, the same order at other uniform offsets,
      *  another draw count, anything else (a first record included). */
@@ -1023,7 +1045,7 @@ private:
         kSpecularIntensityMapUvTransform, kClearcoatMapUvTransform, kClearcoatRoughnessMapUvTransform,
         kClearcoatNormalMapUvTransform, kAnisotropyMapUvTransform, kAoMapIntensity, kClearcoat, kClearcoatRoughness, kClearcoatNormalScale, kBumpScale,
         kPmremMaxMip, kPmremRotation, kScreenSize, kCameraNear, kCameraFar,
-        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kSlotCount
+        kModelNormalMatrix, kSubsurfaceColor, kShadowNoiseFrame, kViewMipBias, kAnisotropyVector, kGpuCullIdBase, kSlotCount
     };
     // Per direct light i, `light{i}<Field>` (shader::LightLayout).
     enum LightField : uint8_t { kLightColor, kLightDirection, kLightPosition, kLightDistance, kLightDecay, kLightAxis,
@@ -1647,7 +1669,14 @@ private:
      *  when the GPU last received this place; the same stamp next plan means the place's bytes are already in `instances`
      *  and on the GPU, so the copy and the compare both skip it. It is committed only after the upload went through. */
     using InstanceStamp = std::array<uint64_t, 7>;
-    struct InstanceSlot { uint64_t offset, count, seen; InstanceStamp stamp{}; bool stamped = false; };
+    /** `gpuCullDraw` is this place's persistent indirect record, so a depth reorder or a draw that leaves the view
+     *  moves neither its record nor any other draw's (PRD-914 Phase 3). */
+    struct InstanceSlot {
+        uint64_t offset, count, seen;
+        InstanceStamp stamp{};
+        bool stamped = false;
+        uint32_t gpuCullDraw = UINT32_MAX;
+    };
     std::map<std::pair<uint64_t, uint64_t>, InstanceSlot> instanceSlots_;  // keyed by the matrix and colour store ids
     std::vector<std::pair<InstanceSlot*, InstanceStamp>> instancePlanned_;  // this plan's places, stamped once uploaded
     std::vector<std::pair<uint64_t, uint64_t>> instanceDirty_;  // float runs this plan copied: the only ones the upload scans
@@ -1694,6 +1723,21 @@ private:
     bool persistentGpuSceneEnabled();
     bool staticVelocityEnabled();
     bool unifiedAuxEnabled();
+    bool gpuInstanceCullEnabled();
+    /**
+     * PRD-914 Phase 3: the compute frustum-cull pipeline and its five-binding layout (`instances`, `descs`, uniforms,
+     * compacted ids, indirect args), built on the first frame that culls.
+     */
+    void ensureGpuCullPipeline();
+    Handle gpuCullArgs_{}, gpuCullDescs_{}, gpuCullUniforms_{};
+    uint64_t gpuCullArgsCap_ = 0, gpuCullDescsCap_ = 0;
+    /** The next persistent indirect record for a GPU-culled draw, given with its instance place; and the records the
+     *  last plan wrote, so the ones a draw left clear their instance count instead of drawing stale survivors. */
+    uint32_t gpuCullSlotTop_ = 0;
+    std::vector<uint32_t> gpuCullPrevSlots_;
+    WGPUComputePipeline gpuCullPipeline_ = nullptr;
+    WGPUBindGroupLayout gpuCullLayout_ = nullptr;
+    RecentBindGroups gpuCullGroups_{4};
     struct BonePlacement {
         const std::vector<float>* ptr = nullptr;
         uint64_t version = 0;
@@ -1776,3 +1820,5 @@ private:
 };
 
 }  // namespace tn::engine
+
+static_assert(sizeof(tn::engine::Renderer::GpuCullDrawDesc) == 128);

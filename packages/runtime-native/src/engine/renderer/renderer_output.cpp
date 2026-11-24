@@ -639,6 +639,12 @@ GpuStatus Renderer::readRgba16(WGPUTexture texture, ReadbackCallback done, uint3
 
 GpuStatus Renderer::readPixels(ReadbackCallback done) { return gpu_.readTexture(color_, std::move(done)); }
 
+GpuStatus Renderer::readGpuCullArgs(uint32_t drawCount, ReadbackCallback done) {
+    if (!done || drawCount == 0) return GpuStatus::OutOfRange;
+    if (!gpuCullArgs_.type || uint64_t(drawCount) * 20 > gpuCullArgsCap_) return GpuStatus::InvalidHandle;
+    return gpu_.readBuffer(gpuCullArgs_, 0, uint64_t(drawCount) * 20, std::move(done));
+}
+
 GpuStatus Renderer::readPresented(ReadbackCallback done) {
     if (!colorView_) return GpuStatus::InvalidHandle;
     if (!presentedView_ || presentedWidth_ != width_ || presentedHeight_ != height_) {

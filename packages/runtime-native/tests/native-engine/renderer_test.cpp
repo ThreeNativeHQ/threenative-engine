@@ -4753,6 +4753,162 @@ void unifiedBasepassMrt() {
           cutClear(unified.indirect) && cutClear(unified.custom));
 }
 
+// PRD-914 Phase 3: with TRAA on, a compute pass frustum-culls an instanced mesh's instances and the main and velocity
+// passes draw exactly its survivors through one indirect record. Both passes index current and previous transforms by
+// the persistent original instance id, so a camera pan's motion vectors match the TN_GPU_INSTANCE_CULL=0 arm: culling
+// under temporal AA changes cost, never the picture.
+void traaGpuInstanceCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const char* priorRaw = std::getenv("TN_GPU_INSTANCE_CULL");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_GPU_INSTANCE_CULL", prior->c_str(), 1);
+            else unsetenv("TN_GPU_INSTANCE_CULL");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 48, height = 36, kCount = 64, kFront = 32;
+    const double aspect = double(width) / height;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial material;
+    shader::MaterialNodes nodes;
+    BufferStore matrices(Scalar::F32, kCount * 16);
+    std::vector<float> baseX(kCount, 0.0f);
+    std::vector<float> matData(kCount * 16, 0.0f);
+    for (uint32_t i = 0; i < kCount; ++i) {
+        float* m = matData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+        if (i < kFront) {  // in front of camera (0, 0, 4) looking down -z, every sphere well inside the 50-degree view
+            baseX[i] = (float(i % 4) - 1.5f) * 0.8f;
+            m[13] = (i / 4) % 2 == 0 ? 0.5f : -0.5f;
+            m[14] = -2.0f - float(i / 8) * 3.0f;
+        } else {  // behind the camera: z = +10 .. +30, so the near plane rejects all of them
+            baseX[i] = (float(i % 4) - 1.5f) * 0.5f;
+            m[14] = 10.0f + float(i - kFront) * 0.65f;
+        }
+        m[12] = baseX[i];
+    }
+    matrices.write(0, matData.data(), matData.size() * sizeof(float));
+
+    DrawItem item;
+    item.key = item.id = 42;
+    item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions;
+    item.indices = &ball->indices;
+    item.material = &material;
+    item.nodes = &nodes;
+    item.instanceMatrices = &matrices;
+    item.instanceCount = kCount;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.geometryBox = Box3();
+    item.geometryBox->min.set(-1, -1, -1);
+    item.geometryBox->max.set(1, 1, 1);
+
+    const auto directory = std::filesystem::current_path() /
+        ("traa-gpu-instance-cull-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Arm {
+        std::vector<uint32_t> survivors;
+        uint32_t culledDraws = 0, pastAll = UINT32_MAX;
+        bool reported = false;
+        std::vector<uint8_t> colour;
+        std::vector<float> velocity;
+    };
+    const auto run = [&](bool enabled) {
+        if (enabled) unsetenv("TN_GPU_INSTANCE_CULL");
+        else setenv("TN_GPU_INSTANCE_CULL", "0", 1);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        const auto folder = directory / (enabled ? "default" : "no-gpu-cull");
+        Arm arm;
+        // The record's second word is the instance count the compute pass wrote; frame 0..14 still, 15..20 a pan.
+        const auto readArgsCount = [&]() -> uint32_t {
+            std::vector<uint8_t> bytes;
+            bool done = false;
+            CHECK(renderer.readGpuCullArgs(1, [&](GpuStatus status, std::vector<uint8_t> out) {
+                if (status == GpuStatus::Ok) bytes = std::move(out);
+                done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done && bytes.size() == 20);
+            uint32_t words[5] = {};
+            if (bytes.size() == 20) std::memcpy(words, bytes.data(), sizeof words);
+            return words[1];
+        };
+        for (int frame = 0; frame <= 20; ++frame) {
+            for (uint32_t i = 0; i < kCount; ++i)
+                matData[std::size_t(i) * 16 + 12] = baseX[i] + 0.02f * float(frame);
+            matrices.write(0, matData.data(), matData.size() * sizeof(float));
+            matrices.needsUpdate();
+            renderer.render({&item, 1}, frame < 15 ? camera(aspect) : slidingCamera(aspect, frame - 15),
+                            LightState{}, {0, 0, 0, 1});
+            arm.culledDraws = renderer.lastFrame().gpuCulledDraws;
+            if (enabled) arm.survivors.push_back(readArgsCount());
+            for (const auto& note : renderer.diagnostics())
+                arm.reported = arm.reported || note.rfind("TN_GPU_INSTANCE_CULL=0", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        // A camera far to the side of both rows: the frustum holds no instance at all.
+        CameraState pastAll = camera(aspect);
+        pastAll.matrixWorld[12] = 200;
+        pastAll.matrixWorldInverse[12] = -200;
+        renderer.render({&item, 1}, pastAll, LightState{}, {0, 0, 0, 1});
+        arm.pastAll = enabled ? readArgsCount() : 0;
+        arm.colour = read(renderer, events);
+        std::ifstream file(folder / "frame-20-velocity.bin", std::ios::binary);
+        CHECK(file.good());
+        arm.velocity.resize(std::size_t{width} * height * 4);
+        if (file.good()) file.read(reinterpret_cast<char*>(arm.velocity.data()),
+                                   std::streamsize(arm.velocity.size() * sizeof(float)));
+        CHECK(file.good());
+        return arm;
+    };
+    const Arm culled = run(true), cpu = run(false);
+    std::printf("gpu instance cull under TRAA: %u draw(s), %u/%u survivors, past-all %u; no-cull %u\n",
+                culled.culledDraws, culled.survivors.front(), culled.survivors.back(), culled.pastAll,
+                cpu.culledDraws);
+    CHECK(culled.culledDraws == 1);
+    CHECK(cpu.culledDraws == 0);
+    CHECK(!culled.reported && cpu.reported);  // the override is reported, never silent
+    CHECK(culled.survivors.size() == 21);
+    for (std::size_t frame = 0; frame < 15 && frame < culled.survivors.size(); ++frame)
+        CHECK(culled.survivors[frame] == kFront);
+    CHECK(culled.pastAll == 0);
+    // Same picture: the survivors the compute pass kept are the instances the no-cull arm drew.
+    CHECK(culled.colour.size() == std::size_t{width} * height * 4 && cpu.colour.size() == culled.colour.size());
+    if (culled.colour.size() == cpu.colour.size()) {
+        int worst = 0;
+        for (std::size_t i = 0; i < culled.colour.size(); ++i)
+            worst = std::max(worst, std::abs(int(culled.colour[i]) - int(cpu.colour[i])));
+        CHECK(worst <= 2);
+    }
+    // Motion vectors: the moving instances keep TRAA's dynamic mark, and the two arms agree on every texel.
+    CHECK(culled.velocity.size() == std::size_t{width} * height * 4 && cpu.velocity.size() == culled.velocity.size());
+    if (culled.velocity.size() == cpu.velocity.size()) {
+        std::size_t moving = 0;
+        for (std::size_t texel = 0; texel < std::size_t{width} * height; ++texel) {
+            if (culled.velocity[texel * 4 + 2] == 3.0f && culled.velocity[texel * 4 + 3] == 1.0f) ++moving;
+            CHECK(std::abs(culled.velocity[texel * 4] - cpu.velocity[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(culled.velocity[texel * 4 + 1] - cpu.velocity[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 20);
+    }
+    std::filesystem::remove_all(directory);
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"unified_basepass_mrt", unifiedBasepassMrt}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4806,4 +4962,5 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"main_instance_frustum_cull", mainInstanceFrustumCull},
              {"uniform_scan_counters", uniformScanCounters},
              {"shared_view_uniforms", sharedViewUniforms},
-             {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity})
+              {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity},
+              {"traa_gpu_instance_cull", traaGpuInstanceCull})
