@@ -935,8 +935,11 @@ export async function compressEmbeddedTextures(
 
     // A colour map needs no runtime decoder in its authored container. Pick the smallest JPEG
     // rung the floor allows; KTX2 then has to beat that, plus the shared transcoder, to win.
+    // A projected atlas never enters that contest: JPEG wins its download bytes and ships RGBA8
+    // with no stored mips, 4x the GPU memory of UASTC on the largest texture of the level.
     const authoredContainer =
       !explicit &&
+      projectedAtlas === undefined &&
       !authoredBasis &&
       options.jpeg !== false &&
       options.astc !== true &&
@@ -958,6 +961,7 @@ export async function compressEmbeddedTextures(
     // no Basis transcoder, so only a Basis target is charged for it.
     const automatic =
       !explicit &&
+      projectedAtlas === undefined &&
       target.width === decoded.width &&
       target.height === decoded.height &&
       retainable(texture.getMimeType());

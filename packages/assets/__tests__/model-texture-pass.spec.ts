@@ -49,6 +49,8 @@ async function fixtureWithTextures(options: {
   readonly width: number;
   /** Mark the base colour map the way the asset MCP marks a projected atlas. */
   readonly projection?: number;
+  /** A smooth photo-like base colour, where JPEG downloads smaller than any KTX2 rung. */
+  readonly photo?: boolean;
 }): Promise<Buffer> {
   const { width } = options;
   const height = options.height ?? width;
@@ -58,13 +60,23 @@ async function fixtureWithTextures(options: {
     ?.setImage(
       PNG.sync.write(
         PNG.sync.read(
-          rgbaPng({
-            blue: (x, y) => 100 + ((x * 21 + y * 21) % 8),
-            green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
-            height,
-            red: (x, y) => 100 + ((x * 37 + y * 41) % 8),
-            width,
-          }),
+          rgbaPng(
+            options.photo === true
+              ? {
+                  blue: (x, y) => 90 + Math.round(30 * Math.sin((x + y) / 40)),
+                  green: (_x, y) => 80 + Math.round(y / 8),
+                  height,
+                  red: (x) => 70 + Math.round(x / 8),
+                  width,
+                }
+              : {
+                  blue: (x, y) => 100 + ((x * 21 + y * 21) % 8),
+                  green: (x, y) => 100 + ((x * 29 + y * 31) % 8),
+                  height,
+                  red: (x, y) => 100 + ((x * 37 + y * 41) % 8),
+                  width,
+                },
+          ),
         ),
       ),
     )
@@ -1187,6 +1199,26 @@ describe("embedded model textures", () => {
     } finally {
       encode.mockRestore();
     }
+  });
+
+  it("should ship a texture-projection atlas as KTX2 even when JPEG downloads smaller", async () => {
+    // Default options keep the JPEG rung on. A JPEG atlas decodes to RGBA8 with no stored mips:
+    // a 4096 painted level costs 89 MB of GPU memory instead of about 22 MB as UASTC.
+    const marked = await compiled(
+      await fixtureWithTextures({ height: 512, photo: true, projection: 512, width: 512 }),
+    );
+    const summary = marked.entry.embeddedTextures as {
+      readonly formats: Readonly<Record<string, string>>;
+    };
+    expect(summary.formats.checker).toBe("uastc");
+    // The unmarked twin proves the fixture: there, the download-bytes contest picks JPEG.
+    const twin = await compiled(
+      await fixtureWithTextures({ height: 512, photo: true, width: 512 }),
+    );
+    expect(
+      (twin.entry.embeddedTextures as { readonly formats: Readonly<Record<string, string>> })
+        .formats.checker,
+    ).toBe("none");
   });
 
   it("should let an explicit maxSize win over a texture-projection marker", async () => {
