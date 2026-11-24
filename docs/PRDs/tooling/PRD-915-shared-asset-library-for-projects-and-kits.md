@@ -117,13 +117,13 @@ Fill the concrete `file:line` entry points before each owning phase completes.
 ## Execution Phases
 
 #### Phase 1: Shared Workbench Core, ThreeNative Brand Logo & Engine Library Migration
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/create-threenative/src/asset-library/` (new client HTML/CSS/TS + Vite plugin `createAssetLibraryPlugin` + `IAssetLibrarySource` contract), `packages/create-threenative/tsup.config.ts`, `packages/create-threenative/package.json`, `packages/create-threenative/src/index.ts`, `packages/procedural-environment/package.json`, `packages/procedural-environment/library/vite.config.ts` (delete `index.html`, `main.ts`, `style.css`).
 **Implementation:**
 - Extract the Storybook-style UI (`index.html`, `main.ts`, `style.css`) and server middleware from `packages/procedural-environment/library/` into `packages/create-threenative/src/asset-library/`, building a self-contained static client bundle (`dist/asset-library/`) with precompiled Tailwind CSS and exporting `createAssetLibraryPlugin` / `defineAssetStory` from `create-threenative` (`./asset-library` subpath + root export).
 - Replace `ICONS.logo` and the empty data favicon with the official ThreeNative TN mark SVG (`#e0fb50` on `#020407`, `viewBox="0 4.5 100 91"`).
 - Migrate `packages/procedural-environment/library/vite.config.ts` to mount `createAssetLibraryPlugin` with a `proceduralEnvironmentSource()` adapter and delete the duplicated `index.html`, `main.ts`, and `style.css`.
-- [ ] Shared workbench serves the official ThreeNative logo/favicon and runs `pnpm asset-library` with zero duplicated UI files — proof: `pnpm --filter create-threenative build && pnpm --filter @threenative/procedural-environment test` + headed Chromium capture of `pnpm asset-library` — covers AC-1.
+- [x] Shared workbench serves the official ThreeNative logo/favicon and runs `pnpm asset-library` with zero duplicated UI files — proof: `pnpm --filter create-threenative build && pnpm --filter @threenative/procedural-environment test` + headed Chromium capture of `pnpm asset-library` — covers AC-1. Result: build exit 0; procedural tests 65/65; `library/{index.html,main.ts,style.css}` deleted. Headed captures (6 poses × 2 runs × 2 arms, `~/Downloads/prd-915-asset-library/`): visual judge NEUTRAL overall, rendering unchanged in all poses. Its two UI notes (title truncated, trees lost Docs/Default nodes) fixed in f0bafa20a and re-captured (`oak-AFTER-fix.png`).
 
 #### Phase 2: AI Iteration Features — GLB/Texture/Audio Viewers, Pose Lab Reuse, Code Stories, Scene Bundler & Contact Sheet
 **Status:** NOT STARTED
