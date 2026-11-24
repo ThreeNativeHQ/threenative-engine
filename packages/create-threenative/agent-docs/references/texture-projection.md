@@ -1,10 +1,11 @@
 # Texture projection — real surfaces on a gray blockout level
 
 An image model paints a gray blockout level or environment from camera views, the views are
-projected into the level's UV atlas, and a GLB with one baked base-colour atlas comes back. The
-geometry does not change, and the guards below keep it that way. The level must be UV-unwrapped: a
-mesh without `TEXCOORD_0` fails with `TEXTURE_PROJECT_MISSING_UV` before anything is bought.
-`outputPath` must be under the project's `assets/`; every other path is project-relative.
+projected into the level's UV atlas, and a GLB with one baked base-colour atlas comes back, plus
+true-scale swatches beside it for close range. The geometry does not change, and the guards below
+keep it that way. The level must be UV-unwrapped: a mesh without `TEXCOORD_0` fails with
+`TEXTURE_PROJECT_MISSING_UV` before anything is bought. `outputPath` must be under the project's
+`assets/`; every other path is project-relative.
 
 ```mermaid
 flowchart LR
@@ -12,7 +13,7 @@ flowchart LR
   t --> p["texture_project_paint<br/>every view, one atlas"]
   p --> i["texture_project_inspect<br/>contact sheet"]
   i --> c["engine cook<br/>UASTC, bake size"]
-  c --> g["game<br/>anisotropy 8"]
+  c --> g["game<br/>atlas + swatches"]
 ```
 
 ## Quote first — it is free and it needs no key
@@ -39,6 +40,8 @@ and writes nothing; a resume that reuses stored images needs no key.
 | `muse-image` | $0.01 | a second look on the same clay; test one view first |
 | `or:<model id>` | the provider's price | any OpenRouter image model, one the author names |
 
+A 40-view run at $0.009 is about $0.36. A resume reads the stored images and buys nothing.
+
 ## The style is materials, never objects
 
 `style` describes surfaces, in words: weathered limestone, faded ochre lime plaster, terracotta
@@ -55,34 +58,65 @@ of the baked albedo.
 is the cheapest way to learn that the style text or the reference image is wrong; the run stays
 incomplete on purpose. Then paint with `resumeRunId` set to that run's `runId`: the stored view is
 re-judged and reused, and only views with no image are bought. That also finishes an interrupted
-run, so a view is never paid for twice.
+run.
 
-## Look at the contact sheet
+## Read the contact sheet yourself
 
 `texture_project_inspect` returns a contact sheet: per view the clay render, the model image and the
-composite that went into the atlas, with rejected views labelled. Read it beside the numbers:
+composite that went into the atlas, with rejected views labelled by reason and structure score.
+No image model reads it. The call that made the bake is the judge. `verify: true` opts into a vision
+check that buys one chat request per view, for what you cannot call by eye.
 
-- `coveragePercent` — the share of atlas island texels a view painted; the rest is filled from the
-  atlas and by an eight-texel gutter around each island, so mips blend into a neighbour, not clay.
-  Raise `holes` to paint more of it.
+Reject a view that invents an arch, a door or a passage, that turns a blank floor into a mosaic or a
+rosette, that adds snow, that puts roof tiles or a coping on a wall top, or that draws an object
+shifted or tilted so one wall carries a ghost of it. A rejection is free, needs no key and buys no
+image:
+
+```json
+{ "resumeRunId": "courtyard-mwuijnnl", "rejectViews": [11, 22, 30] }
+```
+
+The view is stored as `rejected: "caller"`, it projects nothing, and the fill pass covers its texels
+from the images around them. A later resume keeps it rejected, so judge once. An index the run does
+not have fails closed with `TEXTURE_PROJECT_INVALID_INPUT`, and so does `rejectViews` with no
+`resumeRunId`.
+
+Three checks run free on every view before you look:
+
+- **Structure blob.** A compact, closed, much darker or brighter area inside one clay surface is an
+  invented arch, door, window or passage. Logged `rejected: "structure"`.
+- **Silhouette.** Cells the clay leaves as sky must stay sky. A wall over the backdrop or cobbles
+  where the level has no ground is rejected as `structure` too.
+- **Edge strip.** The 0.25 m strip along a clay edge is never projected. Both image models put a
+  coping on a wall top and light an inner corner, and that band is where it lands.
+
+Read the numbers beside the sheet:
+
+- `visibleCoveragePercent` — the share of the texels a player-height camera sees that the bake
+  painted. Under 90 the run warns. Raise `holes`, or reject fewer views.
+- `coveragePercent` — the share of the whole atlas a view painted. An eight-texel gutter around each
+  island takes the rest, so mips blend into a neighbour, not clay.
 - `blurredTexelPercent` — texels whose best view resolves more than about 2×2 atlas texels per image
-  pixel: magnification blur.
-- `rejectedViews` — each rejected view and its reason.
+  pixel. `magnificationSkippedPercent` counts the texels no view painted for that reason.
+- `rejectedViews` — each rejected view and its reason, `caller` included.
 - `cookConfig` — an audit of `threenative.config.ts`: a base-colour `maxSize` below the atlas, or
   ETC1S on it, would blur the bake.
 
 Do not ship a level whose sheet you have not looked at. For a human, `threenative-asset-mcp
 texture-project-ui --level assets/blockout/courtyard.glb` serves the same app on `127.0.0.1`: the
-plan, the cost, each view and the atlas, and a free quote. The key stays in that process. Use it to
-compare two styles by eye before a run is paid for.
+plan, the cost, each view and the atlas, and a free quote. The key stays in that process.
+
+## The fill continues the wall, never mirrors it
+
+Unpainted texels fill from their own UV island, never across the atlas packing, so a gap continues
+the material around it. The fill also tiles that island's own largest painted square, at least 32×32
+texels, with plain wrap and no mirror: same grain, same tone. The grain fades in over the first 8
+texels, so no hard line sits at the paint edge. An island with no such square keeps the plain fill.
 
 ## The guards
 
 - **Grazing reject.** A surface facing the camera at `cos < 0.35` is left to the fill or hole pass;
   a projected grazing texel is a smear, not a material.
-- **Structure check.** Each generated view is compared with the clay it was given, surface by
-  surface, at low frequency. A compact, closed, much darker or brighter blob inside one clay surface
-  is an invented arch, door, window or passage: logged `rejected: "structure"`, not projected.
 - **Stop-spending breaker.** When the first three painted views of a run all invent geometry, the
   run stops before it buys the rest and fails `TEXTURE_PROJECT_STRUCTURE_REJECTED`. The paid images
   are kept, so fix the style text and continue with `resumeRunId`.
@@ -102,21 +136,31 @@ instead:
 embedded texture courtyard.glb#atlas: textureProjection atlas 4096 px
 ```
 
-## First-person floors
+## Close range belongs to the swatches
 
-Set `anisotropy 8` on the level's base-colour map. The atlas holds one texel per view pixel, and a
-floor is seen at a graze along its whole length, so without anisotropy it smears into the distance.
-Walls read as real material from a few metres; the floor at the player's feet stays softer, because
-the view that painted it saw it at a graze and it holds fewer texels than the wall ahead.
+The atlas is macro variation. One 4096 atlas for a whole level is about 0.8 cm per texel, and at
+arm's length a texel covers about 15 screen pixels, so the paint reads as blotches. The bake cuts
+true-scale, tileable swatches from its own paint and writes `<name>.swatch_wall.png`,
+`<name>.swatch_floor.png` and `<name>.swatches.json` (per class its file, `metresX`/`metresY` of one
+tile, its view and metres per pixel) beside the GLB.
+
+Tile a `RepeatWrapping` swatch in world metres and fade back to the atlas by 5 m:
 
 ```ts
-import type { Mesh, MeshStandardMaterial } from "three";
+import { cameraPosition, mix, positionWorld, smoothstep, texture, uv, vec2 } from "three/tsl";
 
-const level = await ctx.assets.model("courtyard.glb");
-level.traverse((object) => {
-  const material = (object as Mesh).material as MeshStandardMaterial | undefined;
-  if (material?.map) material.map.anisotropy = 8;
-});
+// u runs across the face, v up it, in world metres. An x-facing wall takes positionWorld.z for u.
+const swatchUv = vec2(positionWorld.x.div(METRES_X), positionWorld.y.div(METRES_Y));
+const near = smoothstep(2, 5, positionWorld.distance(cameraPosition)).oneMinus();
+material.colorNode = mix(texture(paint, uv()), texture(wall, swatchUv), near);
+```
+
+A class the bake could not cut is null, and that surface keeps the atlas. `ctx.assets.model()` sets
+`anisotropy 8` on the marked atlas already, so set it on each swatch too: a floor is seen at a graze
+along its whole length. Cook the swatches as UASTC, because ETC1S block edges show at arm's length:
+
+```ts
+{ glob: "**/*.swatch_*.png", codec: "uastc" }
 ```
 
 ## What one courtyard proved
