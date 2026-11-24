@@ -1268,4 +1268,43 @@ void vsmBatchedDepthSkipsVsmPageClipAttribute() {
     CHECK(!hasVsmPageClipAttr(depthVertex));
 }
 
-TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved}, {"gpu_page_table_matches_cpu_atlas", gpuPageTableMatchesCpuAtlas}, {"vsm_batched_depth_skips_vsm_page_clip_attr", vsmBatchedDepthSkipsVsmPageClipAttribute})
+// PRD-775 AC-1: with `clip-distances` a batched record clips to its page in the vertex stage, so the unmasked depth
+// pass has nothing left to do per fragment (no discard: early depth holds, and no slot outside the page rasterizes).
+// Without the feature the fragment discard stays. A masked caster keeps its mask, never the page discard.
+void vsmBatchedDepthClipsInHardware() {
+    namespace g = tn::engine::shader::graph;
+    const auto code = [](const tn::engine::shader::StageModule& module) { return module.wgsl.code; };
+    shader::VertexVariant discardArm;
+    discardArm.vsmBatched = true;
+    CHECK(discardArm.vsmDiscards());
+    const auto discardProgs = shader::buildVsmBatchedDepth(discardArm);
+    const auto discardVertex = shader::buildStage(discardProgs.vertex, 0, false);
+    const auto discardFragment = shader::buildStage(discardProgs.fragment, 1, false);
+    CHECK(discardVertex.wgsl.ok() && discardFragment.wgsl.ok());
+    CHECK(code(discardVertex).find("clip_distances") == std::string::npos);
+    CHECK(code(discardFragment).find("discard") != std::string::npos);
+
+    shader::VertexVariant clipArm = discardArm;
+    clipArm.vsmClipDistances = true;
+    CHECK(!clipArm.vsmDiscards());
+    CHECK(clipArm.key() != discardArm.key());
+    const auto clipProgs = shader::buildVsmBatchedDepth(clipArm);
+    const auto clipVertex = shader::buildStage(clipProgs.vertex, 0, false);
+    CHECK(clipVertex.wgsl.ok());
+    CHECK(code(clipVertex).find("enable clip_distances;") != std::string::npos);
+    CHECK(code(clipVertex).find("@builtin(clip_distances) clipDistances: array<f32, 4>") != std::string::npos);
+    CHECK(code(clipVertex).find("vsmPageClip") == std::string::npos);
+
+    shader::VertexVariant masked = clipArm;
+    masked.alphaTest = true;
+    masked.nodes.colorNode = g::uniform("nodeTint", shader::Type::vec(4), {1.0f, 1.0f, 1.0f, 0.5f});
+    masked.nodes.alphaTestNode = g::uniform("nodeCut", shader::Type::f32(), {0.2f});
+    const auto maskedProgs = shader::buildMaskedDepth(masked);
+    const auto maskedVertex = shader::buildStage(maskedProgs.vertex, 0, false);
+    const auto maskedFragment = shader::buildStage(maskedProgs.fragment, 1, false);
+    CHECK(maskedVertex.wgsl.ok() && maskedFragment.wgsl.ok());
+    CHECK(code(maskedVertex).find("@builtin(clip_distances)") != std::string::npos);
+    CHECK(code(maskedFragment).find("vsmPageClip") == std::string::npos);
+}
+
+TN_TEST_MAIN({"focus_point", focusPoint}, {"atlas", atlas}, {"initialized", initialized}, {"selection_follows_centre", selectionFollowsCentre}, {"pan_keeps_pages", panKeepsPages}, {"tilted_pan_keeps_pages", tiltedPanKeepsPages}, {"refresh_reasons", refreshReasons}, {"packing", packing}, {"map_sizes", mapSizes}, {"continuous_invalidation", continuousInvalidation}, {"sampling", sampling}, {"ground_window", groundWindow}, {"lod_rung", lodRung}, {"caster_plan", casterPlanRebuildsOnlyWhatMoved}, {"gpu_page_table_matches_cpu_atlas", gpuPageTableMatchesCpuAtlas}, {"vsm_batched_depth_skips_vsm_page_clip_attr", vsmBatchedDepthSkipsVsmPageClipAttribute}, {"vsm_batched_depth_clips_in_hardware", vsmBatchedDepthClipsInHardware})

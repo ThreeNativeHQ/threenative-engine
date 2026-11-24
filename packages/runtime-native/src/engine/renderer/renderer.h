@@ -1806,6 +1806,9 @@ private:
     bool unifiedAuxEnabled();
     bool gpuInstanceCullEnabled();
     bool vsmGpuPagesEnabled();
+    /** The device has `clip-distances` and `TN_VSM_CLIP_DISTANCES` is not `0`: batched VSM records clip in hardware. */
+    bool vsmClipDistancesEnabled();
+    bool clipDistancesFeature_ = false;
     /**
      * PRD-914 Phase 3: the compute frustum-cull pipeline and its five-binding layout (`instances`, `descs`, uniforms,
      * compacted ids, indirect args), built on the first frame that culls.

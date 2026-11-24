@@ -503,7 +503,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
         (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
-    if (kind.alphaHash || kind.vsmBatched) {
+    if (kind.alphaHash || kind.vsmDiscards()) {
         fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
     }

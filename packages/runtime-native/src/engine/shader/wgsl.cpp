@@ -348,6 +348,10 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
                 const std::string& name = p_.names_[p_.outputs_[s.a].name];
+                if (name == "clipDistances") {  // a vec4 in the IR, an array in WGSL
+                    out += indent + "{ let cd = " + expr(s.b) + "; out.clipDistances = array<f32, 4>(cd.x, cd.y, cd.z, cd.w); }\n";
+                    break;
+                }
                 out += indent + "out." + (name == "position" || name == "color" ? name : name == "fragDepth" ? "depth" : "o_" + name) + " = " +
                        expr(s.b) + ";\n";
                 break;
@@ -390,6 +394,8 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group, bool shared
     // WGSLNodeBuilder's header outside Firefox: a texture sampled inside a branch (a TSL If, as core's
     // WaterSurface3D refraction is) is legal, as it is in three's shaders.
     if (program.stage() == Stage::Fragment) out += "diagnostic(off, derivative_uniformity);\n";
+    // PRD-775 AC-1: a VSMBatched vertex stage clips each record to its page (the device asked for the feature).
+    if (program.stage() == Stage::Vertex && program.hasOutput("clipDistances")) out += "enable clip_distances;\n";
 
     // Resources in first-use order: uniforms in one block at binding 0, then storage buffers.
     std::vector<ExprId> attributes, builtins, varyings;
@@ -494,6 +500,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group, bool shared
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else if (name == "fragDepth") out += "  @builtin(frag_depth) depth: f32,\n";
+            else if (name == "clipDistances") out += "  @builtin(clip_distances) clipDistances: array<f32, 4>,\n";
             else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 || name.starts_with("tnFlat") ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {

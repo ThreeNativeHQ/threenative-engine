@@ -471,11 +471,18 @@ static void applyVsmBatchedClip(Program& v, Program& f, const VertexVariant& var
     const ExprId pageScaleBias = page(5);
     ExprId clipPage = v.mul(viewProj, worldPosition);
     if (variant.nodes.vertexNode) clipPage = clipPosition(v, variant, local, clipPage);
-    v.output("vsmPageClip", v.div(v.swizzle(clipPage, "xy"), v.swizzle(clipPage, "w")));
+    if (variant.vsmClipDistances) {
+        // Inside the page is |x| <= w and |y| <= w: four planes, each distance >= 0 inside (UE 5.8.3 draws a
+        // non-Nanite VSM page through one viewport per page; WebGPU has no per-instance viewport, so it clips).
+        const ExprId x = v.swizzle(clipPage, "x"), y = v.swizzle(clipPage, "y"), w = v.swizzle(clipPage, "w");
+        v.output("clipDistances", v.construct(Type::vec(4), {v.sub(w, x), v.add(w, x), v.sub(w, y), v.add(w, y)}));
+    } else {
+        v.output("vsmPageClip", v.div(v.swizzle(clipPage, "xy"), v.swizzle(clipPage, "w")));
+    }
     const ExprId slot = v.add(v.mul(v.swizzle(clipPage, "xy"), v.swizzle(pageScaleBias, "x")),
                               v.mul(v.swizzle(pageScaleBias, "yz"), v.swizzle(clipPage, "w")));
     v.output("position", v.construct(Type::vec(4), {slot, v.swizzle(clipPage, "zw")}));
-    f.varying("vsmPageClip", Type::vec(2));
+    if (!variant.vsmClipDistances) f.varying("vsmPageClip", Type::vec(2));
 }
 
 // The page rect is normalized inside the page: a fragment outside [-1, 1] landed in another page's slot.
@@ -879,7 +886,7 @@ void linkNodeVaryings(StandardPrograms& out, const VertexVariant& variant, ExprI
     variant.nodes.forEachGraph(collect);
     for (const auto& [name, type] : out.fragment.varyings()) {
         if ((name == "backgroundDirection" && variant.background) || name == "normalView" || (name == "positionView" && v.hasOutput(name)) ||
-            (name == "instanceColor" && variant.tinted()) || (name == "vsmPageClip" && variant.vsmBatched) ||
+            (name == "instanceColor" && variant.tinted()) || (name == "vsmPageClip" && variant.vsmDiscards()) ||
             (name == "uv" && (variant.map || variant.normalMap || variant.pbrMaps || variant.anisotropy))) continue;
         ExprId value;
         if (const auto found = carried.find(name); found != carried.end()) {
@@ -2210,7 +2217,7 @@ StandardPrograms buildDepth(const VertexVariant& variant) {
     if (variant.vsmBatched) applyVsmBatchedClip(v, f, variant, local, world);
     else v.output("position", clipPosition(v, variant, local, v.mul(v.uniform("projectionMatrix", Type::mat(4, 4)), view)));
     outputMapUv(v, local);
-    if (variant.vsmBatched) vsmPageDiscard(f);
+    if (variant.vsmDiscards()) vsmPageDiscard(f);
     const ExprId texel = mapTexel(f, variant);
     const ExprId opacity = f.swizzle(f.uniform("diffuse", Type::vec(4)), "w");
     materialAlpha(f, texel == kInvalid ? opacity : f.mul(opacity, f.swizzle(texel, "w")), variant.alphaHash, kInvalid, variant.alphaTest);
@@ -2226,7 +2233,7 @@ StandardPrograms buildVsmBatchedDepth(const VertexVariant& variant) {
     const ExprId world = v.mul(v.uniform("modelMatrix", Type::mat(4, 4)), local.position);
     Program& f = out.fragment;
     applyVsmBatchedClip(v, f, variant, local, world);
-    vsmPageDiscard(f);
+    if (variant.vsmDiscards()) vsmPageDiscard(f);
     out.vertex.linkVaryings(out.fragment);
     return out;
 }
@@ -2237,7 +2244,7 @@ StandardPrograms buildMaskedDepth(const VertexVariant& variant) {
     StandardPrograms out = buildBasic(variant);
     out.fragment = Program{Stage::Fragment};
     Program& f = out.fragment;
-    if (variant.vsmBatched) vsmPageDiscard(f);
+    if (variant.vsmDiscards()) vsmPageDiscard(f);
     graph::Lowering slots = slotLowering(f, variant, kInvalid);
     nodeDiffuseColor(f, slots, variant);
     discardMasked(f, slots, variant);  // the caller put the shadow mask (maskShadowNode || maskNode) in maskNode

@@ -138,6 +138,14 @@ struct VertexVariant {
      */
     bool vsmBatched = false;
     /**
+     * PRD-775 AC-1: the device has `clip-distances`, so a VSMBatched vertex stage clips each record to its page in
+     * hardware (`@builtin(clip_distances)`) instead of rasterizing into other slots and discarding there. An unmasked
+     * batched depth pass then has no fragment stage and keeps early depth.
+     */
+    bool vsmClipDistances = false;
+    /** The fragment stage clips a VSMBatched record to its page: only without hardware clip distances. */
+    [[nodiscard]] bool vsmDiscards() const { return vsmBatched && !vsmClipDistances; }
+    /**
      * three's skinning(): `skinIndex` (vec4<u32>) and `skinWeight` attributes, the frame's bone
      * matrices in the storage buffer `boneMatrices` from `boneBase` on, `bindMatrix` and
      * `bindMatrixInverse` uniforms.
@@ -211,7 +219,7 @@ struct VertexVariant {
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaToCoverage ? "a2c|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
-               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + (gpuCulled ? "C" : "") + (vsmBatched ? "vB" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + (gpuCulled ? "C" : "") + (vsmBatched ? "vB" : "") + (vsmClipDistances ? "vD" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (anisotropy ? "aniso|" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }

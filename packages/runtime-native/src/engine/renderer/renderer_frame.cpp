@@ -2652,6 +2652,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             shader::VertexVariant depthVariant = variant;
                             if (cache && cache->program) depthVariant.gpuCulled = cache->variant.gpuCulled;
                             depthVariant.vsmBatched = true;
+                            depthVariant.vsmClipDistances = vsmClipDistancesEnabled();
                             cachedDepth = &depthProgram(depthVariant, masked);
                             if (cache) {
                                 if (!cache->program) cache->variant = variant;
@@ -2664,7 +2665,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                             }
                         }
                         const shader::StageModule* depthFragment =
-                            (masked || alphaHash || cachedDepth->variant.vsmBatched) ? &cachedDepth->fragment : nullptr;
+                            (masked || alphaHash || cachedDepth->variant.vsmDiscards()) ? &cachedDepth->fragment : nullptr;
                         const uint8_t derived = item.side == 2 ? 2 : item.side == 1 || virtualMap ? 0 : 1;
                         const uint8_t faces = item.shadowSide != 255 ? item.shadowSide : derived;
                         const WGPUCullMode cull =
@@ -2933,12 +2934,13 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                     shader::VertexVariant batchedVariant = variantOf(item);
                     if (cache && cache->program) batchedVariant.gpuCulled = cache->variant.gpuCulled;
                     batchedVariant.vsmBatched = true;
+                    batchedVariant.vsmClipDistances = vsmClipDistancesEnabled();
                     Program& batched = depthProgram(batchedVariant, masked);
                     PipelineTarget batchedTarget = target;
                     batchedTarget.layout = batched.pipelineLayout;
                     batchedTarget.instanceStepMask = instanceStepMask(batched.vertex, item);
                     const shader::StageModule* batchedFragment =
-                        (masked || batchedVariant.alphaHash || batched.variant.vsmBatched) ? &batched.fragment : nullptr;
+                        (masked || batchedVariant.alphaHash || batched.variant.vsmDiscards()) ? &batched.fragment : nullptr;
                     compilation->push_back(pipelines_->getAsync(batched.vertex, batchedFragment, batchedTarget));
                     if (cache) {
                         cache->vsmDepthProgram = &batched;
@@ -2968,9 +2970,10 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 shader::VertexVariant batchedVariant = variantOf(item);
                 if (cache->program) batchedVariant.gpuCulled = cache->variant.gpuCulled;
                 batchedVariant.vsmBatched = true;
+                batchedVariant.vsmClipDistances = vsmClipDistancesEnabled();
                 Program& batched = depthProgram(batchedVariant, masked);
                 const shader::StageModule* batchedFragment =
-                    (masked || batchedVariant.alphaHash || batched.variant.vsmBatched) ? &batched.fragment : nullptr;
+                    (masked || batchedVariant.alphaHash || batched.variant.vsmDiscards()) ? &batched.fragment : nullptr;
                 PipelineTarget batchedTarget = target;
                 batchedTarget.layout = batched.pipelineLayout;
                 batchedTarget.instanceStepMask = instanceStepMask(batched.vertex, item);
@@ -3280,7 +3283,7 @@ uint64_t Renderer::renderPrepared(std::span<const DrawItem> items, const CameraS
                 const DrawItem& item = *planned.item;
                 Program& program = *planned.program;
                 const bool masked = shadowMasked(*item.material, *item.nodes);
-                const bool fragmentBlock = masked || program.variant.alphaHash || program.variant.vsmBatched;
+                const bool fragmentBlock = masked || program.variant.alphaHash || program.variant.vsmDiscards();
                 if (sharedView) {
                     maxViewLights = std::max(maxViewLights, program.viewLightCount);
                     planned.viewOffset = shadowSliceIdx;

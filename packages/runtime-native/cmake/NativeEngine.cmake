@@ -330,6 +330,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
         native_engine_virtual_shadow_pages_draw_from_gpu_rows=virtual_shadow_pages_draw_from_gpu_rows
+        native_engine_virtual_shadow_pages_draw_from_gpu_rows_discard=virtual_shadow_pages_draw_from_gpu_rows_discard
         native_engine_virtual_shadow_caster_changes_are_pushed=virtual_shadow_caster_changes_are_pushed
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_virtual_shadow_bounds_arvo_parity=virtual_shadow_bounds_arvo_parity

@@ -163,6 +163,7 @@ Renderer::Renderer(WGPUInstance instance, WGPUDevice device, WGPUQueue queue, Ev
                    RenderFeatures features)
     : instance_(instance), device_(device), queue_(queue), events_(events), gpu_(instance, device, queue, events, 1), geometry_(std::make_shared<GeometryCopies>(instance, device, queue, events)), pipelines_(std::make_shared<PipelineCache>(device)), layouts_(std::make_shared<PipelineLayoutCache>(device)), retired_(TextureId::watch()) {
     features_ = checkedRenderFeatures(features);
+    clipDistancesFeature_ = wgpuDeviceHasFeature(device, WGPUFeatureName_ClipDistances);
     geometry_->gpu.shareSubmissions(gpu_);
     // The block format the glTF loader transcodes KTX2 to (PRD-867): BC7 where the device samples it, else
     // ETC2, else none, and the loader keeps RGBA8 by name. ASTC waits for its transcoder tables.
@@ -554,6 +555,12 @@ bool Renderer::unifiedAuxEnabled() {
 bool Renderer::gpuInstanceCullEnabled() {
     return flagEnabledOrLog(flags::read<flags::GpuInstanceCull>(),
                             "TN_GPU_INSTANCE_CULL=0: legacy CPU instance culling enabled", diagnostics_);
+}
+
+bool Renderer::vsmClipDistancesEnabled() {
+    return clipDistancesFeature_ &&
+           flagEnabledOrLog(flags::read<flags::VsmClipDistances>(),
+                            "TN_VSM_CLIP_DISTANCES=0: batched VSM records clip by fragment discard", diagnostics_);
 }
 
 bool Renderer::vsmGpuPagesEnabled() {
