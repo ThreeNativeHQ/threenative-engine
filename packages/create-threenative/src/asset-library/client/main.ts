@@ -90,12 +90,7 @@ const grid = new three.GridHelper(200, 200, 0x55606a, 0x77818a);
 (grid.material as three.Material).transparent = true;
 (grid.material as three.Material).opacity = 0.35;
 grid.position.y = -0.006;
-const figure = new three.Mesh(
-  new three.CapsuleGeometry(0.22, 1.36, 6, 16).translate(0, 0.9, 0),
-  new three.MeshStandardMaterial({ color: 0xd8d2c4, roughness: 0.8 }),
-);
-figure.castShadow = true;
-scene.add(ground, grid, figure);
+scene.add(ground, grid);
 
 const camera = new three.PerspectiveCamera(40, 1, 0.05, 2000);
 const orbit = new OrbitControls(camera, canvas);
@@ -259,9 +254,8 @@ const invalidate = () => {
 /** The view the current story asked for (a whole scene story), else undefined. */
 let fixedView: IAssetLoaded["view"];
 
-/** Where the framing camera sits from the subject, and the screen's right along the ground. */
+/** Where the framing camera sits from the subject. */
 const VIEW_DIRECTION = new three.Vector3(0.55, 0.32, 1).normalize();
-const SCREEN_RIGHT = new three.Vector3(1, 0, -0.55).normalize();
 
 function frame(): void {
   invalidate();
@@ -279,20 +273,10 @@ function frame(): void {
     return;
   }
   const box = new three.Box3().setFromObject(content);
-  // Nothing shown yet (the intro, an empty Stage): a raised view of the floor and the figure,
-  // not a camera left at floor height that sees the ground as a flat band.
+  // Nothing shown yet (the intro, an empty Stage): a raised view of the floor, not a camera left at
+  // floor height that sees the ground as a flat band.
   if (box.isEmpty())
     box.setFromCenterAndSize(new three.Vector3(0, 0.9, 0), new three.Vector3(1, 1.8, 1));
-  // The 1.8 m figure stands beside what is shown, whatever view built it, at the subject's depth on
-  // the screen's right (the camera looks along VIEW_DIRECTION), so its height compares 1:1; nearer
-  // the camera it looked taller than a 1.8 m model. The framing then fits both.
-  const subject = box.getBoundingSphere(new three.Sphere());
-  figure.position
-    .copy(SCREEN_RIGHT)
-    .multiplyScalar(subject.radius + 0.6)
-    .add(subject.center)
-    .setY(0);
-  if (figure.visible) box.union(new three.Box3().setFromObject(figure));
   const sphere = box.getBoundingSphere(new three.Sphere());
   const halfFov = three.MathUtils.degToRad(camera.fov / 2);
   const horizontal = Math.atan(Math.tan(halfFov) * camera.aspect);
@@ -339,7 +323,6 @@ const ICONS: Record<string, string> = {
   zoomOut: "M11 4a7 7 0 1 0 0 14 7 7 0 0 0 0-14zM20 20l-4-4M8 11h6",
   reset: "M3 12a9 9 0 1 0 3-6.7L3 8M3 3v5h5",
   grid: "M3 3h18v18H3zM3 9h18M3 15h18M9 3v18M15 3v18",
-  figure: "M12 3a2 2 0 1 0 0 4 2 2 0 0 0 0-4zM12 7v8M7 10h10M12 15l-3 6M12 15l3 6",
   wire: "M12 2l9 5v10l-9 5-9-5V7zM12 22V12M21 7l-9 5-9-5M3 17l9-5 9 5",
   wind: "M3 8h11a3 3 0 1 0-3-3M3 12h16a3 3 0 1 1-3 3M3 16h8",
   background: "M3 3h18v18H3zM8.5 7a1.5 1.5 0 1 0 0 3 1.5 1.5 0 0 0 0-3zM21 15l-5-5L5 21",
@@ -553,7 +536,6 @@ function applyLighting(element: IAssetElement | undefined, loaded?: IAssetLoaded
   sunShadow(2048, 1);
   ground.visible = true;
   grid.visible = toggled("grid");
-  figure.visible = toggled("figure");
 }
 
 const toggled = (id: string) => $(id).getAttribute("aria-pressed") === "true";
@@ -566,7 +548,6 @@ const view: IAssetViewContext = {
   hemi,
   ground,
   grid,
-  figure,
   content,
   backgroundColor,
   roomEnvironment,
@@ -1406,9 +1387,6 @@ toggle("wire", (on) => {
         material.wireframe = on;
   });
   viewerHost.wireframe(on);
-});
-toggle("figure", (on) => {
-  figure.visible = on && !fixedView;
 });
 toggle("grid", (on) => {
   grid.visible = on && !fixedView;

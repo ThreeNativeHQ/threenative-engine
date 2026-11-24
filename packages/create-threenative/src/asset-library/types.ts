@@ -144,7 +144,6 @@ export interface IAssetViewContext {
   readonly hemi: HemisphereLight;
   readonly ground: Mesh;
   readonly grid: Object3D;
-  readonly figure: Object3D;
   readonly content: Object3D;
   readonly backgroundColor: Color;
   readonly roomEnvironment: Texture;
@@ -164,7 +163,7 @@ export interface IAssetViewContext {
   invalidate(): void;
   sunShadow(size: number, radius: number): void;
   say(text: string, error?: boolean): void;
-  /** Whether a toolbar toggle (`grid`, `figure`) is on. */
+  /** Whether a toolbar toggle (`grid`) is on. */
   toggled(id: string): boolean;
 }
 

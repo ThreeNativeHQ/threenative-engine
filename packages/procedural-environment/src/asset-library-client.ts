@@ -126,7 +126,7 @@ function biomeLight(ctx: IAssetViewContext, outcropBiome?: string): void {
   // A rock story takes the page's own light (hemisphere 1.1, sun 3.2, exposure 1.05, no environment
   // map): the room environment on top of it washed every rock to near white beside the page.
   const rock = outcropBiome !== undefined;
-  const { renderer, scene, sun, hemi, ground, grid, figure } = ctx;
+  const { renderer, scene, sun, hemi, ground, grid } = ctx;
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
   sun.shadow.normalBias = 0;
   ctx.sunShadow(2048, 1);
@@ -134,7 +134,6 @@ function biomeLight(ctx: IAssetViewContext, outcropBiome?: string): void {
   ctx.camera.fov = 40;
   ground.visible = true;
   grid.visible = ctx.toggled("grid");
-  figure.visible = ctx.toggled("figure");
   skyOf(ctx).visible = false;
   scene.environment = rock ? null : ctx.roomEnvironment;
   hemi.intensity = rock ? 1.1 : 0.35;
@@ -262,7 +261,7 @@ function stylizedLighting(ctx: IAssetViewContext, shown?: StylizedPreview): void
   ctx.sky.azimuth = -54;
   ctx.backgroundColor.set(env?.horizon ?? 0xb7c6e6);
   fog(ctx).color.set(env?.horizon ?? 0xb7c6e6);
-  if (shown?.view) ctx.ground.visible = ctx.grid.visible = ctx.figure.visible = false;
+  if (shown?.view) ctx.ground.visible = ctx.grid.visible = false;
   if (!env) return;
   const sky = skyOf(ctx);
   sky.visible = true;

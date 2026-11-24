@@ -549,24 +549,23 @@ function renderDocs(
   );
 }
 
-// ── the contact sheet: Front / Side / Back / ¾ Iso, plus Wireframe and the 1.8 m figure ──
+// ── the contact sheet: Front / Side / Back / ¾ Iso, plus Wireframe and Top ──
 const ANGLES: readonly {
   label: string;
   yaw: number;
   pitch: number;
   wire?: boolean;
-  figure?: boolean;
 }[] = [
   { label: "Front", yaw: 0, pitch: 8 },
   { label: "Side", yaw: 90, pitch: 8 },
   { label: "Back", yaw: 180, pitch: 8 },
   { label: "¾ Iso", yaw: 35, pitch: 28 },
   { label: "Wireframe", yaw: 35, pitch: 28, wire: true },
-  { label: "1.8 m figure", yaw: 35, pitch: 18, figure: true },
+  { label: "Top", yaw: 0, pitch: 89 },
 ];
 
 function turntable(host: IViewerHost, mode: string, render: () => void): HTMLCanvasElement {
-  const { camera, content, figure, renderer } = host.view;
+  const { camera, content, renderer } = host.view;
   const cells = new URLSearchParams(location.search).get("cells") === "4" ? 4 : 6;
   const columns = cells === 4 ? 2 : 3;
   const source = renderer.domElement;
@@ -581,7 +580,7 @@ function turntable(host: IViewerHost, mode: string, render: () => void): HTMLCan
     ? new three.Sphere(new three.Vector3(), 1)
     : box.getBoundingSphere(new three.Sphere());
   const fit = (sphere.radius / Math.sin(three.MathUtils.degToRad(camera.fov / 2))) * 1.05;
-  const saved = { position: camera.position.clone(), figure: figure.visible };
+  const saved = { position: camera.position.clone() };
   const materials: three.MeshStandardMaterial[] = [];
   content.traverse((node) => {
     if ((node as three.Mesh).isMesh)
@@ -590,24 +589,11 @@ function turntable(host: IViewerHost, mode: string, render: () => void): HTMLCan
   for (const [i, angle] of ANGLES.slice(0, cells).entries()) {
     const yaw = three.MathUtils.degToRad(angle.yaw);
     const pitch = three.MathUtils.degToRad(angle.pitch);
-    // The figure stands on this camera's right at the subject's depth, so the two heights compare
-    // 1:1; the camera aims between them.
-    const right = new three.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
-    const aim = sphere.center.clone();
-    figure.visible = angle.figure === true;
-    if (angle.figure) {
-      figure.position
-        .copy(right)
-        .multiplyScalar(sphere.radius + 0.6)
-        .add(sphere.center)
-        .setY(0);
-      aim.addScaledVector(right, (sphere.radius + 0.6) / 2);
-    }
     camera.position
       .set(Math.sin(yaw) * Math.cos(pitch), Math.sin(pitch), Math.cos(yaw) * Math.cos(pitch))
-      .multiplyScalar(fit * (angle.figure ? 1.25 : 1))
-      .add(aim);
-    camera.lookAt(aim);
+      .multiplyScalar(fit)
+      .add(sphere.center);
+    camera.lookAt(sphere.center);
     for (const material of materials) material.wireframe = angle.wire === true;
     render();
     const x = (i % columns) * width;
@@ -624,7 +610,6 @@ function turntable(host: IViewerHost, mode: string, render: () => void): HTMLCan
   ctx.fillText(`${document.title} · ${mode} · ${location.hash}`, 12, sheet.height - 12);
   for (const material of materials) material.wireframe = host.wire;
   camera.position.copy(saved.position);
-  figure.visible = saved.figure;
   host.frame();
   render();
   return sheet;
