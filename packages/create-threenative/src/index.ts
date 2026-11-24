@@ -30,6 +30,8 @@ import {
 export { createEngineCatalogPlugin } from "./engine-catalog.js";
 export { createEngineFreshnessPlugin, hashEngineDist } from "./engine-freshness.js";
 export { createWebBrandPlugin, renderWebManifest } from "./web-brand.js";
+export { type IAssetLibraryOptions, createAssetLibraryPlugin } from "./asset-library/plugin.js";
+export { defineAssetStory } from "./asset-story.js";
 export { webRuntimeDecoders } from "./web-engine.js";
 
 export type ScaffoldTemplate = string;

@@ -1355,6 +1355,9 @@ importers:
         specifier: 'catalog:'
         version: '@typescript/typescript6@6.0.2'
     devDependencies:
+      '@tailwindcss/vite':
+        specifier: 'catalog:'
+        version: 4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
       '@threenative/assets':
         specifier: workspace:*
         version: link:../assets
@@ -1397,6 +1400,9 @@ importers:
       publint:
         specifier: 0.3.22
         version: 0.3.22
+      tailwindcss:
+        specifier: 'catalog:'
+        version: 4.3.3
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(yaml@2.9.1)
@@ -1548,21 +1554,18 @@ importers:
         specifier: 0.187.0
         version: 0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119)
     devDependencies:
-      '@tailwindcss/vite':
-        specifier: 'catalog:'
-        version: 4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43
       '@types/three':
         specifier: 'catalog:'
         version: 0.187.0
+      create-threenative:
+        specifier: workspace:*
+        version: link:../create-threenative
       publint:
         specifier: 0.3.22
         version: 0.3.22
-      tailwindcss:
-        specifier: 'catalog:'
-        version: 4.3.3
       tsup:
         specifier: 8.5.1
         version: 8.5.1(patch_hash=bdcba0cb0e0023b6ee572aae9dd40456c0c3bb0edd9c2abd290caed6ebef0770)(@typescript/typescript6@6.0.2)(jiti@2.7.0)(postcss@8.5.25)(tsx@4.23.5)(yaml@2.9.1)
@@ -5823,6 +5826,13 @@ snapshots:
       '@tailwindcss/oxide-wasm32-wasi': 4.3.3
       '@tailwindcss/oxide-win32-arm64-msvc': 4.3.3
       '@tailwindcss/oxide-win32-x64-msvc': 4.3.3
+
+  '@tailwindcss/vite@4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))':
+    dependencies:
+      '@tailwindcss/node': 4.3.3(patch_hash=e5decbc72f46c0747e26e2ca910e92936f157872011d75fbd32d3d3bcf0d3c1a)
+      '@tailwindcss/oxide': 4.3.3
+      tailwindcss: 4.3.3
+      vite: 8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.27.0)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1)
 
   '@tailwindcss/vite@4.3.3(vite@8.2.0(patch_hash=c99095f3002ba7f0997f348d6c1bcf5952587ed5dee18c058269c0d634d146c1)(@types/node@20.19.43)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.5)(yaml@2.9.1))':
     dependencies:

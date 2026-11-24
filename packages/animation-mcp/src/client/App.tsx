@@ -96,7 +96,7 @@ export function App({ project }: { readonly project: string }) {
   };
 
   useEffect(() => {
-    fetch("/api/models")
+    fetch("api/models")
       .then(async (response) => {
         if (!response.ok) throw new Error(`Model scan failed (${response.status}).`);
         return (await response.json()) as { models: string[] };
@@ -167,7 +167,7 @@ export function App({ project }: { readonly project: string }) {
 
   useEffect(() => {
     if (!host || !attached) return;
-    fetch(`/api/recipe?path=${encodeURIComponent(output)}`)
+    fetch(`api/recipe?path=${encodeURIComponent(output)}`)
       .then(async (response) => {
         if (response.status === 404) return undefined;
         if (!response.ok) throw new Error(`Recipe load failed (${response.status}).`);
@@ -299,7 +299,7 @@ export function App({ project }: { readonly project: string }) {
       host,
       version: 3,
     };
-    const response = await fetch(`/api/recipe?path=${encodeURIComponent(output)}`, {
+    const response = await fetch(`api/recipe?path=${encodeURIComponent(output)}`, {
       body: JSON.stringify({ recipe }),
       headers: { "content-type": "application/json" },
       method: "PUT",

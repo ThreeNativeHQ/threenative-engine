@@ -1,6 +1,7 @@
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import path from "node:path";
+import { verifyClip } from "./ops/verify.js";
 import { poseLabPage } from "./page.js";
 
 const CLIENT = new URL("./client/app.js", import.meta.url);
@@ -85,30 +86,35 @@ function json(response: ServerResponse, status: number, value: unknown): void {
   send(response, status, JSON.stringify(value), "application/json; charset=utf-8");
 }
 
-export async function startPoseLab(options: PoseLabOptions = {}): Promise<{
-  close(): Promise<void>;
-  readonly port: number;
-}> {
-  const project = path.resolve(options.project ?? process.cwd());
-  const port = options.port ?? 4192;
-  await readdir(project).catch(() => {
-    throw new Error(`Project directory does not exist: ${project}`);
-  });
+/** A Node request handler for one project's Pose Lab, mountable under any prefix. */
+export type PoseLabHandler = (
+  request: IncomingMessage,
+  response: ServerResponse,
+  /** The path below the mount (`/`, `/app.js`, `/api/models`). */
+  pathname: string,
+) => Promise<void>;
 
-  const server = createServer(async (request, response) => {
+/**
+ * Pose Lab's routes for `project`. `startPoseLab` serves it on its own port; the Asset Library mounts
+ * the same handler at `/__assets/pose/` (PRD-915), so both views share one op log and one client.
+ */
+export function createPoseLabHandler(projectDirectory: string): PoseLabHandler {
+  const project = path.resolve(projectDirectory);
+  return async (request, response, pathname) => {
     try {
       const url = new URL(request.url ?? "/", "http://pose-lab");
-      if (request.method === "GET" && (url.pathname === "/" || url.pathname === "/pose"))
+      if (request.method === "GET" && (pathname === "/" || pathname === "/pose"))
         return send(response, 200, poseLabPage(path.basename(project)), "text/html; charset=utf-8");
-      if (request.method === "GET" && url.pathname === "/app.js")
+      if (request.method === "GET" && pathname === "/app.js")
         return send(response, 200, await readFile(CLIENT), "text/javascript; charset=utf-8");
-      if (request.method === "GET" && url.pathname === "/favicon.ico") {
+      if (request.method === "GET" && pathname === "/favicon.ico") {
         response.writeHead(204);
-        return response.end();
+        response.end();
+        return;
       }
-      if (request.method === "GET" && url.pathname === "/api/models")
+      if (request.method === "GET" && pathname === "/api/models")
         return json(response, 200, { models: await modelsIn(project) });
-      if (request.method === "GET" && url.pathname === "/api/model") {
+      if (request.method === "GET" && pathname === "/api/model") {
         const relative = url.searchParams.get("path") ?? "";
         const file = relative.endsWith(".glb") ? projectFile(project, relative) : undefined;
         if (file === undefined) return json(response, 404, { error: "GLB not found." });
@@ -117,7 +123,17 @@ export async function startPoseLab(options: PoseLabOptions = {}): Promise<{
           ? json(response, 404, { error: "GLB not found." })
           : send(response, 200, model, "model/gltf-binary");
       }
-      if (url.pathname === "/api/recipe") {
+      // animation_verify's measure, for a timeline that draws each defect where it happens.
+      if (request.method === "GET" && pathname === "/api/verify") {
+        const relative = url.searchParams.get("path") ?? "";
+        const file = /\.(glb|gltf)$/u.test(relative) ? projectFile(project, relative) : undefined;
+        const clip = url.searchParams.get("clip") ?? "";
+        if (file === undefined || clip === "")
+          return json(response, 400, { error: "verify needs ?path=<model.glb>&clip=<name>." });
+        const scale = Number(url.searchParams.get("scale") ?? "1");
+        return json(response, 200, await verifyClip(file, clip, { scale }));
+      }
+      if (pathname === "/api/recipe") {
         const relative = url.searchParams.get("path") ?? "";
         const file = relative.endsWith(".json") ? projectFile(project, relative) : undefined;
         if (file === undefined) return json(response, 404, { error: "Recipe not found." });
@@ -139,6 +155,21 @@ export async function startPoseLab(options: PoseLabOptions = {}): Promise<{
     } catch (error) {
       return json(response, 500, { error: error instanceof Error ? error.message : String(error) });
     }
+  };
+}
+
+export async function startPoseLab(options: PoseLabOptions = {}): Promise<{
+  close(): Promise<void>;
+  readonly port: number;
+}> {
+  const project = path.resolve(options.project ?? process.cwd());
+  const port = options.port ?? 4192;
+  await readdir(project).catch(() => {
+    throw new Error(`Project directory does not exist: ${project}`);
+  });
+  const handle = createPoseLabHandler(project);
+  const server = createServer((request, response) => {
+    void handle(request, response, new URL(request.url ?? "/", "http://pose-lab").pathname);
   });
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
