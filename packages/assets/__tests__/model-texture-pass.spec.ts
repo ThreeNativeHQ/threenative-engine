@@ -1221,6 +1221,28 @@ describe("embedded model textures", () => {
     ).toBe("none");
   });
 
+  it("should write the texture-projection marker through to the image the runtime reads", async () => {
+    const { buffer } = await compiled(
+      await fixtureWithTextures({ height: 32, projection: 4096, width: 32 }),
+    );
+    // three's GLTFLoader copies `images[i].extras` into `texture.userData`, and the runtime's
+    // anisotropic-filtering convention reads the marker from there. A cook that moved it onto
+    // `textures[i]` — or dropped it — would leave that convention silently inert.
+    const json = JSON.parse(buffer.subarray(20, 20 + buffer.readUInt32LE(12)).toString("utf8")) as {
+      images: {
+        extras?: { threenative?: { textureProjection?: { atlas?: number; runId?: string } } };
+      }[];
+    };
+    const marked = json.images.filter(
+      (image) => image.extras?.threenative?.textureProjection !== undefined,
+    );
+    expect(marked).toHaveLength(1);
+    expect(marked[0]?.extras?.threenative?.textureProjection).toEqual({
+      atlas: 4096,
+      runId: "run-1",
+    });
+  });
+
   it("should let an explicit maxSize win over a texture-projection marker", async () => {
     const { buffer, entry } = await compiled(
       await fixtureWithTextures({ height: 16, projection: 4096, width: 4096 }),
