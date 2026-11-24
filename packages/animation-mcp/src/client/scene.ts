@@ -115,8 +115,8 @@ export class CalibrationScene {
     const generation = ++this.#generation;
     try {
       const [hostFile, attachedFile] = await Promise.all([
-        this.#loader.loadAsync(`/api/model?path=${encodeURIComponent(hostPath)}`),
-        this.#loader.loadAsync(`/api/model?path=${encodeURIComponent(attachedPath)}`),
+        this.#loader.loadAsync(`api/model?path=${encodeURIComponent(hostPath)}`),
+        this.#loader.loadAsync(`api/model?path=${encodeURIComponent(attachedPath)}`),
       ]);
       if (generation !== this.#generation) return;
       this.#clear();

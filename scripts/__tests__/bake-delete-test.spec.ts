@@ -215,12 +215,11 @@ describe("bake delete-test", () => {
     const root = await makeTempDir("delete-test-watcher-ok-");
     await writeFile(
       path.join(root, "vite.config.ts"),
-      "export default defineConfig({\n  plugins: [\n    assetsWatchPlugin(),\n  ],\n});\n",
+      "export default defineConfig({\n  plugins: [threenative(), react()],\n});\n",
     );
     await disableAssetWatcher(root);
     const patched = await readFile(path.join(root, "vite.config.ts"), "utf8");
-    expect(patched).not.toMatch(/^\s*assetsWatchPlugin\(\),$/mu);
-    expect(patched).toContain("disabled by the delete-test");
+    expect(patched).toContain("plugins: [threenative({ assetsWatch: false }), react()]");
   });
 
   it("should refuse to measure anything when the baked run already fails", async () => {

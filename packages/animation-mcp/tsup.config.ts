@@ -20,9 +20,25 @@ export default defineConfig([
     treeshake: true,
   },
   {
+    // Pose Lab as a mountable handler (PRD-915): the Asset Library serves it under `/__assets/pose/`.
+    clean: false,
+    dts: true,
+    entry: { "pose-lab": "src/pose-lab.ts" },
+    format: ["esm"],
+    minify: true,
+    noExternal: [/.*/u],
+    outDir: "dist",
+    platform: "node",
+    splitting: false,
+    target: "node20",
+    treeshake: true,
+  },
+  {
     clean: false,
     entry: { app: "src/client/main.tsx" },
     format: ["esm"],
+    // Core carries this file (mcp/client/app.js), so it ships minified.
+    minify: true,
     noExternal: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "three"],
     outDir: "dist/client",
     platform: "browser",

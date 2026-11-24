@@ -31,6 +31,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./pose-lab": {
+      "types": "./dist/pose-lab.d.ts",
+      "import": "./dist/pose-lab.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {

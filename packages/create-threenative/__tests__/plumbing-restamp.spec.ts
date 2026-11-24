@@ -34,22 +34,14 @@ describe("generated build plumbing", () => {
   });
 
   it("should derive each Vite delta from the kit itself", () => {
-    // React and Tailwind by dependency, the second entry by `main.html`: no list to update.
-    expect(kitViteDelta("minimal", TEMPLATES)).toMatchObject({
-      react: false,
-      tailwind: false,
-      workerEntry: false,
-    });
-    expect(kitViteDelta("starter", TEMPLATES)).toMatchObject({
-      react: true,
-      tailwind: true,
-      workerEntry: true,
-    });
-    expect(viteConfigText({ react: false, tailwind: false, workerEntry: false })).not.toContain(
-      "tailwindcss()",
+    // React and Tailwind by dependency: no list to update. The rest is `threenative()`.
+    expect(kitViteDelta("minimal", TEMPLATES)).toEqual({ react: false, tailwind: false });
+    expect(kitViteDelta("starter", TEMPLATES)).toEqual({ react: true, tailwind: true });
+    expect(viteConfigText({ react: false, tailwind: false })).toContain(
+      "plugins: [threenative()],",
     );
-    expect(viteConfigText({ react: true, tailwind: true, workerEntry: true })).toContain(
-      'build: { rollupOptions: { input: { index: "index.html", main: "main.html" } } },',
+    expect(viteConfigText({ react: true, tailwind: true })).toContain(
+      "plugins: [threenative(), react(), tailwindcss()],",
     );
   });
 

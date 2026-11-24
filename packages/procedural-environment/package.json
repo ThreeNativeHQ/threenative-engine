@@ -23,6 +23,10 @@
       "types": "./dist/stylized.d.ts",
       "import": "./dist/stylized.js"
     },
+    "./asset-library": {
+      "types": "./dist/asset-library.d.ts",
+      "import": "./dist/asset-library.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -41,11 +45,9 @@
     "three": "catalog:"
   },
   "devDependencies": {
-    "@tailwindcss/vite": "catalog:",
     "@types/node": "catalog:",
     "@types/three": "catalog:",
     "publint": "0.3.22",
-    "tailwindcss": "catalog:",
     "tsup": "8.5.1",
     "typescript": "catalog:",
     "vite": "catalog:"

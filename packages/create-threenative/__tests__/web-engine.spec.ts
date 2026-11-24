@@ -520,14 +520,11 @@ describe("the web engine's asset decoders", () => {
   });
 
   it("is what every template's dev-server asset watch cooks with, as its build does", async () => {
-    const templates = path.resolve(import.meta.dirname, "../templates");
-    const watching = (await readdir(templates)).filter((name) =>
-      existsSync(path.join(templates, name, "vite.config.ts")),
+    // Every kit's watch is the one in `threenative()` (PRD-915).
+    const source = await readFile(
+      path.resolve(import.meta.dirname, "../src/kit-plugins.ts"),
+      "utf8",
     );
-    expect(watching.length).toBeGreaterThan(0);
-    for (const name of watching) {
-      const source = await readFile(path.join(templates, name, "vite.config.ts"), "utf8");
-      expect(source, name).toContain("runtimeDecoders: webRuntimeDecoders(config)");
-    }
+    expect(source).toContain("runtimeDecoders: webRuntimeDecoders(config)");
   });
 });
