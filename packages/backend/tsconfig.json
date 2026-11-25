@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  // No rootDir: tests live in __tests__/, outside src/, and the base config is noEmit — tsup
+  // owns the build, so rootDir would only constrain typechecking.
+  "include": ["src/**/*.ts", "__tests__/**/*.ts"]
+}
