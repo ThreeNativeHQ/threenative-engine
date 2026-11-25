@@ -16,7 +16,12 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { type ComputeNode, MeshBasicNodeMaterial, type StorageBufferNode } from "three/webgpu";
+import {
+  type ComputeNode,
+  MeshBasicNodeMaterial,
+  type Node,
+  type StorageBufferNode,
+} from "three/webgpu";
 import * as three from "three/webgpu";
 import type { IComputeDriven } from "../compute-driven.js";
 import {
@@ -25,16 +30,17 @@ import {
   createDonorParticle,
   layerAmount,
   overrideLayer,
+  presetClock,
 } from "./particles.js";
 import { type ArchiveLayer, godotPortalVortexLayers } from "./presets.js";
 
 type ComputeRenderer = Parameters<IComputeDriven["process"]>[0];
 
-function layerPhase(layer: ArchiveLayer, seed: number) {
+function layerPhase(layer: ArchiveLayer, seed: number, age: Node<"float">) {
   const lifetime = float(layer.lifetime[0]).add(
     hash(instanceIndex.add(seed + 53)).mul(layer.lifetime[1] - layer.lifetime[0]),
   );
-  return fract(time.div(lifetime).add(hash(instanceIndex.add(seed + 59))));
+  return fract(age.div(lifetime).add(hash(instanceIndex.add(seed + 59))));
 }
 
 /**
@@ -53,7 +59,7 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
   #released = false;
   #dispatches = 0;
 
-  constructor(layer: ArchiveLayer, seed: number, capacity: number) {
+  constructor(layer: ArchiveLayer, seed: number, capacity: number, age: Node<"float"> = time) {
     const positions = instancedArray(capacity, "vec3");
     const color = layer.color;
     const material = new MeshBasicNodeMaterial({
@@ -62,7 +68,7 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
       toneMapped: false,
       transparent: true,
     });
-    const phase = layerPhase(layer, seed);
+    const phase = layerPhase(layer, seed, age);
     const radius = layer.shape.type === "sphereSurface" ? layer.shape.radius : 0.38;
     const swirl = hash(instanceIndex.add(seed + 3)).mul(Math.PI * 2);
     material.positionNode = positionLocal.add(positions.element(instanceIndex));
@@ -78,9 +84,9 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
         .assign(vec3(cos(swirl).mul(radius), sin(swirl).mul(radius), sin(swirl.mul(2)).mul(0.08)));
     })().compute(capacity);
     const process = Fn(() => {
-      const currentPhase = layerPhase(layer, seed);
+      const currentPhase = layerPhase(layer, seed, age);
       const angle = swirl
-        .add(time.mul(layer.vortex?.strength ?? 1))
+        .add(age.mul(layer.vortex?.strength ?? 1))
         .add(currentPhase.mul(layer.vortex?.strength ?? 1));
       const currentRadius = float(radius).add(
         currentPhase.mul(layer.velocity.speed[1]).mul(layer.lifetime[1]),
@@ -170,11 +176,13 @@ export function createPortalVortex(overrides: IVfxOverrides = {}): IPortalVortex
     overrideLayer(ringLayer, overrides),
     seed,
     layerAmount(ringLayer, overrides.amount),
+    overrides[presetClock],
   );
   const ribbons = new RibbonField(
     overrideLayer(ribbonLayer, overrides),
     seed + 1,
     layerAmount(ribbonLayer, overrides.amount),
+    overrides[presetClock]?.age,
   );
   return {
     ring,

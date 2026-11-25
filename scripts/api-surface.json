@@ -222,6 +222,7 @@
         "@threenative/core#createPipelineCensus": "export function createPipelineCensus(options: IPipelineCensusOptions): PipelineCensus { … }",
         "@threenative/core#createRandom": "export function createRandom(seed?: number): IRandom { … }",
         "@threenative/core#createReplayDriver": "export function createReplayDriver( recording: Recording, target: EventTarget, pointerTarget = target, ) { … }",
+        "@threenative/core#createVfxPreset": "export function createVfxPreset(id: string, overrides: IVfxPresetOverrides = { … }",
         "@threenative/core#Daylight": "export class Daylight extends Group implements IComputeDriven { … }",
         "@threenative/core#debugFlag": "export function debugFlag(name: string): boolean { … }",
         "@threenative/core#debugValue": "export function debugValue(name: string): string | undefined { … }",

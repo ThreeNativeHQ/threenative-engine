@@ -224,13 +224,20 @@ function acceleration(layer: ArchiveLayer) {
   return vec3(...sum);
 }
 
-function phaseNode(layer: ArchiveLayer, seed: number) {
+export const presetClock = Symbol("VFX preset clock");
+interface IPresetClock {
+  readonly age: Node<"float">;
+  readonly burst: boolean;
+}
+
+function phaseNode(layer: ArchiveLayer, seed: number, clock?: IPresetClock) {
   const lifetime = float(layer.lifetime[0]).add(
     random(instanceIndex, seed, 53).mul(layer.lifetime[1] - layer.lifetime[0]),
   );
+  if (clock?.burst === true) return clock.age.div(lifetime).min(1);
   const emissionRate = layer.spawnRate ?? layer.burstCount ?? 1;
   return fract(
-    time
+    (clock?.age ?? time)
       .mul(Math.max(0.35, Math.min(2.4, (emissionRate / Math.max(layer.capacity, 1)) * 8)))
       .div(lifetime)
       .add(random(instanceIndex, seed, 59)),
@@ -243,6 +250,7 @@ function moveParticle(
   velocity: Node<"vec3">,
   phase: Node<"float">,
   seed: number,
+  age: Node<"float"> = time,
 ) {
   const lifetime = float(layer.lifetime[0]).add(
     random(instanceIndex, seed, 53).mul(layer.lifetime[1] - layer.lifetime[0]),
@@ -254,9 +262,9 @@ function moveParticle(
   if (layer.curl !== undefined) {
     const frequency = layer.curl.frequency;
     const curl = vec3(
-      sin(position.y.mul(frequency).add(time.mul(frequency))).mul(layer.curl.strength),
-      cos(position.x.mul(frequency).sub(time.mul(frequency * 0.83))).mul(layer.curl.strength),
-      sin(position.z.mul(frequency).add(time.mul(frequency * 0.61))).mul(layer.curl.strength),
+      sin(position.y.mul(frequency).add(age.mul(frequency))).mul(layer.curl.strength),
+      cos(position.x.mul(frequency).sub(age.mul(frequency * 0.83))).mul(layer.curl.strength),
+      sin(position.z.mul(frequency).add(age.mul(frequency * 0.61))).mul(layer.curl.strength),
     );
     position = position.add(curl.mul(elapsed));
   }
@@ -335,7 +343,11 @@ function styleMask(style: number) {
     .mul(mix(0.55, 1, noise));
 }
 
-function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial {
+function particleMaterial(
+  layer: ArchiveLayer,
+  seed: number,
+  clock?: IPresetClock,
+): SpriteNodeMaterial {
   const material = new SpriteMaterial({
     blending:
       layer.blend === "alpha" || layer.blend === "masked"
@@ -345,7 +357,7 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
     toneMapped: false,
     transparent: true,
   });
-  const phase = phaseNode(layer, seed);
+  const phase = phaseNode(layer, seed, clock);
   const phaseVarying = varying(phase);
   const color = layer.color;
   const authoredColor = colorCurve(layer.colorCurve, phaseVarying, [color[0], color[1], color[2]]);
@@ -366,7 +378,10 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
   material.scaleNode = vec2(width, length).mul(authoredSize).mul(lifetimeScale);
   material.colorNode = vec4(
     authoredColor,
-    authoredAlpha.mul(styleMask(layer.style)).mul(stretched ? float(0.92) : float(1)),
+    authoredAlpha
+      .mul(styleMask(layer.style))
+      .mul(stretched ? 0.92 : 1)
+      .mul(clock?.burst === true ? float(1).sub(step(1, phaseVarying)) : 1),
   );
   const spawn = shapePosition(layer, seed);
   const launch = velocityDirection(layer, spawn, seed);
@@ -378,6 +393,7 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
 
 /** Named overrides every VFX factory takes. Each one rewrites donor data before a pipeline is built. */
 export interface IVfxOverrides {
+  readonly [presetClock]?: IPresetClock;
   /** Hash seed. Each layer adds 97 per layer index. Default: the effect's stock seed. */
   readonly seed?: number;
   /** Particles per layer: a count, or a function of the donor capacity. Default: the donor capacity. */
@@ -438,8 +454,9 @@ export function createDonorParticle(
   layer: ArchiveLayer,
   seed: number,
   amount: number,
+  clock?: IPresetClock,
 ): IParticleOptions {
-  const material = particleMaterial(layer, seed);
+  const material = particleMaterial(layer, seed, clock);
   const start = ({ positions, velocities }: IParticleBuffers): ComputeNode =>
     Fn(() => {
       const spawn = shapePosition(layer, seed);
@@ -450,8 +467,10 @@ export function createDonorParticle(
     Fn(() => {
       const spawn = shapePosition(layer, seed);
       const launch = velocityDirection(layer, spawn, seed);
-      const phase = phaseNode(layer, seed);
-      positions.element(instanceIndex).assign(moveParticle(layer, spawn, launch, phase, seed));
+      const phase = phaseNode(layer, seed, clock);
+      positions
+        .element(instanceIndex)
+        .assign(moveParticle(layer, spawn, launch, phase, seed, clock?.age));
       velocities.element(instanceIndex).assign(launch);
     })().compute(amount);
   return { amount, material, start, process };
@@ -468,6 +487,7 @@ export function createDonorEffect(
       overrideLayer(layer, overrides),
       seed + index * 97,
       layerAmount(layer, overrides.amount),
+      overrides[presetClock],
     ),
   );
 }
