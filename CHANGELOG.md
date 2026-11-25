@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Workshop Kit adds a dining table, slat-back chair, bench, and a four- or
+  six-seat dining set with adjustable table width and named seat placements.
+
 - The Asset Library's Workshop Kit adds a two- or three-seat sofa, armchair, adjustable coffee
   table, hinged media console and assembled lounge, all using the existing compressed wood maps.
 

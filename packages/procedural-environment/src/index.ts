@@ -56,8 +56,7 @@ import {
   workshopAccent,
   workshopModules,
   workshopOpeningModules,
-  workshopSeatModules,
-  workshopSeats,
+  workshopSeatCounts,
   workshopWidths,
 } from "./workshop.js";
 
@@ -1357,6 +1356,7 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @situation bake configurable furniture for a workshop, apartment, safehouse or office
  * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
  * @situation furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console
+ * @situation furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
  * @constraint open previews the top drawer, locker door or media console doors; moving groups remain available for animation
  * @requires npm i -D @threenative/procedural-environment
@@ -1370,8 +1370,9 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     workshopModules,
     workshopAccent,
   );
-  const { width, open, seats } = options;
   const range = workshopWidths[kit.id];
+  const seatRange = workshopSeatCounts[kit.id];
+  const { width = range?.default, open, seats = seatRange?.default } = options;
   if (
     width !== undefined &&
     (!range || !Number.isFinite(width) || width < range.min || width > range.max)
@@ -1390,15 +1391,15 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
       "bakeWorkshop: open is a boolean for the drawer cabinet, locker or media console",
     );
   }
-  if (
-    seats !== undefined &&
-    (!workshopSeatModules.includes(kit.id) ||
-      ![workshopSeats.min, workshopSeats.max].includes(seats))
-  ) {
-    throw new Error("bakeWorkshop: seats must be 2 or 3 for the sofa or lounge");
+  if (![undefined, seatRange?.min, seatRange?.max].includes(seats)) {
+    throw new Error(
+      seatRange
+        ? `bakeWorkshop: seats must be ${seatRange.min} or ${seatRange.max} for workshop-${kit.id}`
+        : `bakeWorkshop: seats does not apply to workshop-${kit.id}`,
+    );
   }
-  const size = width === undefined || width === range?.default ? "" : `-w${width}`;
-  const seatSuffix = seats === workshopSeats.min ? `-${seats}-seats` : "";
+  const size = width === range?.default ? "" : `-w${width}`;
+  const seatSuffix = seats === seatRange?.default ? "" : `-${seats}-seats`;
   const filename = kit.filename.replace(
     /\.glb$/u,
     `${size}${seatSuffix}${open ? "-open" : ""}.glb`,

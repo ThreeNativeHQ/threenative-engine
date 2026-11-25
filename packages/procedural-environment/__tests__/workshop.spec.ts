@@ -1,6 +1,6 @@
 import { readFile } from "node:fs/promises";
 import sharp from "sharp";
-import { Box3, Raycaster, Vector3 } from "three";
+import { Box3, Mesh, Raycaster, Vector3 } from "three";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { proceduralEnvironmentSource } from "../src/asset-library.js";
@@ -20,6 +20,10 @@ const anchors = {
   "coffee-table": ["coffee-surface", "coffee-shelf"],
   "media-console": ["console-top", "console-shelf", "console-door-left", "console-door-right"],
   lounge: ["seat-1", "seat-2", "seat-3", "armchair-seat", "coffee-surface"],
+  "dining-table": ["dining-top"],
+  "dining-chair": ["dining-seat"],
+  "dining-bench": ["bench-seat-left", "bench-seat-right"],
+  "dining-set": ["dining-top", "dining-seat-1", "dining-seat-2", "dining-seat-3", "dining-seat-4"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -188,6 +192,71 @@ describe("Workshop furniture", () => {
     }
   });
 
+  it.each([
+    [4, 1.4],
+    [6, 1.4],
+    [6, 2.4],
+  ])("fits %s dining chairs at width %s m with usable seat and knee space", (seats, width) => {
+    const set = buildWorkshop("dining-set", { ...options, seats, width });
+    set.updateMatrixWorld(true);
+    const table = set.getObjectByName("dining-table");
+    if (!table) throw new Error("Missing table");
+    expect(new Box3().setFromObject(table).getSize(new Vector3()).x).toBeCloseTo(width);
+    const chairs = set.children.filter(({ name }) => name.startsWith("dining-chair-"));
+    expect(chairs).toHaveLength(seats);
+    const boxes: Box3[] = [];
+    for (const [i, chair] of chairs.entries()) {
+      const seat = chair.getObjectByName(`dining-seat-${i + 1}`);
+      if (!seat) throw new Error(`Missing seat ${i + 1}`);
+      const position = seat.getWorldPosition(new Vector3());
+      const forward = seat.getWorldDirection(new Vector3());
+      const reachRay = new Raycaster(position.clone().setY(0.724), forward, 0, 0.25);
+      expect(reachRay.intersectObject(table).length).toBeGreaterThan(0);
+      const seatRay = new Raycaster(position.clone().setY(0.53), down);
+      expect(seatRay.intersectObject(chair)[0]?.point.y).toBeCloseTo(position.y);
+      const kneeRay = new Raycaster(position.clone().setY(0.56), forward, 0, 0.5);
+      expect(kneeRay.intersectObject(table)).toHaveLength(0);
+      const box = new Box3().setFromObject(chair, true);
+      expect(boxes.some((other) => box.intersectsBox(other))).toBe(false);
+      boxes.push(box);
+    }
+  });
+
+  it("keeps both bench anchors on the usable surface across widths", () => {
+    for (const width of [0.92, 1.65]) {
+      const bench = buildWorkshop("dining-bench", { ...options, width });
+      bench.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(bench).getSize(new Vector3()).x).toBeCloseTo(width);
+      for (const name of ["bench-seat-left", "bench-seat-right"]) {
+        const seat = bench.getObjectByName(name);
+        if (!seat) throw new Error(`Missing ${name}`);
+        const ray = new Raycaster(seat.position.clone().setY(0.54), down);
+        expect(ray.intersectObject(bench)[0]?.point.y).toBeCloseTo(seat.position.y);
+      }
+    }
+  });
+
+  it("maps wood grain along the dining chair's upright", () => {
+    const chair = buildWorkshop("dining-chair", options);
+    const wood = chair.getObjectByName("Workshop cherry veneer");
+    if (!(wood instanceof Mesh)) throw new Error("Missing chair timber");
+    const position = wood.geometry.getAttribute("position");
+    const normal = wood.geometry.getAttribute("normal");
+    const uv = wood.geometry.getAttribute("uv");
+    const grain: number[] = [];
+    for (let i = 0; i < position.count; i++) {
+      if (
+        normal.getZ(i) < -0.999 &&
+        Math.abs(position.getX(i) - 0.175) < 0.03 &&
+        position.getZ(i) < -0.2
+      ) {
+        grain.push(uv.getX(i));
+      }
+    }
+    expect(grain.length).toBeGreaterThan(0);
+    expect(Math.max(...grain) - Math.min(...grain)).toBeGreaterThan(0.75);
+  });
+
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
     const out = await makeTempDir("tn-workshop-controls-");
     const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
@@ -196,6 +265,28 @@ describe("Workshop furniture", () => {
     expect(wide?.bounds.max[0]).toBeCloseTo(1.2);
     const [smallSofa] = await bakeWorkshop({ module: "workshop-sofa", out, seats: 2 });
     expect(smallSofa?.path).toMatch(/-2-seats\.glb$/u);
+    const [wideDining] = await bakeWorkshop({
+      module: "workshop-dining-set",
+      out,
+      width: 2.3,
+      seats: 6,
+    });
+    expect(wideDining?.path).toMatch(/-w2\.3-6-seats\.glb$/u);
+    if (!wideDining) throw new Error("Missing six-seat dining GLB");
+    const bytes = await readFile(wideDining.path);
+    const { nodes } = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {
+      nodes: { name: string; mesh?: number; children?: number[] }[];
+    };
+    const chairs = nodes.filter(({ name }) => name.startsWith("dining-chair-"));
+    expect(chairs).toHaveLength(6);
+    const meshes = chairs.map(({ children }) =>
+      children?.flatMap((child) => nodes[child]?.mesh ?? []),
+    );
+    expect(meshes[0]).toHaveLength(3);
+    for (const chairMeshes of meshes) expect(chairMeshes).toEqual(meshes[0]);
+    await expect(bakeWorkshop({ module: "workshop-dining-set", out, seats: 5 })).rejects.toThrow(
+      /seats/u,
+    );
     await expect(bakeWorkshop({ module: "workshop-stool", out, seats: 2 })).rejects.toThrow(
       /seats/u,
     );

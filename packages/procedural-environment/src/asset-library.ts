@@ -19,8 +19,7 @@ import { stylizedAssets } from "./stylized.js";
 import {
   workshopAccent,
   workshopOpeningModules,
-  workshopSeatModules,
-  workshopSeats,
+  workshopSeatCounts,
   workshopWidths,
 } from "./workshop.js";
 
@@ -133,14 +132,16 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         default: false,
         only: workshopOpeningModules.map((id) => `workshop-${id}`),
       },
-      {
-        key: "seats",
-        label: "Seats",
-        type: "range",
-        step: 1,
-        ...workshopSeats,
-        only: workshopSeatModules.map((id) => `workshop-${id}`),
-      },
+      ...Object.entries(workshopSeatCounts).map(
+        ([id, seats]): IControl => ({
+          key: "seats",
+          label: "Seats",
+          type: "range",
+          step: seats.max - seats.min,
+          ...seats,
+          only: [`workshop-${id}`],
+        }),
+      ),
     ],
     logistics: [
       {

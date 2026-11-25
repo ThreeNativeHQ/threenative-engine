@@ -45,10 +45,11 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
 ### Workshop Kit
 
-Open **Workshop Kit** for workshop, bedroom and lounge furniture. Change **Width** to resize
-the workbench, wall shelf or coffee table. Pick two or three **Seats** for the sofa or assembled
-lounge. **Open** previews the top drawer, locker door or media console doors. **Scale**, **Seed**
-and **Accent color** make size and finish variants.
+Open **Workshop Kit** for workshop, bedroom, lounge and dining furniture. Change **Width** to
+resize the workbench, wall shelf, coffee table, dining table or dining bench. Pick two or three
+**Seats** for the sofa or lounge, or four or six for the dining set. **Open** previews the top
+drawer, locker door or media console doors. **Scale**, **Seed** and **Accent color** make size
+and finish variants.
 
 | Asset | Named nodes and placement |
 | --- | --- |
@@ -60,6 +61,8 @@ and **Accent color** make size and finish variants.
 | Sofa, armchair and lounge | Use `seat-1` through `seat-3` on the sofa and `armchair-seat` on the chair. The lounge includes both and the coffee table. |
 | Coffee table | Place props at `coffee-surface` or `coffee-shelf`. |
 | Media console | Rotate `console-door-left` and `console-door-right` around their local Y axes. Place props at `console-top` or `console-shelf`. |
+| Dining table and set | Place dishes at `dining-top`. The set adds four or six separately movable chairs with `dining-seat-1` through `dining-seat-6`. Seat local +Z faces the table. |
+| Dining chair and bench | Place characters at `dining-seat`, `bench-seat-left` or `bench-seat-right`. |
 
 The furniture uses +Y up and faces +Z. The 512 px wood color and normal maps come from
 [Poly Haven's CC0 Cherry Veneer](https://polyhaven.com/a/cherry_veneer) and ship embedded as WebP.
