@@ -49,6 +49,15 @@ import {
   stationRoofModules,
 } from "./station.js";
 import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
+import {
+  type IBakeWorkshopOptions,
+  buildWorkshop,
+  loadWorkshopVeneer,
+  workshopAccent,
+  workshopModules,
+  workshopOpeningModules,
+  workshopWidths,
+} from "./workshop.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
@@ -59,6 +68,7 @@ export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeRailOptions } from "./rail.js";
 export type { IBakeSportsOptions } from "./sports.js";
 export type { IBakeStationOptions } from "./station.js";
+export type { IBakeWorkshopOptions } from "./workshop.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -634,7 +644,8 @@ export type EnvironmentKind =
   | "mechanism"
   | "rail"
   | "sports"
-  | "logistics";
+  | "logistics"
+  | "workshop";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -670,6 +681,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "rail",
   "sports",
   "logistics",
+  "workshop",
 ];
 
 /**
@@ -805,6 +817,14 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeLogistics({ module: "logistics-${id}", out: "assets/environment" })`,
   }));
+  const workshop = workshopModules.map(({ id, name, category }) => ({
+    id: `workshop-${id}`,
+    name,
+    kind: "workshop" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeWorkshop({ module: "workshop-${id}", out: "assets/environment" })`,
+  }));
   const elements = [
     ...plants,
     ...rocks,
@@ -816,6 +836,7 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     ...rails,
     ...sports,
     ...logistics,
+    ...workshop,
   ];
   return elements.filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
@@ -1329,6 +1350,47 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
   return writeStaticKit(buildLogistics(kit.id, { ...options, ...kit }), options.out, filename);
 }
 
+/**
+ * Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.
+ * @situation bake configurable furniture for a workshop, apartment, safehouse or office
+ * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
+ * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
+ * @constraint open previews the top drawer or locker door; all moving groups remain available for animation
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
+ */
+export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeWorkshop",
+    "workshop",
+    workshopModules,
+    workshopAccent,
+  );
+  const { width, open } = options;
+  const range = workshopWidths[kit.id];
+  if (
+    width !== undefined &&
+    (!range || !Number.isFinite(width) || width < range.min || width > range.max)
+  ) {
+    throw new Error(
+      range
+        ? `bakeWorkshop: width must be between ${range.min} and ${range.max}`
+        : `bakeWorkshop: width does not apply to workshop-${kit.id}`,
+    );
+  }
+  if (
+    open !== undefined &&
+    (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
+  ) {
+    throw new Error("bakeWorkshop: open is a boolean for the drawer cabinet or locker");
+  }
+  const size = width === undefined || width === range?.default ? "" : `-w${width}`;
+  const filename = kit.filename.replace(/\.glb$/u, `${size}${open ? "-open" : ""}.glb`);
+  const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
+  return writeStaticKit(group, options.out, filename, true);
+}
+
 function resolvePaintedKit<Id extends string>(
   options: Pick<IBakeFrontierOptions, "module" | "seed" | "accent" | "scale">,
   caller: string,
@@ -1368,6 +1430,7 @@ async function writeStaticKit(
   group: Group,
   out: string,
   filename: string,
+  compressTextures = false,
 ): Promise<IEnvironmentBake[]> {
   const box = new Box3().setFromObject(group);
   let triangles = 0;
@@ -1379,7 +1442,7 @@ async function writeStaticKit(
   const file = path.join(out, filename);
   const bytes = await exportStaticGlb(group);
   await mkdir(out, { recursive: true });
-  await writeAtomic(file, bytes);
+  await writeAtomic(file, compressTextures ? await webpImages(bytes) : bytes);
   return [
     { bounds: { max: box.max.toArray(), min: box.min.toArray() }, lod: 0, path: file, triangles },
   ];

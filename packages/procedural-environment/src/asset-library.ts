@@ -16,6 +16,7 @@ import { railAccent, railModules } from "./rail.js";
 import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
+import { workshopAccent, workshopOpeningModules, workshopWidths } from "./workshop.js";
 
 const frontierPaintable = frontierModules
   .filter(({ id }) => id !== "ore")
@@ -104,6 +105,27 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         type: "toggle",
         default: false,
         only: litMechanismModules.map((id) => `mechanism-${id}`),
+      },
+    ],
+    workshop: [
+      { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      ...Object.entries(workshopWidths).map(
+        ([id, width]): IControl => ({
+          key: "width",
+          label: "Width",
+          type: "range",
+          step: 0.01,
+          ...width,
+          only: [`workshop-${id}`],
+        }),
+      ),
+      {
+        key: "open",
+        label: "Open",
+        type: "toggle",
+        default: false,
+        only: workshopOpeningModules.map((id) => `workshop-${id}`),
       },
     ],
     logistics: [
@@ -377,6 +399,16 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("active", toggle(q, "active")),
       });
+    case "workshop":
+      return pkg.bakeWorkshop({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("width", num(q, "width")),
+        ...opt("open", toggle(q, "open")),
+      });
     case "logistics":
       return pkg.bakeLogistics({
         module: q.get("id") ?? "",
@@ -452,6 +484,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  workshop: { name: "Workshop Kit" },
   logistics: { name: "Logistics Kit" },
   sports: { name: "Sports Kit" },
   rail: { name: "Rail Kit" },
@@ -579,6 +612,7 @@ export function proceduralEnvironmentSource(
                 "rail",
                 "sports",
                 "logistics",
+                "workshop",
               ].includes(entry.kind)
                 ? "stylized"
                 : "realistic",

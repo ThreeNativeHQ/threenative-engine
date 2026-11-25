@@ -524,6 +524,7 @@
         "@threenative/procedural-environment#bakeSports": "export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeStation": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#bakeWorkshop": "export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#environmentBiomes": "export function environmentBiomes(): IEnvironmentBiome[] { … }",
         "@threenative/procedural-environment#environmentElements": "export function environmentElements(filter: IEnvironmentFilter = { … }",
         "@threenative/procedural-environment#vegetationPresets": "export function vegetationPresets(): IVegetationPreset[] { … }"

@@ -20,6 +20,14 @@
     "sakura_bark",
     "tree_bark_03"
   ],
+  "furniture": {
+    "cherry_veneer": {
+      "url": "https://polyhaven.com/a/cherry_veneer",
+      "author": "Jenelle van Heerden",
+      "downloaded": "2026-11-25",
+      "preprocessing": "Official 1K diffuse and nor_gl JPGs resized to 512 px square. Diffuse contrast tuned with RGB multipliers 2.25 and offsets -310/-245/-185. Vendored WebP q90 diffuse and q83 normal."
+    }
+  },
   "foliage": {
     "downloaded": "2026-11-17",
     "preprocessing": "scans/prepare.mjs foliage: the 1K diffuse and alpha (Poly Haven model maps) or Color and Opacity (ambientCG 1K-PNG), one alpha island per cut, turned base-down, fitted to a cell, WebP q75 with lossless alpha. ambientCG only where Poly Haven has no such leaf (oak, maple, scale-leaf conifer, dry oak).",

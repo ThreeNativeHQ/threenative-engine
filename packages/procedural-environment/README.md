@@ -43,6 +43,30 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Workshop Kit
+
+Open **Workshop Kit** for a workbench, stool, three-drawer cabinet, wall shelf, hinged locker,
+single bed, and an assembled workstation. Change **Width** to resize the workbench or shelf.
+The matching stool and drawer unit keep their dimensions. **Open** previews the top drawer or
+locker door. **Scale**, **Seed** and **Accent color** make size and finish variants.
+
+| Asset | Named nodes and placement |
+| --- | --- |
+| Workbench | `worktop`, `workbench-drawer-bay`, and `workbench-stool-bay` place props and matching furniture. |
+| Stool and bed | `stool-seat` and `bed-sleep` sit on the usable surfaces. |
+| Drawer cabinet | Translate `drawer-1` through `drawer-3` along local +Z. `drawer-content` follows the top drawer. |
+| Wall shelf | Mount `shelf-wall` on a facing surface. Local +Z points away from the wall. Use `shelf-surface` for props. |
+| Locker | Rotate `locker-door` around local Y. Place items on `locker-floor` or `locker-shelf`. |
+
+The furniture uses +Y up and faces +Z. The 512 px wood color and normal maps come from
+[Poly Haven's CC0 Cherry Veneer](https://polyhaven.com/a/cherry_veneer) and ship embedded as WebP.
+
+```ts
+import { bakeWorkshop } from "@threenative/procedural-environment";
+
+await bakeWorkshop({ module: "workshop-station", width: 2.4, out: "assets/furniture" });
+```
+
 ### Logistics Kit
 
 Open **Logistics Kit** for a timber pallet, stackable cargo tote, an assembled loaded pallet,
