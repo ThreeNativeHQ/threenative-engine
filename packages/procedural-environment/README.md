@@ -45,10 +45,10 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
 ### Workshop Kit
 
-Open **Workshop Kit** for a workbench, stool, three-drawer cabinet, wall shelf, hinged locker,
-single bed, and an assembled workstation. Change **Width** to resize the workbench or shelf.
-The matching stool and drawer unit keep their dimensions. **Open** previews the top drawer or
-locker door. **Scale**, **Seed** and **Accent color** make size and finish variants.
+Open **Workshop Kit** for workshop, bedroom and lounge furniture. Change **Width** to resize
+the workbench, wall shelf or coffee table. Pick two or three **Seats** for the sofa or assembled
+lounge. **Open** previews the top drawer, locker door or media console doors. **Scale**, **Seed**
+and **Accent color** make size and finish variants.
 
 | Asset | Named nodes and placement |
 | --- | --- |
@@ -57,6 +57,9 @@ locker door. **Scale**, **Seed** and **Accent color** make size and finish varia
 | Drawer cabinet | Translate `drawer-1` through `drawer-3` along local +Z. `drawer-content` follows the top drawer. |
 | Wall shelf | Mount `shelf-wall` on a facing surface. Local +Z points away from the wall. Use `shelf-surface` for props. |
 | Locker | Rotate `locker-door` around local Y. Place items on `locker-floor` or `locker-shelf`. |
+| Sofa, armchair and lounge | Use `seat-1` through `seat-3` on the sofa and `armchair-seat` on the chair. The lounge includes both and the coffee table. |
+| Coffee table | Place props at `coffee-surface` or `coffee-shelf`. |
+| Media console | Rotate `console-door-left` and `console-door-right` around their local Y axes. Place props at `console-top` or `console-shelf`. |
 
 The furniture uses +Y up and faces +Z. The 512 px wood color and normal maps come from
 [Poly Haven's CC0 Cherry Veneer](https://polyhaven.com/a/cherry_veneer) and ship embedded as WebP.

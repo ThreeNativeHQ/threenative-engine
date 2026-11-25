@@ -15,6 +15,11 @@ const anchors = {
   locker: ["locker-door", "locker-floor", "locker-shelf"],
   bed: ["bed-sleep"],
   station: ["worktop", "stool-seat", "drawer-content"],
+  sofa: ["seat-1", "seat-2", "seat-3"],
+  armchair: ["armchair-seat"],
+  "coffee-table": ["coffee-surface", "coffee-shelf"],
+  "media-console": ["console-top", "console-shelf", "console-door-left", "console-door-right"],
+  lounge: ["seat-1", "seat-2", "seat-3", "armchair-seat", "coffee-surface"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -123,12 +128,80 @@ describe("Workshop furniture", () => {
     expect(open.getObjectByName("locker-door")?.rotation.y).toBeLessThan(-Math.PI / 2);
   });
 
+  it("keeps seat spacing and surface height when the sofa adds a cushion", () => {
+    const two = buildWorkshop("sofa", { ...options, seats: 2 });
+    const three = buildWorkshop("sofa", { ...options, seats: 3 });
+    two.updateMatrixWorld(true);
+    three.updateMatrixWorld(true);
+    expect(two.getObjectByName("seat-3")).toBeUndefined();
+    expect(three.getObjectByName("seat-3")).toBeDefined();
+    const spacing = (sofa: typeof two) => {
+      const first = sofa.getObjectByName("seat-1");
+      const second = sofa.getObjectByName("seat-2");
+      if (!first || !second) throw new Error("Missing seats");
+      for (const contact of [first, second]) {
+        const ray = new Raycaster(contact.position.clone().add(new Vector3(0, 0.1, 0)), down);
+        expect(ray.intersectObject(sofa)[0]?.point.y).toBeCloseTo(contact.position.y);
+      }
+      return second.position.x - first.position.x;
+    };
+    expect(spacing(two)).toBeCloseTo(spacing(three));
+    const width = (sofa: typeof two) => new Box3().setFromObject(sofa).getSize(new Vector3()).x;
+    expect(width(three) - width(two)).toBeCloseTo(spacing(two));
+  });
+
+  it.each([2, 3])("maintains access to the coffee table in the %s-seat arrangement", (seats) => {
+    const room = buildWorkshop("lounge", { ...options, seats });
+    const bounds = (name: string) => {
+      const component = room.getObjectByName(name);
+      if (!component) throw new Error(`Missing ${name}`);
+      return new Box3().setFromObject(component, true);
+    };
+    const chair = bounds("lounge-armchair");
+    const sofa = bounds("lounge-sofa");
+    const table = bounds("lounge-table");
+    expect(table.min.z - sofa.max.z).toBeGreaterThan(0.31);
+    expect(chair.min.x - table.max.x).toBeGreaterThan(0.25);
+    expect(chair.intersectsBox(sofa)).toBe(false);
+  });
+
+  it("swings both media cabinet doors clear of their compartments", () => {
+    const closed = buildWorkshop("media-console", options);
+    const open = buildWorkshop("media-console", { ...options, open: true });
+    closed.updateMatrixWorld(true);
+    open.updateMatrixWorld(true);
+    for (const x of [-0.52, 0.52]) {
+      const ray = new Raycaster(new Vector3(x, 0.38, 1), new Vector3(0, 0, -1));
+      expect(ray.intersectObject(closed)[0]?.point.z).toBeGreaterThan(0.2);
+      expect(ray.intersectObject(open)[0]?.point.z).toBeLessThan(-0.1);
+    }
+  });
+
+  it("keeps the media console's back panel clear of coplanar supports", () => {
+    const console = buildWorkshop("media-console", options);
+    console.updateMatrixWorld(true);
+    for (const x of [0.305, 0.79]) {
+      const ray = new Raycaster(new Vector3(x, 0.345, -1), new Vector3(0, 0, 1));
+      const [panel, support] = ray.intersectObject(console);
+      if (!panel || !support) throw new Error("Missing back panel or support");
+      expect(support.point.z - panel.point.z).toBeGreaterThan(0.01);
+    }
+  });
+
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
     const out = await makeTempDir("tn-workshop-controls-");
     const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
     const [wide] = await bakeWorkshop({ module: "workshop-workbench", out, width: 2.4 });
     expect(wide?.path).not.toBe(stock?.path);
     expect(wide?.bounds.max[0]).toBeCloseTo(1.2);
+    const [smallSofa] = await bakeWorkshop({ module: "workshop-sofa", out, seats: 2 });
+    expect(smallSofa?.path).toMatch(/-2-seats\.glb$/u);
+    await expect(bakeWorkshop({ module: "workshop-stool", out, seats: 2 })).rejects.toThrow(
+      /seats/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-sofa", out, seats: 2.5 })).rejects.toThrow(
+      /seats/u,
+    );
     await expect(bakeWorkshop({ module: "workshop-stool", out, width: 1.2 })).rejects.toThrow(
       /width/u,
     );

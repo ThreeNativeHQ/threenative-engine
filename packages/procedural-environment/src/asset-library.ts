@@ -16,7 +16,13 @@ import { railAccent, railModules } from "./rail.js";
 import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
-import { workshopAccent, workshopOpeningModules, workshopWidths } from "./workshop.js";
+import {
+  workshopAccent,
+  workshopOpeningModules,
+  workshopSeatModules,
+  workshopSeats,
+  workshopWidths,
+} from "./workshop.js";
 
 const frontierPaintable = frontierModules
   .filter(({ id }) => id !== "ore")
@@ -126,6 +132,14 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         type: "toggle",
         default: false,
         only: workshopOpeningModules.map((id) => `workshop-${id}`),
+      },
+      {
+        key: "seats",
+        label: "Seats",
+        type: "range",
+        step: 1,
+        ...workshopSeats,
+        only: workshopSeatModules.map((id) => `workshop-${id}`),
       },
     ],
     logistics: [
@@ -408,6 +422,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("width", num(q, "width")),
         ...opt("open", toggle(q, "open")),
+        ...opt("seats", num(q, "seats")),
       });
     case "logistics":
       return pkg.bakeLogistics({

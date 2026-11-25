@@ -56,6 +56,8 @@ import {
   workshopAccent,
   workshopModules,
   workshopOpeningModules,
+  workshopSeatModules,
+  workshopSeats,
   workshopWidths,
 } from "./workshop.js";
 
@@ -1354,8 +1356,9 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.
  * @situation bake configurable furniture for a workshop, apartment, safehouse or office
  * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
+ * @situation furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
- * @constraint open previews the top drawer or locker door; all moving groups remain available for animation
+ * @constraint open previews the top drawer, locker door or media console doors; moving groups remain available for animation
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
  */
@@ -1367,7 +1370,7 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     workshopModules,
     workshopAccent,
   );
-  const { width, open } = options;
+  const { width, open, seats } = options;
   const range = workshopWidths[kit.id];
   if (
     width !== undefined &&
@@ -1383,10 +1386,23 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     open !== undefined &&
     (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
   ) {
-    throw new Error("bakeWorkshop: open is a boolean for the drawer cabinet or locker");
+    throw new Error(
+      "bakeWorkshop: open is a boolean for the drawer cabinet, locker or media console",
+    );
+  }
+  if (
+    seats !== undefined &&
+    (!workshopSeatModules.includes(kit.id) ||
+      ![workshopSeats.min, workshopSeats.max].includes(seats))
+  ) {
+    throw new Error("bakeWorkshop: seats must be 2 or 3 for the sofa or lounge");
   }
   const size = width === undefined || width === range?.default ? "" : `-w${width}`;
-  const filename = kit.filename.replace(/\.glb$/u, `${size}${open ? "-open" : ""}.glb`);
+  const seatSuffix = seats === workshopSeats.min ? `-${seats}-seats` : "";
+  const filename = kit.filename.replace(
+    /\.glb$/u,
+    `${size}${seatSuffix}${open ? "-open" : ""}.glb`,
+  );
   const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
   return writeStaticKit(group, options.out, filename, true);
 }

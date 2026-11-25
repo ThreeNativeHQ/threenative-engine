@@ -8824,7 +8824,7 @@
       "aliases": [],
       "constraints": [
         "the workbench width changes while the matching stool and cabinet keep their sizes",
-        "open previews the top drawer or locker door; all moving groups remain available for animation"
+        "open previews the top drawer, locker door or media console doors; moving groups remain available for animation"
       ],
       "example": "await bakeWorkshop({ module: \"workshop-drawer\", open: true, out: \"assets/furniture\" });",
       "importPath": "@threenative/procedural-environment",
@@ -8835,7 +8835,8 @@
       "signature": "export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> { … }",
       "situations": [
         "bake configurable furniture for a workshop, apartment, safehouse or office",
-        "bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf"
+        "bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf",
+        "furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console"
       ],
       "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
       "supersedes": [],

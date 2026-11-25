@@ -3,7 +3,7 @@ import { loadImage } from "@napi-rs/canvas";
 import {
   BoxGeometry,
   Color,
-  type Group,
+  Group,
   MeshStandardMaterial,
   Object3D,
   RepeatWrapping,
@@ -20,14 +20,16 @@ export interface IBakeWorkshopOptions {
   readonly out: string;
   /** Unsigned 32-bit seed for paint and wood tone. */
   readonly seed?: number;
-  /** Six-digit CSS hex color for painted parts and bedding. */
+  /** Six-digit CSS hex color for painted parts, bedding and upholstery. */
   readonly accent?: string;
   /** Uniform scale from 0.5 to 2. Use the same scale across an arrangement. */
   readonly scale?: number;
-  /** Workbench, workstation or wall shelf width in metres before scale. */
+  /** Workbench, workstation, wall shelf or coffee table width in metres before scale. */
   readonly width?: number;
-  /** Bake the top drawer pulled out or the locker door swung outward. Default false. */
+  /** Bake the top drawer pulled out or the locker or media console doors swung outward. */
   readonly open?: boolean;
+  /** Number of sofa cushions for a standalone sofa or lounge arrangement. Defaults to 3. */
+  readonly seats?: number;
 }
 
 export const workshopAccent = "#4d7779";
@@ -39,6 +41,11 @@ export const workshopModules = [
   { id: "locker", name: "Hinged storage locker", category: "Storage" },
   { id: "bed", name: "Single bed with timber frame", category: "Beds" },
   { id: "station", name: "Assembled workshop workstation", category: "Arrangements" },
+  { id: "sofa", name: "Upholstered sofa", category: "Lounge" },
+  { id: "armchair", name: "Upholstered armchair", category: "Lounge" },
+  { id: "coffee-table", name: "Two-tier coffee table", category: "Lounge" },
+  { id: "media-console", name: "Hinged media console", category: "Lounge" },
+  { id: "lounge", name: "Assembled lounge furniture", category: "Arrangements" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
@@ -48,12 +55,16 @@ type Part = StaticKitMesh<Finish>;
 
 const workbenchWidth = { min: 1.2, max: 2.4, default: 1.65 };
 const shelfWidth = { min: 0.7, max: 1.8, default: 1.05 };
+const coffeeWidth = { min: 0.72, max: 1.5, default: 1.08 };
 export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   workbench: workbenchWidth,
   station: workbenchWidth,
   shelf: shelfWidth,
+  "coffee-table": coffeeWidth,
 };
-export const workshopOpeningModules = ["drawer", "locker"];
+export const workshopOpeningModules = ["drawer", "locker", "media-console"];
+export const workshopSeatModules = ["sofa", "lounge"];
+export const workshopSeats = { min: 2, max: 3, default: 3 };
 
 const worktop = 0.92;
 const drawerY = [0.104, 0.302, 0.5];
@@ -284,14 +295,120 @@ function bed(palette: Palette): Group {
   return group;
 }
 
+const cushionPitch = 0.58;
+const seatHeight = 0.485;
+
+function sofa(palette: Palette, count: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const chair = count === 1;
+  const arm = chair ? 0.15 : 0.13;
+  const width = cushionPitch * count + arm * 2;
+  for (const x of [-width / 2 + arm / 2, width / 2 - arm / 2]) {
+    for (const z of [-0.294, 0.316]) {
+      timber(mesh, [0.075, 0.146, 0.073], [x, 0.073, z], 0.009);
+    }
+    mesh.block("accent", [arm, 0.308, 0.755], [x, 0.471, 0.023], 0.059);
+  }
+  timber(mesh, [width - 0.046, 0.077, 0.742], [0, 0.169, 0.006], 0.025);
+  mesh.block("insert", [width - 0.018, 0.188, 0.792], [0, 0.285, 0.014], 0.055);
+  mesh.add(
+    "insert",
+    new RoundedBoxGeometry(width - 0.045, 0.55, 0.162, 2, 0.057)
+      .rotateX(-0.14)
+      .translate(0, 0.566, -0.309),
+  );
+  for (let i = 0; i < count; i++) {
+    const x = (i - (count - 1) / 2) * cushionPitch;
+    mesh.block("accent", [0.568, 0.124, 0.546], [x, seatHeight - 0.062, 0.107], 0.046);
+    mesh.add(
+      "accent",
+      new RoundedBoxGeometry(0.561, 0.395, 0.151, 2, 0.058)
+        .rotateX(-0.16)
+        .translate(x, 0.624, -0.214),
+    );
+  }
+  const group = mesh.finish(chair ? "lounge-armchair" : "lounge-sofa", palette);
+  for (let i = 0; i < count; i++) {
+    anchor(group, chair ? "armchair-seat" : `seat-${i + 1}`, [
+      (i - (count - 1) / 2) * cushionPitch,
+      seatHeight,
+      0.13,
+    ]);
+  }
+  return group;
+}
+
+function coffeeTable(palette: Palette, width: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  for (const x of [-width / 2 + 0.09, width / 2 - 0.09]) {
+    for (const z of [-0.207, 0.207]) {
+      timber(mesh, [0.065, 0.36, 0.065], [x, 0.18, z], 0.012);
+    }
+    mesh.block("insert", [0.045, 0.065, 0.44], [x, 0.319, 0], 0.008);
+  }
+  for (const z of [-0.207, 0.207]) {
+    mesh.block("insert", [width - 0.18, 0.065, 0.041], [0, 0.319, z], 0.008);
+  }
+  timber(mesh, [width, 0.06, 0.575], [0, 0.375, 0], 0.027);
+  timber(mesh, [width - 0.125, 0.036, 0.477], [0, 0.152, 0], 0.015);
+  const group = mesh.finish("lounge-table", palette);
+  anchor(group, "coffee-surface", [0, 0.405, 0]);
+  anchor(group, "coffee-shelf", [0, 0.17, 0]);
+  return group;
+}
+
+function mediaConsole(palette: Palette, open: boolean): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  timber(mesh, [1.66, 0.06, 0.507], [0, 0.52, 0], 0.024);
+  timber(mesh, [1.625, 0.058, 0.476], [0, 0.155, -0.003], 0.016);
+  mesh.block("insert", [1.603, 0.307, 0.03], [0, 0.337, -0.237], 0.008);
+  timber(mesh, [0.59, 0.034, 0.42], [0, 0.318, -0.003], 0.009);
+  for (const side of [-1, 1]) {
+    const x = side * 0.79;
+    timber(mesh, [0.043, 0.314, 0.46], [x, 0.337, -0.003], 0.012);
+    timber(mesh, [0.034, 0.314, 0.426], [side * 0.305, 0.337, -0.016], 0.009);
+    for (const z of [-0.166, 0.162]) {
+      mesh.block("dark", [0.059, 0.137, 0.061], [side * 0.716, 0.0685, z], 0.01);
+    }
+  }
+  const group = mesh.finish("console-body", palette);
+  anchor(group, "console-top", [0, 0.55, 0]);
+  anchor(group, "console-shelf", [0, 0.335, 0]);
+  for (const side of [-1, 1]) {
+    const panel = new StaticKitMesh<Finish>();
+    timber(panel, [0.458, 0.282, 0.035], [-side * 0.229, 0, 0], 0.012);
+    panel.block("accent", [0.397, 0.226, 0.014], [-side * 0.229, 0, 0.018], 0.012);
+    handle(panel, -side * 0.362, 0.064, 0.026);
+    const door = panel.finish(side < 0 ? "console-door-left" : "console-door-right", palette);
+    door.position.set(side * 0.776, 0.338, 0.229);
+    door.rotation.y = open ? side * Math.PI * 0.6 : 0;
+    group.add(door);
+  }
+  return group;
+}
+
+function lounge(palette: Palette, seats: number): Group {
+  const group = new Group();
+  const couch = sofa(palette, seats);
+  couch.position.z = -0.56;
+  const chair = sofa(palette, 1);
+  chair.rotation.y = -Math.PI / 2;
+  chair.position.set((seats * cushionPitch) / 2 + 0.73, 0, 0.43);
+  const table = coffeeTable(palette, coffeeWidth.default);
+  table.position.z = 0.55;
+  group.add(couch, chair, table);
+  return group;
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
-    Pick<IBakeWorkshopOptions, "width" | "open">,
+    Pick<IBakeWorkshopOptions, "width" | "open" | "seats">,
   veneer?: IVeneer,
 ): Group {
   const palette = materials(options.seed, options.accent, veneer);
   const width = options.width ?? workshopWidths[id]?.default ?? workbenchWidth.default;
+  const seats = options.seats ?? workshopSeats.default;
   const builders = {
     workbench: () => workbench(palette, width),
     stool: () => stool(palette),
@@ -308,6 +425,11 @@ export function buildWorkshop(
       desk.add(seat, storage);
       return desk;
     },
+    sofa: () => sofa(palette, seats),
+    armchair: () => sofa(palette, 1),
+    "coffee-table": () => coffeeTable(palette, width),
+    "media-console": () => mediaConsole(palette, options.open ?? false),
+    lounge: () => lounge(palette, seats),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;
