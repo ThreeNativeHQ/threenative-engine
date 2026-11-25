@@ -1,7 +1,7 @@
 import { runsGameInWorker } from "./worker-probe.js";
 import { createOwnedRunResourceRelease } from "./ownedRunResources.js";
 import type { IPlaytestToneCaptureObservation } from "../tone.js";
-import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
+import { advanceFixedStep, completionWindowEnvironment, completionWindowLabel, measureCompletionWindow, sampleFootSlip, samplePathPosition, sampleSightLine, setPointerButtons, setBrowserPointers, type ICompletionWindow, waitFrames, waitWarmupFrames, captureVisualSurface, assertBrowserCaptureNotBlank, runStep, sampleVisualElementBounds, screenshotObservations, sampleAfterTransition } from "./steps.js";
 import type { StepInputState } from "./steps.js";
 import { withPerformanceBudget } from "./buildReport.js";
 import { alignScenarioStartTick, preflightDisplay, acquireRunnerCaptureLock, provideRunDisplay, buildReport, addPreflightDiagnostic, isJudgeMarkerRequestFailure } from "./runner-support.js";
@@ -50,7 +50,7 @@ import {
   type PlaytestVec3,
 } from "../index.js";
 import type { IPlaytestObservationSnapshot } from "../protocol.js";
-import { assertCaptureNotBlank, CaptureGuardError, collectRegionalTone } from "../capture.js";
+import { CaptureGuardError, collectRegionalTone } from "../capture.js";
 import { captureWithRetry } from "./capture-retry.js";
 import { chromium, type Browser, type BrowserContext, type CDPSession, type Page } from "playwright";
 
@@ -664,7 +664,7 @@ async function runStandalonePlaytestOnce(
             }
           }
         }
-        const stats = assertCaptureNotBlank(png, label);
+        const stats = await assertBrowserCaptureNotBlank(activePage, png, label);
         if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
         tone.push(...collectRegionalTone(png, scenario.assert?.tone ?? [], label, atStep));
         return { ...(elementRegions === undefined ? {} : { elementRegions }), image: png };
@@ -694,7 +694,7 @@ async function runStandalonePlaytestOnce(
         const png = await captureWithRetry(async () => {
           const shot = await captureVisualSurface(activePage, artifactPath);
           if (shot === undefined) return undefined;
-          const stats = assertCaptureNotBlank(shot, label);
+          const stats = await assertBrowserCaptureNotBlank(activePage, shot, label);
           if (stats.tone !== undefined) tone.push({ code: "TN_TONE", label, ...(atStep === undefined ? {} : { atStep }), ...stats.tone });
           tone.push(...collectRegionalTone(shot, scenario.assert?.tone ?? [], label, atStep));
           return shot;

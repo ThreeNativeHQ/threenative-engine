@@ -1,8 +1,8 @@
 import { GPUParticles3D, GPUReadback, type ICtx } from "@threenative/core";
+import { createImpactSparks } from "@threenative/core/vfx";
 import { Vector3 } from "three";
 import { Fn, If, float, hash, instanceIndex, instancedArray, uint, vec3 } from "three/tsl";
 import { SpriteNodeMaterial } from "three/webgpu";
-import { createImpactSparks } from "../render/combat.js";
 import type { GalleryState } from "./Gallery.js";
 
 export function createBurstProbe(ctx: ICtx<GalleryState>): () => void {
@@ -17,7 +17,8 @@ export function createBurstProbe(ctx: ICtx<GalleryState>): () => void {
 
 /** Opt-in (`?burstProbe`): drives the restart-based burst of the action-rpg template and reads it back. */
 function createRestartProbe(ctx: ICtx<GalleryState>): () => void {
-  const option = createImpactSparks(83)[0];
+  // 40 is the gallery's bounded count for this 260-particle donor layer.
+  const option = createImpactSparks({ seed: 83, amount: 40 })[0];
   if (option === undefined) throw new Error("Burst probe requires an impact-sparks layer.");
   const particles = ctx.add(new GPUParticles3D(option));
   particles.name = "burst-probe-sparks";
