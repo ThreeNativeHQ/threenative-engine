@@ -140,3 +140,41 @@ describe("createBackend key validation", () => {
     expect(calls).toEqual([]);
   });
 });
+
+describe("the page's own fetch", () => {
+  it("is called with the global as its receiver, as a browser's window.fetch requires", async () => {
+    const original = globalThis.fetch;
+    // A browser throws "Illegal invocation" when window.fetch runs detached from window.
+    globalThis.fetch = function (this: unknown) {
+      if (this !== globalThis) throw new TypeError("Illegal invocation");
+      return Promise.resolve(
+        new Response(JSON.stringify({ items: [] }), { headers: { [MARKER_HEADER]: MARKER_VALUE } }),
+      );
+    } as typeof fetch;
+    try {
+      const backend = createBackend({ storage: new MemoryStorage() });
+      expect(await backend.db.list()).toEqual([]);
+      expect(await backend.db.set("save", 1)).toBeGreaterThanOrEqual(0);
+      let threw = false;
+      await backend.db.get("save").catch(() => {
+        threw = true;
+      });
+      expect(threw).toBe(false);
+      // Hosted only if the probe reached the marker: a detached call would have read as no host.
+      const calls: unknown[] = [];
+      globalThis.fetch = function (this: unknown, ...args: unknown[]) {
+        if (this !== globalThis) throw new TypeError("Illegal invocation");
+        calls.push(args[0]);
+        return Promise.resolve(
+          new Response(JSON.stringify({ items: [] }), {
+            headers: { [MARKER_HEADER]: MARKER_VALUE },
+          }),
+        );
+      } as typeof fetch;
+      await createBackend({ storage: new MemoryStorage() }).db.list();
+      expect(calls.length).toBe(2);
+    } finally {
+      globalThis.fetch = original;
+    }
+  });
+});

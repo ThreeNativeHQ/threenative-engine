@@ -72,8 +72,11 @@ export interface IBackendContext extends IStorageContext {
 }
 
 function readFetch(options: IBackendOptions): typeof fetch | undefined {
-  const candidate = options.fetch ?? (globalThis as { fetch?: typeof fetch }).fetch;
-  return typeof candidate === "function" ? candidate : undefined;
+  if (options.fetch !== undefined) return options.fetch;
+  const candidate = (globalThis as { fetch?: typeof fetch }).fetch;
+  // A page's `fetch` is a method of `window`: called as a bare reference it throws "Illegal
+  // invocation", so the one the client keeps is bound to the global it came from.
+  return typeof candidate === "function" ? candidate.bind(globalThis) : undefined;
 }
 
 function readEndpoint(options: IBackendOptions): string {
