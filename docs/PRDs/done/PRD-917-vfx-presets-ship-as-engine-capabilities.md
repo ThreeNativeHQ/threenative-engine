@@ -4,8 +4,7 @@ prd_contract: v1
 
 # PRD-917 — The 46 gallery VFX presets ship as engine capabilities
 
-**Status:** IN PROGRESS
-**Priority:** P2 — AC-1 to AC-6 are open: an agent in a scaffolded game cannot find or import any of the 46 gallery effects, so it hand-writes fire, smoke, rain and auras that already exist.
+**Status:** DONE
 **Complexity:** 5 (MEDIUM) — 11+ implementation files (+3), new `@threenative/core/vfx` entry point (+2); risk override: none.
 **Owner:** João
 **Depends on:** None
@@ -48,7 +47,7 @@ flowchart LR
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: The gallery renders all 46 effects from `@threenative/core/vfx` with no local preset copies. — proof: `pnpm test:vfx-gallery` — Evidence: pending.
+- [x] AC-1 [local]: The gallery renders all 46 effects from `@threenative/core/vfx` with no local preset copies. — proof: `pnpm test:vfx-gallery` — Evidence: Phase 1 box 2.
 - [x] AC-2 [local]: A capability search for each of 10 representative effects (healing aura, muzzle flash, smoke plume, rain, snow, poison cloud, impact sparks, portal vortex, fireflies, blood splash) returns its factory as the top match. — proof: `pnpm caps:recall` — Evidence: Phase 2 box 1.
 - [x] AC-3 [local]: Colour, count, size and timing overrides change the layer output of a factory, and the defaults match the donor values. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — Evidence: Phase 2 box 2.
 - [x] AC-4 [local]: A bundle that imports only `createHealingAura` contains no data from other presets. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — Evidence: Phase 2 box 3.
@@ -76,12 +75,12 @@ flowchart LR
 
 #### Phase 1: The presets live in core, and the gallery consumes them
 
-**Status:** IN PROGRESS
+**Status:** DONE
 **Files:** `packages/core/src/vfx/*` (moved from `examples/vfx-gallery/src/render/`), `packages/core/package.json`, `packages/core/tsup.config.ts`, `examples/vfx-gallery/src/scenes/Gallery.ts`, `scripts/fixtures/vfx-niagara-46-effects.json`.
 **Implementation:** Add the `./vfx` export and the tsup entry. Move the files and give each preset its own export. Remove the gallery cap from the defaults and pass it back as the gallery's `amount` override. Delete the gallery copies and point the fixture `renderSource` paths at core.
 
 - [x] Core builds the `./vfx` entry, and the gallery typechecks against it. — proof: `pnpm typecheck` — exit 0, 2026-11-25; `pnpm --filter @threenative/core build` writes `dist/vfx/index.js`, publint "All good" — covers AC-1 wiring.
-- [ ] The gallery playtest and the visual check see all 46 effects. — proof: `pnpm test:vfx-gallery` — covers AC-1.
+- [x] The gallery playtest and the visual check see all 46 effects. — proof: `pnpm test:vfx-gallery` — exit 0, 2026-11-25, headed WebGPU on an RTX 2080: "46 evaluated, 46 visible, 0 missing". It was red on develop too (`TN_CAPTURE_BLANK`, bright ratio 0.035): the browser guard counted the HTML labels, so a dark page of glowing effects failed the 5% bright floor. On that failure alone, `assertBrowserCaptureNotBlank` (`packages/playtest/src/runner/steps.ts`) now captures the canvas with the DOM hidden and applies the desktop rule; a blank canvas under bright labels still fails (`capture.spec.ts`, red with the recheck off) — covers AC-1.
   2026-11-25, RTX 2080 (Turing), headed WebGPU: the tile check passes (46 of 46 tiles occupied). The scenario then fails `TN_CAPTURE_BLANK` (bright pixel ratio 0.03478 < 0.05). Develop with only the fireflies fix fails identically (0.03429), so this red is pre-existing. The guard's dark-frame path requires max luminance ≤ 0.5, and the gallery's white HTML labels exceed it. Open: fix that playtest guard or the gallery scenario.
 - [x] The provenance fixture still covers all 46 effects. — proof: `pnpm exec tsx scripts/vfx-niagara-coverage.ts` — "46 accounted (21 webgpu-vfx, 15 Effekseer, 10 extras)", exit 0, 2026-11-25 — covers AC-1 provenance.
 
