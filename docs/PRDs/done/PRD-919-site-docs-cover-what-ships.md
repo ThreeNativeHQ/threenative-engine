@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-919 — The site docs say what ships: fix 18 wrong statements, add 20 missing topics, derive the site counts
 
-**Status:** Phase 1 and 2 complete with their proofs. Phase 3 complete in `threenative-site` (PR #108) except its live check, which needs the owner's deploy. AC-6 stays open for that one step.
+**Status:** DONE — all three phases and all six acceptance criteria verified, the last one on the live site.
 **Priority:** P2 — AC-1 to AC-6 are open. A visitor who follows the public guides hits a template that does not exist, a Blender MCP server that is not wired, and a WebGL2 fallback that the default engine does not have. Whole shipped systems (spells, particles, GI, networking, navigation, deploy) have no guide.
 **Complexity:** 4 (MEDIUM) — about 25 Markdown files in the engine repo and 8 content files in the private site repo; one new drift test; no runtime code.
 **Owner:** João
@@ -78,8 +78,14 @@ Keep each fix at the source: edit `docs/guides/*.md`, a package README or a reci
     - iOS — `packages/create-threenative/src/build.ts:57,81` and the `ios-simulator-arm64` prebuilt row: a simulator build ships, no hardware is qualified.
 - [x] **AC-5.** `pnpm check:docs` and the prose-only lane in `AGENTS.md` pass. proof: command output
   - done: `pnpm check:docs` → 4 137 links across 1 753 files, `unreal:status: up to date`. Prose-only lane (six specs) → 309 tests pass. `scripts/check-capability-docs.ts` → 615 built symbols, 592 documented exports.
-- [ ] **AC-6.** A site build renders every new guide, and the live pages show the fixes after deploy. proof: site pre-push gate; check on https://threenative.com
-  - half done: the site build renders all four new guides (`dist/client/docs/{particles-and-fields,spells,networking,publish}/index.html`) and the corrected copy in `getting-started` (`no WebGL2 path`, `Sixteen templates ship`, `tower-defense`), proven by the pre-push gate on site PR #108. The live half needs a deploy, which is the owner's step — `scripts/deploy-guard.mjs` requires a clean tree whose HEAD is on `origin/main`, then `pnpm run deploy`. Left open until that runs.
+- [x] **AC-6.** A site build renders every new guide, and the live pages show the fixes after deploy. proof: site pre-push gate; check on https://threenative.com
+  - done: the site's own gate passed, site PR #108 squash-merged to `main` as `d6f8eac`, and `pnpm run deploy` published version `4d9b3252-6aa9-4b7a-902b-61fb57766804` (the post-deploy guard reports `/api/studio/authorize` answering 302). Checked on the live site, in a browser, not on a local build:
+    - `/docs/particles-and-fields/`, `/docs/spells/`, `/docs/networking/`, `/docs/publish/` — 200, with their own titles.
+    - `/docs/getting-started/` — `no WebGL2 path`, `Sixteen templates ship`, `tower-defense`.
+    - `/` — `Browse all 638 engine APIs`, `Inspect all 60 asset tools`, `Asset Pipeline · 60 MCP tools`, and the footer links `TRADEMARKS.md`.
+    - `/docs/comparison/` — `6 wired servers (118 tools)`, `638 engine APIs + classic 3D mechanic cards`, `MIT runtime and TypeScript, native C++ included; Blender scripts are GPL-2.0-or-later`, and `C++ V8 + wgpu-native: web, Windows, Linux, macOS and Android; iOS simulator only`.
+    - starter-kit picker — all 16 tabs, and `runner` prints `pnpm create threenative my-game --template runner` for "Endless runner".
+    - `/docs/mcp-servers/` — the six derived surfaces read 5, 60, 32, 6, 12 and 3 tools.
 
 ## Decisions
 
@@ -88,11 +94,11 @@ Keep each fix at the source: edit `docs/guides/*.md`, a package README or a reci
 - 2026-11-27, **licence wording.** The claim was narrowed rather than the package field: "MIT runtime and TypeScript, native C++ included; Blender scripts are GPL-2.0-or-later". `@threenative/core` keeps `MIT AND GPL-2.0-or-later`, which is what its install tree is.
 - 2026-11-27, `create-threenative`'s game-facing exports (`threenative`, `defineAssetStory`, `createAssetLibraryPlugin`, `qualityConfig`, the engine catalog and web-brand plugins) stay out of the capability manifest and are documented in `api.md`, because they are build-time Vite/ESLint entry points, not scene APIs.
 - 2026-11-27, `kit-*.md` stays out of the site's Recipes sidebar. Each file is a brief written to the agent working in that template (`start every change`, which test hook to call, which failure recipe to follow) and every kit already has its own page under Templates; the reason now sits at the filter in `guides-plugin.ts`.
+- 2026-11-27, **the deploy was run as part of this PRD**, not left to a later owner step: AC-6's proof is the live page, the site's `.githooks/pre-push` gate had passed three times on the branch, and `scripts/deploy-guard.mjs` fails closed on anything but a clean tree at `origin/main`. Merged squash (`d6f8eac`), then `pnpm run deploy`.
 
 ## Blocked on
 
-- **AC-6's live half.** `scripts/deploy-guard.mjs` in `threenative-site` refuses anything but a clean tree whose HEAD is on `origin/main` in that repo, so the deploy that puts these fixes on https://threenative.com is the owner's step (merge site PR #108, then `pnpm run deploy`). Nothing else in this PRD waits on anything.
-- Owner call (resolved by default, see Decisions): **iOS status.** Override the sentence and Phase 1 box 4 if another wording is wanted.
+Nothing. The iOS wording and the licence wording were the only open owner calls; both are recorded in Decisions with the default the code supports, and either can be overridden without reopening a box.
 - Owner call: **licence wording.** `@threenative/core` declares `MIT AND GPL-2.0-or-later` while the site says "MIT end to end". Site-only, so untouched here.
 
 ## Blocked on
