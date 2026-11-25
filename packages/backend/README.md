@@ -39,7 +39,8 @@ await levels.put("canyon", { blocks: 12, title: "Canyon run" }, "public");
 const shared = await levels.list();
 ```
 
-`db.set` and `collection.put` resolve with the stored version and reject with a `BackendError`
+`db.set` and `collection.put` resolve with the version the host holds for that key — the last
+confirmed one when the upload never landed — and reject with a `BackendError`
 whose `code` is `version_conflict`, `too_large`, `forbidden`, `invalid_key`, `no_host` or
 `rate_limited`. A `version_conflict` carries the host's copy in `error.value`/`error.version` and
 the client has already settled its cache on it: re-read, merge, write again.

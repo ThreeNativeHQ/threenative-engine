@@ -71,6 +71,20 @@ function clientFor(playerId: string, gameId = GAME) {
   });
 }
 
+/** The same client with a switch that cuts the network mid-session, so a write stays local. */
+function flakyClientFor(playerId: string) {
+  const state = { offline: false };
+  const backend = createBackend({
+    endpoint: ENDPOINT,
+    storage: new MemoryStorage(),
+    fetch: (input, init) => {
+      if (state.offline) throw new TypeError("Failed to fetch");
+      return handleBackend(new Request(input, init), { db, gameId: GAME, playerId });
+    },
+  });
+  return { backend, state };
+}
+
 function send(path: string, playerId: string, init?: RequestInit): Promise<Response> {
   return handleBackend(new Request(`${ENDPOINT}${path}`, init), {
     db,
@@ -110,6 +124,43 @@ describe("two clients, one key (AC-2)", () => {
       code: "version_conflict",
       version: 3,
     });
+  });
+});
+
+describe("a write the host never took", () => {
+  it("keeps the key's last confirmed version so the next write is not rejected as stale", async () => {
+    const { backend, state } = flakyClientFor("player-1");
+    await expect(backend.db.set("save", 1)).resolves.toBe(1);
+
+    state.offline = true;
+    await expect(backend.db.set("save", 2)).resolves.toBe(1);
+    await expect(backend.db.get("save")).resolves.toBe(2);
+
+    state.offline = false;
+    await expect(backend.db.set("save", 3)).resolves.toBe(2);
+    const stored = await db
+      .prepare("SELECT value, version FROM kv WHERE game_id = ? AND player_id = ? AND key = ?")
+      .bind(GAME, "player-1", "save")
+      .first<{ value: string; version: number }>();
+    expect(stored).toEqual({ value: "3", version: 2 });
+  });
+
+  it("keeps a document's last confirmed version the same way", async () => {
+    const { backend, state } = flakyClientFor("player-1");
+    const board = () => backend.db.collection("board");
+    await expect(board().put("level", { n: 1 }, "public")).resolves.toBe(1);
+
+    state.offline = true;
+    await expect(board().put("level", { n: 2 }, "public")).resolves.toBe(1);
+    await expect(board().get("level")).resolves.toMatchObject({ data: { n: 2 }, version: 1 });
+
+    state.offline = false;
+    await expect(board().put("level", { n: 3 }, "public")).resolves.toBe(2);
+    const stored = await db
+      .prepare("SELECT data, version FROM docs WHERE game_id = ? AND collection = ? AND doc_id = ?")
+      .bind(GAME, "board", "level")
+      .first<{ data: string; version: number }>();
+    expect(stored).toEqual({ data: JSON.stringify({ n: 3 }), version: 2 });
   });
 });
 

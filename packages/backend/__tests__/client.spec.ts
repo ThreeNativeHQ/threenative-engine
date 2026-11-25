@@ -23,12 +23,13 @@ async function expectEveryCallResolves(
   const collection = backend.db.collection("leaderboard");
 
   await expect(backend.db.get("save")).resolves.toBeUndefined();
-  await expect(backend.db.set("save", { level: 2 })).resolves.toBe(1);
+  // Nothing confirmed the write, so the version stays the host's: 0, never one it does not hold.
+  await expect(backend.db.set("save", { level: 2 })).resolves.toBe(0);
   await expect(backend.db.list()).resolves.toEqual([]);
   await expect(backend.db.delete("save")).resolves.toBeUndefined();
 
   await expect(collection.get("a")).resolves.toBeUndefined();
-  await expect(collection.put("a", { score: 3 }, "public")).resolves.toBe(1);
+  await expect(collection.put("a", { score: 3 }, "public")).resolves.toBe(0);
   await expect(collection.list()).resolves.toEqual([]);
   await expect(collection.delete("a")).resolves.toBeUndefined();
 }
@@ -69,7 +70,7 @@ describe("createBackend without a host", () => {
       },
     });
     await expect(backend.db.list()).resolves.toEqual([]);
-    await expect(backend.db.set("save", 1)).resolves.toBe(1);
+    await expect(backend.db.set("save", 1)).resolves.toBe(0);
   });
 
   it("keeps a local value readable when the host never answers", async () => {
@@ -80,7 +81,7 @@ describe("createBackend without a host", () => {
     });
     await backend.db.set("save", { level: 4 });
     await expect(backend.db.get("save")).resolves.toEqual({ level: 4 });
-    expect(await backend.db.list()).toEqual([{ key: "save", value: { level: 4 }, version: 1 }]);
+    expect(await backend.db.list()).toEqual([{ key: "save", value: { level: 4 }, version: 0 }]);
   });
 });
 

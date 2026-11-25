@@ -109,26 +109,29 @@ export class BackendDb {
   }
 
   /**
-   * Writes locally at once, then uploads. Resolves with the new version; rejects with
-   * `version_conflict` when the caller's copy was stale, leaving the host's copy in the cache.
+   * Writes locally at once, then uploads. Resolves with the version the host holds for this key;
+   * an upload that never landed leaves the last confirmed one, so the next write is not stale.
+   * Rejects with `version_conflict` when the caller's copy was stale, keeping the host's copy.
    */
   async set(key: string, value: unknown, options: IBackendWriteOptions = {}): Promise<number> {
     requireName(key);
     const cacheKey = `kv:${key}`;
     const baseVersion =
       options.ifVersion ?? item<ICachedValue>(this.context, cacheKey)?.version ?? 0;
-    const optimistic = baseVersion + 1;
-    putItem(this.context, cacheKey, { value, version: optimistic, dirty: true });
-    if (!(await hosted(this.context))) return optimistic;
+    // An unconfirmed write keeps the host's version, never the one it would take: sending
+    // `ifVersion = base + 1` to a host still holding `base` is a guaranteed 409, and the 409 would
+    // overwrite the player's offline progress with the host's older copy.
+    putItem(this.context, cacheKey, { value, version: baseVersion, dirty: true });
+    if (!(await hosted(this.context))) return baseVersion;
 
     const response = await send(this.context, "PUT", `/v1/db/${encodeURIComponent(key)}`, {
       value,
       ifVersion: baseVersion,
     });
-    if (response === undefined) return optimistic;
+    if (response === undefined) return baseVersion;
     const body = await readJson(response);
     if (response.ok) {
-      const version = typeof body?.version === "number" ? body.version : optimistic;
+      const version = typeof body?.version === "number" ? body.version : baseVersion;
       putItem(this.context, cacheKey, { value, version, dirty: false });
       return version;
     }
@@ -253,7 +256,11 @@ export class BackendCollection {
     return body;
   }
 
-  /** Writes locally at once, then uploads; another player's document rejects with `forbidden`. */
+  /**
+   * Writes locally at once, then uploads. Resolves with the version the host holds, and an upload
+   * that never landed keeps the last confirmed one, exactly like `BackendDb.set`. Another player's
+   * document rejects with `forbidden`.
+   */
   async put(
     id: string,
     data: unknown,
@@ -264,15 +271,15 @@ export class BackendCollection {
     const cacheKey = `doc:${this.name}/${id}`;
     const cached = item<ICachedDoc>(this.context, cacheKey);
     const baseVersion = options.ifVersion ?? cached?.version ?? 0;
-    const optimistic = baseVersion + 1;
+    // Same rule as `BackendDb.set`: the cached version stays the host's while the write is pending.
     putItem(this.context, cacheKey, {
       data,
       scope,
-      version: optimistic,
+      version: baseVersion,
       isOwner: true,
       dirty: true,
     });
-    if (!(await hosted(this.context))) return optimistic;
+    if (!(await hosted(this.context))) return baseVersion;
 
     const response = await send(
       this.context,
@@ -280,10 +287,10 @@ export class BackendCollection {
       `/v1/collections/${encodeURIComponent(this.name)}/${encodeURIComponent(id)}`,
       { data, scope, ifVersion: baseVersion },
     );
-    if (response === undefined) return optimistic;
+    if (response === undefined) return baseVersion;
     const body = await readJson(response);
     if (response.ok) {
-      const version = typeof body?.version === "number" ? body.version : optimistic;
+      const version = typeof body?.version === "number" ? body.version : baseVersion;
       putItem(this.context, cacheKey, { data, scope, version, isOwner: true, dirty: false });
       return version;
     }
