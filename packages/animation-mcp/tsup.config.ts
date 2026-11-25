@@ -3,7 +3,9 @@ import { defineConfig } from "tsup";
 export default defineConfig([
   {
     banner: { js: "#!/usr/bin/env node" },
-    clean: true,
+    // The build script cleans dist once: tsup runs these configs in parallel, and a `clean: true`
+    // DTS step deletes every *.d.ts in dist, including pose-lab.d.ts when it finishes first.
+    clean: false,
     dts: true,
     entry: { index: "src/index.ts" },
     format: ["esm"],

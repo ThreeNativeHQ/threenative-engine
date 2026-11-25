@@ -62,7 +62,8 @@ addEventListener("message", (e) => window.got.push(e.data));
 afterAll(async () => {
   await browser?.close();
   await server?.close();
-  // `makeTempDir` outside a test falls back to a process-exit cleanup that a vitest worker may never run.
+  // A `beforeAll` directory is outside any test, so `makeTempDir` only removes it at process exit,
+  // which a Vitest worker may never reach: the suite's temp guard then counts it as a leak.
   if (root) await rm(root, { recursive: true, force: true });
 });
 
