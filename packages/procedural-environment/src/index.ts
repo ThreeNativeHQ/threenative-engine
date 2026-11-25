@@ -18,6 +18,13 @@ import {
   frontierModules,
 } from "./frontier.js";
 import {
+  type IBakeMechanismOptions,
+  buildMechanism,
+  litMechanismModules,
+  mechanismAccent,
+  mechanismModules,
+} from "./mechanisms.js";
+import {
   type IBakePickupOptions,
   buildPickup,
   flatPickupModules,
@@ -37,6 +44,7 @@ import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
+export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeStationOptions } from "./station.js";
 
@@ -610,7 +618,8 @@ export type EnvironmentKind =
   | "city"
   | "station"
   | "frontier"
-  | "pickup";
+  | "pickup"
+  | "mechanism";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -642,6 +651,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "station",
   "frontier",
   "pickup",
+  "mechanism",
 ];
 
 /**
@@ -745,24 +755,34 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakePickup({ module: "pickup-${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city, ...station, ...frontier, ...pickups].filter((element) => {
-    if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
-    if (filter.kind !== undefined && element.kind !== filter.kind) return false;
-    const text = [
-      element.id,
-      element.name,
-      "latin" in element ? element.latin : "",
-      "category" in element ? element.category : "",
-      element.kind,
-      ...element.biomes.flatMap((id) => [
-        id,
-        ...(BIOMES.find((row) => row.id === id)?.words ?? []),
-      ]),
-    ]
-      .join(" ")
-      .toLowerCase();
-    return words.every((word) => text.includes(word));
-  });
+  const mechanisms = mechanismModules.map(({ id, name, category }) => ({
+    id: `mechanism-${id}`,
+    name,
+    kind: "mechanism" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeMechanism({ module: "mechanism-${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city, ...station, ...frontier, ...pickups, ...mechanisms].filter(
+    (element) => {
+      if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
+      if (filter.kind !== undefined && element.kind !== filter.kind) return false;
+      const text = [
+        element.id,
+        element.name,
+        "latin" in element ? element.latin : "",
+        "category" in element ? element.category : "",
+        element.kind,
+        ...element.biomes.flatMap((id) => [
+          id,
+          ...(BIOMES.find((row) => row.id === id)?.words ?? []),
+        ]),
+      ]
+        .join(" ")
+        .toLowerCase();
+      return words.every((word) => text.includes(word));
+    },
+  );
 }
 
 export interface IBakeRockOptions {
@@ -1147,8 +1167,34 @@ export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironm
   return writeStaticKit(buildPickup(kit.id, { ...kit, pose }), options.out, file);
 }
 
+/**
+ * Bake modular puzzle and transport props with named GLB attachment points.
+ * @situation create modular conveyor belts, turntables and power cell sockets for a factory or puzzle game
+ * @situation build a signal puzzle with an emitter, reflector and receiver model
+ * @constraint all pieces stand at y = 0; conveyor flow and signal faces point +Z
+ * @constraint active lights the emitter, receiver and socket indicators
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeMechanism({ module: "mechanism-emitter", active: true, out: "assets/mechanisms" });
+ */
+export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeMechanism",
+    "mechanism",
+    mechanismModules,
+    mechanismAccent,
+  );
+  const { active = false } = options;
+  if (typeof active !== "boolean" || (active && !litMechanismModules.includes(kit.id)))
+    throw new Error(
+      "bakeMechanism: active is a boolean for an emitter, receiver or power cell socket",
+    );
+  const filename = active ? kit.filename.replace(/\.glb$/u, "-active.glb") : kit.filename;
+  return writeStaticKit(buildMechanism(kit.id, { ...kit, active }), options.out, filename);
+}
+
 function resolvePaintedKit<Id extends string>(
-  options: IBakeFrontierOptions | IBakePickupOptions,
+  options: Pick<IBakeFrontierOptions, "module" | "seed" | "accent" | "scale">,
   caller: string,
   prefix: string,
   modules: readonly { readonly id: Id }[],

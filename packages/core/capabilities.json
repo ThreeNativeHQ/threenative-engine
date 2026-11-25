@@ -8633,6 +8633,27 @@
     {
       "aliases": [],
       "constraints": [
+        "all pieces stand at y = 0; conveyor flow and signal faces point +Z",
+        "active lights the emitter, receiver and socket indicators"
+      ],
+      "example": "await bakeMechanism({ module: \"mechanism-emitter\", active: true, out: \"assets/mechanisms\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular conveyor belts, turntables and power cell sockets for a factory or puzzle game",
+        "build a signal puzzle with an emitter, reflector and receiver model"
+      ],
+      "summary": "Bake modular puzzle and transport props with named GLB attachment points.",
+      "supersedes": [],
+      "symbol": "bakeMechanism"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2"
       ],
       "example": "await bakePickup({ module: \"pickup-medkit\", accent: \"#ed5166\", scale: 1.5, out: \"assets/pickups\" });",

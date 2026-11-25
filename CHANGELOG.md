@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Mechanism Kit adds six modular puzzle and transport GLBs with
+  named signal, conveyor, deck and power cell attachment points.
+
 - The Asset Library's Pickups pack bakes seven stylized recovery, access and equipment props
   as PBR GLBs. Use Accent color and Scale to make variants in the viewer or with `bakePickup`.
 

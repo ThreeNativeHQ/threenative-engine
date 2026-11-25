@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
+import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
 import { flatPickupModules, pickupAccent } from "./pickups.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
@@ -91,6 +92,17 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     tree: [TEXTURES],
     cover: [TEXTURES],
     debris: [TEXTURES],
+    mechanism: [
+      { key: "accent", label: "Accent color", type: "color", default: mechanismAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "active",
+        label: "Active",
+        type: "toggle",
+        default: false,
+        only: litMechanismModules.map((id) => `mechanism-${id}`),
+      },
+    ],
     pickup: [
       { key: "accent", label: "Accent color", type: "color", default: pickupAccent },
       { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
@@ -291,6 +303,15 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
       return rockBake(pkg, q, { seed, lods, out });
     case "city":
       return cityBake(pkg, q, { seed, out });
+    case "mechanism":
+      return pkg.bakeMechanism({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("active", toggle(q, "active")),
+      });
     case "frontier":
     case "pickup":
       return (kind === "frontier" ? pkg.bakeFrontier : pkg.bakePickup)({
@@ -338,6 +359,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  mechanism: { name: "Mechanism Kit" },
   pickup: { name: "Pickups" },
   frontier: { name: "Frontier Kit" },
   station: { name: "Station Kit" },
@@ -453,7 +475,9 @@ export function proceduralEnvironmentSource(
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
             styleTags: [
-              ["station", "frontier", "pickup"].includes(entry.kind) ? "stylized" : "realistic",
+              ["station", "frontier", "pickup", "mechanism"].includes(entry.kind)
+                ? "stylized"
+                : "realistic",
             ],
           })),
           ...stylizedAssets().map((entry) => ({

@@ -43,6 +43,29 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Mechanism Kit
+
+Open **Mechanism Kit** for a signal emitter, receiver and reflector, a modular conveyor,
+a rotating deck and a power cell socket. All six bake as grounded PBR GLBs. Change **Accent color**
+and **Scale** in the viewer. Toggle **Active** to bake lit indicators for the emitter, receiver or socket.
+
+| Piece | Named node | Placement |
+| --- | --- | --- |
+| Emitter, receiver, reflector | `signal-output`, `signal-input`, `signal-reflector` | Face centre at y = 0.72 m. Local +Z points out. |
+| Conveyor | `belt-start`, `belt-end` | 2 m sections run toward +Z with the belt at y = 0.34 m. |
+| Rotating deck | `turntable-deck` | Rotate the child group around its Y axis. Its surface matches the conveyor. |
+| Power cell socket | `cell-dock` | Seat the Station Kit power cell here at matching scale. |
+
+These coordinates describe the default scale. Read the named world transforms in your game
+to work with scaled or rotated pieces. The GLBs carry the visual parts and attachment points.
+The game supplies movement, signals and collision.
+
+```ts
+import { bakeMechanism } from "@threenative/procedural-environment";
+
+await bakeMechanism({ module: "mechanism-receiver", active: true, out: "assets/mechanisms" });
+```
+
 ### Pickups
 
 Open **Pickups** for seven stylized props for recovery, access and equipment: a medkit,
