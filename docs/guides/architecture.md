@@ -24,6 +24,19 @@ in `src/main.ts`. Materials, lights, camera and effects are editable files in `s
 ThreeNative reports events and your code gives them meaning. The physics plugin detects that a
 body entered a trigger. Your scene decides whether that scores a point or opens a door.
 
+## Choose the engine
+
+Two renderers sit behind one API. The default is ThreeNative's own C++ engine — compiled to Wasm on
+web, the V8 engine player on desktop. `engine: "threejs"` in `threenative.config.ts` is the named
+override, which keeps upstream Three.js on web and the legacy host on desktop. Android and iOS run
+the legacy host under either setting.
+
+Nothing in your game changes. `defineGame`, the scene objects, the materials and the render settings
+are the same files, because both renderers answer the same Three.js API. What changes is what a
+frame can afford and, on the default engine, that WebGPU is required: it has no WebGL2 path, so a
+browser without WebGPU fails with `TN_NO_RENDERER`. Details in
+[Native runtime](native-runtime.md) and [Rendering](rendering.md).
+
 ## From startup to a frame
 
 At startup, plugins set up their services and the first scene loads. The scene's `enter` adds
@@ -38,7 +51,7 @@ Put gameplay rules in the update. Two hooks cover work that must run at a specif
 
 `ctx.renderer` is the ThreeNative renderer wrapper. If a library needs the Three.js renderer, use
 `ctx.renderer.raw`. If an effect needs one backend, check `ctx.renderer.kind` first. It is
-`"webgpu"` or `"webgl2"`.
+`"webgpu"` or `"webgl2"`, and `"webgl2"` only exists under `engine: "threejs"`.
 
 ## UI
 

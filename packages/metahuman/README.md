@@ -56,11 +56,11 @@ each other's face and `dispose()` frees the rig without touching the loader's ge
 - `RigEvaluator` loads `wasm/riglogic.mjs`, verifies the binary's SHA-256 against
   `wasm/checksums.json` before instantiating it, and returns copies of every output array.
   A stale or disposed evaluator throws instead of reading freed memory.
-- `validateMetaHumanAssets(bindings, dna, glb, rig, gltf)` rejects a bindings sidecar whose
-  hashes, joint names, node names, blend-shape channels, morph indices, LOD indices, control
+- `validateMetaHumanAssets({ bindings, dnaSha256, glbSha256, rig, gltf })` rejects a bindings sidecar
+  whose hashes, joint names, node names, blend-shape channels, morph indices, LOD indices, control
   domains or aliases do not hold up. Failures carry a stable `code` on `MetaHumanAssetError`.
-  The GLB's own `glbSha256` is optional: it is a preparation-time contract, and a loaded model is
-  not re-downloaded to be hashed.
+  `glbSha256` is optional: it is a preparation-time contract, and a loaded model is not re-downloaded
+  to be hashed.
 - `assertAssetPath` keeps a caller-supplied path inside the asset directory.
 
 ## Building the WASM
