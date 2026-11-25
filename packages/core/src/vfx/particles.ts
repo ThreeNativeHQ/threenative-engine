@@ -277,7 +277,7 @@ function moveParticle(
     );
   }
   if (layer.vortex !== undefined) {
-    const angle = time.mul(layer.vortex.strength).add(phase.mul(layer.vortex.strength));
+    const angle = age.mul(layer.vortex.strength).add(phase.mul(layer.vortex.strength));
     const c = cos(angle);
     const s = sin(angle);
     position = vec3(
@@ -291,10 +291,10 @@ function moveParticle(
   return position;
 }
 
-function styleMask(style: number) {
+function styleMask(style: number, age: Node<"float">) {
   const p = uv().sub(0.5);
   const radius = p.length();
-  const noise = fractalNoise(p.mul(5.2).add(vec2(time.mul(0.12), time.mul(0.08))));
+  const noise = fractalNoise(p.mul(5.2).add(vec2(age.mul(0.12), age.mul(0.08))));
   if (style === 0) {
     const flameRadius = vec2(p.x.mul(1.15), p.y.add(0.09).mul(0.88)).length();
     let mask = float(1).sub(smoothstep(0.24, 0.51, flameRadius.add(noise.sub(0.5).mul(0.11))));
@@ -379,7 +379,7 @@ function particleMaterial(
   material.colorNode = vec4(
     authoredColor,
     authoredAlpha
-      .mul(styleMask(layer.style))
+      .mul(styleMask(layer.style, clock?.age ?? time))
       .mul(stretched ? 0.92 : 1)
       .mul(clock?.burst === true ? float(1).sub(step(1, phaseVarying)) : 1),
   );
