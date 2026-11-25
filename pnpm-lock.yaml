@@ -1560,6 +1560,9 @@ importers:
         specifier: 0.187.0
         version: 0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119)
     devDependencies:
+      '@threenative/core':
+        specifier: workspace:*
+        version: link:../core
       '@types/node':
         specifier: 'catalog:'
         version: 20.19.43

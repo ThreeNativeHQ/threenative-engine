@@ -53,6 +53,7 @@ flowchart LR
 - [x] AC-3 [local]: Colour, count, size and timing overrides change the layer output of a factory, and the defaults match the donor values. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — Evidence: Phase 2 box 2.
 - [x] AC-4 [local]: A bundle that imports only `createHealingAura` contains no data from other presets. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — Evidence: Phase 2 box 3.
 - [x] AC-5 [local]: A fresh visual judge reports NEUTRAL or IMPROVEMENT for the gallery between develop and this branch, at the same pose, headed WebGPU, two runs per arm. — proof: visual judge subagent verdict on the PR — Evidence: Phase 3 box 2.
+- [x] AC-7 [local]: The Asset Library (`pnpm asset-library`, and `/__assets/` in any kit) lists all 46 effects as stories built from `@threenative/core/vfx`, with tint, size, lifetime, amount and seed as controls. — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library.spec.ts` plus a headed look at the library — Evidence: Phase 2 box 4.
 - [x] AC-6 [local]: AGENTS.md rule 3 names the `@threenative/core/vfx` exception, and the mirrors are current. — proof: `pnpm sync:agents --check && pnpm check:docs` — Evidence: Phase 3 box 1.
 
 ## Integration Ledger
@@ -60,12 +61,15 @@ flowchart LR
 | Capability | Reachable consumer/trigger | Replaces / disposition | Evidence |
 | --- | --- | --- | --- |
 | 46 VFX factories | `import { createHealingAura } from "@threenative/core/vfx"` in a game; first consumer `examples/vfx-gallery/src/scenes/Gallery.ts` | `examples/vfx-gallery/src/render/*` deleted | AC-1 |
+| Asset Library VFX stories | `createAssetLibraryPlugin` attaches a `vfx` source when the project's core ships `capabilities.json` rows for `@threenative/core/vfx` (`packages/create-threenative/src/asset-library/plugin.ts` `vfxSource`); each story module imports its factory from the game's core | new source; no copy of the recipes | AC-7 |
 | Manifest discovery | `engine_search_capabilities` reads `packages/core/capabilities.json` | new rows | AC-2 |
 
 ## Decisions
 
 - 2026-11-25 (João): The VFX presets become engine capabilities (option 1), not generated source in every project (option 2). With option 1, an unused effect stays out of the game bundle, and an agent finds each effect through the capability search.
 - 2026-11-25 (agent): The fireflies recipe faulted the GPU on develop (NVIDIA Xid 31, `VK_ERROR_DEVICE_LOST`; bisected to `godot-fireflies` alone). Its cone direction `[0, 0.12, 0]` failed the raw-`y` parallel test, so `cross()` was zero and every position was NaN. `particles.ts` now tests the normalized direction. Red at 15:06:58 (fireflies alone), green after the fix (0 Xid, 0 device lost, full gallery). This fix ships in this PRD because the code becomes an engine capability.
+- 2026-11-25 (João): The effects must also show in the existing Storybook-style Asset Library. The library reads the effect list from core's capability manifest, so the library and the capability search show the same 46 rows and no list is kept by hand.
+- 2026-11-25 (agent): The story frame now attaches and dispatches compute-driven nodes (in a game, `ctx.add` does this), and frames a 4 m stage for them, because a GPU particle's geometry is one quad.
 - 2026-11-25 (agent): Public symbols describe the effect (for example `createHealingAura`), not the donor brand. The donor IDs stay in `scripts/fixtures/vfx-niagara-46-effects.json`.
 
 ## Execution Phases
@@ -89,6 +93,7 @@ flowchart LR
 
 - [x] Recall finds 10 representative effects. — proof: `pnpm caps:recall` — exit 0, 2026-11-25: all 10 `vfx.*` rows return their factory first; recallAtK 0.952703 (141/148), above the old floor 0.949275. `ScenePicker` gained the situation "find which target a shot hit" so `brief.fps.9` keeps its recall after the 46 new rows moved the term weights — covers AC-2.
 - [x] Overrides and defaults behave as specified. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — 5 passed, 2026-11-25. It also checks every cone layer of all 46 recipes for a non-parallel spread axis; the old raw-`y` test fails it on `godot-fireflies` — covers AC-3.
+- [x] People and agents see every effect in the Asset Library. — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library.spec.ts` — 15 passed, 2026-11-25; the new test fails with the source switched off. Headed check on `pnpm asset-library` (RTX 2080, WebGPU): a VFX group of 46 stories; Healing Aura, Portal Vortex and Fire draw, and a blue tint with Size 2 changes Fire live. Screenshots in `~/Downloads/prd-917-vfx-library/` — covers AC-7.
 - [x] One import ships one preset. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — 1 passed, 2026-11-25: a `createHealingAura` bundle carries 0 layer ids of the other 45 recipes; adding `createRain` makes it fail with `rainLayers:rain` — covers AC-4.
 
 #### Phase 3: The rule and the look are confirmed
