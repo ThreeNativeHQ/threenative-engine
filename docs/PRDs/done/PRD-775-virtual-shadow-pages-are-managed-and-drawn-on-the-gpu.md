@@ -1,10 +1,9 @@
 # PRD-775 — Virtual shadow pages are managed and drawn on the GPU, as in Unreal
 
-**Status:** IN PROGRESS
-**Priority:** P1 — no box is ticked: the stress lab `?stress` CPU frame (p50 12.82, p95 17.64 ms) is behind Unreal 5.8.3 (p50 9.45, p95 11.03 ms) on the same scene, and the gap is the virtual shadow map's CPU work.
+**Status:** DONE (2026-11-24) — PR #732
 **Complexity:** 6 (MEDIUM) — 6-10 files (+2), a new GPU page module (+2), CPU/GPU page state in step (+2); risk override: HIGH, because every virtual-shadow game (the shooter kit ships VSM by default) takes the new path.
 **Owner:** João · 2026-10-30
-**Depends on:** [PRD-773](../../performance/stress-lab-2026-10-30/PRD-773-vsm-per-page-instance-culling.md) Phase 1 (FG1 per-instance page culling, merged in `1882d6041`); PRD-770 fair window. Phase B starts from the stress-120 verdicts on FV1, FV3, FGL3 and FC1s-b.
+**Depends on:** [PRD-773](../performance/stress-lab-2026-10-30/PRD-773-vsm-per-page-instance-culling.md) Phase 1 (FG1 per-instance page culling, merged in `1882d6041`); PRD-770 fair window. Phase B starts from the stress-120 verdicts on FV1, FV3, FGL3 and FC1s-b.
 
 ## Context
 
@@ -111,7 +110,7 @@ flowchart LR
 3. **Phase 3 — the page table and pool on the GPU** (ceiling: 0.06 native steady, 0.24 on a grant, plus the table
    upload). The CPU keeps only per-level state: window origin, matrices, depth fit and the grant decision. A GPU page
    manager keeps Unreal's four lists and runs keep/free, pack, allocate and select-to-clear. The request is still the
-   whole window of a granted level; [PRD-457](../rendering/PRD-457-virtual-shadows-scale-by-measurement.md) owns sparse
+   whole window of a granted level; [PRD-457](../Unreal/rendering/PRD-457-virtual-shadows-scale-by-measurement.md) owns sparse
    pages from receiver demand and gets the GPU request flags from this phase. The page records of Phase 1 come from
    the allocation pass, so the 256 `AtlasPage` builds and `writeTable` leave the CPU.
 
@@ -140,9 +139,7 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
 
 ## Blocked on
 
-- The keep rule for Phase 1: it cuts granting frames (12-15 % of frames), so it moves CPU p95, not p50. The brief's
-  rule asks for CPU p50 better by more than 3 %. Unblocked by the coordinator (stress-120): accept "CPU p95 better
-  by more than 3 % in both ABBA pairs, p50 not worse" for Phase 1, or keep the brief's rule.
+Nothing.
 
 ## Integration ledger
 
@@ -168,6 +165,9 @@ GPU cost that `recordCost` reads; the pass time goes to the granted level, split
   (`native-engine-vsm`, `-deformation`, `-cut`) are this PRD's pixel gates where they exist; PRD-652's tier
   `maxPhysicalPages` sizes the GPU pool; PRD-773 Phase 3 (FG2 depth band) stays there; PRD-774 moves the plan off the
   main thread and is independent of this work.
+- 2026-11-24 (perf-60fps): the Phase 1 keep-rule question in `Blocked on` is moot. The measured stack passed the brief's rule as written (CPU p50 better by more than 3 %, `?stress` `-6.1%`, `systems` mean `-8.8%`), so no coordinator call is needed.
+- 2026-11-24 (perf-60fps): the three phases landed and merged together in PR #732 (#731 folded in), so the keep rule was measured once on the whole stack, not per phase. Each phase's own box 1 holds its isolated red-green proof.
+- 2026-11-24 (perf-60fps): the batched depth pass clips each page record with WebGPU `clip-distances` (`@builtin(clip_distances)`), not a fragment `discard`. The discard rasterized into other atlas slots and disabled early depth, which raised GPU p95 on granting frames. A device without the feature, or `TN_VSM_CLIP_DISTANCES=0`, keeps the discard arm.
 
 ## Execution phases
 
@@ -179,28 +179,28 @@ row (decision keep), a `PERFORMANCE-LEARNINGS.md` entry and the box ticked with 
 
 ### Phase 1 — One shadow pass per light draws GPU-culled page instances
 
-**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` granting regression & `stress:loop` / holdout open)
+**Status:** DONE (2026-11-24)
 **Files:** new `packages/runtime-native/src/engine/renderer/shadows/virtual/gpu_pages.{h,cpp}` (cull kernel, buffers);
 `renderer.cpp` (shadow stage, encode); the shadow vertex program generator under `engine/shader/` (page record path);
 `tests/native-engine/render_database_test.cpp`.
 
 - [x] A granted level draws in one render pass per light, from GPU rows. proof: `virtual_shadow_pages_draw_from_gpu_rows` (`0` differing pixels across `34,392` covered, 0 WebGPU validation errors), `vsm_batched_depth_skips_vsm_page_clip_attr`, and full `ctest -L native-engine` `655/655` pass (`2026-11-24`); Wasm `4,392,975` / `4,403,260` B (`<= 4,456,448` B), `native:coverage` `82.00%`, `ablation-flags-never-ship` `8/8`; pre-rebase (`28dc0b2c3`) desktop-vs-web owned-engine VSM parity `5/5` pass; RTX 2080 WebGPU ABBA `0` errors on all stress runs, `shadowDraws p95` `-64–85%`, `gpuP50` improved on `systems`/`strata`.
-- [ ] Phase 1 passes the keep rule on the stress lab. proof: ledger rows (decision keep) from `measure.sh` and the fair window, judge verdict, shooter holdout — *Open: Visual Judge `NEUTRAL` (12/12 sheets) and `wasmPlan p95` `-37–44%` (`systems 9.64/9.14 -> 5.24/5.79 ms`, `strata 6.57/5.78 -> 3.65/3.55 ms`), but `gpuP95` increased `+0.5–3.7 ms` on granting frames (`systems 8.17/8.00 -> 36.77/11.77`, `strata 9.17/9.04 -> 9.64/10.07`, `stress 5.04/5.11 -> 5.93/5.31`, `freezeAt=12 4.99/5.02 -> 6.19/5.22`) due to `vsmPageDiscard` fragment discard without `clip-distances`; `stress-loop.mjs fair` and `holdout-measure-shooter.sh` were not run.*
+- [x] Phase 1 passes the keep rule on the stress lab. proof: keep rows #412 (`?stress`) and #413 (`?stress&systems`) in `docs/stress-loop/ledger.json`, the whole stack measured in the PRD-770 fair window against develop `5318dfefe` (RTX 2080 Brave WebGPU, uncapped): `?stress` frame p50 `8.01 -> 7.52 ms` (`-6.1%`), p95 `11.40 -> 10.94 ms`, GPU p95 `5.23 -> 5.20 ms`; `systems` over 6 windows frame p50 mean `12.85 -> 11.72 ms` (`-8.8%`, better in 5 of 6), frame p95 `-20%` to `-34%`, GPU p95 mean `8.74 -> 8.49 ms` (both arms spike above 9 ms in 4 of 11 runs; `TN_VSM_GPU_PAGES=0` arm `5.89/6.01 ms`); visual judge `NEUTRAL` 8/8 on the clip-distances build (`prd-775-screenshots` `850b017f6`) after the earlier `NEUTRAL` 12/12; shooter holdout no effect (vsync #393/#394: frame p50 `5.94 -> 5.78 ms`, GPU p95 `7.56 -> 7.72 ms`); threads Wasm `4,456,132` of `4,456,448` bytes.
 
 ### Phase 2 — The VSM stage reads the caster change set
 
-**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` stack gate & `stress:loop` / holdout open)
+**Status:** DONE (2026-11-24)
 **Files:** `renderer.cpp` (VSM stage), `render_database.{h,cpp}` (change set), `shadows/virtual/atlas.{h,cpp}`
 (`updateCasters` over changed casters), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
 - [x] A frame where no caster changed visits no caster state, and the move, settle and remove invalidations equal today's. proof: `virtual_shadow_caster_changes_are_pushed` (seed 64 visits, steady 0 visits / 0 passes, move 1 visit / 0 differ, settle 0 visits, remove 0 differ / 0 visits) and `ctest -L native-engine` `655/655` green on RTX 2080 (`2026-11-24`); RTX 2080 ABBA reduced `planVirtualPages` on every scene (`systems 0.92/0.83 -> 0.65/0.74 ms`, `strata 0.83/0.73 -> 0.64/0.60 ms`, `stress 0.60/0.66 -> 0.55/0.52 ms`, `stress&still 0.42/0.38 -> 0.23/0.23 ms`, `forest_overview 0.14 -> 0.03–0.06 ms`).
-- [ ] Phase 2 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout — *Open: `stress-loop.mjs` fair window and `holdout-measure-shooter.sh` not run; whole-stack `gpuP95` regressed on granting frames as noted in AC-1.*
+- [x] Phase 2 passes the keep rule on the stress lab. proof: keep rows #412 (`?stress`) and #413 (`?stress&systems`) in `docs/stress-loop/ledger.json`, the whole stack measured in the PRD-770 fair window against develop `5318dfefe` (RTX 2080 Brave WebGPU, uncapped): `?stress` frame p50 `8.01 -> 7.52 ms` (`-6.1%`), p95 `11.40 -> 10.94 ms`, GPU p95 `5.23 -> 5.20 ms`; `systems` over 6 windows frame p50 mean `12.85 -> 11.72 ms` (`-8.8%`, better in 5 of 6), frame p95 `-20%` to `-34%`, GPU p95 mean `8.74 -> 8.49 ms` (both arms spike above 9 ms in 4 of 11 runs; `TN_VSM_GPU_PAGES=0` arm `5.89/6.01 ms`); visual judge `NEUTRAL` 8/8 on the clip-distances build (`prd-775-screenshots` `850b017f6`) after the earlier `NEUTRAL` 12/12; shooter holdout no effect (vsync #393/#394: frame p50 `5.94 -> 5.78 ms`, GPU p95 `7.56 -> 7.72 ms`); threads Wasm `4,456,132` of `4,456,448` bytes.
 
 ### Phase 3 — The page table and physical pool live on the GPU
 
-**Status:** IN PROGRESS (native/Wasm/ABBA & Visual Judge verified; `gpuP95` granting regression & `stress:loop` / holdout open)
+**Status:** DONE (2026-11-24)
 **Files:** `shadows/virtual/gpu_pages.{h,cpp}` (page manager passes), `shadows/virtual/atlas.{h,cpp}` (per-level state
 only on the runtime path), `renderer.cpp` (table binding), `tests/native-engine/vsm/vsm_atlas_test.cpp`.
 
 - [x] The GPU page manager maps the same virtual pages as the CPU `PageAtlas` over a recorded path with pans, a camera cut, a sun direction change and an invalidation, with no lost or duplicated physical page. proof: `gpu_page_table_matches_cpu_atlas` (`0` WebGPU validation errors), `vsm_batched_depth_skips_vsm_page_clip_attr`, and `ctest -L native-engine` `655/655` green (`2026-11-24`); `gpuP50` improved on `systems`/`strata` with `0` stress runtime errors.
-- [ ] Phase 3 passes the keep rule on the stress lab. proof: ledger rows (decision keep), judge verdict, shooter holdout — *Open: `gpuP95` increased on granting frames as noted in AC-1; `stress-loop.mjs` fair window and `holdout-measure-shooter.sh` were not run.*
+- [x] Phase 3 passes the keep rule on the stress lab. proof: keep rows #412 (`?stress`) and #413 (`?stress&systems`) in `docs/stress-loop/ledger.json`, the whole stack measured in the PRD-770 fair window against develop `5318dfefe` (RTX 2080 Brave WebGPU, uncapped): `?stress` frame p50 `8.01 -> 7.52 ms` (`-6.1%`), p95 `11.40 -> 10.94 ms`, GPU p95 `5.23 -> 5.20 ms`; `systems` over 6 windows frame p50 mean `12.85 -> 11.72 ms` (`-8.8%`, better in 5 of 6), frame p95 `-20%` to `-34%`, GPU p95 mean `8.74 -> 8.49 ms` (both arms spike above 9 ms in 4 of 11 runs; `TN_VSM_GPU_PAGES=0` arm `5.89/6.01 ms`); visual judge `NEUTRAL` 8/8 on the clip-distances build (`prd-775-screenshots` `850b017f6`) after the earlier `NEUTRAL` 12/12; shooter holdout no effect (vsync #393/#394: frame p50 `5.94 -> 5.78 ms`, GPU p95 `7.56 -> 7.72 ms`); threads Wasm `4,456,132` of `4,456,448` bytes.
