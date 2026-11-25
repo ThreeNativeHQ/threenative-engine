@@ -8633,6 +8633,27 @@
     {
       "aliases": [],
       "constraints": [
+        "match scale across the pallet, crates, jack and rack; fork sockets point into the pallet",
+        "shelves applies to the rack and open applies to the shipping container"
+      ],
+      "example": "await bakeLogistics({ module: \"logistics-container\", open: true, out: \"assets/cargo\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a logistics warehouse set with a pallet, stacking tote, pallet jack, rack or walk-in shipping container",
+        "bake a shipping container with open swing doors and a clear cargo deck"
+      ],
+      "summary": "Bake compatible cargo, storage and handling props as grounded PBR GLBs.",
+      "supersedes": [],
+      "symbol": "bakeLogistics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "all pieces stand at y = 0; conveyor flow and signal faces point +Z",
         "active lights the emitter, receiver and socket indicators"
       ],

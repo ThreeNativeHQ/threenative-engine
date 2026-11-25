@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Logistics Kit adds six cargo, storage and handling models with
+  matching fork and load positions, adjustable shelves, and independent container doors.
+
 - The Asset Library's Sports Kit bakes soccer, basketball and court equipment with named
   placement points, adjustable fixture dimensions, and matching ball props.
 

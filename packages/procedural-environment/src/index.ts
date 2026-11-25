@@ -18,6 +18,13 @@ import {
   frontierModules,
 } from "./frontier.js";
 import {
+  type IBakeLogisticsOptions,
+  buildLogistics,
+  logisticsAccent,
+  logisticsModules,
+  logisticsShelfCount,
+} from "./logistics.js";
+import {
   type IBakeMechanismOptions,
   buildMechanism,
   litMechanismModules,
@@ -46,6 +53,7 @@ import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
+export type { IBakeLogisticsOptions } from "./logistics.js";
 export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeRailOptions } from "./rail.js";
@@ -625,7 +633,8 @@ export type EnvironmentKind =
   | "pickup"
   | "mechanism"
   | "rail"
-  | "sports";
+  | "sports"
+  | "logistics";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -660,6 +669,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "mechanism",
   "rail",
   "sports",
+  "logistics",
 ];
 
 /**
@@ -787,6 +797,14 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeSports({ module: "sports-${id}", out: "assets/environment" })`,
   }));
+  const logistics = logisticsModules.map(({ id, name, category }) => ({
+    id: `logistics-${id}`,
+    name,
+    kind: "logistics" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeLogistics({ module: "logistics-${id}", out: "assets/environment" })`,
+  }));
   const elements = [
     ...plants,
     ...rocks,
@@ -797,6 +815,7 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     ...mechanisms,
     ...rails,
     ...sports,
+    ...logistics,
   ];
   return elements.filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
@@ -1271,6 +1290,43 @@ export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironm
   }
   const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
   return writeStaticKit(buildSports(kit.id, { ...options, ...kit }), options.out, filename);
+}
+
+/**
+ * Bake compatible cargo, storage and handling props as grounded PBR GLBs.
+ * @situation bake a logistics warehouse set with a pallet, stacking tote, pallet jack, rack or walk-in shipping container
+ * @situation bake a shipping container with open swing doors and a clear cargo deck
+ * @constraint match scale across the pallet, crates, jack and rack; fork sockets point into the pallet
+ * @constraint shelves applies to the rack and open applies to the shipping container
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeLogistics({ module: "logistics-container", open: true, out: "assets/cargo" });
+ */
+export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeLogistics",
+    "logistics",
+    logisticsModules,
+    logisticsAccent,
+  );
+  const { shelves, open } = options;
+  const { min, max, default: defaults } = logisticsShelfCount;
+  if (
+    shelves !== undefined &&
+    (kit.id !== "rack" || !Number.isInteger(shelves) || shelves < min || shelves > max)
+  ) {
+    throw new Error(`bakeLogistics: shelves must be an integer from ${min} to ${max} for the rack`);
+  }
+  if (open !== undefined && (kit.id !== "container" || typeof open !== "boolean")) {
+    throw new Error("bakeLogistics: open is a boolean for the shipping container");
+  }
+  const suffix = open
+    ? "-open"
+    : shelves !== undefined && shelves !== defaults
+      ? `-${shelves}-shelves`
+      : "";
+  const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
+  return writeStaticKit(buildLogistics(kit.id, { ...options, ...kit }), options.out, filename);
 }
 
 function resolvePaintedKit<Id extends string>(

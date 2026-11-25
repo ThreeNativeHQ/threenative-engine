@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
+import { logisticsAccent, logisticsModules, logisticsShelfCount } from "./logistics.js";
 import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
 import { flatPickupModules, pickupAccent } from "./pickups.js";
 import { railAccent, railModules } from "./rail.js";
@@ -103,6 +104,33 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         type: "toggle",
         default: false,
         only: litMechanismModules.map((id) => `mechanism-${id}`),
+      },
+    ],
+    logistics: [
+      {
+        key: "accent",
+        label: "Accent color",
+        type: "color",
+        default: logisticsAccent,
+        only: logisticsModules
+          .filter(({ id }) => id !== "pallet")
+          .map(({ id }) => `logistics-${id}`),
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "shelves",
+        label: "Shelf levels",
+        type: "range",
+        ...logisticsShelfCount,
+        step: 1,
+        only: ["logistics-rack"],
+      },
+      {
+        key: "open",
+        label: "Doors open",
+        type: "toggle",
+        default: false,
+        only: ["logistics-container"],
       },
     ],
     sports: [
@@ -349,6 +377,16 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("active", toggle(q, "active")),
       });
+    case "logistics":
+      return pkg.bakeLogistics({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("shelves", num(q, "shelves")),
+        ...opt("open", toggle(q, "open")),
+      });
     case "sports":
       return pkg.bakeSports({
         module: q.get("id") ?? "",
@@ -414,6 +452,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  logistics: { name: "Logistics Kit" },
   sports: { name: "Sports Kit" },
   rail: { name: "Rail Kit" },
   mechanism: { name: "Mechanism Kit" },
@@ -532,7 +571,15 @@ export function proceduralEnvironmentSource(
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
             styleTags: [
-              ["station", "frontier", "pickup", "mechanism", "rail", "sports"].includes(entry.kind)
+              [
+                "station",
+                "frontier",
+                "pickup",
+                "mechanism",
+                "rail",
+                "sports",
+                "logistics",
+              ].includes(entry.kind)
                 ? "stylized"
                 : "realistic",
             ],

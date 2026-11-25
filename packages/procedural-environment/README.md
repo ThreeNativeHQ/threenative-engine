@@ -43,6 +43,31 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Logistics Kit
+
+Open **Logistics Kit** for a timber pallet, stackable cargo tote, an assembled loaded pallet,
+a pallet jack, an adjustable warehouse rack, and a walk-in shipping container. Change
+**Shelf levels** to fit the rack to your space and **Doors open** to preview the container interior.
+Use the same **Scale** across parts that interact. **Accent color** recolors painted surfaces
+and **Seed** varies the timber and paint finish.
+
+| Asset | Named nodes and placement |
+| --- | --- |
+| Pallet | `pallet-fork-rear` and `pallet-fork-front` face into the channels from opposite ends. `pallet-load-left` and `pallet-load-right` seat one tote each. |
+| Cargo tote | Place the next tote at `tote-stack` for a vertical stack. |
+| Pallet jack | Match `jack-fork-entry` to a pallet's fork socket. Raise the `jack-forks` group along +Y or tilt `jack-handle` around X relative to the jack. |
+| Rack | `rack-shelf-1` through `rack-shelf-4` are the centers of available deck surfaces. Place an empty or loaded pallet at each. |
+| Container | `container-deck` seats cargo on the interior floor. Door groups `container-door-left` and `container-door-right` pivot outward about local Y. |
+
+The jack's forks and the container's entry face +Z. The models and their named nodes are
+baked in metres. The game supplies the controls, collision, and cargo motion.
+
+```ts
+import { bakeLogistics } from "@threenative/procedural-environment";
+
+await bakeLogistics({ module: "logistics-rack", shelves: 4, out: "assets/cargo" });
+```
+
 ### Sports Kit
 
 Open **Sports Kit** for a soccer goal, basketball hoop and backboard, a court net, and
