@@ -33,6 +33,7 @@ import {
 } from "./pickups.js";
 import { type IBakeRailOptions, buildRail, railAccent, railModules } from "./rail.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
+import { type IBakeSportsOptions, buildSports, sportsDimensions, sportsModules } from "./sports.js";
 import {
   type IBakeStationOptions,
   buildStation,
@@ -48,6 +49,7 @@ export type { IBakeFrontierOptions } from "./frontier.js";
 export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeRailOptions } from "./rail.js";
+export type { IBakeSportsOptions } from "./sports.js";
 export type { IBakeStationOptions } from "./station.js";
 
 export interface IVegetationPreset {
@@ -622,7 +624,8 @@ export type EnvironmentKind =
   | "frontier"
   | "pickup"
   | "mechanism"
-  | "rail";
+  | "rail"
+  | "sports";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -656,6 +659,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "pickup",
   "mechanism",
   "rail",
+  "sports",
 ];
 
 /**
@@ -775,6 +779,14 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeRail({ module: "rail-${id}", out: "assets/environment" })`,
   }));
+  const sports = sportsModules.map(({ id, name, category }) => ({
+    id: `sports-${id}`,
+    name,
+    kind: "sports" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeSports({ module: "sports-${id}", out: "assets/environment" })`,
+  }));
   const elements = [
     ...plants,
     ...rocks,
@@ -784,6 +796,7 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     ...pickups,
     ...mechanisms,
     ...rails,
+    ...sports,
   ];
   return elements.filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
@@ -1227,14 +1240,47 @@ export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentB
   return writeStaticKit(buildRail(kit.id, kit), options.out, kit.filename);
 }
 
+/**
+ * Bake grounded sports equipment and matching balls with named play surfaces and pivots.
+ * @situation bake a soccer football goal, basketball hoop, tennis or volleyball net with configurable dimensions
+ * @situation bake a soccer ball, basketball or tennis ball with a named sphere center
+ * @constraint span and height are in metres before uniform scale; equipment faces +Z
+ * @constraint span applies to the goal and court net, height to the goal, hoop and court net
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeSports({ module: "sports-net", span: 9.5, height: 2.24, out: "assets/sports" });
+ */
+export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeSports",
+    "sports",
+    sportsModules,
+    sportsModules[0].accent,
+  );
+  const rules = sportsDimensions[kit.id];
+  let suffix = "";
+  for (const key of ["span", "height"] as const) {
+    const value = options[key];
+    if (value === undefined) continue;
+    const rule = rules?.[key];
+    if (!rule) throw new Error(`bakeSports: ${key} does not apply to sports-${kit.id}`);
+    if (!Number.isFinite(value) || value < rule.min || value > rule.max) {
+      throw new Error(`bakeSports: ${key} must be between ${rule.min} and ${rule.max}`);
+    }
+    if (value !== rule.default) suffix += `-${key}${value}`;
+  }
+  const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
+  return writeStaticKit(buildSports(kit.id, { ...options, ...kit }), options.out, filename);
+}
+
 function resolvePaintedKit<Id extends string>(
   options: Pick<IBakeFrontierOptions, "module" | "seed" | "accent" | "scale">,
   caller: string,
   prefix: string,
-  modules: readonly { readonly id: Id }[],
-  defaultAccent: string,
+  modules: readonly { readonly id: Id; readonly accent?: string }[],
+  fallbackAccent: string,
 ) {
-  const { module, seed = 1, accent = defaultAccent, scale = 1 } = options;
+  const { module, seed = 1, scale = 1 } = options;
   const entry = modules.find(({ id }) => module === `${prefix}-${id}`);
   if (!entry) {
     const ids = modules.map(({ id }) => `${prefix}-${id}`);
@@ -1242,6 +1288,8 @@ function resolvePaintedKit<Id extends string>(
       `${caller}: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
     );
   }
+  const defaultAccent = entry.accent ?? fallbackAccent;
+  const { accent = defaultAccent } = options;
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
     throw new Error(`${caller}: seed must be an unsigned 32-bit integer`);
   if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))

@@ -12,6 +12,7 @@ import { frontierAccent, frontierModules } from "./frontier.js";
 import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
 import { flatPickupModules, pickupAccent } from "./pickups.js";
 import { railAccent, railModules } from "./rail.js";
+import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 
@@ -103,6 +104,29 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         default: false,
         only: litMechanismModules.map((id) => `mechanism-${id}`),
       },
+    ],
+    sports: [
+      ...sportsModules.map(
+        ({ id, accent }): IControl => ({
+          key: "accent",
+          label: "Accent color",
+          type: "color",
+          default: accent,
+          only: [`sports-${id}`],
+        }),
+      ),
+      ...Object.entries(sportsDimensions).flatMap(([id, dimensions]) =>
+        Object.entries(dimensions).map(
+          ([key, rules]): IControl => ({
+            key,
+            ...rules,
+            type: "range",
+            step: 0.01,
+            only: [`sports-${id}`],
+          }),
+        ),
+      ),
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
     ],
     rail: [
       {
@@ -325,6 +349,16 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("active", toggle(q, "active")),
       });
+    case "sports":
+      return pkg.bakeSports({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("span", num(q, "span")),
+        ...opt("height", num(q, "height")),
+      });
     case "rail":
       return pkg.bakeRail({
         module: q.get("id") ?? "",
@@ -380,6 +414,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  sports: { name: "Sports Kit" },
   rail: { name: "Rail Kit" },
   mechanism: { name: "Mechanism Kit" },
   pickup: { name: "Pickups" },
@@ -497,7 +532,7 @@ export function proceduralEnvironmentSource(
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
             styleTags: [
-              ["station", "frontier", "pickup", "mechanism", "rail"].includes(entry.kind)
+              ["station", "frontier", "pickup", "mechanism", "rail", "sports"].includes(entry.kind)
                 ? "stylized"
                 : "realistic",
             ],

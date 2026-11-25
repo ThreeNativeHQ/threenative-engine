@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Sports Kit bakes soccer, basketball and court equipment with named
+  placement points, adjustable fixture dimensions, and matching ball props.
+
 - The Asset Library's Rail Kit bakes six modular railway GLBs, including a matching minecart
   with separately rotatable axle groups and a cargo attachment point.
 

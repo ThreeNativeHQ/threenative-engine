@@ -520,6 +520,7 @@
         "@threenative/procedural-environment#bakePickup": "export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRail": "export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#bakeSports": "export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeStation": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#environmentBiomes": "export function environmentBiomes(): IEnvironmentBiome[] { … }",

@@ -8720,6 +8720,27 @@
     {
       "aliases": [],
       "constraints": [
+        "span and height are in metres before uniform scale; equipment faces +Z",
+        "span applies to the goal and court net, height to the goal, hoop and court net"
+      ],
+      "example": "await bakeSports({ module: \"sports-net\", span: 9.5, height: 2.24, out: \"assets/sports\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a soccer football goal, basketball hoop, tennis or volleyball net with configurable dimensions",
+        "bake a soccer ball, basketball or tennis ball with a named sphere center"
+      ],
+      "summary": "Bake grounded sports equipment and matching balls with named play surfaces and pivots.",
+      "supersedes": [],
+      "symbol": "bakeSports"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin",
         "roof applies only to corridors and the assembled maintenance junction"
       ],

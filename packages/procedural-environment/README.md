@@ -43,6 +43,29 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Sports Kit
+
+Open **Sports Kit** for a soccer goal, basketball hoop and backboard, a court net, and
+three matching balls. Set the goal's clear opening width and height, the hoop's rim
+height, or the court net's span and center height. The post and rim thickness stay
+fixed when height changes. **Scale** resizes the whole piece. **Accent color** recolors
+the visible paint or ball panels.
+
+| Asset | Named nodes | Placement |
+| --- | --- | --- |
+| Soccer goal | `goal-center`, `goal-left-post`, `goal-right-post`, `goal-crossbar` | Opening faces +Z. Post and crossbar nodes mark the clear opening. |
+| Basketball hoop | `rim-center`, `backboard-target` | Hoop faces +Z. Use the rim center to place a scoring test. |
+| Court net | `net-left`, `net-center`, `net-right` | Net runs across X. Nodes mark the centerline of the top cord. |
+| Soccer ball, basketball, tennis ball | `ball-center` | The model rests on y = 0. Use the center node for a rotation pivot. |
+
+```ts
+import { bakeSports } from "@threenative/procedural-environment";
+
+await bakeSports({ module: "sports-net", span: 9.5, height: 2.24, out: "assets/sports" });
+```
+
+Dimensions are in metres before scale. The game owns collision, scoring and ball motion.
+
 ### Rail Kit
 
 Open **Rail Kit** for straight and quarter-turn track, a raised approach, a trestle bridge,
