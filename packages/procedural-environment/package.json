@@ -45,6 +45,7 @@
     "three": "catalog:"
   },
   "devDependencies": {
+    "@threenative/core": "workspace:*",
     "@types/node": "catalog:",
     "@types/three": "catalog:",
     "publint": "0.3.22",

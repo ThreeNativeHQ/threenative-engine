@@ -1,6 +1,6 @@
 // Builds the Asset Library's browser half into dist/asset-library/ (PRD-915): the shell (upstream
 // three addons inlined, `three` left to the dev server), the story frame (`three` and
-// `three/webgpu` left to the game), Tailwind compiled once so no kit needs it.
+// `three/webgpu` left to the game), the VFX story (`@threenative/core` left to the game too), Tailwind compiled once so no kit needs it.
 import { cpSync } from "node:fs";
 import path from "node:path";
 import tailwindcss from "@tailwindcss/vite";
@@ -31,10 +31,14 @@ export default defineConfig({
       entry: {
         client: path.join(here, "main.ts"),
         "story-frame": path.join(here, "../story-frame.ts"),
+        "vfx-story": path.join(here, "../vfx-story.ts"),
       },
       formats: ["es"],
       cssFileName: "client",
     },
-    rollupOptions: { external: (id) => id === "three" || id === "three/webgpu" },
+    rollupOptions: {
+      external: (id) =>
+        id === "three" || id === "three/webgpu" || id.startsWith("@threenative/core"),
+    },
   },
 });
