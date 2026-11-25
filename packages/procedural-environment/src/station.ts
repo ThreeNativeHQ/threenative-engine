@@ -1,7 +1,6 @@
-import { BoxGeometry, type BufferGeometry, Color, Group, Mesh, MeshStandardMaterial } from "three";
-import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
+import { Color, Group, MeshStandardMaterial } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import { StaticKitMesh } from "./static-kit-mesh.js";
 
 export interface IBakeStationOptions {
   /** Module id from environmentElements({ kind: "station" }). */
@@ -43,19 +42,12 @@ export const stationModules = [
 
 type Module = (typeof stationModules)[number]["id"];
 type Finish = "hull" | "panel" | "inset" | "rubber" | "accent" | "stripe" | "light";
-type XYZ = [number, number, number];
+type StationMesh = StaticKitMesh<Finish>;
 export const stationRoofModules = [
   ...Object.keys(CORRIDORS).map((id) => `station-${id}`),
   "station-layout",
 ];
 export const stationAccent = "#25b9c8";
-
-function squareBlock(size: XYZ): BufferGeometry {
-  const indexed = new BoxGeometry(...size);
-  const shape = indexed.toNonIndexed();
-  indexed.dispose();
-  return shape;
-}
 
 function stationMaterials(accent: string, seed: number): Record<Finish, MeshStandardMaterial> {
   const tint = new Color(accent);
@@ -77,35 +69,6 @@ function stationMaterials(accent: string, seed: number): Record<Finish, MeshStan
       roughness: 0.4,
     }),
   };
-}
-
-class StationMesh {
-  private readonly parts = new Map<Finish, BufferGeometry[]>();
-
-  block(finish: Finish, size: XYZ, center: XYZ, bevel = 0.035, tilt = 0): void {
-    const shape = bevel > 0.018 ? new RoundedBoxGeometry(...size, 1, bevel) : squareBlock(size);
-    if (tilt) shape.rotateZ(tilt);
-    shape.translate(...center);
-    const bucket = this.parts.get(finish);
-    if (bucket) bucket.push(shape);
-    else this.parts.set(finish, [shape]);
-  }
-
-  finish(name: string, materials: Record<Finish, MeshStandardMaterial>): Group {
-    const group = new Group();
-    group.name = name;
-    for (const [finish, shapes] of this.parts) {
-      const geometry = mergeGeometries(shapes);
-      for (const shape of shapes) shape.dispose();
-      if (!geometry) throw new Error(`Could not merge ${name} ${finish}`);
-      const mesh = new Mesh(geometry, materials[finish]);
-      mesh.name = materials[finish].name;
-      mesh.castShadow = true;
-      mesh.receiveShadow = true;
-      group.add(mesh);
-    }
-    return group;
-  }
 }
 
 function floor(mesh: StationMesh): void {
@@ -206,7 +169,7 @@ export function buildStation(
   const piece = (part: keyof typeof PIECES) => {
     const known = prototypes.get(part);
     if (known) return known.clone();
-    const mesh = new StationMesh();
+    const mesh = new StaticKitMesh<Finish>();
     PIECES[part](mesh);
     const group = mesh.finish(`station-${part}`, palette);
     prototypes.set(part, group);

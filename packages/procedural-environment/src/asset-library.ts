@@ -8,8 +8,13 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
+import { frontierAccent, frontierModules } from "./frontier.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
+
+const frontierPaintable = frontierModules
+  .filter(({ id }) => id !== "ore")
+  .map(({ id }) => `frontier-${id}`);
 
 type Package = typeof import("./index.js");
 
@@ -85,6 +90,16 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     tree: [TEXTURES],
     cover: [TEXTURES],
     debris: [TEXTURES],
+    frontier: [
+      {
+        key: "accent",
+        label: "Team color",
+        type: "color",
+        default: frontierAccent,
+        only: frontierPaintable,
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+    ],
     station: [
       { key: "accent", label: "Accent paint", type: "color", default: stationAccent },
       { key: "roof", label: "Ceiling", type: "toggle", default: false, only: stationRoofModules },
@@ -258,25 +273,40 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
   const seed = num(q, "seed") ?? (kind === "city" ? 31082 : 1);
   const lods = [num(q, "lod") ?? 0];
   const out = path.join(cache, kind);
-  if (kind === "rock") return rockBake(pkg, q, { seed, lods, out });
-  if (kind === "city") return cityBake(pkg, q, { seed, out });
-  if (kind === "station")
-    return pkg.bakeStation({
-      module: q.get("id") ?? "",
-      seed,
-      out,
-      ...opt("accent", q.get("accent") ?? undefined),
-      ...opt("roof", toggle(q, "roof")),
-    });
-  if (kind === "tree" || kind === "cover" || kind === "debris")
-    return pkg.bakeVegetation({
-      preset: q.get("id") ?? "",
-      seed,
-      lods,
-      out,
-      ...opt("textures", q.get("textures") === "generated" ? ("generated" as const) : undefined),
-    });
-  throw new Error(`asset-library: no bake for kind "${kind}"`);
+  switch (kind) {
+    case "rock":
+      return rockBake(pkg, q, { seed, lods, out });
+    case "city":
+      return cityBake(pkg, q, { seed, out });
+    case "frontier":
+      return pkg.bakeFrontier({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+      });
+    case "station":
+      return pkg.bakeStation({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("roof", toggle(q, "roof")),
+      });
+    case "tree":
+    case "cover":
+    case "debris":
+      return pkg.bakeVegetation({
+        preset: q.get("id") ?? "",
+        seed,
+        lods,
+        out,
+        ...opt("textures", q.get("textures") === "generated" ? ("generated" as const) : undefined),
+      });
+    default:
+      throw new Error(`asset-library: no bake for kind "${kind}"`);
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown): true {
@@ -293,6 +323,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  frontier: { name: "Frontier Kit" },
   station: { name: "Station Kit" },
   stylized: { runtime: true, name: "Stylized Biome Kit", pack: "Biome Kit" },
   dungeon: { runtime: true, pack: "Dungeon Kit" },
@@ -405,7 +436,9 @@ export function proceduralEnvironmentSource(
         elements: [
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
-            styleTags: [entry.kind === "station" ? "stylized" : "realistic"],
+            styleTags: [
+              entry.kind === "station" || entry.kind === "frontier" ? "stylized" : "realistic",
+            ],
           })),
           ...stylizedAssets().map((entry) => ({
             ...entry,

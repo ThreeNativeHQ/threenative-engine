@@ -8613,6 +8613,24 @@
       "symbol": "bakeCity"
     },
     {
+      "aliases": [],
+      "constraints": ["models use metres, +Y up and a ground-level origin; scale from 0.5 to 2"],
+      "example": "await bakeFrontier({ module: \"frontier-command\", accent: \"#628ac4\", scale: 1.5, out: \"assets/frontier\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular industrial headquarters, supply depots and ore processors for strategy, RTS and base-building games",
+        "generate a power generator, antenna relay, ore deposit or landing pad for a colony or factory outpost"
+      ],
+      "summary": "Bake Frontier Kit buildings, utility structures or a resource deposit as a grounded PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeFrontier"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",

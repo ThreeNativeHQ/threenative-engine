@@ -43,6 +43,28 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Frontier Kit
+
+Open **Frontier Kit** for industrial buildings and props for strategy, colony and base-building
+games. It includes command headquarters, a supply depot, an ore processor, a power generator,
+a communications relay, a crystal ore deposit, a landing pad and an assembled outpost.
+
+**Team color** sets the painted panels across the kit. **Scale** sets the uniform size from
+0.5× to 2×. **Seed** varies the ore cluster and ceramic paint tones. The modules are centred at
+ground level, use +Y up and are baked in metres as opaque PBR GLBs.
+
+```ts
+import { bakeFrontier, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "frontier" });
+await bakeFrontier({
+  module: "frontier-command",
+  accent: "#628ac4",
+  scale: 1.5,
+  out: "assets/frontier",
+});
+```
+
 ### Station Kit
 
 Open **Station Kit** for 12 stylized science-fiction interiors and props. The kit covers deck,

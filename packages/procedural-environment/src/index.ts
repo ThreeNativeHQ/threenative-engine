@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import { Box3, type BufferGeometry, type Mesh } from "three";
+import { Box3, type BufferGeometry, type Group, type Mesh } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
@@ -11,6 +11,12 @@ import ForestKit, {
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
 import { type IBakeCityOptions, buildCity, cityModules, exportStaticGlb } from "./city.js";
+import {
+  type IBakeFrontierOptions,
+  buildFrontier,
+  frontierAccent,
+  frontierModules,
+} from "./frontier.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
 import {
   type IBakeStationOptions,
@@ -23,6 +29,7 @@ import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
+export type { IBakeFrontierOptions } from "./frontier.js";
 export type { IBakeStationOptions } from "./station.js";
 
 export interface IVegetationPreset {
@@ -586,8 +593,15 @@ async function bakeForestKit(
   return baked;
 }
 
-/** A vegetation preset, rock form, city module or station module. */
-export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city" | "station";
+/** A vegetation preset, rock form or a built asset module. */
+export type EnvironmentKind =
+  | "tree"
+  | "cover"
+  | "debris"
+  | "rock"
+  | "city"
+  | "station"
+  | "frontier";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -610,7 +624,15 @@ export interface IEnvironmentFilter {
   readonly search?: string;
 }
 
-const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city", "station"];
+const KINDS: readonly EnvironmentKind[] = [
+  "tree",
+  "cover",
+  "debris",
+  "rock",
+  "city",
+  "station",
+  "frontier",
+];
 
 /**
  * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
@@ -697,7 +719,15 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeStation({ module: "station-${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city, ...station].filter((element) => {
+  const frontier = frontierModules.map(({ id, name, category }) => ({
+    id: `frontier-${id}`,
+    name,
+    kind: "frontier" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeFrontier({ module: "frontier-${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city, ...station, ...frontier].filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
@@ -1057,14 +1087,53 @@ export async function bakeStation(options: IBakeStationOptions): Promise<IEnviro
     throw new Error("bakeStation: roof is a boolean for corridors and the layout");
   const paint = accent.toLowerCase();
   const group = buildStation(entry.id, { seed, accent: paint, roof });
+  const suffix = (paint === stationAccent ? "" : `-${paint.slice(1)}`) + (roof ? "-roof" : "");
+  return writeStaticKit(group, out, `${module}-${seed}${suffix}.glb`);
+}
+
+/**
+ * Bake Frontier Kit buildings, utility structures or a resource deposit as a grounded PBR GLB.
+ * @situation create modular industrial headquarters, supply depots and ore processors for strategy, RTS and base-building games
+ * @situation generate a power generator, antenna relay, ore deposit or landing pad for a colony or factory outpost
+ * @constraint models use metres, +Y up and a ground-level origin; scale from 0.5 to 2
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeFrontier({ module: "frontier-command", accent: "#628ac4", scale: 1.5, out: "assets/frontier" });
+ */
+export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> {
+  const { module, out, seed = 1, accent = frontierAccent, scale = 1 } = options;
+  const entry = frontierModules.find(({ id }) => module === `frontier-${id}`);
+  if (!entry) {
+    const ids = frontierModules.map(({ id }) => `frontier-${id}`);
+    throw new Error(
+      `bakeFrontier: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
+    );
+  }
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
+    throw new Error("bakeFrontier: seed must be an unsigned 32-bit integer");
+  if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))
+    throw new Error("bakeFrontier: accent must be a six-digit hex color, such as #e6a44b");
+  if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
+    throw new Error("bakeFrontier: scale must be between 0.5 and 2");
+  const paint = accent.toLowerCase();
+  const group = buildFrontier(entry.id, { seed, accent: paint, scale });
+  const tint = paint === frontierAccent ? "" : `-${paint.slice(1)}`;
+  const size = scale === 1 ? "" : `-s${scale}`;
+  return writeStaticKit(group, out, `${module}-${seed}${tint}${size}.glb`);
+}
+
+async function writeStaticKit(
+  group: Group,
+  out: string,
+  filename: string,
+): Promise<IEnvironmentBake[]> {
   const box = new Box3().setFromObject(group);
   let triangles = 0;
   group.traverse((node) => {
     const mesh = node as Mesh;
-    if (mesh.isMesh) triangles += mesh.geometry.getAttribute("position").count / 3;
+    if (mesh.isMesh)
+      triangles += (mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position").count) / 3;
   });
-  const suffix = (paint === stationAccent ? "" : `-${paint.slice(1)}`) + (roof ? "-roof" : "");
-  const file = path.join(out, `${module}-${seed}${suffix}.glb`);
+  const file = path.join(out, filename);
   const bytes = await exportStaticGlb(group);
   await mkdir(out, { recursive: true });
   await writeAtomic(file, bytes);

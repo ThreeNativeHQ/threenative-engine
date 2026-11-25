@@ -45,7 +45,8 @@ describe("environment elements are found by biome", () => {
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(expect.arrayContaining(vegetationPresets().map((preset) => preset.id)));
     const unplaced = elements.filter(
-      (e) => e.kind !== "city" && e.kind !== "station" && e.biomes.length === 0,
+      (e) =>
+        e.kind !== "city" && e.kind !== "station" && e.kind !== "frontier" && e.biomes.length === 0,
     );
     expect(unplaced.map((e) => e.id)).toEqual([]);
     for (const biome of environmentBiomes())
