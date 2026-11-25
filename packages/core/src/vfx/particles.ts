@@ -426,24 +426,19 @@ export function overrideLayer(layer: ArchiveLayer, overrides: IVfxOverrides): Ar
     throw new Error(`VFX layer ${layer.id}: size and lifetime must be positive.`);
   }
   const tint = overrides.color === undefined ? undefined : new three.Color(overrides.color);
-  const tinted = <T extends readonly number[]>(rgb: T): T =>
-    tint === undefined
-      ? rgb
-      : (rgb.map((value, index) =>
-          index === 0
-            ? value * tint.r
-            : index === 1
-              ? value * tint.g
-              : index === 2
-                ? value * tint.b
-                : value,
-        ) as unknown as T);
+  function tinted(rgb: ArchiveVec4): ArchiveVec4;
+  function tinted(rgb: ArchiveVec3 | ArchiveVec4): ArchiveVec3 | ArchiveVec4;
+  function tinted(rgb: ArchiveVec3 | ArchiveVec4): ArchiveVec3 | ArchiveVec4 {
+    if (tint === undefined) return rgb;
+    const color = [rgb[0] * tint.r, rgb[1] * tint.g, rgb[2] * tint.b] as const;
+    return rgb.length === 3 ? color : [...color, rgb[3]];
+  }
   return {
     ...layer,
     size: layer.size * size,
     ...(layer.ribbonWidth === undefined ? {} : { ribbonWidth: layer.ribbonWidth * size }),
     lifetime: [layer.lifetime[0] * lifetime, layer.lifetime[1] * lifetime],
-    color: tinted(layer.color) as ArchiveVec4,
+    color: tinted(layer.color),
     ...(layer.colorCurve === undefined
       ? {}
       : { colorCurve: layer.colorCurve.map(([at, rgb]) => [at, tinted(rgb)] as const) }),
