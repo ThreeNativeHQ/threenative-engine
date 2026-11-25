@@ -4805,6 +4805,242 @@ void ground_snap_apply() {
     plainWorldObj->updateWorldMatrix(true, true, true);
     for (int i = 0; i < 16; ++i) CHECK(std::abs(tiltedBoneAfter[i] - plainBoneObj->matrixWorld.elements[i]) < 1e-9);
 
+    // 8. Four-bone chain ending in a leaf: the leaf only has its origin measured, and a clean character
+    // shifts in place rather than recomposing every bone.
+    tn_handle_t deepWorldT{}, deepGroupT{}, deepModelT{}, deepA{}, deepB{}, deepC{}, deepD{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &deepWorldT, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &deepGroupT, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &deepModelT, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deepA, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deepB, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deepC, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &deepD, &d.value) == TN_OK);
+    addChild(deepWorldT, deepGroupT);
+    addChild(deepGroupT, deepModelT);
+    addChild(deepModelT, deepA);
+    addChild(deepA, deepB);
+    addChild(deepB, deepC);
+    addChild(deepC, deepD);
+    auto deepWorldPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepWorldT)->ptr);
+    auto deepGroupPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepGroupT)->ptr);
+    auto deepModelPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepModelT)->ptr);
+    auto deepAPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepA)->ptr);
+    auto deepBPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepB)->ptr);
+    auto deepCPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepC)->ptr);
+    auto deepDPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(deepD)->ptr);
+    Object3D* const deepBones[4] = {deepAPtr.get(), deepBPtr.get(), deepCPtr.get(), deepDPtr.get()};
+    const double deepRadii[4] = {0.1, 0.12, 0.08, 0.2};
+    deepWorldPtr->position.set(0.0, 3.0, 0.0);
+    deepWorldPtr->rotation.y = 0.55;
+    deepWorldPtr->scale.set(1.4, 1.3, 1.4);
+    deepGroupPtr->position.set(0.0, 1.0, 0.0);
+    deepModelPtr->rotation.z = 0.2;
+    deepAPtr->position.set(0.0, 0.5, 0.0);
+    deepBPtr->position.set(0.2, 0.6, 0.1);
+    deepCPtr->position.set(0.1, 0.4, -0.2);
+    deepDPtr->position.set(0.3, 0.25, 0.15);
+    const tn_value_t deepObjects[] = {ref(deepA), ref(deepB), ref(deepC), ref(deepD)};
+    tn_value_t deepList{};
+    deepList.kind = TN_VALUE_ARRAY;
+    deepList.count = 4;
+    deepList.values = deepObjects;
+    tn_value_t deepRadiiValue{};
+    deepRadiiValue.kind = TN_VALUE_NUMBERS;
+    deepRadiiValue.count = 4;
+    deepRadiiValue.numbers = deepRadii;
+    const tn_value_t deepAttach[] = {deepList, deepRadiiValue};
+    CHECK(tn_invoke(deepModelT, "__tnSphereBoundsAttach", deepAttach, 2, &out, &d.value) == TN_OK);
+    auto deepBruteLowest = [&]() {
+        deepWorldPtr->updateWorldMatrix(true, true, true);
+        double low = std::numeric_limits<double>::infinity();
+        for (int b = 0; b < 4; ++b)
+            low = std::min(low, deepBones[b]->matrixWorld.elements[13] - deepRadii[b]);
+        return low - 0.1;
+    };
+    auto deepMeasureOnly = [&]() {
+        const tn_value_t call[] = {ref(deepGroupT), num(0.0), num(1.0 / 30.0), num(-1.0), num(0), num(-0.1)};
+        CHECK(tn_invoke(deepModelT, "__tnGroundSnapApply", call, 6, &out, &d.value) == TN_OK);
+        return out.number;
+    };
+    CHECK(std::abs(deepMeasureOnly() - deepBruteLowest()) < 1e-9);
+    // A mid-chain rotation and a moved leaf still measure to the brute-force minimum of the four origins.
+    deepCPtr->rotation.y = 0.35;
+    deepDPtr->position.x = 0.55;
+    CHECK(std::abs(deepMeasureOnly() - deepBruteLowest()) < 1e-9);
+    // Upright and tilted models take different minY paths and must both agree with the forced walk.
+    deepModelPtr->rotation.z = 0.0;
+    CHECK(std::abs(deepMeasureOnly() - deepBruteLowest()) < 1e-9);
+    deepModelPtr->rotation.z = -0.18;
+    CHECK(std::abs(deepMeasureOnly() - deepBruteLowest()) < 1e-9);
+
+    // Clean shift: every bone moves by exactly the applied correction and keeps the other 15 elements bit
+    // for bit, so the snap shifted the rig instead of recomposing it.
+    const double deepLowest = deepBruteLowest();
+    deepWorldPtr->updateWorldMatrix(true, true, true);
+    std::array<double, 16> deepBefore[4];
+    for (int b = 0; b < 4; ++b) deepBefore[b] = deepBones[b]->matrixWorld.elements;
+    const tn_value_t deepSnap[] = {ref(deepGroupT), num(2.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(deepModelT, "__tnGroundSnapApply", deepSnap, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    const double deepDy = 2.0 - deepLowest;
+    for (int b = 0; b < 4; ++b) {
+        const std::array<double, 16>& now = deepBones[b]->matrixWorld.elements;
+        for (int k = 0; k < 16; ++k) {
+            if (k == 13) CHECK(std::abs(now[k] - (deepBefore[b][k] + deepDy)) < 1e-9);
+            else CHECK(now[k] == deepBefore[b][k]);
+        }
+    }
+
+    // A bone edited without updateMatrix() is composed by the snap, not blind-shifted with the rest.
+    deepWorldPtr->updateWorldMatrix(true, true, true);
+    deepCPtr->position.x += 0.4;
+    const tn_value_t deepDirtySnap[] = {ref(deepGroupT), num(2.0), num(1.0 / 30.0), num(-1.0), num(1), num(-0.1)};
+    CHECK(tn_invoke(deepModelT, "__tnGroundSnapApply", deepDirtySnap, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    std::array<double, 16> deepDirtyAfter[4];
+    for (int b = 0; b < 4; ++b) deepDirtyAfter[b] = deepBones[b]->matrixWorld.elements;
+    deepWorldPtr->updateWorldMatrix(true, true, true);
+    for (int b = 0; b < 4; ++b)
+        for (int k = 0; k < 16; ++k)
+            CHECK(std::abs(deepDirtyAfter[b][k] - deepBones[b]->matrixWorld.elements[k]) < 1e-9);
+
+    // 9. Repeated snaps under a still and then a moving parent whose upright scale is not 1: each call answers the
+    // exact local offset, the shifted rig still matches a forced walk, and a set whose object died fails closed.
+    tn_handle_t snapParent{}, snapGroup{}, snapModel{}, snapBone{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &snapParent, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &snapGroup, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &snapModel, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &snapBone, &d.value) == TN_OK);
+    addChild(snapParent, snapGroup);
+    addChild(snapGroup, snapModel);
+    addChild(snapModel, snapBone);
+    auto snapParentPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(snapParent)->ptr);
+    auto snapGroupPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(snapGroup)->ptr);
+    auto snapBonePtr = std::static_pointer_cast<Bone>(tn::abi::objectOf(snapBone)->ptr);
+    snapParentPtr->position.set(0.0, 1.0, 0.0);
+    snapParentPtr->scale.set(1.0, 2.0, 1.0);
+    snapGroupPtr->position.set(0.0, 0.5, 0.0);
+    snapBonePtr->position.set(0.0, 1.0, 0.0);
+    const tn_value_t snapObjects[] = {ref(snapBone)};
+    tn_value_t snapList{};
+    snapList.kind = TN_VALUE_ARRAY;
+    snapList.count = 1;
+    snapList.values = snapObjects;
+    const double snapRadiiValues[] = {0.0};
+    tn_value_t snapRadii{};
+    snapRadii.kind = TN_VALUE_NUMBERS;
+    snapRadii.count = 1;
+    snapRadii.numbers = snapRadiiValues;
+    const tn_value_t snapAttach[] = {snapList, snapRadii};
+    CHECK(tn_invoke(snapModel, "__tnSphereBoundsAttach", snapAttach, 2, &out, &d.value) == TN_OK);
+    // Bone world Y = 1.0 + 2.0 * (0.5 + 1.0) = 4.0; world scale Y 2.0 -> group local offset -2.0 / 2.0.
+    const tn_value_t snapTo2[] = {ref(snapGroup), num(2.0), num(1.0 / 30.0), num(-1.0), num(1), num(0.0)};
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapTo2, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    CHECK(std::abs(snapGroupPtr->position.y - (-0.5)) < 1e-12);
+    CHECK(std::abs(snapBonePtr->matrixWorld.elements[13] - 2.0) < 1e-9);
+    // A still rig answers zero and moves nothing on the next call.
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapTo2, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    CHECK(std::abs(snapGroupPtr->position.y - (-0.5)) < 1e-12);
+    // Moving the parent raises the bone to 4.5 -> -2.5 correction -> 2.5 / 2.0 back out of the local Y.
+    snapParentPtr->position.y = 3.5;
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapTo2, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(out.number) < 1e-9);
+    CHECK(std::abs(snapGroupPtr->position.y - (-1.75)) < 1e-12);
+    CHECK(std::abs(snapBonePtr->matrixWorld.elements[13] - 2.0) < 1e-9);
+    const std::array<double, 16> snapBoneAfter = snapBonePtr->matrixWorld.elements;
+    snapParentPtr->updateWorldMatrix(true, true, true);
+    for (int i = 0; i < 16; ++i) CHECK(std::abs(snapBoneAfter[i] - snapBonePtr->matrixWorld.elements[i]) < 1e-9);
+
+    // A group that does not carry the model corrects through its own parent: an upright parent divides the local Y,
+    // a rotated one resolves a world +correction through the inverse, and both move the world Y by the correction.
+    tn_handle_t outParent{}, outGroup{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &outParent, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &outGroup, &d.value) == TN_OK);
+    addChild(outParent, outGroup);
+    auto outParentPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(outParent)->ptr);
+    auto outGroupPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(outGroup)->ptr);
+    outParentPtr->scale.set(1.0, 1.5, 1.0);
+    const tn_value_t snapOut[] = {ref(outGroup), num(0.0), num(1.0 / 30.0), num(-1.0), num(1), num(0.0)};
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapOut, 6, &out, &d.value) == TN_OK);
+    CHECK(std::abs(outGroupPtr->position.y - (-2.0 / 1.5)) < 1e-12);
+    CHECK(std::abs(out.number - 2.0) < 1e-9); // the model did not move, so the re-measure answers the clearance
+    outParentPtr->rotation.z = 0.3;
+    outParentPtr->updateWorldMatrix(true, true, true);
+    const Vector3 rotatedBefore(outGroupPtr->matrixWorld.elements[12], outGroupPtr->matrixWorld.elements[13],
+                                outGroupPtr->matrixWorld.elements[14]);
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapOut, 6, &out, &d.value) == TN_OK);
+    outParentPtr->updateWorldMatrix(true, true, true);
+    CHECK(std::abs(outGroupPtr->matrixWorld.elements[12] - rotatedBefore.x) < 1e-9);
+    CHECK(std::abs(outGroupPtr->matrixWorld.elements[13] - (rotatedBefore.y - 2.0)) < 1e-9);
+    CHECK(std::abs(outGroupPtr->matrixWorld.elements[14] - rotatedBefore.z) < 1e-9);
+
+    // An attached bone that dies between calls fails closed, and the failed set is not kept as a compiled one.
+    const tn_value_t snapRemove = ref(snapBone);
+    CHECK(tn_invoke(snapModel, "remove", &snapRemove, 1, &out, &d.value) == TN_OK);
+    CHECK(tn_object_release(snapBone, &d.value) == TN_OK);
+    snapBonePtr.reset();
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapTo2, 6, &out, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("an attached object is gone; attach again") != std::string::npos);
+    CHECK(tn_invoke(snapModel, "__tnGroundSnapApply", snapTo2, 6, &out, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("an attached object is gone; attach again") != std::string::npos);
+
+    // 10. ModelLod from one call a frame: a still mesh answers the level it kept, a moved or rescaled one reselects
+    // the level a fresh pose picks, and a mesh that died fails closed.
+    tn_handle_t lodCamera{}, lodGeom{}, lodMat{}, lodMesh{};
+    CHECK(tn_construct(ctx, "PerspectiveCamera", nullptr, 0, &lodCamera, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &lodGeom, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &lodMat, &d.value) == TN_OK);
+    const tn_value_t lodParts[2] = {ref(lodGeom), ref(lodMat)};
+    CHECK(tn_construct(ctx, "Mesh", lodParts, 2, &lodMesh, &d.value) == TN_OK);
+    auto lodMeshPtr = std::static_pointer_cast<Mesh>(tn::abi::objectOf(lodMesh)->ptr);
+    lodMeshPtr->position.set(0.0, 0.0, -10.0);
+    lodMeshPtr->updateWorldMatrix(true, false);
+    // Errors 0/2/8 at 100 px: at depth 9 the two coarser levels project past the budget, far away both fit.
+    const double lodErrorValues[] = {0.0, 2.0, 8.0};
+    tn_value_t lodErrors{};
+    lodErrors.kind = TN_VALUE_NUMBERS;
+    lodErrors.count = 3;
+    lodErrors.numbers = lodErrorValues;
+    const double lodLocalValues[] = {0.0, 0.0, 0.0, 1.0};
+    tn_value_t lodLocal{};
+    lodLocal.kind = TN_VALUE_NUMBERS;
+    lodLocal.count = 4;
+    lodLocal.numbers = lodLocalValues;
+    const tn_value_t lodAttach[] = {lodErrors, lodLocal, num(100.0), num(0.1), num(2)};
+    CHECK(tn_invoke(lodMesh, "__tnModelLodAttach", lodAttach, 5, &out, &d.value) == TN_OK);
+    const tn_value_t lodObjects[] = {ref(lodMesh)};
+    tn_value_t lodList{};
+    lodList.kind = TN_VALUE_ARRAY;
+    lodList.count = 1;
+    lodList.values = lodObjects;
+    CHECK(tn_invoke(lodCamera, "__tnModelLodMeshes", &lodList, 1, &out, &d.value) == TN_OK);
+    const tn_value_t lodSelect[] = {num(1000.0), num(1.0)};
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBERS && out.count == 2 && out.numbers[0] == 0.0 && out.numbers[1] == 0.0);
+    // The same pose again, and the same pose with the cached sphere forced stale, both keep level 0.
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBERS && out.count == 0);
+    lodMeshPtr->updateMatrix();
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBERS && out.count == 0);
+    // Far away both coarser levels fit the budget: the cached world sphere must follow the move.
+    lodMeshPtr->position.z = -10000.0;
+    lodMeshPtr->updateWorldMatrix(true, false);
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBERS && out.count == 2 && out.numbers[0] == 0.0 && out.numbers[1] == 2.0);
+    // Scaled 200x the pixel budget shrinks to 0.5, so only level 1 fits: the cached world scale must follow too.
+    lodMeshPtr->scale.set(200.0, 200.0, 200.0);
+    lodMeshPtr->updateWorldMatrix(true, false);
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_OK);
+    CHECK(out.kind == TN_VALUE_NUMBERS && out.count == 2 && out.numbers[0] == 0.0 && out.numbers[1] == 1.0);
+    // A mesh that died since the set was handed over fails closed, so the game hands the set over again.
+    CHECK(tn_object_release(lodMesh, &d.value) == TN_OK);
+    lodMeshPtr.reset();
+    CHECK(tn_invoke(lodCamera, "__tnModelLodSelect", lodSelect, 2, &out, &d.value) == TN_ERROR_UNSUPPORTED);
+    CHECK(d.message().find("a mesh in the set is gone; hand the set over again") != std::string::npos);
+
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -4875,6 +5111,282 @@ void billboard_face() {
     CHECK(std::abs(worldFront.y) < 1e-6);
     CHECK(worldFront.distanceTo(horizExpected) < 1e-6);
 
+    // 4. Identity-rotated parent: the local angle is the facing angle, and an unchanged face keeps its
+    // revision (no decompose, no invert, no bump).
+    tn_handle_t flat{}, tag{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &flat, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &tag, &d.value) == TN_OK);
+    auto flatObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(flat)->ptr);
+    auto tagObj = std::static_pointer_cast<Object3D>(tn::abi::objectOf(tag)->ptr);
+    flatObj->position.set(-2.0, 0.5, 4.0);
+    flatObj->scale.set(2.0, 2.0, 2.0);
+    flatObj->add(*tagObj);
+    tagObj->position.set(0.5, -1.0, 2.0);
+    perspObj->getWorldPosition(perspPos);
+    const tn_value_t callFlatLockY[] = {ref(persp), num(2)};
+    CHECK(tn_invoke(tag, "__tnBillboardFace", callFlatLockY, 2, &out, &d.value) == TN_OK);
+    tagObj->updateWorldMatrix(true, false);
+    tagObj->getWorldPosition(labelPos);
+    tagObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    expectedDir.subVectors(perspPos, labelPos);
+    expectedDir.y = 0.0;
+    expectedDir.normalize();
+    CHECK(std::abs(worldFront.y) < 1e-6);
+    CHECK(worldFront.distanceTo(expectedDir) < 1e-6);
+    const uint64_t tagRev = tagObj->revision();
+    CHECK(tn_invoke(tag, "__tnBillboardFace", callFlatLockY, 2, &out, &d.value) == TN_OK);
+    CHECK(tagObj->revision() == tagRev);
+    // Unrestricted face under the same parent matches the exact world front direction.
+    const tn_value_t callFlatFull[] = {ref(persp), num(0)};
+    CHECK(tn_invoke(tag, "__tnBillboardFace", callFlatFull, 2, &out, &d.value) == TN_OK);
+    tagObj->updateWorldMatrix(true, false);
+    tagObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    expectedDir.subVectors(perspPos, labelPos).normalize();
+    CHECK(worldFront.distanceTo(expectedDir) < 1e-6);
+
+    // 5. An orthographic camera with a Y-axis lock reads the camera rotation only when it needs it.
+    const tn_value_t callOrthoLockY[] = {ref(ortho), num(2)};
+    CHECK(tn_invoke(tag, "__tnBillboardFace", callOrthoLockY, 2, &out, &d.value) == TN_OK);
+    tagObj->updateWorldMatrix(true, false);
+    tagObj->getWorldPosition(labelPos);
+    tagObj->getWorldQuaternion(labelWorldQuat);
+    worldFront.set(0.0, 0.0, 1.0).applyQuaternion(labelWorldQuat).normalize();
+    Quaternion orthoLockQuat;
+    orthoObj->getWorldQuaternion(orthoLockQuat);
+    Vector3 orthoLockDir(0.0, 0.0, -1.0);
+    orthoLockDir.applyQuaternion(orthoLockQuat).negate();
+    orthoLockDir.y = 0.0;
+    orthoLockDir.normalize();
+    CHECK(std::abs(worldFront.y) < 1e-6);
+    CHECK(worldFront.distanceTo(orthoLockDir) < 1e-6);
+
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// A rig whose every bone holds a deferred pose answers its cached lowest while no skeleton ticked; each tick, a
+// non-bone link move, a held child under a moved parent and a materialized bone still measure exactly.
+void ground_snap_skips_unchanged_deferred_skeleton_and_tracks_pose_changes() {
+    using namespace tn::engine;
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_value_t out{};
+    tn_handle_t root{}, model{}, armature{}, foot{}, toe{};
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &root, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &model, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Group", nullptr, 0, &armature, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &foot, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Bone", nullptr, 0, &toe, &d.value) == TN_OK);
+    auto addChild = [&](tn_handle_t p, tn_handle_t c) {
+        const tn_value_t arg = ref(c);
+        CHECK(tn_invoke(p, "add", &arg, 1, &out, &d.value) == TN_OK);
+    };
+    addChild(root, model);
+    addChild(model, armature);
+    addChild(armature, foot);
+    addChild(foot, toe);
+    const tn_value_t armY = num(1.0);
+    CHECK(tn_set(armature, "position.y", &armY, &d.value) == TN_OK);
+    auto footPtr = std::static_pointer_cast<Bone>(tn::abi::objectOf(foot)->ptr);
+    auto toePtr = std::static_pointer_cast<Bone>(tn::abi::objectOf(toe)->ptr);
+    auto skeleton = std::make_shared<Skeleton>(std::vector<std::shared_ptr<Bone>>{footPtr, toePtr});
+    CHECK(footPtr->poseVersions().size() == 1 && toePtr->poseVersions().size() == 1);
+
+    // Admission and materialization both move the skeleton's pose version and the bone's deferred version.
+    footPtr->enableTrackedTransform();
+    toePtr->enableTrackedTransform();
+    uint64_t pose = skeleton->poseVersion();
+    CHECK(footPtr->deferredVersion() == 0);
+    CHECK(footPtr->enableDeferredTransform() && toePtr->enableDeferredTransform());
+    CHECK(skeleton->poseVersion() > pose);
+    CHECK(footPtr->deferredVersion() == 1 && toePtr->deferredVersion() == 1);
+    CHECK(footPtr->enableDeferredTransform() && footPtr->deferredVersion() == 1);  // already admitted: no move
+    const double s = std::sqrt(0.5);
+    const double footPos[3] = {0.0, 0.5, 0.0}, footRotUp[4] = {0.0, 0.0, s, s}, toePos[3] = {1.0, 0.0, 0.0};
+    CHECK(footPtr->deferTransformValue(0, footPos) && footPtr->deferTransformValue(3, footRotUp));
+    CHECK(toePtr->deferTransformValue(0, toePos));
+    CHECK(footPtr->deferredVersion() == 3 && toePtr->deferredVersion() == 2);
+    CHECK(footPtr->hasDeferredTransform() && toePtr->hasDeferredTransform());
+
+    const tn_value_t objects[] = {ref(foot), ref(toe)};
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 2;
+    list.values = objects;
+    const double radiiValues[] = {0.25, 0.1};
+    tn_value_t radii{};
+    radii.kind = TN_VALUE_NUMBERS;
+    radii.count = 2;
+    radii.numbers = radiiValues;
+    const tn_value_t attachArgs[] = {list, radii};
+    CHECK(tn_invoke(model, "__tnSphereBoundsAttach", attachArgs, 2, &out, &d.value) == TN_OK);
+    const tn_value_t measure[] = {ref(root), num(0.0), num(1.0 / 30.0), num(-1.0), num(0), num(0.0)};
+    auto clearance = [&]() {
+        CHECK(tn_invoke(model, "__tnGroundSnapApply", measure, 6, &out, &d.value) == TN_OK);
+        CHECK(out.kind == TN_VALUE_NUMBER);
+        return out.number;
+    };
+    // Foot at y 1.5 turned +90 deg about Z: the toe's +x offset points up, to y 2.5. Lowest: 1.5 - 0.25.
+    CHECK(std::abs(clearance() - 1.25) < 1e-9);
+    // Nothing ticked: the held rig answers the same, twice.
+    CHECK(std::abs(clearance() - 1.25) < 1e-9);
+    CHECK(std::abs(clearance() - 1.25) < 1e-9);
+    CHECK(footPtr->hasDeferredTransform() && toePtr->hasDeferredTransform());  // measuring materializes nothing
+
+    // The foot turns -90 deg; the toe holds its version and composes its cached TRS against the moved parent.
+    const uint64_t toeVersion = toePtr->deferredVersion();
+    const double footRotDown[4] = {0.0, 0.0, -s, s};
+    CHECK(footPtr->deferTransformValue(3, footRotDown));
+    CHECK(toePtr->deferredVersion() == toeVersion);
+    CHECK(std::abs(clearance() - 0.4) < 1e-9);  // toe at 1 + 0.5 - 1 = 0.5, less its 0.1 radius
+    CHECK(std::abs(clearance() - 0.4) < 1e-9);
+
+    // A non-bone link moves while no skeleton ticks: the held-rig skip sees it.
+    const tn_value_t armY2 = num(2.0);
+    CHECK(tn_set(armature, "position.y", &armY2, &d.value) == TN_OK);
+    CHECK(std::abs(clearance() - 1.4) < 1e-9);
+
+    // The toe ticks alone.
+    const double toePos2[3] = {2.0, 0.0, 0.0};
+    CHECK(toePtr->deferTransformValue(0, toePos2));
+    CHECK(std::abs(clearance() - 0.4) < 1e-9);  // toe at 2 + 0.5 - 2
+
+    // Materializing a bone moves the pose version; the set reads the now-eager bone and measures the same.
+    pose = skeleton->poseVersion();
+    const uint64_t footVersion = footPtr->deferredVersion();
+    footPtr->prepareLocalTransformWrite();
+    CHECK(!footPtr->hasDeferredTransform());
+    CHECK(skeleton->poseVersion() > pose);
+    CHECK(footPtr->deferredVersion() == footVersion + 1);
+    CHECK(std::abs(footPtr->quaternion.z + s) < 1e-12);
+    CHECK(std::abs(clearance() - 0.4) < 1e-9);
+    // An eager write on the materialized foot is seen next call: foot y 3 lifts the toe to 1.0, less 0.1.
+    footPtr->position.y = 1.0;
+    footPtr->markLocalTransformDirty();
+    CHECK(std::abs(clearance() - 0.9) < 1e-9);
+
+    // The reference: a full eager walk agrees with the last measurement.
+    toePtr->prepareLocalTransformWrite();
+    auto rootPtr = std::static_pointer_cast<Object3D>(tn::abi::objectOf(root)->ptr);
+    rootPtr->updateWorldMatrix(true, true, true);
+    const double eagerLowest = std::min(footPtr->matrixWorld.elements[13] - 0.25, toePtr->matrixWorld.elements[13] - 0.1);
+    CHECK(std::abs(eagerLowest - 0.9) < 1e-9);
+    CHECK(std::abs(clearance() - 0.9) < 1e-9);
+    CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
+}
+
+// `__tnIntersectObject(s)` answer the same records as intersectObject(s), with number lists for vectors.
+void raycaster_flat_intersections_match_standard_without_handles() {
+    const tn_version_info_t own = tn_engine_version();
+    tn_context_t* ctx = nullptr;
+    Diag d;
+    CHECK(tn_context_create(&ctx, &own, &d.value) == TN_OK);
+    tn_handle_t geometry{}, material{}, mesh{}, origin{}, direction{}, caster{};
+    CHECK(tn_construct(ctx, "BoxGeometry", nullptr, 0, &geometry, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "MeshBasicMaterial", nullptr, 0, &material, &d.value) == TN_OK);
+    const tn_value_t parts[2] = {ref(geometry), ref(material)};
+    CHECK(tn_construct(ctx, "Mesh", parts, 2, &mesh, &d.value) == TN_OK);
+    const tn_value_t o[3] = {num(0.2), num(0.1), num(5.0)}, dir[3] = {num(0.0), num(0.0), num(-1.0)};
+    CHECK(tn_construct(ctx, "Vector3", o, 3, &origin, &d.value) == TN_OK);
+    CHECK(tn_construct(ctx, "Vector3", dir, 3, &direction, &d.value) == TN_OK);
+    const tn_value_t ray[2] = {ref(origin), ref(direction)};
+    CHECK(tn_construct(ctx, "Raycaster", ray, 2, &caster, &d.value) == TN_OK);
+    const auto field = [](const tn_value_t& record, const char* key) -> const tn_value_t* {
+        if (record.kind != TN_VALUE_RECORD) return nullptr;
+        for (uint64_t i = 0; i + 1 < 2 * record.count; i += 2)
+            if (text(record.values[i]) == key) return &record.values[i + 1];
+        return nullptr;
+    };
+    // One hit, flattened: [distance, faceIndex, face.a, face.b, face.c, point, face.normal, barycoord, uv, normal].
+    struct Hit {
+        std::vector<double> numbers;
+        tn_handle_t object{};
+        std::vector<tn_handle_t> vectors;  // the standard result's wrappers, read after the call's buffers
+        std::vector<const char*> vectorKinds;
+    };
+    const char* const kVectorKeys[] = {"point", "normal", "barycoord", "uv", "normal"};  // [1] is face.normal
+    const auto collect = [&](const tn_value_t& hits, bool flat) {
+        std::vector<Hit> result;
+        CHECK(hits.kind == TN_VALUE_ARRAY);
+        if (hits.kind != TN_VALUE_ARRAY) return result;
+        for (uint64_t i = 0; i < hits.count; ++i) {
+            const tn_value_t& h = hits.values[i];
+            Hit hit;
+            const tn_value_t* face = field(h, "face");
+            CHECK(face != nullptr && face->kind == TN_VALUE_RECORD);
+            if (face == nullptr || face->kind != TN_VALUE_RECORD) return result;
+            for (const char* key : {"distance", "faceIndex"}) hit.numbers.push_back(field(h, key)->number);
+            for (const char* key : {"a", "b", "c", "materialIndex"}) hit.numbers.push_back(field(*face, key)->number);
+            const tn_value_t* object = field(h, "object");
+            CHECK(object != nullptr && object->kind == TN_VALUE_HANDLE);
+            if (object != nullptr) hit.object = object->handle;
+            for (int k = 0; k < 5; ++k) {
+                const tn_value_t* v = field(k == 1 ? *face : h, kVectorKeys[k]);
+                CHECK(v != nullptr);
+                if (v == nullptr) return result;
+                if (flat) {
+                    CHECK(v->kind == TN_VALUE_NUMBERS && v->count == (k == 3 ? 2u : 3u));
+                    for (uint64_t c = 0; c < v->count; ++c) hit.numbers.push_back(v->numbers[c]);
+                } else {
+                    CHECK(v->kind == TN_VALUE_HANDLE);
+                    hit.vectors.push_back(v->handle);
+                    hit.vectorKinds.push_back(k == 3 ? "xy" : "xyz");
+                }
+            }
+            result.push_back(std::move(hit));
+        }
+        return result;
+    };
+    const auto resolve = [&](std::vector<Hit>& hits) {  // the standard result's vector wrappers, read one by one
+        for (auto& hit : hits)
+            for (std::size_t k = 0; k < hit.vectors.size(); ++k)
+                for (const char* axis = hit.vectorKinds[k]; *axis != '\0'; ++axis) {
+                    tn_value_t v{};
+                    CHECK(tn_get(hit.vectors[k], std::string(1, *axis).c_str(), &v, &d.value) == TN_OK);
+                    hit.numbers.push_back(v.number);
+                }
+    };
+    const auto same = [&](const std::vector<Hit>& a, const std::vector<Hit>& b) {
+        CHECK(a.size() == b.size());
+        for (std::size_t i = 0; i < std::min(a.size(), b.size()); ++i) {
+            CHECK(a[i].numbers == b[i].numbers);
+            CHECK(::same(a[i].object, b[i].object) && ::same(a[i].object, mesh));
+        }
+    };
+    const tn_value_t one[1] = {ref(mesh)};
+    tn_value_t result{};
+    CHECK(tn_invoke(caster, "intersectObject", one, 1, &result, &d.value) == TN_OK);
+    std::vector<Hit> standard = collect(result, false);
+    CHECK(standard.size() == 1);
+    resolve(standard);
+    CHECK(!standard.empty() && std::abs(standard[0].numbers[0] - 4.5) < 1e-12);  // the +z face at z 0.5
+
+    // The flat call adopts no handle: the next construct takes the very next slot after a probe before it.
+    tn_handle_t before{}, after{};
+    CHECK(tn_construct(ctx, "Vector3", nullptr, 0, &before, &d.value) == TN_OK);
+    CHECK(tn_invoke(caster, "__tnIntersectObject", one, 1, &result, &d.value) == TN_OK);
+    const std::vector<Hit> flat = collect(result, true);
+    CHECK(tn_construct(ctx, "Vector3", nullptr, 0, &after, &d.value) == TN_OK);
+    CHECK(after.index == before.index + 1);
+    same(flat, standard);
+
+    tn_value_t list{};
+    list.kind = TN_VALUE_ARRAY;
+    list.count = 1;
+    list.values = one;
+    CHECK(tn_invoke(caster, "intersectObjects", &list, 1, &result, &d.value) == TN_OK);
+    std::vector<Hit> standardMany = collect(result, false);
+    resolve(standardMany);
+    CHECK(tn_invoke(caster, "__tnIntersectObjects", &list, 1, &result, &d.value) == TN_OK);
+    same(collect(result, true), standardMany);
+    same(standardMany, standard);
+    tn_value_t empty{};
+    empty.kind = TN_VALUE_NUMBERS;
+    CHECK(tn_invoke(caster, "__tnIntersectObjects", &empty, 1, &result, &d.value) == TN_OK);
+    CHECK(result.kind == TN_VALUE_ARRAY && result.count == 0);
     CHECK(tn_context_destroy(ctx, &d.value) == TN_OK);
 }
 
@@ -4888,4 +5400,4 @@ TN_TEST_MAIN({"denoise_over_a_red_field_keeps_one_lane", denoise_over_a_red_fiel
              {"bounds_in_view", bounds_in_view}, {"projected_cull_held_restore", projected_cull_held_restore},
              {"instanced_lod_partial_partition", instanced_lod_partial_partition},
              {"ground_snap_apply", ground_snap_apply},
-             {"billboard_face", billboard_face})
+             {"billboard_face", billboard_face}, {"ground_snap_skips_unchanged_deferred_skeleton_and_tracks_pose_changes", ground_snap_skips_unchanged_deferred_skeleton_and_tracks_pose_changes}, {"raycaster_flat_intersections_match_standard_without_handles", raycaster_flat_intersections_match_standard_without_handles})

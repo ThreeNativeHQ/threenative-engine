@@ -10,6 +10,7 @@ import {
 } from "three";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
 import type { InstancedBatch } from "./instanced-batch.js";
+import { hasMorphAttributes } from "./projection-plan.js";
 import { pooledCapacity, pooledMesh } from "./render/mesh-pool.js";
 import { type IRecordWriter, batchRecords } from "./world-cell-records.js";
 
@@ -96,6 +97,16 @@ export function sameSquares(next: Set<string>, was: Set<string> | undefined): bo
 export class SharedBatch implements IRecordWriter {
   mesh: ICasterScaleMesh;
   #sourceGeometry: BufferGeometry;
+  #currentGeometry!: BufferGeometry;
+  #currentMaterial!: Material;
+  #lodRangeAttr: InstancedBufferAttribute | undefined;
+  #hasMorphs = false;
+  #cachedBox!: Box3;
+  #cachedSphere!: Sphere;
+  #publishedCount = 0;
+  #publishedVisible = false;
+  #publishedFrustumCulled = true;
+  #publishedName = "";
   readonly #rangeLevel: number;
   #rangeAware: boolean;
   /** The pass this batch draws in; see `#dressMesh`. Only `main` is clustered. */
@@ -249,10 +260,79 @@ export class SharedBatch implements IRecordWriter {
     this.#segmentSize = Math.max(1, segmentSize);
     this.#bounds = bounds;
     this.mesh = this.#meshFor(material, this.#segmentSize * segments, name, bounds);
-    this.#setGeometry(this.mesh.geometry);
+    this.#setGeometry(this.#currentGeometry);
     this.#free = [[0, this.mesh.instanceMatrix.count]];
     this.#ceiling = this.mesh.instanceMatrix.count;
     this.#rebound();
+  }
+
+  get currentGeometry(): BufferGeometry {
+    return this.#currentGeometry;
+  }
+
+  get currentMaterial(): Material {
+    return this.#currentMaterial;
+  }
+
+  get hasRangeAttribute(): boolean {
+    return this.#lodRangeAttr !== undefined;
+  }
+
+  get hasMorphs(): boolean {
+    return this.#hasMorphs;
+  }
+
+  get publishedCount(): number {
+    return this.#publishedCount;
+  }
+
+  get publishedVisible(): boolean {
+    return this.#publishedVisible;
+  }
+
+  get publishedFrustumCulled(): boolean {
+    return this.#publishedFrustumCulled;
+  }
+
+  get publishedName(): string {
+    return this.#publishedName;
+  }
+
+  setFrustumCulled(value: boolean): void {
+    if (this.#publishedFrustumCulled === value) return;
+    this.#publishedFrustumCulled = value;
+    this.mesh.frustumCulled = value;
+  }
+
+  setVisible(value: boolean): void {
+    if (this.#publishedVisible === value) return;
+    this.#publishedVisible = value;
+    this.mesh.visible = value;
+  }
+
+  setCount(value: number): void {
+    if (this.#publishedCount === value) return;
+    this.#publishedCount = value;
+    this.mesh.count = value;
+  }
+
+  setName(name: string): void {
+    if (this.#publishedName === name) return;
+    this.#publishedName = name;
+    this.mesh.name = name;
+  }
+
+  setGeometryView(geometry: BufferGeometry): void {
+    if (this.#currentGeometry === geometry) return;
+    this.mesh.geometry = geometry;
+    this.#syncGeometryMirrors(geometry);
+  }
+
+  #syncGeometryMirrors(geometry: BufferGeometry): void {
+    this.#currentGeometry = geometry;
+    const attribute = geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
+    this.#lodRangeAttr = attribute instanceof InstancedBufferAttribute ? attribute : undefined;
+    this.#hasMorphs = hasMorphAttributes(geometry);
   }
 
   /** This batch's own record ceiling; see {@link liveCeiling}. */
@@ -288,8 +368,9 @@ export class SharedBatch implements IRecordWriter {
   }
 
   #setGeometry(geometry: BufferGeometry): void {
-    const previous = this.mesh.geometry;
-    this.mesh.geometry = geometry;
+    const previous = this.#currentGeometry;
+    if (previous !== geometry) this.mesh.geometry = geometry;
+    this.#syncGeometryMirrors(geometry);
     if (geometry.userData.tnPublishedLodRangeView === true) {
       let views = this.mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined;
       if (views === undefined) {
@@ -302,7 +383,11 @@ export class SharedBatch implements IRecordWriter {
       }
       views.add(geometry);
     }
-    if (previous !== geometry && previous.userData.tnPublishedLodRangeView === true) {
+    if (
+      previous !== undefined &&
+      previous !== geometry &&
+      previous.userData.tnPublishedLodRangeView === true
+    ) {
       (this.mesh.userData.tnPublishedLodRangeViews as Set<BufferGeometry> | undefined)?.delete(
         previous,
       );
@@ -311,8 +396,7 @@ export class SharedBatch implements IRecordWriter {
   }
 
   #lodRangeAttribute(): InstancedBufferAttribute | undefined {
-    const attribute = this.mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
-    return attribute instanceof InstancedBufferAttribute ? attribute : undefined;
+    return this.#lodRangeAttr;
   }
 
   /**
@@ -329,15 +413,25 @@ export class SharedBatch implements IRecordWriter {
    */
   #meshFor(material: Material, capacity: number, name: string, bounds: Box3): ICasterScaleMesh {
     const records = pooledCapacity(capacity);
-    const mesh = pooledMesh(this.#geometryFor(records), material, records) as ICasterScaleMesh;
+    const geometry = this.#geometryFor(records);
+    const mesh = pooledMesh(geometry, material, records) as ICasterScaleMesh;
+    this.#currentGeometry = geometry;
+    this.#currentMaterial = material;
+    this.#syncGeometryMirrors(geometry);
+    this.#publishedName = name;
     mesh.name = name;
-    mesh.boundingBox = bounds.clone();
-    mesh.boundingSphere = bounds.getBoundingSphere(mesh.boundingSphere ?? new Sphere());
+    this.#cachedBox = bounds.clone();
+    this.#cachedSphere = bounds.getBoundingSphere(new Sphere());
+    mesh.boundingBox = this.#cachedBox;
+    mesh.boundingSphere = this.#cachedSphere;
+    this.#publishedCount = 0;
     mesh.count = 0;
+    this.#publishedVisible = false;
     mesh.visible = false;
     // Cullable, because the bounds are now this batch's own. Every camera three draws this mesh
     // with — the main one and each virtual-shadow level's — asks first, which is what stops a 48 m
     // shadow level from submitting every shared batch in the world.
+    this.#publishedFrustumCulled = true;
     mesh.frustumCulled = true;
     mesh.castShadow = false;
     mesh.receiveShadow = false;
@@ -356,7 +450,10 @@ export class SharedBatch implements IRecordWriter {
   /** Point an empty batch at the parts a reload brought; see {@link rebind}. */
   rebind(geometry: BufferGeometry, material: Material): this {
     this.#sourceGeometry = geometry;
-    this.mesh.material = material;
+    if (this.#currentMaterial !== material) {
+      this.#currentMaterial = material;
+      this.mesh.material = material;
+    }
     this.#rangeAware = material.userData.tnPublishedLodRange === true;
     this.#setGeometry(this.#geometryFor(this.mesh.instanceMatrix.count));
     this.#localGeometry = undefined;
@@ -375,7 +472,10 @@ export class SharedBatch implements IRecordWriter {
    * drawn batch range-aware, and the Wasm engine refuses a draw whose attribute is missing.
    */
   surface(material: Material): void {
-    this.mesh.material = material;
+    if (this.#currentMaterial !== material) {
+      this.#currentMaterial = material;
+      this.mesh.material = material;
+    }
     const aware = material.userData.tnPublishedLodRange === true;
     if (aware === this.#rangeAware) return;
     this.#rangeAware = aware;
@@ -443,9 +543,8 @@ export class SharedBatch implements IRecordWriter {
       } else box.union(one);
     }
     if (live === false) box.copy(this.#bounds);
-    (this.mesh.boundingBox as Box3).copy(box);
-    this.mesh.boundingSphere = this.mesh.boundingSphere ?? new Sphere();
-    box.getBoundingSphere(this.mesh.boundingSphere);
+    this.#cachedBox.copy(box);
+    box.getBoundingSphere(this.#cachedSphere);
     // The size a per-instance shadow gate reads, published next to the mesh rather than asked for
     // again per level: the cluster's own sphere is ~24 m of grid square, so gating on it dropped
     // nothing, while a fern is 0.3 m and every fern cluster clears every coarse level.
@@ -458,7 +557,7 @@ export class SharedBatch implements IRecordWriter {
    * no readable box, and the package extent stands in for the block's records.
    */
   #localBox(): boolean {
-    const geometry = this.mesh.geometry;
+    const geometry = this.#currentGeometry;
     if (this.#localGeometry !== geometry) {
       this.#localGeometry = geometry;
       if (geometry?.boundingBox === null || geometry?.boundingBox === undefined)
@@ -510,25 +609,22 @@ export class SharedBatch implements IRecordWriter {
       this.#hole(was, this.#ceiling);
       return undefined;
     }
+    const oldRanges = this.#lodRangeAttribute();
     const mesh = this.#meshFor(
-      old.material as Material,
+      this.#currentMaterial,
       old.instanceMatrix.count * 2,
-      old.name,
+      this.#publishedName,
       this.#bounds,
     );
     const records = old.instanceMatrix.count;
     batchRecords.copy(mesh.instanceMatrix, old.instanceMatrix, records * 16);
-    const oldRanges = old.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
-    const nextRanges = mesh.geometry.getAttribute(LOD_RANGE_ATTRIBUTE);
-    if (
-      oldRanges instanceof InstancedBufferAttribute &&
-      nextRanges instanceof InstancedBufferAttribute
-    )
+    const nextRanges = this.#lodRangeAttribute();
+    if (oldRanges !== undefined && nextRanges !== undefined)
       batchRecords.copy(nextRanges, oldRanges, records * LOD_RANGE_STRIDE);
     mesh.castShadow = old.castShadow;
     mesh.receiveShadow = old.receiveShadow;
     this.mesh = mesh;
-    this.#setGeometry(mesh.geometry);
+    this.#setGeometry(this.#currentGeometry);
     this.#ceiling = mesh.instanceMatrix.count;
     this.#settle();
     // The whole drawn range, because this is a different buffer. `#meshFor` left the new
@@ -552,9 +648,17 @@ export class SharedBatch implements IRecordWriter {
   replaceMesh(next: ICasterScaleMesh): ICasterScaleMesh {
     const old = this.mesh;
     this.mesh = next;
-    this.#setGeometry(next.geometry);
-    this.mesh.boundingBox = this.mesh.boundingBox ?? new Box3();
-    this.mesh.boundingSphere = this.mesh.boundingSphere ?? new Sphere();
+    this.#syncGeometryMirrors(next.geometry);
+    this.#setGeometry(this.#currentGeometry);
+    this.#currentMaterial = next.material as Material;
+    this.#publishedName = next.name;
+    this.#publishedCount = next.count;
+    this.#publishedVisible = next.visible;
+    this.#publishedFrustumCulled = next.frustumCulled;
+    this.#cachedBox = next.boundingBox ?? new Box3();
+    this.#cachedSphere = next.boundingSphere ?? new Sphere();
+    next.boundingBox = this.#cachedBox;
+    next.boundingSphere = this.#cachedSphere;
     (next as { casterPrewarmOwed?: boolean }).casterPrewarmOwed = this.#awaitingPrewarm;
     next.mainAdmitted = this.#mainAdmitted;
     this.#rebound();
@@ -1024,7 +1128,7 @@ export class SharedBatch implements IRecordWriter {
     batchRecords.touch(this);
     this.#publish(this.#drawn);
     // Records are real, so the bounds `settleRecords` publishes are the ones to cull by.
-    this.mesh.frustumCulled = true;
+    this.setFrustumCulled(true);
   }
 
   /** The flush asks for this frame's upload span, one range per buffer; see {@link #touched}. */
@@ -1092,8 +1196,8 @@ export class SharedBatch implements IRecordWriter {
     // A shadow key is submitted every render of a map that covers it: its own records are the
     // dispatch's, so an empty-looking key is one this map draws nothing of, not one to hide.
     if (this.role === "key") {
-      this.mesh.count = this.gpuCount;
-      this.mesh.visible = true;
+      this.setCount(this.gpuCount);
+      this.setVisible(true);
       return;
     }
     // A dressed batch's instances are the GPU scene's, and its own `count` says nothing about how
@@ -1103,12 +1207,12 @@ export class SharedBatch implements IRecordWriter {
     // what shows it. Until then the prewarm draw is the one reason to stay visible *because* it is
     // empty: that submission is what builds the node and the pipeline.
     if (this.gpu !== undefined) {
-      this.mesh.count = this.gpuCount;
-      if (this.bundled === false) this.mesh.visible = this.#awaitingPrewarm;
+      this.setCount(this.gpuCount);
+      if (this.bundled === false) this.setVisible(this.#awaitingPrewarm);
       return;
     }
-    this.mesh.count = count;
-    this.mesh.visible = count > 0 || this.#awaitingPrewarm;
+    this.setCount(count);
+    this.setVisible(count > 0 || this.#awaitingPrewarm);
   }
 
   /**
@@ -1135,7 +1239,9 @@ export class SharedBatch implements IRecordWriter {
     // The region's capacity, not this batch's own records: an empty-looking key — one the CPU built
     // at another level — must still submit its indirect draw, and the record inside it draws nothing
     // when the dispatch selected none. See `gpuCount`.
-    this.mesh.count = this.gpuCount;
+    this.setCount(this.gpuCount);
+    // Coarse gate keeps writing `visible` directly when bundles are off or refused (world-bundles.spec).
+    this.#publishedVisible = shown;
     this.mesh.visible = shown;
   }
 
@@ -1177,6 +1283,6 @@ export class SharedBatch implements IRecordWriter {
     // never re-reads visibility — so hiding it here would not save this frame's draw and would lose
     // the mesh from every record after the next structural change. See `bundled`.
     if (this.bundled === true) return;
-    this.mesh.visible = this.mesh.count > 0;
+    this.setVisible(this.#publishedCount > 0);
   }
 }

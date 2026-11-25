@@ -24,6 +24,8 @@ bool Bone::enableDeferredTransform() {
     deferredTRS_ = {position.x, position.y, position.z, quaternion.x, quaternion.y, quaternion.z,
                     quaternion.w, scale.x, scale.y, scale.z};
     deferred_ = true;
+    ++deferredVersion_;
+    localTransformWritten();
     if (!publication_) { publication_ = true; ++publicationCount_; }
     return true;
 }
@@ -62,6 +64,7 @@ bool Bone::deferTransformValue(int component, const double* values) {
         for (int i = 0; i < count; ++i) streamData_[streamOffset_ + packedOffset + i] = float(values[i]);
     }
     pending_ = true;
+    ++deferredVersion_;
     markLocalTransformDirty();
     matrixWorldNeedsUpdate = true;
     return true;
@@ -71,6 +74,8 @@ void Bone::materializeLocalTransform() {
     if (poseObserver) poseObserver(*this, 1);
     if (!pending_) return;
     pending_ = false;
+    ++deferredVersion_;
+    localTransformWritten();
     position.fromArray(deferredTRS_.data());
     quaternion.fromArray(deferredTRS_.data(), 3);
     scale.fromArray(deferredTRS_.data(), 7);

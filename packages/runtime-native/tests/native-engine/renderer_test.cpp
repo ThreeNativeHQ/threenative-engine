@@ -4563,6 +4563,110 @@ void traaDynamicOnlyVelocity() {
     }
     std::filesystem::remove_all(directory);
 }
+// PRD-914: a draw's deformation record is kept across frames instead of rebuilt every frame, so a steady frame
+// allocates nothing per draw and its velocity still matches the TN_STATIC_VELOCITY=1 path. A compile between frames
+// must change no submitted state, and a mover's matrix or an instanced store's write must still redraw velocity on
+// the frame it changes.
+void traaStaticZeroChurn() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const char* priorRaw = std::getenv("TN_STATIC_VELOCITY");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_STATIC_VELOCITY", prior->c_str(), 1);
+            else unsetenv("TN_STATIC_VELOCITY");
+        }
+    } restore{prior};
+    const auto directory = std::filesystem::current_path() /
+        ("traa-static-zero-churn-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    constexpr int lastFrame = 6;  // frame 0 seeds the history; frames 2..6 are the steady ones the dump covers
+    const auto readVelocity = [&](const std::filesystem::path& folder, int frame) {
+        std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    // A rigid sphere and an instanced sphere that never move, and a rigid sphere sliding 0.02 along x per frame, all
+    // under a still camera. The instance store is rewritten once, on frame 4.
+    struct Arm {
+        std::array<uint32_t, lastFrame + 1> draws{};
+        std::array<std::vector<float>, lastFrame - 1> velocity;
+    };
+    const auto arm = [&](bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(1);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(2, lastFrame);
+        BufferStore instanced(Scalar::F32, 16);
+        instanced.write(0, identity, sizeof identity);
+        std::vector<DrawItem> items(3);
+        for (int i = 0; i < 3; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.1, 0.4, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0.4, 0, 1};
+        items[1].instanceMatrices = &instanced; items[1].instanceCount = 1;
+        items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.1, 0.4, 0, 1};
+        const auto folder = directory / (forceStatic ? "forced" : "default");
+        const auto view = slidingCamera(double(width) / height, 1);
+        Arm result;
+        for (int frame = 0; frame <= lastFrame; ++frame) {
+            items[2].matrixWorld[12] = 1.1 + 0.02 * frame;
+            if (frame == 4) {
+                const std::array<float, 16> moved = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0.12f, 0, 1};
+                instanced.write(0, moved.data(), moved.size() * sizeof(float));
+            }
+            // Preparation between submitted frames: it must neither draw velocity nor disturb a kept record.
+            if (frame == 2 && !forceStatic) renderer.compileAsync(items, view, LightState{});
+            renderer.render(items, view, LightState{}, {0, 0, 0, 1});
+            result.draws[size_t(frame)] = renderer.lastFrame().velocityDraws;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+            if (frame >= 2) result.velocity[size_t(frame - 2)] = readVelocity(folder, frame);
+        }
+        return result;
+    };
+    const auto steady = arm(false);
+    const auto forced = arm(true);
+    // No frame redraws a static draw: the seed frame reuses the camera reprojection for the rigid one and waits one
+    // frame for the instanced one's previous storage, and every later frame keeps the records it already holds.
+    CHECK(steady.draws[0] == 1);
+    for (int frame = 1; frame <= lastFrame; ++frame) {
+        // The mover always, plus the draw whose instance store the write moved on its own frame.
+        CHECK(steady.draws[size_t(frame)] == (frame == 4 ? 2u : 1u));
+        CHECK(forced.draws[size_t(frame)] == 3);
+    }
+    std::size_t moving = 0;
+    for (std::size_t i = 0; i < steady.velocity.size(); ++i) {
+        const auto& texels = steady.velocity[i];
+        const auto& reference = forced.velocity[i];
+        CHECK(texels.size() == reference.size() && texels.size() == size_t{width} * height * 4);
+        if (texels.size() != reference.size()) break;
+        for (std::size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            CHECK(std::abs(texels[texel * 4] - reference[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(texels[texel * 4 + 1] - reference[texel * 4 + 1]) <= 1e-3f);
+            if (i + 2 == std::size_t(lastFrame) && (std::abs(texels[texel * 4]) > 0.004f || std::abs(texels[texel * 4 + 1]) > 0.004f)) ++moving;
+        }
+    }
+    CHECK(moving > 10);  // the mover's own velocity is drawn, not the camera's
+    std::filesystem::remove_all(directory);
+}
 // PRD-914: at sampleCount 1 one unified base pass writes the scene colour and every post target the graph reads,
 // named targets and custom slots alike, instead of a second aux pass over the same draws. The named fallback
 // (TN_UNIFIED_AUX_MRT=0) must produce the same pixels on every target, and a draw that writes no surface (an unlit
@@ -4909,6 +5013,251 @@ void traaGpuInstanceCull() {
     std::filesystem::remove_all(directory);
 }
 
+// A settled static shadow batch carries its own AutoLOD chain and the largest scale of the meshes it merged: a static
+// page picks its rung from those two, with no per-mesh lookup and no main draw matrix. It must pick the rung the
+// individual path picks at the same scale, and must not coarsen at all once that scale puts every rung's error past the
+// page's budget (a rung coarser than the budget allows is a facet on the shadow's edge).
+void shadowBatchLodRungs() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto ball = sphere(16, 8);                 // the caster the main pass draws
+    const auto coarse = makeSphereGeometry(1, 6, 3);  // one AutoLOD rung: a quarter of the triangles
+    shader::StandardMaterial paint;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto meshGeometry = makeSphereGeometry(1, 16, 8);
+    Mesh mesh(meshGeometry, material);
+
+    constexpr int kFrames = 8;  // the atlas grants one clip level a frame, so the later ones hold every level
+    struct Arm {
+        std::array<uint64_t, kFrames> triangles{};
+        uint64_t total = 0;
+    };
+    // `chain`: the batch's own chain (null: the caster reads `control.lods` by object id). `scale`: the batch's largest
+    // mesh scale, zero for a caster that has none. `lod`: whether the atlas holds a chain for the mesh at all.
+    const auto arm = [&](const shadows::ShadowLodChain* chain, double scale, bool lod) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{});
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {16, 48, 144};
+        atlas.mapSize = 256; atlas.pageTexels = 64;
+        atlas.staticAfterFrames = 2;  // a caster's pages are its static pages within the run
+        atlas.shadowLodBias = true;
+        // A tiny error, so every level whose budget allows anything draws the rung.
+        if (lod) atlas.control->lods[mesh.id()] = shadows::ShadowLodChain{{coarse}, {1e-6}};
+        renderer.setVirtualShadow(0, atlas);
+
+        DrawItem item;
+        item.key = item.id = 1;
+        item.variantStamp = 1;
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices;
+        item.material = &paint;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        item.geometryBox = Box3();
+        item.geometryBox->min.set(-1, -1, -1);
+        item.geometryBox->max.set(1, 1, 1);
+        item.castShadow = true;
+        item.shadowLodChain = chain;
+        item.shadowLodMaxScale = scale;
+        if (chain == nullptr) item.shadowObject = &mesh;  // the individual path reads its chain by object id
+
+        LightState lights;
+        DirectLight sun = DirectLight::directional({0.35, 1, 0.2}, {1, 1, 1});
+        sun.id = 1;
+        sun.shadow = DirectLight::Shadow{};
+        lights.direct.push_back(sun);
+        Arm result;
+        for (int frame = 0; frame < kFrames; ++frame) {
+            renderer.render({&item, 1}, camera(1), lights, {0, 0, 0, 1});
+            result.triangles[std::size_t(frame)] = renderer.lastFrame().shadowTriangles;
+            result.total += renderer.lastFrame().shadowTriangles;
+        }
+        const auto& notes = renderer.diagnostics();
+        CHECK(std::none_of(notes.begin(), notes.end(), [](const std::string& note) {
+            return note.rfind("TN_VIRTUAL_SHADOW", 0) == 0 || note.rfind("TN_NATIVE_PIPELINE_REFUSED", 0) == 0;
+        }));
+        return result;
+    };
+    const shadows::ShadowLodChain chain{{coarse}, {1e-6}};
+    const Arm plain = arm(nullptr, 0.0, false);       // nobody has a chain: the fine geometry at every level
+    const Arm object = arm(nullptr, 0.0, true);       // the individual path, reading the chain by object id
+    const Arm batch = arm(&chain, 1.0, false);        // the batch, at the scale its meshes were merged at
+    const Arm conservative = arm(&chain, 1e9, false); // a scale no rung's error fits: never coarser than shown
+    std::fprintf(stderr, "shadow batch LOD triangles: plain %llu, object %llu, batch %llu, conservative %llu\n",
+                 (unsigned long long)plain.total, (unsigned long long)object.total,
+                 (unsigned long long)batch.total, (unsigned long long)conservative.total);
+    CHECK(plain.total > 0);
+    CHECK(object.total < plain.total);                    // the individual path drew the coarse rung somewhere
+    CHECK(batch.total == object.total);                   // the batch picked the same rung from its own chain
+    CHECK(batch.triangles == object.triangles);           // ...level for level
+    CHECK(conservative.total == plain.total);             // a scale the rung cannot meet keeps the main geometry
+    CHECK(conservative.triangles == plain.triangles);
+}
+
+// The geometry cache probes a 256-slot direct-mapped table before its map, so a frame's repeated syncs answer without a
+// hash descent. Three hundred stores cannot all hold a slot: a collision must never answer for another store, a version
+// bump must send exactly its window, and a forgotten or swept store must leave no slot that speaks for it.
+void geometryCacheQuickSlots() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    GpuResources gpu(context.getInstance(), context.getDevice(), context.getQueue(), events, 1);
+    GeometryCache cache(gpu);
+    constexpr std::size_t kStores = 300;  // more than the table's 256 slots
+    std::vector<std::unique_ptr<BufferStore>> stores;
+    stores.reserve(kStores);
+    for (std::size_t i = 0; i < kStores; ++i) {
+        stores.push_back(std::make_unique<BufferStore>(Scalar::F32, 4));
+        const std::array<float, 4> data{float(i), 1, 2, 3};
+        stores.back()->write(0, data.data(), sizeof data);
+    }
+    std::vector<Handle> handles;
+    handles.reserve(kStores);
+    for (auto& store : stores) handles.push_back(cache.sync(*store, WGPUBufferUsage_Vertex));
+    CHECK(cache.stats().fullUploads == kStores);
+    CHECK(cache.entries() == kStores);
+    CHECK(cache.resolved(*stores[17]).buffer.index == handles[17].index);
+    // The steady state: a slot that still holds the store answers at once, the map answers the ones a collision
+    // evicted, and neither moves a copy.
+    for (std::size_t i = 0; i < kStores; ++i) {
+        const Handle again = cache.sync(*stores[i], WGPUBufferUsage_Vertex);
+        CHECK(again.index == handles[i].index && again.generation == handles[i].generation);
+    }
+    CHECK(cache.stats().fullUploads == kStores);
+    CHECK(cache.stats().rangeUploads == 0);
+    // A version bump with an update range sends that window and nothing else.
+    const uint64_t uploadedBefore = cache.stats().bytesUploaded;
+    const float moved = 9;
+    stores[7]->write(0, &moved, sizeof moved);
+    stores[7]->addUpdateRange(0, 1);  // one F32 element
+    stores[7]->needsUpdate();
+    cache.sync(*stores[7], WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().rangeUploads == 1);
+    CHECK(cache.stats().bytesUploaded == uploadedBefore + 4);
+    CHECK(cache.resolved(*stores[7]).buffer.index == handles[7].index);  // a range upload keeps the copy
+    // A forgotten store's slot must not answer for the address it leaves behind.
+    cache.forget(*stores[7]);
+    CHECK(cache.entries() == kStores - 1);
+    bool dropped = false;
+    try { cache.resolved(*stores[7]); } catch (const std::runtime_error&) { dropped = true; }
+    CHECK(dropped);
+    const Handle recreated = cache.sync(*stores[7], WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().fullUploads == kStores + 1);  // nothing answered, so a fresh copy went up
+    CHECK(cache.resolved(*stores[7]).buffer.index == recreated.index);
+    // A shared-owned store is swept once it dies; the slots it and its neighbours filled are dropped with it.
+    auto dying = std::make_shared<BufferStore>(Scalar::F32, 8);
+    const std::array<float, 8> dyingData{};
+    dying->write(0, dyingData.data(), sizeof dyingData);
+    cache.sync(*dying, WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().fullUploads == kStores + 2);
+    cache.sweep();  // nothing released since the last one: no walk
+    const uint64_t sweeps = cache.stats().sweeps;
+    dying.reset();
+    cache.sweep();
+    CHECK(cache.stats().sweeps == sweeps + 1);
+    CHECK(cache.entries() == kStores);
+    for (std::size_t i = 0; i < kStores; ++i) {
+        const Handle again = cache.sync(*stores[i], WGPUBufferUsage_Vertex);
+        if (i != 7) CHECK(again.index == handles[i].index && again.generation == handles[i].generation);
+        CHECK(cache.resolved(*stores[i]).buffer.index == again.index);
+    }
+    CHECK(cache.stats().fullUploads == kStores + 2);  // a swept neighbour never invalidated a surviving copy
+}
+
+// A record keeps the velocity program and its support verdict, and a page's casters keep the grouped depth pipeline
+// they share: a steady frame resolves no program key at all, draws the same motion, and compiles nothing.
+void velocityAndShadowGroupCaches() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    // Grouped page rows are the legacy per-page CPU path; PRD-775's GPU pages draw one row per caster.
+    const char* priorRaw = std::getenv("TN_VSM_GPU_PAGES");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_VSM_GPU_PAGES", prior->c_str(), 1);
+            else unsetenv("TN_VSM_GPU_PAGES");
+        }
+    } restore{prior};
+    setenv("TN_VSM_GPU_PAGES", "0", 1);
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{});
+    renderer.setSampleCount(1);
+    renderer.setTraa(TraaOptions{});
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {16, 48, 144};
+    atlas.mapSize = 256; atlas.pageTexels = 64;
+    atlas.staticAfterFrames = 2;
+    renderer.setVirtualShadow(0, atlas);
+
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial paint;
+    constexpr std::size_t kCasters = 6;
+    std::vector<DrawItem> items(kCasters + 1);
+    std::vector<DrawCache> caches(items.size());
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        DrawItem& item = items[i];
+        item.key = item.id = uint64_t(i + 1);
+        item.variantStamp = 1;
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices;
+        item.material = &paint;
+        item.cache = &caches[i];
+        item.castShadow = i < kCasters;
+        item.instanceCount = 1;
+        item.matrixWorld = {0.25, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.25, 0, -0.9 + 0.36 * double(i % 6), 0.3 * double(i % 2), 0, 1};
+        item.geometryBox = Box3();
+        item.geometryBox->min.set(-1, -1, -1);
+        item.geometryBox->max.set(1, 1, 1);
+    }
+    LightState lights;
+    DirectLight sun = DirectLight::directional({0.35, 1, 0.2}, {1, 1, 1});
+    sun.id = 1;
+    sun.shadow = DirectLight::Shadow{};
+    lights.direct.push_back(sun);
+
+    std::array<uint32_t, 6> velocityDraws{};
+    uint32_t groupRows = 0, shadowDraws = 0;
+    for (int frame = 0; frame < 6; ++frame) {
+        items[kCasters].matrixWorld[12] = 1.6 + 0.05 * frame;  // the one mover: rigid, its own motion each frame
+        const uint64_t keysBefore = renderer.programKeyBuilds(), compilesBefore = renderer.pipelines().compiles();
+        renderer.render(items, camera(1), lights, {0, 0, 0, 1});
+        velocityDraws[std::size_t(frame)] = renderer.lastFrame().velocityDraws;
+        groupRows = std::max(groupRows, renderer.lastFrame().shadowGroupRows);
+        shadowDraws = std::max(shadowDraws, renderer.lastFrame().shadowDraws);
+        const uint64_t keyDelta = renderer.programKeyBuilds() - keysBefore;
+        std::fprintf(stderr, "velocity/group caches frame %d: %u velocity, %u shadow draws, %u grouped rows, %llu keys, %llu compiles\n",
+                     frame, renderer.lastFrame().velocityDraws, renderer.lastFrame().shadowDraws,
+                     renderer.lastFrame().shadowGroupRows, (unsigned long long)keyDelta,
+                     (unsigned long long)(renderer.pipelines().compiles() - compilesBefore));
+        // A settled frame resolves no depth or main program key: the record's velocity program, its depth program
+        // and every page's grouped pipeline answered from their caches. The mover's own velocity pipeline is first
+        // asked for on the frame it starts moving, so the compile count is read from the frame after that one.
+        if (frame != 0) {
+            CHECK(keyDelta == 0);
+            CHECK(renderer.lastFrame().velocityDraws == 1);  // the mover alone, from the program it kept
+        }
+        if (frame >= 2) CHECK(renderer.pipelines().compiles() == compilesBefore);
+    }
+    CHECK(groupRows > 0);  // the casters shared rows, so a page's pipeline was found by its key
+    CHECK(shadowDraws > 0);
+    for (int frame = 1; frame < 6; ++frame) CHECK(velocityDraws[std::size_t(frame)] == 1);
+    const auto& notes = renderer.diagnostics();
+    CHECK(std::none_of(notes.begin(), notes.end(), [](const std::string& note) {
+        return note.rfind("TN_TRAA", 0) == 0 || note.rfind("TN_NATIVE_PIPELINE_REFUSED", 0) == 0;
+    }));
+}
+
 }  // namespace
 
 TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"unified_basepass_mrt", unifiedBasepassMrt}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
@@ -4963,4 +5312,8 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"uniform_scan_counters", uniformScanCounters},
              {"shared_view_uniforms", sharedViewUniforms},
               {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity},
+              {"traa_static_zero_churn", traaStaticZeroChurn},
+              {"velocity_and_shadow_group_caches", velocityAndShadowGroupCaches},
+              {"geometry_cache_quick_slots", geometryCacheQuickSlots},
+              {"shadow_batch_lod_rungs", shadowBatchLodRungs},
               {"traa_gpu_instance_cull", traaGpuInstanceCull})

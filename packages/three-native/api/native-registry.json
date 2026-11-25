@@ -8148,7 +8148,14 @@
     },
     "Raycaster": {
       "constructor": true,
-      "methods": ["intersectObject", "intersectObjects", "set", "setFromCamera"],
+      "methods": [
+        "__tnIntersectObject",
+        "__tnIntersectObjects",
+        "intersectObject",
+        "intersectObjects",
+        "set",
+        "setFromCamera"
+      ],
       "getters": ["far", "near"],
       "setters": ["camera", "far", "near"],
       "members": ["camera", "layers", "ray"],

@@ -320,6 +320,27 @@ function isMesh(object: Object3D): object is Mesh {
   return (object as Mesh).isMesh === true;
 }
 
+/** Leaf object types that AutoBatch never merges and whose addition holds no mergeable subtree. */
+function isNeverBatchableLeaf(object: Object3D): boolean {
+  if (object.children.length > 0) return false;
+  const flags = object as Object3D & {
+    isInstancedMesh?: boolean;
+    isBatchedMesh?: boolean;
+    isSkinnedMesh?: boolean;
+    isSprite?: boolean;
+    isPoints?: boolean;
+    isLine?: boolean;
+  };
+  return (
+    flags.isInstancedMesh === true ||
+    flags.isBatchedMesh === true ||
+    flags.isSkinnedMesh === true ||
+    flags.isSprite === true ||
+    flags.isPoints === true ||
+    flags.isLine === true
+  );
+}
+
 /** Whether the mesh is an ordinary opaque single-material draw the renderer owes nothing special. */
 function plainDraw(mesh: Mesh): boolean {
   const flags = mesh as Mesh & {
@@ -458,11 +479,13 @@ export class AutoBatch {
   /** What the scan in progress met and left for the next one: hidden subtrees. */
   #later = new Set<Object3D>();
   readonly #onTopChild = (event: { type: string; child: Object3D }): void => {
+    if (isNeverBatchableLeaf(event.child)) return;
     this.#shapeChanges += 1;
     this.#arrived.push(event.child);
     if (event.type === "childadded") this.#pending.add(event.child);
   };
   readonly #onChild = (event: { type: string; child: Object3D }): void => {
+    if (event.child.userData.batch === "off" || isNeverBatchableLeaf(event.child)) return;
     this.#shapeChanges += 1;
     if (event.type === "childadded") this.#pending.add(event.child);
   };
@@ -573,7 +596,7 @@ export class AutoBatch {
    */
   #shape(): number {
     for (const child of this.#arrived.splice(0)) {
-      const top = child.parent === this.#scene;
+      const top = child.parent === this.#scene && child.userData.batch !== "off";
       if (top === this.#levelOne.has(child)) continue;
       if (top) {
         child.addEventListener("childadded", this.#onChild);

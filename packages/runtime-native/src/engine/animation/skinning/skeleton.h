@@ -32,7 +32,7 @@ namespace tn::engine {
 /** three's Bone: an Object3D whose `type` is "Bone" and whose `isBone` flag is true. */
 class Bone : public Object3D {
   public:
-    Bone() = default;
+    Bone() { markBoneNode(); }
     ~Bone() override { localTransformWritten(); prepareLocalTransformWrite(); if (publication_) --publicationCount_; ++deathVersion_; }
     /** Bumps the pose version of every skeleton that holds this bone (PRD-878). */
     void localTransformWritten() override {
@@ -58,6 +58,9 @@ class Bone : public Object3D {
     [[nodiscard]] const std::array<double, 10>& deferredTRSInternal() const { return deferredTRS_; }
     mutable bool poseObservationEscapedValues = false; // A retained native reference can read any later interval.
     [[nodiscard]] bool hasDeferredTransform() const { return pending_; }
+    /** Moves on every deferred TRS write, admission and materialization: an equal value means equal deferred TRS. */
+    [[nodiscard]] uint64_t deferredVersion() const { return deferredVersion_; }
+    [[nodiscard]] const std::vector<std::shared_ptr<std::atomic<uint64_t>>>& poseVersions() const { return poseVersions_; }
 
     Bone(const Bone&) = delete;
     Bone& operator=(const Bone&) = delete;
@@ -73,6 +76,7 @@ class Bone : public Object3D {
     std::array<double, 10> deferredTRS_{}; // position, quaternion, scale; original mixer doubles
     inline static std::size_t publicationCount_ = 0;
     bool deferred_ = false, pending_ = false, publication_ = false;
+    uint64_t deferredVersion_ = 0;
     std::shared_ptr<std::vector<float>> stream_;
     std::shared_ptr<bool> streamValid_;
     float* streamData_ = nullptr;
@@ -182,7 +186,11 @@ class Skeleton {
  */
 class SkinnedMesh : public Mesh {
   public:
-    using Mesh::Mesh;
+    SkinnedMesh() { markSkinnedNode(); }
+    SkinnedMesh(std::shared_ptr<BufferGeometry> geometry, std::shared_ptr<Material> material)
+        : Mesh(std::move(geometry), std::move(material)) {
+        markSkinnedNode();
+    }
     [[nodiscard]] std::string_view type() const override { return "SkinnedMesh"; }
     /** three's bind: without a matrix, the mesh's current world matrix after computing the inverses. */
     void bind(std::shared_ptr<Skeleton> skeleton, const Matrix4* bindMatrix = nullptr);

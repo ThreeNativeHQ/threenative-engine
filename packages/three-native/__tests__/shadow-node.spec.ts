@@ -1,6 +1,11 @@
 import { BufferGeometry, DirectionalLight, Mesh, Scene } from "three";
 import { describe, expect, it, vi } from "vitest";
-import { type IBrowserRuntime, defineBrowserClasses } from "../src/browser-backend.js";
+import {
+  type IBrowserRuntime,
+  type IEngineRef,
+  type IRegistryClass,
+  defineBrowserClasses,
+} from "../src/browser-backend.js";
 import { bindUpstreamExports } from "../src/browser-entry.js";
 
 import {
@@ -335,6 +340,166 @@ it("walks the light root only when the hierarchy or a registered chain moved", (
   } finally {
     fallbackNode.dispose();
     host[versionKey] = previousVersion;
+  }
+});
+
+it("bumps the geometry counter only for a swap the shadow walk must see", () => {
+  // Core's `ModelLod` swaps a mesh between rungs of one registered chain as the camera orbits. The
+  // walk the facade's geometry counter forces already registered that chain for the mesh, so a
+  // same-chain rung swap must not re-walk a 10,000-node light root. Anything else must.
+  class VirtualShadowNode extends ShadowBaseNode {
+    static override get type() {
+      return "VirtualShadowNode";
+    }
+    options = { selectionGuard: [0.775], refreshStep: [0.125] };
+  }
+  const assignmentsKey = Symbol.for("threenative.geometryAssignments");
+  const chainsKey = Symbol.for("threenative.discreteLodChains");
+  const versionKey = Symbol.for("threenative.discreteLodChainsVersion");
+  const host = globalThis as Record<symbol, unknown>;
+  const previous = {
+    chains: host[chainsKey],
+    version: host[versionKey],
+    assignments: host[assignmentsKey],
+  };
+  // A scene-graph engine over refs: a mesh holds the ref of the geometry it draws, as the engine does.
+  const types = new Map([
+    ["Mesh", 1],
+    ["BufferGeometry", 2],
+  ]);
+  const ids = new Map<string, number>();
+  const heldGeometry = new Map<string, IEngineRef>();
+  let built = 0;
+  const runtime = {
+    typeId: (name: string) => types.get(name) ?? 0,
+    construct: (name: string) => {
+      built += 1;
+      const ref = { key: `${name}:${built}`, type: types.get(name) ?? 0 };
+      ids.set(ref.key, built);
+      return ref;
+    },
+    get: (self: IEngineRef, property: string) => {
+      if (property === "id") return ids.get(self.key) ?? 0;
+      if (property === "geometry") return heldGeometry.get(self.key) ?? null;
+      return null;
+    },
+    set: (self: IEngineRef, property: string, value: unknown) => {
+      if (property !== "geometry") return;
+      if (value === null || typeof value !== "object") heldGeometry.delete(self.key);
+      else heldGeometry.set(self.key, value as IEngineRef);
+    },
+    invoke: () => null,
+    setCallback: () => {},
+    release: () => {},
+  } as unknown as IBrowserRuntime;
+  const plain: IRegistryClass = {
+    constructor: true,
+    methods: [],
+    getters: [],
+    setters: [],
+    members: [],
+    callbacks: [],
+  };
+  const { classes } = defineBrowserClasses(
+    {
+      classes: {
+        Mesh: { ...plain, methods: ["copy"], getters: ["id", "geometry"], setters: ["geometry"] },
+        BufferGeometry: plain,
+      },
+    },
+    runtime,
+  );
+  const NewMesh = classes.Mesh as new () => {
+    geometry: object;
+    id: number;
+    copy(from: object): void;
+  };
+  const NewGeometry = classes.BufferGeometry as new () => object;
+  const mesh = new NewMesh();
+  const source = new NewMesh();
+  const geometry = () => new NewGeometry();
+  const geo0 = geometry();
+  const geo1 = geometry();
+  const otherRung = geometry();
+  const otherCoarse = geometry();
+  // A rung swap inside one chain leaves the shadow's registration alone; another chain, or a geometry
+  // no chain holds, does not.
+  const chainA = { levels: [geo0, geo1], errors: [0, 0.25] };
+  const chainB = { levels: [otherRung, otherCoarse], errors: [0, 0.5] };
+  host[chainsKey] = new WeakMap([
+    [geo0, { chain: chainA }],
+    [geo1, { chain: chainA }],
+    [otherRung, { chain: chainB }],
+    [otherCoarse, { chain: chainB }],
+  ]);
+  host[versionKey] = ((previous.version as number | undefined) ?? 0) + 1;
+  host[assignmentsKey] = 0;
+  // The caster draws rung 0, and no read has mirrored it yet: only the write below knows it.
+  mesh.geometry = geo0;
+  const root = {
+    id: 1,
+    parent: undefined as object | undefined,
+    __hierarchyRevision: 3,
+    traverse: vi.fn((callback: (child: object) => void) => callback(mesh)),
+  };
+  const node = new VirtualShadowNode(root);
+  const dispatch = vi.fn();
+  virtualShadowOptions(node, dispatch);
+  const assignments = () => host[assignmentsKey] as number;
+  try {
+    // (a) the first walk registers chain A for the caster, and its `geometry` read fills the mirror.
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledExactlyOnceWith({
+      command: "lod",
+      id: mesh.id,
+      geometries: [geo1],
+      errors: [0.25],
+    });
+    // (b) a rung swap inside chain A (the mirror's answer, then the last write's): no bump, no walk.
+    const beforeSwap = assignments();
+    mesh.geometry = geo1;
+    mesh.geometry = geo0;
+    expect(assignments()).toBe(beforeSwap);
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(1);
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    // (c) another chain: the counter moves, the walk re-registers the caster's new rungs.
+    mesh.geometry = otherRung;
+    expect(assignments()).toBe(beforeSwap + 1);
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(2);
+    expect(dispatch).toHaveBeenLastCalledWith({
+      command: "lod",
+      id: mesh.id,
+      geometries: [otherCoarse],
+      errors: [0.5],
+    });
+    // (d) a geometry no chain holds: nothing to compare, so the walk also drops the registration.
+    mesh.geometry = geometry();
+    expect(assignments()).toBe(beforeSwap + 2);
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(3);
+    expect(dispatch).toHaveBeenLastCalledWith({ command: "unlod", id: mesh.id });
+    // (e) back to chain A, then a copy: `copy` may replace the engine's geometry behind JS's back, so
+    // the record is dropped and the next same-chain write bumps (the walk re-runs, resending nothing).
+    mesh.geometry = geo0;
+    expect(assignments()).toBe(beforeSwap + 3);
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(4);
+    const sent = dispatch.mock.calls.length;
+    const beforeCopy = assignments();
+    mesh.copy(source);
+    mesh.geometry = geo1;
+    expect(assignments()).toBe(beforeCopy + 1);
+    syncVirtualShadowLods();
+    expect(root.traverse).toHaveBeenCalledTimes(5);
+    expect(dispatch).toHaveBeenCalledTimes(sent);
+  } finally {
+    node.dispose();
+    host[chainsKey] = previous.chains;
+    host[versionKey] = previous.version;
+    host[assignmentsKey] = previous.assignments;
   }
 });
 

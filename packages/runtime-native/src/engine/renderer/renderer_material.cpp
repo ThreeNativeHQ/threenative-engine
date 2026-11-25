@@ -663,6 +663,9 @@ void Renderer::releaseMaterialTextures() {
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    for (auto& [key, group] : depthMapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    depthMapGroups_.clear();
 }
 
 void Renderer::dropMapGroups() {
@@ -672,6 +675,9 @@ void Renderer::dropMapGroups() {
     for (auto& [key, group] : mapGroups_)
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    for (auto& [key, group] : depthMapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    depthMapGroups_.clear();
     ++groupEpoch_;
 }
 

@@ -38,6 +38,9 @@ inline constexpr Flag PersistentGpuScene{"TN_PERSISTENT_GPU_SCENE", Read::Live};
 inline constexpr Flag StaticVelocity{"TN_STATIC_VELOCITY", Read::Live};
 inline constexpr Flag UnifiedAuxMrt{"TN_UNIFIED_AUX_MRT", Read::Live};
 inline constexpr Flag GpuInstanceCull{"TN_GPU_INSTANCE_CULL", Read::Live};
+inline constexpr Flag VsmGpuPages{"TN_VSM_GPU_PAGES", Read::Live};
+// `0`: batched VSM records clip by fragment discard even where the device has `clip-distances` (PRD-775 AC-1).
+inline constexpr Flag VsmClipDistances{"TN_VSM_CLIP_DISTANCES", Read::Live};
 
 // Player (the native host).
 inline constexpr Flag GameSpans{"TN_GAME_SPANS", Read::Live};

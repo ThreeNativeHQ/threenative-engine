@@ -36,11 +36,15 @@ const classes = Object.fromEntries(
 
 // Upstream three resolves from core, which depends on it; three-native does not.
 const fromCore = createRequire(path.join(REPO, "packages/core/package.json"));
+// `require` resolves "three" to `three.cjs`, a `require(esm)` shim. Loading it while the other two
+// imports are still loading `three.core.js` throws Node's "reading 'getStatus'" loader race (CI,
+// PR #732), so import the ES module the shim wraps.
+const threeModule = path.join(path.dirname(fromCore.resolve("three/webgpu")), "three.module.js");
 const upstream = Object.assign(
   {},
   ...(await Promise.all(
-    ["three", "three/webgpu", "three/tsl"].map(
-      (id) => import(pathToFileURL(fromCore.resolve(id)).href) as Promise<object>,
+    [threeModule, fromCore.resolve("three/webgpu"), fromCore.resolve("three/tsl")].map(
+      (file) => import(pathToFileURL(file).href) as Promise<object>,
     ),
   )),
 ) as Record<string, unknown>;

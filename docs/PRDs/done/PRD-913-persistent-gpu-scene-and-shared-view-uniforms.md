@@ -8,7 +8,7 @@ prd_contract: v1
 **Priority:** P1 — `wasmScene` + `wasmPlan` take 53–56% of heavy stress frames (`?stress&strata` 5.89 + 3.49 ms; `?stress&systems&extended` `wasmPlan` 6.13 ms and 3.5 MB/frame uploads) because every draw copies `frameSlab` and camera motion forces full-arena `memcmp` and storage `sameBytes` scans.
 **Complexity:** 6 (MEDIUM) — 6–10 implementation files in `packages/runtime-native/src/engine/renderer/` and `shader/` (+2), persistent GPU slot and dirty-list state across frames (+2), crosses the web Wasm and native desktop host boundary (+2); risk override: none.
 **Owner:** João
-**Depends on:** None. Feeds [PRD-775](../Unreal/shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 (pushed VSM caster invalidation) and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 (TRAA-compatible GPU instance culling).
+**Depends on:** None. Feeds [PRD-775](PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 (pushed VSM caster invalidation) and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 (TRAA-compatible GPU instance culling).
 
 ## Context
 
@@ -44,7 +44,7 @@ flowchart LR
 
 1. **Size it first (Phase 1):** Instrument exact CPU time and uploaded bytes spent in per-draw `frameSlab` memcpy, uniform `memcmp`/uploads on a moving camera, and storage `sameBytes` scans across `?stress`, `?stress&systems&extended`, `?stress&strata`, and Strata `vista`. Continue only if combined removable CPU is `>= 0.5 ms` on web Wasm or upload savings exceed 50% on camera turns; otherwise defer under `## Decisions`.
 2. **Shared `ViewUniformBuffer` (Phase 2):** Move frame-constant camera, view/projection, direct lights, shadow matrices, hemisphere, and ambient terms out of per-draw uniform blocks into one shared per-view uniform buffer written once per view. Per-draw uniform blocks shrink to per-object and material fields only, so a camera turn dirties **zero** per-draw uniform blocks and runs no full-arena `memcmp`. Keep a named override (`TN_SHARED_VIEW_UNIFORM=0`) for bisecting and report when overridden.
-3. **Persistent `GPUScene` slots & dirty-list uploads (Phase 3):** Give static, instanced, and skinned draws persistent slots in `storages_["instances"]` and primitive storage fed from dirty flags stamped at transform/attribute write time (`Object3D`, `BufferAttribute`, `InstancedBatch`, `Skeleton`), deleting the per-frame `sameBytes` CPU scan on steady and camera-turn frames. Expose the internal dirty primitive/caster list so [PRD-775](../Unreal/shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 consume one shared owner.
+3. **Persistent `GPUScene` slots & dirty-list uploads (Phase 3):** Give static, instanced, and skinned draws persistent slots in `storages_["instances"]` and primitive storage fed from dirty flags stamped at transform/attribute write time (`Object3D`, `BufferAttribute`, `InstancedBatch`, `Skeleton`), deleting the per-frame `sameBytes` CPU scan on steady and camera-turn frames. Expose the internal dirty primitive/caster list so [PRD-775](PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) Phase 2 and `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) Phase 3 consume one shared owner.
 
 Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on both web Wasm and native desktop in the same commit, and preserve bit-equal or NEUTRAL-judged output.
 
@@ -59,7 +59,7 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 ## Non-Goals
 
 - GPU compute instance culling and BasePass MRT consolidation (owned by `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`)).
-- GPU VSM page table/pool and single-pass shadow raster (owned by [PRD-775](../Unreal/shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md)).
+- GPU VSM page table/pool and single-pass shadow raster (owned by [PRD-775](PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md)).
 - Bindless textures or hardware ray tracing (deferred until WebGPU exposes them).
 - Changing the `engine: "threejs"` path.
 
@@ -103,7 +103,7 @@ Constraints: must fit within `LIMITS.webEngineBytes` (`pnpm budgets`), ship on b
 
 ## Decisions
 
-- 2026-11-23 (filing): Split from `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) and [PRD-775](../Unreal/shadows/PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) because persistent `GPUScene` slots and dirty-primitive tracking form the shared substrate that both pushed VSM invalidation (PRD-775 Phase 2) and TRAA-compatible GPU instance culling (PRD-914 Phase 3) consume. Structurally addresses the upload/scan root behind [PRD-881](../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) and [PRD-891](../performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md) without reopening [PRD-753](../Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md)'s deferred batch-key work.
+- 2026-11-23 (filing): Split from `PRD-914` (`docs/PRDs/Unreal/performance/PRD-914-unified-base-pass-mrt-dynamic-velocity-and-traa-gpu-culling.md`) and [PRD-775](PRD-775-virtual-shadow-pages-are-managed-and-drawn-on-the-gpu.md) because persistent `GPUScene` slots and dirty-primitive tracking form the shared substrate that both pushed VSM invalidation (PRD-775 Phase 2) and TRAA-compatible GPU instance culling (PRD-914 Phase 3) consume. Structurally addresses the upload/scan root behind [PRD-881](../performance/PRD-881-the-crowds-engine-stages-fit-2-5-ms.md) and [PRD-891](../performance/PRD-891-a-big-world-uploads-only-the-instances-that-moved.md) without reopening [PRD-753](../Unreal/performance/PRD-753-a-scene-change-updates-only-the-batches-it-touches.md)'s deferred batch-key work.
 - 2026-11-23 (Phase 1 RTX 2080 sizing — `nvidia/turing`, `1280x720`, `?tnDebug=1`, 0 errors):
 
 | Scene | FPS | frameP50 (ms) | gpuP50 (ms) | wasmScene / wasmPlan (ms) | slabCopy p50 | memcmp p50 / p95 | sameBytes p50 / max | uniformUpload p50 / p95 / max |

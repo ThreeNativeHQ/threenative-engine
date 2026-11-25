@@ -26,7 +26,11 @@
 
 import { Frustum, Matrix4, Sphere, Vector3 } from "three";
 import type { Camera, Object3D } from "three";
-import { markEngineRenderHook } from "./engine-render-hook.js";
+import {
+  captureRenderHook,
+  markEngineRenderHook,
+  restoreRenderHook,
+} from "./engine-render-hook.js";
 import {
   LOD_NEAR_PLANE,
   baseGeometryOf,
@@ -608,10 +612,8 @@ export class GeometryCapture {
 
   #hook(armed: IArmedFrame, object: Object3D): void {
     const rendered = object as IRenderedLike;
-    const own = Object.hasOwn(object, "onBeforeRender")
-      ? (rendered.onBeforeRender as RenderCallback | undefined)
-      : undefined;
-    const previous = own ?? NO_OP_RENDER;
+    const { hadOwn, own } = captureRenderHook(object, "onBeforeRender");
+    const previous = (hadOwn ? (own as RenderCallback | undefined) : undefined) ?? NO_OP_RENDER;
     const record: ISubmissionRecord = {
       byPass: new Map(),
       draws: 0,
@@ -665,7 +667,8 @@ export class GeometryCapture {
         }
       }
       record.byPass.set(kind, pass);
-      previous.call(this, renderer, scene, camera, geometry, material, group);
+      if (typeof previous === "function")
+        previous.call(this, renderer, scene, camera, geometry, material, group);
     };
     // Engine bookkeeping, exactly as the world's prewarm borrow is: the capture counts the draws
     // the frame really submits, so it claims no object and the scene render projection may fold
@@ -675,12 +678,7 @@ export class GeometryCapture {
     rendered.onBeforeRender = instrumented;
     armed.restore.push(() => {
       if (rendered.onBeforeRender !== instrumented) return;
-      // Deleted, not set to undefined: three calls `object.onBeforeRender(...)` unconditionally,
-      // so an own `undefined` shadows the prototype's no-op and throws on the next frame.
-      // quality-allow: delete is the restoration, not a leak; an own `undefined` would shadow the prototype no-op and throw
-      // biome-ignore lint/performance/noDelete: restoring the prototype lookup is the point.
-      if (own === undefined) delete rendered.onBeforeRender;
-      else rendered.onBeforeRender = own;
+      restoreRenderHook(rendered, "onBeforeRender", hadOwn, own);
     });
   }
 
