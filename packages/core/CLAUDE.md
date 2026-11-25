@@ -84,6 +84,8 @@ Changing that containment is a `CHARTER.md` question, not an implementation deta
   post-processing, camera framing. Not as code, and not as a `defineGame` option.
   `postprocessing: ['bloom']` was a real v1 mistake and is deliberately absent from the API.
   Those defaults ship as generated source in `create-threenative/templates/*/src/render/`.
+  Two subpaths are the exception, as root rule 3 says: `@threenative/core/spells` and
+  `@threenative/core/vfx` ship a stock look with named overrides on each call.
 - **React from the main entry or scene graph.** The optional `@threenative/core/react` subpath is
   UI plumbing: its peer dependencies are optional, the main entry cannot reach it, and it renders
   generated game appearance into `CanvasLayer`. Core stays consumable from R3F; React never owns

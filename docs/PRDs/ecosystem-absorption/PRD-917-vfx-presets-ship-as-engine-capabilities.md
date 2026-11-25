@@ -53,7 +53,7 @@ flowchart LR
 - [x] AC-3 [local]: Colour, count, size and timing overrides change the layer output of a factory, and the defaults match the donor values. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — Evidence: Phase 2 box 2.
 - [x] AC-4 [local]: A bundle that imports only `createHealingAura` contains no data from other presets. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — Evidence: Phase 2 box 3.
 - [ ] AC-5 [local]: A fresh visual judge reports NEUTRAL or IMPROVEMENT for the gallery between develop and this branch, at the same pose, headed WebGPU, two runs per arm. — proof: visual judge subagent verdict on the PR — Evidence: pending.
-- [ ] AC-6 [local]: AGENTS.md rule 3 names the `@threenative/core/vfx` exception, and the mirrors are current. — proof: `pnpm sync:agents --check && pnpm check:docs` — Evidence: pending.
+- [x] AC-6 [local]: AGENTS.md rule 3 names the `@threenative/core/vfx` exception, and the mirrors are current. — proof: `pnpm sync:agents --check && pnpm check:docs` — Evidence: Phase 3 box 1.
 
 ## Integration Ledger
 
@@ -93,9 +93,9 @@ flowchart LR
 
 #### Phase 3: The rule and the look are confirmed
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `AGENTS.md` and its generated `CLAUDE.md` mirrors.
 **Implementation:** Extend rule 3 with the owner decision. Capture the gallery before and after, and give both sets to a fresh judge.
 
-- [ ] AGENTS.md rule 3 names the vfx exception. — proof: `pnpm sync:agents --check && pnpm check:docs` — covers AC-6.
+- [x] AGENTS.md rule 3 names the vfx exception. — proof: `pnpm sync:agents --check && pnpm check:docs` — 31 mirrors in sync, check:docs exit 0, prose-lane specs 316 passed, 2026-11-25. `packages/core/AGENTS.md` names both look subpaths too — covers AC-6.
 - [ ] The gallery look is unchanged. — proof: visual judge subagent verdict — covers AC-5.
