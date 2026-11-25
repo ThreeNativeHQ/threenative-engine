@@ -696,7 +696,7 @@ export class CellRender {
         );
       }
       shared.rebind(part.geometry, part.material);
-      shared.mesh.name = name;
+      shared.setName(name);
       this.dressMesh(shared, false);
       this.#shared.set(name, shared);
       this.attach(shared);
@@ -726,11 +726,11 @@ export class CellRender {
     const region = scene.shadowRegionOf(key);
     const drawn = scene.shadowDrawn;
     const args = scene.shadowArgs;
-    const geometry = shared.mesh.geometry;
+    const geometry = shared.currentGeometry;
     if (
       drawn !== undefined &&
       shared.mesh.instanceMatrix === drawn &&
-      shared.mesh.frustumCulled === false &&
+      shared.publishedFrustumCulled === false &&
       shared.gpuCount === region?.capacity &&
       geometry.indirect === args &&
       geometry.indirectOffset === (region?.argsIndex ?? -1) * DRAW_ARGS_BYTES
@@ -746,24 +746,24 @@ export class CellRender {
     // A fresh object for the same reason the main pass needs one: three binds the `instanceMatrix`
     // an object held when its node was built and keeps that binding for the object's whole life.
     if (mesh.instanceMatrix !== drawn) {
-      const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
+      const next = freshMeshFor(mesh, view, shared.publishedCount) as ICasterScaleMesh;
       redressMaterial(next);
       this.#host.carryPrewarm(mesh, next);
       this.seat(shared.replaceMesh(next), next);
       next.instanceMatrix = drawn;
-      next.frustumCulled = false;
+      shared.setFrustumCulled(false);
     } else {
-      mesh.geometry = view;
+      shared.setGeometryView(view);
       mesh.instanceMatrix = drawn;
-      mesh.frustumCulled = false;
+      shared.setFrustumCulled(false);
     }
     // Shown and submitted whatever the records say: a key's own count is its region's capacity, and
     // the twin record inside is what decides how many instances this map draws of it. See
     // `SharedBatch#publish`. Never bundled — a bundle's record is fixed when it is recorded and only
     // the main pass's draws are replayed from it, so a shadow key in the group would be drawn by the
     // main camera's replay from the wrong buffer. See `#attach`.
-    mesh.count = shared.gpuCount;
-    mesh.visible = true;
+    shared.setCount(shared.gpuCount);
+    shared.setVisible(true);
   }
 
   /** The `@x,z` half of a caster cluster key, for a resident cell. */
@@ -809,12 +809,12 @@ export class CellRender {
     if (existing !== undefined) {
       const rebind =
         shape.material.userData.tnPublishedLodRange === true &&
-        existing.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
-        existing.mesh.count === 0;
+        !existing.hasRangeAttribute &&
+        existing.publishedCount === 0;
       // The same surface on the same buffer: re-recording it on every call re-walked its whole node
       // graph each time a cell asked for the key (3 s of a 25 s Strata trace). The cached check still
       // re-reads the material's shallow state and hooks, and re-records only when its verdict moved.
-      if (!rebind && existing.mesh.material === shape.material) {
+      if (!rebind && existing.currentMaterial === shape.material) {
         this.bundleIn(existing, true);
         return existing;
       }
@@ -833,7 +833,7 @@ export class CellRender {
       this.#retired.delete(key);
       this.#retiredBytes -= heldBytes(released);
       released.rebind(shape.geometry, shape.material);
-      released.mesh.name = key;
+      released.setName(key);
       released.smallCaster = smallCaster;
       this.dressMesh(released, receiveShadow);
       // A rebind swaps the geometry and may swap the buffer, so the key is dressed again: the indirect
@@ -1007,7 +1007,7 @@ export class CellRender {
     for (const cell of this.#host.residentCells())
       for (const entry of cell.batches) {
         if (entry.asset !== asset.id) continue;
-        if (entry.wide !== undefined && entry.wide.mesh.name === globalKey) continue;
+        if (entry.wide !== undefined && entry.wide.publishedName === globalKey) continue;
         // The old segment's shape and its doubled part offset are both wrong now; hand it back. Its
         // placed count goes with the records, so the mesh left behind does not read as fully placed
         // and the global one does not read as unplaced: see `SharedBatch#gpuPlaced`.

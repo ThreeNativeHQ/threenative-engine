@@ -7,10 +7,27 @@ export default defineConfig([
       js: "import { createRequire as __createRequire } from 'node:module';\nconst require = __createRequire(import.meta.url);",
     },
     // quality bundles typescript-eslint: its `require("typescript")` resolves the TypeScript 6 API from this package.
-    entry: ["src/index.ts", "src/threenative.ts", "src/terrain-kit.ts", "src/quality.ts"],
+    entry: [
+      "src/index.ts",
+      "src/threenative.ts",
+      "src/terrain-kit.ts",
+      "src/quality.ts",
+      "src/asset-library.ts",
+    ],
     format: ["esm"],
     target: "node20",
-    dts: true,
+    // `asset-story` is built by the browser config below; its declarations come from here, because
+    // a second config's declarations race this one's `clean`.
+    dts: {
+      entry: [
+        "src/index.ts",
+        "src/threenative.ts",
+        "src/terrain-kit.ts",
+        "src/quality.ts",
+        "src/asset-library.ts",
+        "src/asset-story.ts",
+      ],
+    },
     sourcemap: false,
     clean: true,
     splitting: false,
@@ -31,6 +48,15 @@ export default defineConfig([
       "ktx2-encoder",
       "meshoptimizer",
     ],
+  },
+  {
+    // A code story imports this in the browser: no Node `require` banner.
+    entry: ["src/asset-story.ts"],
+    platform: "browser",
+    format: ["esm"],
+    target: "es2022",
+    dts: false,
+    splitting: false,
   },
   {
     entry: {

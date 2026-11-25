@@ -130,6 +130,7 @@ std::vector<std::string> renderToTarget(Renderer& main, RenderTarget& target, Ob
     if (target.layers > 1)
         gpu.renderer->copySceneColorToLayer(gpu.array, layer, target.layers, gpu.levels, target.texture->generateMipmaps);
     if (target.depthTexture) gpu.renderer->copyDepthToTexture(*target.depthTexture);
+    if (gpu.database->diagnostics().empty() && gpu.renderer->diagnostics().empty() && target.more.empty()) return {};
     std::vector<std::string> diagnostics = gpu.database->diagnostics();
     for (const std::string& message : gpu.renderer->diagnostics()) diagnostics.push_back(message);
     // three's WebGPUBackend clears every attachment after the first to (0, 0, 0, 1), not the renderer's clear colour.

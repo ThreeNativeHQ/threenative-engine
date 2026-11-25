@@ -1,6 +1,7 @@
 import {
   Box3,
   BoxGeometry,
+  InstancedMesh,
   MeshBasicMaterial,
   Object3D,
   PerspectiveCamera,
@@ -279,4 +280,67 @@ it("keeps distinct cached LOD surfaces when main and wide roles share a level wi
   source0.dispose();
   source2.dispose();
   reloadedSource.dispose();
+});
+
+it("clears prototype-accessor render hooks via setter null rather than no-op delete", () => {
+  const callbacks = new WeakMap<object, Map<string, unknown>>();
+  const setterCalls: Array<{ prop: string; value: unknown }> = [];
+  class AccessorInstancedMesh extends InstancedMesh {}
+  for (const prop of ["onBeforeRender", "onAfterRender"] as const) {
+    Object.defineProperty(AccessorInstancedMesh.prototype, prop, {
+      configurable: true,
+      get(this: object) {
+        return callbacks.get(this)?.get(prop) ?? null;
+      },
+      set(this: object, value: unknown) {
+        setterCalls.push({ prop, value });
+        const map = callbacks.get(this) ?? new Map<string, unknown>();
+        if (value === null || value === undefined) map.delete(prop);
+        else map.set(prop, value);
+        callbacks.set(this, map);
+      },
+    });
+  }
+
+  const root = new Object3D();
+  const h = host(() => false);
+  let shared: SharedBatch | undefined;
+  h.setShared = (_key, batch) => {
+    shared = batch;
+  };
+  h.attach = (batch) => {
+    Object.setPrototypeOf(batch.mesh, AccessorInstancedMesh.prototype);
+    root.add(batch.mesh);
+  };
+  const prewarm = new CellPrewarm(h);
+  prewarm.queuePrewarm(asset);
+  // Step 1: mint once so `awaitDraw` borrows `onBeforeRender`, then invoke it directly.
+  prewarm.drainPrewarm();
+  if (!shared) throw new Error("Prewarm batch was not minted.");
+  const mesh = shared.mesh;
+  expect(typeof mesh.onBeforeRender).toBe("function");
+  Reflect.apply(mesh.onBeforeRender, mesh, [undefined, root, undefined]);
+  expect(mesh.onBeforeRender).toBeNull();
+  expect(setterCalls.some((c) => c.prop === "onBeforeRender" && c.value === null)).toBe(true);
+  for (let frame = 0; frame < 11; frame++) prewarm.drainPrewarm();
+  expect(prewarm.settled).toBe(true);
+  setterCalls.length = 0;
+
+  mesh.count = 1;
+  mesh.visible = true;
+  mesh.boundingSphere = new Sphere(new Vector3(), 1);
+  const camera = new PerspectiveCamera(60, 1, 0.1, 100);
+  camera.position.z = 10;
+  camera.lookAt(0, 0, 0);
+  const renderer = { compiling: false, info: { render: { drawCalls: 0 } } };
+  expect(prewarm.pendingCpuDrawsInView(root, camera, renderer as unknown as IRendererLike)).toBe(1);
+  // Prior value on prototype accessor was `null`, so running the hooks must not throw and must
+  // restore both hooks back to `null` via the prototype setter when the draw finishes.
+  Reflect.apply(mesh.onBeforeRender, mesh, [renderer, root, camera]);
+  renderer.info.render.drawCalls += 1;
+  Reflect.apply(mesh.onAfterRender, mesh, [renderer, root, camera]);
+  expect(mesh.onBeforeRender).toBeNull();
+  expect(mesh.onAfterRender).toBeNull();
+  expect(setterCalls.some((c) => c.prop === "onBeforeRender" && c.value === null)).toBe(true);
+  expect(setterCalls.some((c) => c.prop === "onAfterRender" && c.value === null)).toBe(true);
 });

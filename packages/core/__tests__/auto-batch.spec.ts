@@ -1,6 +1,7 @@
 import {
   BoxGeometry,
   Group,
+  InstancedMesh,
   Layers,
   Mesh,
   MeshStandardMaterial,
@@ -686,5 +687,47 @@ describe("AutoBatch scans what arrived, not the scene", () => {
     scene.add(new Group());
     run(batch, 8);
     expect(batch.census.meshes).toBe(46);
+  });
+
+  it("ignores streaming child churn inside opted-out containers and top-level non-batchable leaves", () => {
+    const scene = new Scene();
+    const optedOut = new Group();
+    optedOut.userData.batch = "off";
+    const active = new Group();
+    const moving = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    let matrixReads = 0;
+    const realMatrixWorld = moving.matrixWorld;
+    Object.defineProperty(moving, "matrixWorld", {
+      configurable: true,
+      get: () => {
+        matrixReads += 1;
+        return realMatrixWorld;
+      },
+    });
+    active.add(moving);
+    scene.add(optedOut, active);
+    const batch = new AutoBatch(scene, { settleFrames: 3 });
+    run(batch, 8);
+    const baselineReads = matrixReads;
+
+    // Adding/removing meshes or instanced batches under an opted-out container must not wake
+    // AutoBatch or re-snapshot pending scene subtrees.
+    const streamedMesh = new Mesh(new BoxGeometry(), new MeshStandardMaterial());
+    const streamedInstanced = new InstancedMesh(new BoxGeometry(), new MeshStandardMaterial(), 4);
+    for (let frame = 0; frame < 10; frame += 1) {
+      if (frame % 2 === 0) optedOut.add(streamedMesh, streamedInstanced);
+      else optedOut.remove(streamedMesh, streamedInstanced);
+      batch.update();
+    }
+
+    // Adding/removing top-level non-batchable leaves must also stay completely idle.
+    const topInstanced = new InstancedMesh(new BoxGeometry(), new MeshStandardMaterial(), 2);
+    for (let frame = 0; frame < 6; frame += 1) {
+      if (frame % 2 === 0) scene.add(topInstanced);
+      else scene.remove(topInstanced);
+      batch.update();
+    }
+
+    expect(matrixReads).toBe(baselineReads);
   });
 });

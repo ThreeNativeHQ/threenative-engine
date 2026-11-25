@@ -39,6 +39,19 @@ describe("WaterSurface3D", () => {
     ).toThrow(/resolutionScale/u);
   });
 
+  it("refuses a minSize that is not positive when selecting terrain automatically", () => {
+    for (const minSize of [0, -1, Number.NaN]) {
+      expect(
+        () =>
+          new WaterSurface3D({
+            level: 0,
+            maxThickness: 3,
+            reflection: { ...reflection, minSize },
+          }),
+      ).toThrow(/minSize/u);
+    }
+  });
+
   it("draws only the named layers in the mirrored pass, preserving explicit overrides", () => {
     // A reflection is a second draw of the world. `resolutionScale` decides how many pixels that
     // costs; this decides how much world, which on a crowded scene is the whole bill.

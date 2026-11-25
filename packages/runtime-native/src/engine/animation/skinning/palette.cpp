@@ -289,7 +289,7 @@ const Object3D* SkinnedPalette::writeRelative(std::uint32_t slot, SkinnedMesh& r
     // The placement depends only on the hierarchy: found once per hierarchy change, not per frame. Any transform the
     // walk composes eagerly is exact here (the web engine tracks none), because the slot and the placement below are
     // read from the same world matrices this frame (PRD-878).
-    if (const uint64_t hierarchy = Object3D::hierarchyVersion(); cache.hierarchy != hierarchy || !cache.root) {
+    if (const uint64_t hierarchy = Object3D::skinnedHierarchyVersion(); cache.hierarchy != hierarchy || !cache.root) {
         cache.root = placementOf(rig);
         cache.hierarchy = hierarchy;
         cache.matrices.clear();

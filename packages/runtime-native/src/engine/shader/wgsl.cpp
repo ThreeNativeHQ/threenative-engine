@@ -1,4 +1,5 @@
 #include "engine/shader/wgsl_strip.h"
+#include "engine/shader/view_uniforms.h"
 #include <algorithm>
 #include <atomic>
 #include "wgsl.h"
@@ -142,8 +143,8 @@ std::string WgslEmitter::type(const Type& t) const {
     return "mat" + std::to_string(t.cols) + "x" + std::to_string(t.rows) + "<" + scalar + ">";
 }
 
-WgslEmitter::WgslEmitter(const Program& program)
-    : p_(program), uses_(program.exprs_.size()), bound_(program.exprs_.size()) {
+WgslEmitter::WgslEmitter(const Program& program, bool sharedView)
+    : p_(program), sharedView_(sharedView), uses_(program.exprs_.size()), bound_(program.exprs_.size()) {
     // Counted from the statements down, so an expression a dead branch alone shares stays inline.
     std::vector<bool> seen(program.exprs_.size());
     const auto visit = [&](auto& self, ExprId id) -> void {
@@ -200,7 +201,18 @@ std::string WgslEmitter::inlined(ExprId id) const {
             const auto end = std::to_chars(buffer, buffer + sizeof buffer, value).ptr;  // shortest round trip
             return std::string(buffer, end) + "f";
         }
-        case Op::Uniform: return "u.f_" + p_.names_[e.immediate];
+        case Op::Uniform: {
+            const std::string& name = p_.names_[e.immediate];
+            if (sharedView_) {
+                if (name == "normalMatrix") return "(vu.f_viewNormalMatrix * u.f_modelNormalMatrix)";
+                if (view_uniforms::isHeaderField(name)) return "vu.f_" + name;
+                uint32_t lightIdx = 0;
+                std::string_view lightField;
+                if (view_uniforms::parseLightField(name, lightIdx, lightField))
+                    return "vu.lights[" + std::to_string(lightIdx) + "].f_" + std::string(lightField);
+            }
+            return "u.f_" + name;
+        }
         case Op::Attribute: return "a_" + p_.names_[e.immediate];
         case Op::Builtin: return "b_" + p_.names_[e.immediate];
         case Op::Varying: return "i_" + p_.names_[e.immediate];
@@ -336,6 +348,10 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
             case Kind::Continue: out += indent + "continue;\n"; break;
             case Kind::Output: {
                 const std::string& name = p_.names_[p_.outputs_[s.a].name];
+                if (name == "clipDistances") {  // a vec4 in the IR, an array in WGSL
+                    out += indent + "{ let cd = " + expr(s.b) + "; out.clipDistances = array<f32, 4>(cd.x, cd.y, cd.z, cd.w); }\n";
+                    break;
+                }
                 out += indent + "out." + (name == "position" || name == "color" ? name : name == "fragDepth" ? "depth" : "o_" + name) + " = " +
                        expr(s.b) + ";\n";
                 break;
@@ -363,8 +379,8 @@ void WgslEmitter::block(uint32_t index, int depth, std::string& out) const {
     boundStack_.resize(scope);
 }
 
-WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
-    WgslEmitter e(program);
+WgslModule WgslEmitter::emit(const Program& program, uint32_t group, bool sharedView) {
+    WgslEmitter e(program, sharedView);
     WgslModule module;
     if (!program.ok()) {
         // The first one names the authoring call that built the bad node (code, operation, reason).
@@ -378,21 +394,58 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     // WGSLNodeBuilder's header outside Firefox: a texture sampled inside a branch (a TSL If, as core's
     // WaterSurface3D refraction is) is legal, as it is in three's shaders.
     if (program.stage() == Stage::Fragment) out += "diagnostic(off, derivative_uniformity);\n";
+    // PRD-775 AC-1: a VSMBatched vertex stage clips each record to its page (the device asked for the feature).
+    if (program.stage() == Stage::Vertex && program.hasOutput("clipDistances")) out += "enable clip_distances;\n";
 
     // Resources in first-use order: uniforms in one block at binding 0, then storage buffers.
-    std::vector<ExprId> uniforms, attributes, builtins, varyings;
+    std::vector<ExprId> attributes, builtins, varyings;
+    std::vector<std::pair<std::string, Type>> drawUniforms;
+    bool usesViewGroup = false;
+    uint32_t viewLightCount = 0;
+    bool emittedModelNormal = false;
     for (ExprId id = 1; id < program.exprs_.size(); ++id) {
         const Op op = program.exprs_[id].op;
-        if (op == Op::Uniform) uniforms.push_back(id);
-        else if (op == Op::Attribute) attributes.push_back(id);
+        if (op == Op::Uniform) {
+            const std::string& name = program.names_[program.exprs_[id].immediate];
+            if (sharedView) {
+                uint32_t lightIdx = 0;
+                std::string_view lightField;
+                if (view_uniforms::isHeaderField(name)) {
+                    usesViewGroup = true;
+                    continue;
+                }
+                if (view_uniforms::parseLightField(name, lightIdx, lightField)) {
+                    usesViewGroup = true;
+                    viewLightCount = std::max(viewLightCount, lightIdx + 1);
+                    continue;
+                }
+                if (name == "normalMatrix") {
+                    usesViewGroup = true;
+                    if (!emittedModelNormal) {
+                        emittedModelNormal = true;
+                        drawUniforms.emplace_back("modelNormalMatrix", Type::mat(3, 3));
+                    }
+                    continue;
+                }
+                if (name == "modelNormalMatrix") {
+                    if (!emittedModelNormal) {
+                        emittedModelNormal = true;
+                        drawUniforms.emplace_back(name, program.exprs_[id].type);
+                    }
+                    continue;
+                }
+            }
+            drawUniforms.emplace_back(name, program.exprs_[id].type);
+        } else if (op == Op::Attribute) attributes.push_back(id);
         else if (op == Op::Builtin) builtins.push_back(id);
         else if (op == Op::Varying) varyings.push_back(id);
     }
+    if (usesViewGroup) out += view_uniforms::emitWgsl(viewLightCount);
     uint32_t binding = 0;
-    if (!uniforms.empty()) {
+    if (!drawUniforms.empty()) {
         out += "struct Uniforms {\n";
-        for (ExprId id : uniforms) {
-            out += "  f_" + program.names_[program.exprs_[id].immediate] + ": " + e.type(program.exprs_[id].type) + ",\n";
+        for (const auto& [name, uType] : drawUniforms) {
+            out += "  f_" + name + ": " + e.type(uType) + ",\n";
         }
         out += "}\n@group(" + std::to_string(group) + ") @binding(" + std::to_string(binding++) +
                ") var<uniform> u: Uniforms;\n";
@@ -436,7 +489,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
     }
 
     const Stage stage = program.stage_;
-    const bool hasOutputs = stage != Stage::Compute;
+    const bool hasOutputs = stage != Stage::Compute && (stage != Stage::Fragment || !program.outputs_.empty());
     if (hasOutputs) {
         out += "struct Out {\n";
         // A fragment's further colour targets (MRT) take the locations after `color`'s 0, in first-output order.
@@ -447,6 +500,7 @@ WgslModule WgslEmitter::emit(const Program& program, uint32_t group) {
             if (name == "position") out += std::string("  ") + (program.invariantPosition_ ? "@invariant " : "") + "@builtin(position) position: vec4<f32>,\n";
             else if (name == "color") out += "  @location(0) color: vec4<f32>,\n";
             else if (name == "fragDepth") out += "  @builtin(frag_depth) depth: f32,\n";
+            else if (name == "clipDistances") out += "  @builtin(clip_distances) clipDistances: array<f32, 4>,\n";
             else out += "  " + std::string(slot.type.scalar == Type::Scalar::I32 || slot.type.scalar == Type::Scalar::U32 || name.starts_with("tnFlat") ? "@interpolate(flat) " : "") + "@location(" + std::to_string(location++) + ") o_" + name + ": " + e.type(slot.type) + ",\n";
         }
         if (program.outputs_.empty()) {

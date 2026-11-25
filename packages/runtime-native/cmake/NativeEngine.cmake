@@ -62,6 +62,16 @@ elseif(TARGET wgpu::wgpu)
 endif()
 tn_engine_renderer_target(tn_host_services ${tn_renderer_backend})
 
+# PRD-775 Phase 3: the differential page-table case drives a real headless WebGPU device, so it needs the native
+# backend and host services that the portable `tn_engine_vsm` library does not.
+if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
+    target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_renderer tn_host_services)
+    target_compile_definitions(tn-native-engine-vsm-atlas-test PRIVATE TN_NATIVE_ENGINE_GPU_PAGE_TEST=1)
+    add_test(NAME native_engine_gpu_page_table_matches_cpu_atlas
+        COMMAND tn-native-engine-vsm-atlas-test gpu_page_table_matches_cpu_atlas)
+    set_tests_properties(native_engine_gpu_page_table_matches_cpu_atlas PROPERTIES LABELS "native-engine")
+endif()
+
 if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "android")
     # Gate E: clear, submit and read back 300 headless frames with no JS engine linked.
     add_executable(tn-native-engine-gate-e EXCLUDE_FROM_ALL tests/native-engine/gate_e_driver.cpp)
@@ -146,6 +156,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_aux_targets_one_pass=aux_targets_one_pass
         native_engine_renderer_aux_targets_normal_node=aux_targets_normal_node
         native_engine_renderer_aux_routes_written_normals=aux_routes_written_normals
+        native_engine_unified_basepass_mrt=unified_basepass_mrt
         native_engine_renderer_aux_targets_alpha_tested=aux_targets_alpha_tested
         native_engine_renderer_denoise_face_normal=denoise_face_normal
         native_engine_renderer_emissive_validation=emissive_validation
@@ -165,6 +176,9 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_traa_camera_velocity=traa_camera_velocity
         native_engine_traa_skinned_velocity=traa_skinned_velocity
         native_engine_traa_camera_held_skinned_velocity=traa_camera_held_skinned_velocity
+        native_engine_traa_dynamic_only_velocity=traa_dynamic_only_velocity
+        native_engine_traa_static_zero_churn=traa_static_zero_churn
+        native_engine_traa_gpu_instance_cull=traa_gpu_instance_cull
         native_engine_renderer_frame_delta_skips_compiles=frame_delta_skips_compiles
         native_engine_traa_instanced_velocity=traa_instanced_velocity
         native_engine_traa_alpha_tested_velocity=traa_alpha_tested_velocity
@@ -191,7 +205,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_sibling_reads_the_live_scene=sibling_reads_the_live_scene
         native_engine_renderer_output_screen_size=output_screen_size
         native_engine_post_stage_is_metered=post_stage_is_metered
-        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges)
+        native_engine_renderer_coalesce_dirty_ranges=coalesce_dirty_ranges
+        native_engine_renderer_uniform_scan_counters=uniform_scan_counters
+        native_engine_shared_view_uniforms=shared_view_uniforms
+        native_engine_shadow_batch_lod_rungs=shadow_batch_lod_rungs
+        native_engine_geometry_cache_quick_slots=geometry_cache_quick_slots
+        native_engine_velocity_and_shadow_group_caches=velocity_and_shadow_group_caches)
     target_link_libraries(tn-native-engine-renderer-test PRIVATE tn_engine_renderer tn_host_services)
     # PRD-867: a KTX2 model's texture uploads as BC7 levels and draws; a device without the feature refuses it.
     if(TARGET tn_engine_gltf AND TARGET tn_engine_basisu)
@@ -310,11 +329,15 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_virtual_shadow_page_jobs=virtual_shadow_page_jobs
         native_engine_virtual_shadow_pages_instance_skinned_casters=virtual_shadow_pages_instance_skinned_casters
         native_engine_virtual_shadow_instance_pages=virtual_shadow_instance_pages
+        native_engine_virtual_shadow_pages_draw_from_gpu_rows=virtual_shadow_pages_draw_from_gpu_rows
+        native_engine_virtual_shadow_pages_draw_from_gpu_rows_discard=virtual_shadow_pages_draw_from_gpu_rows_discard
+        native_engine_virtual_shadow_caster_changes_are_pushed=virtual_shadow_caster_changes_are_pushed
         native_engine_virtual_shadow_bounds_cache=virtual_shadow_bounds_cache
         native_engine_virtual_shadow_bounds_arvo_parity=virtual_shadow_bounds_arvo_parity
         native_engine_bone_chains_are_not_projected=bone_chains_are_not_projected
         native_engine_palette_lifetime=palette_lifetime
         native_engine_batch_compacts_in_place=batch_compacts_in_place
+        native_engine_gpu_scene_dirty_uploads=gpu_scene_dirty_uploads
         native_engine_shadow_row_follows_material_change=shadow_row_follows_material_change
         native_engine_shadow_row_follows_on_before_render=shadow_row_follows_on_before_render
         native_engine_skin_attribute_delete_is_seen=skin_attribute_delete_is_seen
@@ -346,6 +369,12 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_invalidation=invalidation
         native_engine_renderer_scene_alpha=alpha_scene
         native_engine_transparent_sort_uses_geometry_center=transparent_sort_uses_geometry_center
+        native_engine_transparent_contiguous_runs_batch=transparent_contiguous_runs_batch
+        native_engine_static_shadow_casters_batch_under_virtual_shadows=static_shadow_casters_batch_under_virtual_shadows
+        native_engine_static_shadow_casters_batch_with_their_lod_chain=static_shadow_casters_batch_with_their_lod_chain
+        native_engine_different_lod_chains_never_share_a_shadow_batch=different_lod_chains_never_share_a_shadow_batch
+        native_engine_batch_instance_rows_read_the_scene=batch_instance_rows_read_the_scene
+        native_engine_record_cached_scale_and_det_follow_transform_edits=record_cached_scale_and_det_follow_transform_edits
         native_engine_renderer_translucent_target=translucent_target
         native_engine_standard_materials_unsupported=material_unsupported
         native_engine_renderer_shader_invalid=shader_invalid
@@ -360,6 +389,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_depth_test_off_draws_over_nearer=depth_test_off_draws_over_nearer
         native_engine_renderer_steady_cache_invalidation=steady_cache_invalidation
         native_engine_render_target=render_target
+        native_engine_single_mesh_rtt_skips_scene_overhead_and_preserves_draw=single_mesh_rtt_skips_scene_overhead_and_preserves_draw
         native_engine_array_render_target=array_render_target
         native_engine_target_samples_late_traa_output=target_samples_late_traa_output
         native_engine_float_render_target=float_render_target_keeps_float32
@@ -423,6 +453,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
         native_engine_renderer_frustum_record_retention=frustum_record_retention
         native_engine_renderer_world_sphere_measured_once=world_sphere_measured_once
         native_engine_renderer_reflection_reuse=reflection_reuse
+        native_engine_renderer_reflection_filter=reflection_filter
         native_engine_renderer_depth_node_sets_fragment_depth=depth_node_sets_fragment_depth
         native_engine_renderer_depth_node_reaches_every_material_program=depth_node_reaches_every_material_program
         native_engine_program_probes_are_resolved_once=program_probes_are_resolved_once

@@ -492,6 +492,11 @@ static RequiredFeatures buildRequiredFeatures(WGPUAdapter adapter,
                   << std::endl;
     }
 
+#if defined(MYSTRAL_WEBGPU_DAWN)
+    // PRD-775 AC-1: the batched VSM depth pass clips each page record to its atlas slot in hardware.
+    appendIfSupported(WGPUFeatureName_ClipDistances, "clip-distances");
+#endif
+
 #if defined(MYSTRAL_WEBGPU_WGPU_MODERN) && defined(__ANDROID__)
     // wgpu's own extension, and only wgpu declares it: without it an adapter that advertises a
     // compressed format still refuses the adapter-specific format capabilities three's KTX2 path

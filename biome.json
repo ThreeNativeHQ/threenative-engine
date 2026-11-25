@@ -8,6 +8,8 @@
       "**/.threenative/**",
       "**/mcp/engine-server.mjs",
       "**/mcp/animation-server.mjs",
+      "**/mcp/pose-lab.mjs",
+      "**/mcp/client/app.js",
       "packages/metahuman/wasm/**",
       "artifacts/**",
       "examples/strata-terrain-preview/src/world/*.json",

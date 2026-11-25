@@ -154,6 +154,7 @@ function disposeObject(this: { dispatchEvent?(event: { type: string }): void }):
 }
 
 type TraverseCallback = (object: object) => void;
+type EngineMethod = (this: object, ...args: unknown[]) => unknown;
 
 /** The engine classes with their own raycast (`Mesh::raycast`, `Line::raycast`, `LOD::raycast`). */
 const RAYCASTERS = new Set(["Mesh", "Line", "Sprite", "LOD"]);
@@ -523,6 +524,9 @@ export function defineBrowserClasses(
       (binding.fixedMembers?.includes(property) === true || /^(map|[a-z]+Map)$/u.test(property)));
   const labels = new WeakMap<object, Map<string, unknown>>();
   let animated = new WeakMap<object, Map<string, unknown>>();
+  // The geometry JS last wrote on an object, which the shadow LOD sync compares with the next write to
+  // tell a LOD rung swap (same registered chain, no walk owed) from any other geometry change.
+  const assignedGeometries = new WeakMap<object, unknown>();
   // An action's `isScheduled()`: the mixer's list of active actions, which only the action's own
   // play/stop and the mixer's stopAllAction/uncache calls change (animation/mixer.cpp), never update,
   // setTime or clipAction (a rifle asks clipAction each frame).
@@ -721,13 +725,76 @@ export function defineBrowserClasses(
 
   const fromEngine = (value: EngineValue): unknown => {
     if (isRef(value)) return wrap(value);
-    if (Array.isArray(value)) return value.map(fromEngine);
-    if (typeof value === "object" && value !== null)
-      return Object.fromEntries(
-        Object.entries(value).map(([key, item]) => [key, fromEngine(item)]),
-      );
+    if (Array.isArray(value)) {
+      const out = new Array<unknown>(value.length);
+      for (let i = 0; i < value.length; i += 1) out[i] = fromEngine(value[i] as EngineValue);
+      return out;
+    }
+    if (typeof value === "object" && value !== null) {
+      const out: Record<string, unknown> = {};
+      for (const key in value) {
+        if (Object.hasOwn(value, key)) {
+          out[key] = fromEngine((value as Record<string, EngineValue>)[key] as EngineValue);
+        }
+      }
+      return out;
+    }
     return value;
   };
+  // The engine's flat ray hits (`__tnIntersectObject`): each vector is a number list, decoded here
+  // into a JS value, so a hit makes no engine vector. A wrapped vector still decodes as before.
+  const hitVectors = new Map([
+    ["point", 3],
+    ["barycoord", 3],
+    ["normal", 3],
+    ["uv", 2],
+    ["uv1", 2],
+  ]);
+  const { Vector2, Vector3 } = math as Record<
+    "Vector2" | "Vector3",
+    new (
+      ...lanes: unknown[]
+    ) => object
+  >;
+  const hitField = (key: string, field: EngineValue): unknown => {
+    const size = hitVectors.get(key);
+    if (size === undefined) return key === "face" ? hitRecord(field) : fromEngine(field);
+    if (!Array.isArray(field)) return fromEngine(field);
+    return size === 3 ? new Vector3(field[0], field[1], field[2]) : new Vector2(field[0], field[1]);
+  };
+  const hitRecord = (value: EngineValue): unknown => {
+    if (typeof value !== "object" || value === null || Array.isArray(value) || isRef(value))
+      return fromEngine(value);
+    const out: Record<string, unknown> = {};
+    for (const key in value)
+      if (Object.hasOwn(value, key))
+        out[key] = hitField(key, (value as Record<string, EngineValue>)[key] as EngineValue);
+    return out;
+  };
+  /** Whether every argument after the first crosses as itself: a number, flag, string or nothing. */
+  const scalarTail = (args: readonly unknown[]): boolean => {
+    for (let i = 1; i < args.length; i++) {
+      const kind = typeof args[i];
+      if (kind === "object" || kind === "function") return false;
+    }
+    return true;
+  };
+  // GroundSnap and Billboard3D call these once per object per frame with one engine object and
+  // scalars. Both are transform-only (the kept labels stay) and lend no value, so the call skips
+  // the generic wrapper's bookkeeping. Any other argument shape takes the generic path.
+  const scalarHook = (method: string, generic: EngineMethod): EngineMethod =>
+    function (this: object, ...args: unknown[]) {
+      const target = (args[0] as Partial<IWrapped> | null | undefined)?.[REF];
+      if (!caching || target === undefined || !scalarTail(args)) return generic.apply(this, args);
+      if (glueCounting) methodCalls += 1;
+      if (pending.size > 0 || dirty.size > 0) writeBack();
+      hold(args[0] as object); // as toEngine does for a wrapper passed into the engine
+      const engineArgs = args.map((arg, i) =>
+        i === 0 ? target : ((arg as EngineValue | undefined) ?? null),
+      );
+      const result = runtime.invoke(refOf(this), method, engineArgs);
+      return isRef(result) ? wrap(result) : result;
+    };
   // A geometry bulk mutator (`translate`, `applyMatrix4`, `computeVertexNormals`, ...) writes the
   // bytes of its attributes. The engine already keeps the geometry's current attribute list, so the
   // wrapper enumerates it (one `__attributeNames` read, then a `getAttribute` each) rather than track
@@ -921,6 +988,14 @@ export function defineBrowserClasses(
               : undefined;
       // An action's clip and root are its construction arguments: kept like a geometry's attributes.
       const lifelong = name === "AnimationAction" && (method === "getClip" || method === "getRoot");
+      const flatName =
+        method === "intersectObject"
+          ? "__tnIntersectObject"
+          : method === "intersectObjects"
+            ? "__tnIntersectObjects"
+            : undefined;
+      const flatHits =
+        flatName !== undefined && binding.methods.includes(flatName) ? flatName : undefined;
       Object.defineProperty(prototype, method, {
         configurable: true,
         writable: true,
@@ -982,6 +1057,7 @@ export function defineBrowserClasses(
           if (!keeps && !(transforms && caching)) {
             labels.delete(this);
             animated.delete(this);
+            assignedGeometries.delete(this);
           }
           // The item a mesh-level attribute write makes: read before the arguments cross, since a
           // Matrix4 is promoted in place, and written into the game's array once the call lands.
@@ -992,13 +1068,13 @@ export function defineBrowserClasses(
           const mark = loans.length;
           let result: unknown;
           try {
-            result = fromEngine(
-              runtime.invoke(
-                refOf(this),
-                method,
-                toEngineArgs(intersections ? args.slice(0, 2) : args),
-              ),
+            const raw = runtime.invoke(
+              refOf(this),
+              flatHits ?? method,
+              toEngineArgs(intersections ? args.slice(0, 2) : args),
             );
+            result =
+              flatHits !== undefined && Array.isArray(raw) ? raw.map(hitRecord) : fromEngine(raw);
           } finally {
             if (loans.length > mark) result = repay(mark, result);
             if (drives) animated = new WeakMap();
@@ -1015,6 +1091,11 @@ export function defineBrowserClasses(
             const slots = shaderNodes.get(refOf(from as object).key);
             if (slots === undefined) shaderNodes.delete(refOf(to as object).key);
             else shaderNodes.set(refOf(to as object).key, new Map(slots));
+            if (method === "copy") {
+              const host = globalThis as Record<symbol, unknown>;
+              const key = Symbol.for("threenative.materialGraphVersion");
+              host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+            }
           }
           if (method === "copy") {
             shapes.delete(this);
@@ -1050,6 +1131,14 @@ export function defineBrowserClasses(
           return result;
         },
       });
+      // Transform-only hooks with scalar arguments: see `scalarHook`.
+      if (transforms && (method === "__tnGroundSnapApply" || method === "__tnBillboardFace")) {
+        Object.defineProperty(prototype, method, {
+          configurable: true,
+          writable: true,
+          value: scalarHook(method, prototype[method] as EngineMethod),
+        });
+      }
     }
     // three's `layers.test(other)` is one AND of two masks the engine holds in place (field `mask`): a
     // game tests each light's layers against the camera's per callback, so it stays in JS.
@@ -1206,6 +1295,9 @@ export function defineBrowserClasses(
           if (value === null) {
             runtime.set(ref, property, null);
             shaderNodes.get(ref.key)?.delete(property);
+            const host = globalThis as Record<symbol, unknown>;
+            const key = Symbol.for("threenative.materialGraphVersion");
+            host[key] = ((host[key] as number | undefined) ?? 0) + 1;
             return;
           }
           if (typeof value !== "object" || !(TSL_NODE in value) || !runtime.tsl)
@@ -1399,6 +1491,12 @@ export function defineBrowserClasses(
                     );
                     return;
                   }
+                  // The geometry the object held until this write: the mirror's answer, or the one JS
+                  // last wrote (a mesh nothing has read since).
+                  const prevGeometry =
+                    property === "geometry"
+                      ? (labels.get(this)?.get("geometry") ?? assignedGeometries.get(this))
+                      : undefined;
                   if (caching && (mirrored(binding, property, setters) || bounds)) {
                     // A mirrored property's setter writes only that property: the others stay kept,
                     // and a write of the primitive the mirror holds changes nothing in the engine.
@@ -1418,11 +1516,25 @@ export function defineBrowserClasses(
                     labels.delete(this);
                     animated.delete(this);
                   }
-                  // The shadow LOD sync skips its scene walk until this or the hierarchy moves.
+                  // The shadow LOD sync re-walks the light root when this or the hierarchy moves. The walk
+                  // already registered a chain for the caster, so a swap between two rungs of that same
+                  // chain owes no walk: core's ModelLod does it as the camera orbits.
                   if (property === "geometry") {
                     const host = globalThis as Record<symbol, unknown>;
-                    const key = Symbol.for("threenative.geometryAssignments");
-                    host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+                    const chains = host[Symbol.for("threenative.discreteLodChains")] as
+                      | WeakMap<object, { chain?: object }>
+                      | undefined;
+                    const chainOf = (candidate: unknown): object | undefined =>
+                      candidate !== null && typeof candidate === "object"
+                        ? chains?.get(candidate)?.chain
+                        : undefined;
+                    const prevChain = chainOf(prevGeometry);
+                    if (!caching || prevChain === undefined || prevChain !== chainOf(value)) {
+                      const key = Symbol.for("threenative.geometryAssignments");
+                      host[key] = ((host[key] as number | undefined) ?? 0) + 1;
+                    }
+                    if (caching) assignedGeometries.set(this, value);
+                    else assignedGeometries.delete(this);
                   }
                   runtime.set(refOf(this), property, toEngine(value));
                   if (shape) {

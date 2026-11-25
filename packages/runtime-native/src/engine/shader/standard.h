@@ -127,6 +127,24 @@ struct VertexVariant {
     /** The vertex stage passes one tint varying, `instanceColor`: the instance colour times the vertex colour. */
     [[nodiscard]] bool tinted() const { return instanceColor || vertexColors != 0; }
     bool instanceStorage = false; // packed matrix columns and colour in one frame storage buffer
+    /** The draw's instances are the compacted survivors of this frame's GPU frustum cull: the vertex stage maps its
+     *  `instanceIndex` through the persistent original index in `gpuCullIds` at `gpuCullIdBase`. */
+    bool gpuCulled = false;
+    /**
+     * The draw's `instanceIndex` is a slot in this frame's VSM page records: `vsmPageRecords` holds two u32 per
+     * slot, the original instance index and the physical page, and the vertex stage projects the caster through
+     * that page's `viewProj` and clips the fragment to the page rect (`vsmPageClip`). The instance matrix, skin
+     * palette and skin record all read the original index. Depth passes only.
+     */
+    bool vsmBatched = false;
+    /**
+     * PRD-775 AC-1: the device has `clip-distances`, so a VSMBatched vertex stage clips each record to its page in
+     * hardware (`@builtin(clip_distances)`) instead of rasterizing into other slots and discarding there. An unmasked
+     * batched depth pass then has no fragment stage and keeps early depth.
+     */
+    bool vsmClipDistances = false;
+    /** The fragment stage clips a VSMBatched record to its page: only without hardware clip distances. */
+    [[nodiscard]] bool vsmDiscards() const { return vsmBatched && !vsmClipDistances; }
     /**
      * three's skinning(): `skinIndex` (vec4<u32>) and `skinWeight` attributes, the frame's bone
      * matrices in the storage buffer `boneMatrices` from `boneBase` on, `bindMatrix` and
@@ -201,7 +219,7 @@ struct VertexVariant {
     /** A stable key: two variants with the same key build the same program. */
     [[nodiscard]] std::string key() const {
         return std::to_string(fog) + (alphaHash ? "alphaHash|" : "") + (alphaToCoverage ? "a2c|" : "") + (alphaTest ? "alphaTest|" : "") + (background ? "background|" : "") + std::string(sprite ? "sprite|" : "") + (backSide ? "back|" : "") + (doubleSide ? "double|" : "") + (leafReceiver ? "leaf|" : "") + (twoSidedFoliage ? "foliage|" : "") + (roughDiffuse ? "eon|" : "") + (flatShading ? "flat|" : "") + (premultipliedAlpha ? "premultiplied|" : "") + std::to_string(instanced) + std::to_string(instanceColor) + "vc" + std::to_string(vertexColors) + std::to_string(skinned) +
-               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
+               std::to_string(skinnedPalette) + (skinInstanceValues ? "S" : "") + (instanceStorage ? "storage" : "") + (gpuCulled ? "C" : "") + (vsmBatched ? "vB" : "") + (vsmClipDistances ? "vD" : "") + "m" + std::to_string(morphTargets) + (morphNormals ? "n" : "") +
                (map ? "t" : "") + (normalMap ? "N" : "") + (pbrMaps ? "P" + std::to_string(pbrMaps) : "") + (mapSRGB ? "s" : "") + (environment ? "e" : "") + (clearcoat ? "c" : "") + (anisotropy ? "aniso|" : "") + (invariantPosition ? "i" : "") +
                (positionNode ? "p:" + positionNode->key : "") + "|nodes:" + nodes.key();
     }
@@ -309,6 +327,8 @@ StandardPrograms buildBasic(const VertexVariant& variant = {});
 
 /** Shadow depth with material alpha coverage; no colour attachment. */
 StandardPrograms buildDepth(const VertexVariant& variant);
+/** The opaque depth program of a VSMBatched draw: its page projection and the page-rect clip, no colour. */
+StandardPrograms buildVsmBatchedDepth(const VertexVariant& variant);
 /**
  * The shadow depth program of an alpha-tested caster (PRD-651): buildBasic's vertex, uv included, and a
  * fragment that writes nothing and discards where materialAlpha would (map alpha x diffuse opacity at or

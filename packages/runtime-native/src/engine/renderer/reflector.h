@@ -29,6 +29,9 @@ struct Reflector {
      */
     std::shared_ptr<PerspectiveCamera> camera;
     double resolutionScale = 1;
+    bool excludeInstancedAndSkinned = false;
+    double minSize = 0.0;
+    uint32_t refreshInterval = 1;
 
   private:
     static std::string nextName() {

@@ -7,7 +7,11 @@ import {
   Matrix4,
   type Object3D,
 } from "three";
-import { markEngineRenderHook } from "./engine-render-hook.js";
+import {
+  captureRenderHook,
+  markEngineRenderHook,
+  restoreRenderHook,
+} from "./engine-render-hook.js";
 import type { IRendererLike } from "./renderer.js";
 import { SharedBatch } from "./world-cell-batches.js";
 import type { IBatchShape, IPrewarmEntry } from "./world-cell-data.js";
@@ -118,10 +122,8 @@ export class CellPrewarm {
       const previous = this.#drawBorrows.get(object);
       if (previous && object.onBeforeRender !== previous.before) previous.release();
       if (this.#drawBorrows.has(object) || renderer === undefined) return;
-      const ownBefore = object.onBeforeRender;
-      const ownAfter = object.onAfterRender;
-      const hadBefore = Object.hasOwn(object, "onBeforeRender");
-      const hadAfter = Object.hasOwn(object, "onAfterRender");
+      const { hadOwn: hadBefore, own: ownBefore } = captureRenderHook(object, "onBeforeRender");
+      const { hadOwn: hadAfter, own: ownAfter } = captureRenderHook(object, "onAfterRender");
       let before: number | undefined;
       // Renders finished when the hook ran: three's `info.render.calls` and the facade's both only grow.
       let hookedAt: number | undefined;
@@ -137,15 +139,13 @@ export class CellPrewarm {
       const submitted = this.#submitted;
       const release = () => {
         if (object.onBeforeRender === beforeHook) this.#handBack(object, hadBefore, ownBefore);
-        if (object.onAfterRender === afterHook) {
-          if (hadAfter) object.onAfterRender = ownAfter;
-          else Reflect.deleteProperty(object, "onAfterRender");
-        }
+        if (object.onAfterRender === afterHook)
+          restoreRenderHook(object, "onAfterRender", hadAfter, ownAfter);
         this.#drawBorrows.delete(object);
       };
       const beforeHook: typeof object.onBeforeRender = function (this: InstancedMesh, ...args) {
         before = undefined;
-        ownBefore.apply(this, args);
+        if (typeof ownBefore === "function") ownBefore.apply(this, args);
         before = args[2] === camera && renderer.compiling !== true ? calls() : undefined;
         hookedAt = before === undefined ? undefined : renders();
       };
@@ -164,7 +164,7 @@ export class CellPrewarm {
         }
         before = undefined;
         hookedAt = undefined;
-        ownAfter.apply(this, args);
+        if (typeof ownAfter === "function") ownAfter.apply(this, args);
       };
       markEngineRenderHook(beforeHook);
       markEngineRenderHook(afterHook);
@@ -382,8 +382,8 @@ export class CellPrewarm {
     // hands back a function that was never an own property. Writing it back as one leaves every
     // batch that has drawn since looking permanently hooked, and the projection's `hasRenderHook`
     // reads own properties — so the borrow has to remember whether there was one to give back.
-    const hadOwn = Object.hasOwn(mesh, "onBeforeRender");
-    this.#borrowDraw(shared, mesh, hadOwn, hadOwn ? mesh.onBeforeRender : undefined);
+    const { hadOwn, own } = captureRenderHook(mesh, "onBeforeRender");
+    this.#borrowDraw(shared, mesh, hadOwn, own);
   }
 
   /**
@@ -411,7 +411,7 @@ export class CellPrewarm {
       // The node is built and the pipeline is compiled: the batch owes nothing more, so an empty one
       // goes back to hiding.
       shared.prewarmDrew();
-      borrow?.(...args);
+      if (typeof borrow === "function") borrow(...args);
     };
     // Engine bookkeeping, not a claim on the mesh: the scene-render projection's `hasRenderHook`
     // ignores a marked borrow, so a streamed world's prewarmed batches stay eligible for the
@@ -454,12 +454,7 @@ export class CellPrewarm {
 
   /** Give a borrowed mesh back the hook it had, or none at all when it never had one of its own. */
   #handBack(mesh: InstancedMesh, hadOwn: boolean, own: unknown): void {
-    if (hadOwn) mesh.onBeforeRender = own as typeof mesh.onBeforeRender;
-    // Deleted rather than assigned `undefined`: three calls `object.onBeforeRender(...)`
-    // unconditionally, and an own `undefined` shadows the prototype's no-op and throws.
-    // quality-allow: the hook must go back to the prototype, which only `delete` can restore.
-    // biome-ignore lint/performance/noDelete: restoring the prototype lookup is the point.
-    else delete (mesh as Partial<InstancedMesh>).onBeforeRender;
+    restoreRenderHook(mesh, "onBeforeRender", hadOwn, own);
   }
 
   /**

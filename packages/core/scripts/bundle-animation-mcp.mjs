@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-import { copyFileSync, existsSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -18,3 +18,18 @@ if (!existsSync(source)) {
   );
 }
 copyFileSync(source, target);
+// Pose Lab rides along (PRD-915): the Asset Library mounts `pose-lab.mjs` at `/__assets/pose/`, and
+// both it and `animation_open_view` serve the prebuilt client from `mcp/client/app.js` beside them.
+const dist = path.dirname(source);
+for (const [from, to] of [
+  ["pose-lab.js", "pose-lab.mjs"],
+  ["client/app.js", "client/app.js"],
+]) {
+  const file = path.join(dist, from);
+  if (!existsSync(file))
+    throw new Error(
+      `TN_ANIMATION_MCP_BUNDLE: build threenative-animation-mcp before core; missing ${file}`,
+    );
+  mkdirSync(path.dirname(path.join(coreRoot, "mcp", to)), { recursive: true });
+  copyFileSync(file, path.join(coreRoot, "mcp", to));
+}

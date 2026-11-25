@@ -23,9 +23,9 @@ struct RenderFeatures {
 
     /** The desktop, Android and iOS hosts' choices. */
     static constexpr RenderFeatures native() { return {}; }
-    /** The web host's choices (Decision 2026-11-08): depth-first opaque order, a batch takes the next slot each frame,
-     *  no stable passes and no cause hashes. The shooter's web camera turn recorded no less with stable passes (PRD-754). */
-    static constexpr RenderFeatures web() { return {false, false, false, false}; }
+    /** The web host's choices (Decision 2026-11-08): depth-first opaque order, no stable passes, no cause hashes.
+     *  A batch keeps its slot, so frustum culling and a moving camera rewrite no batch's buffers (PRD-754). */
+    static constexpr RenderFeatures web() { return {false, false, true, false}; }
 };
 
 /**

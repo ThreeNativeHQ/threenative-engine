@@ -73,7 +73,11 @@ void Renderer::buildLayouts(Program& program) {
                        std::to_string(int(e.sampler.type));
         program.layouts[g] = layouts_->bindGroup(keys[g], entries);
     }
-    program.pipelineLayout = layouts_->pipeline(keys[0] + "\x1e" + keys[1], program.layouts[0], program.layouts[1]);
+    program.usesViewGroup = program.vertex.usesViewGroup || program.fragment.usesViewGroup;
+    program.viewLightCount = std::max(program.vertex.viewLightCount, program.fragment.viewLightCount);
+    program.pipelineLayout = layouts_->pipeline(
+        keys[0] + "\x1e" + keys[1] + (program.usesViewGroup ? "\x1ev" : ""),
+        program.layouts[0], program.layouts[1], program.usesViewGroup ? viewLayout_ : nullptr);
     std::vector<uint8_t> vertexBuiltIn(program.vertex.uniforms.size(), 0);
     std::vector<uint8_t> fragmentBuiltIn(program.fragment.uniforms.size(), 0);
     for (int s = 0; s < kSlotCount; ++s) {
@@ -109,6 +113,8 @@ void Renderer::buildLayouts(Program& program) {
         if (!fragmentBuiltIn[i] || program.fragment.uniforms[i].shadowLightId != shader::kNoShadowLight)
             program.fragmentNodeUniforms.push_back(&program.fragment.uniforms[i]);
     program.hasDiscard = program.fragment.wgsl.code.find("discard") != std::string::npos;
+    program.hasNormalView = program.vertex.wgsl.code.find("@location(0) o_normalView") != std::string::npos;
+    program.hasPositionView = program.vertex.wgsl.code.find("@location(1) o_positionView") != std::string::npos;
     // FM3: what the stage modules alone decide about a draw of this program, resolved once here beside the
     // slots above. A program is immutable once built, so every draw of every pass of every frame reads these
     // instead of scanning the bindings again (perDrawFragment and its siblings).
@@ -119,7 +125,9 @@ void Renderer::buildLayouts(Program& program) {
 Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVariant& vv, const std::string& lights) {
     ++programKeyBuilds_;
     ++programLookups_;
-    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights;
+    const bool sharedView = sharedViewEnabled();
+    const std::string key = std::to_string(static_cast<int>(kind)) + "|" + vv.key() + "|" + lights +
+                            (sharedView ? "|sv1" : "|sv0");
     const auto refuse = [&](const std::string& reason) -> Program* {
         if (std::find(diagnostics_.begin(), diagnostics_.end(), reason) == diagnostics_.end()) diagnostics_.push_back(reason);
         return nullptr;
@@ -177,8 +185,8 @@ Renderer::Program* Renderer::program(MaterialKind kind, const shader::VertexVari
             return refuseBuild(d.code + ": " + d.node + ": " + d.reason);
         }
     source.vertex.setInvariantPosition(vv.invariantPosition);
-    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
-    shader::StageModule fragment = shader::buildStage(source.fragment, 1);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView);
+    shader::StageModule fragment = shader::buildStage(source.fragment, 1, sharedView);
     if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
         const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
         return refuseBuild(errors.empty() ? "no reason" : errors.front());
@@ -277,18 +285,106 @@ const shader::StageModule* Renderer::auxFragment(Program& program, uint8_t mask,
         // shadow reads included, to write one normal (a splatted ground paid that twice a frame).
         f.pruneDeadStatements();
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return store(nullptr);
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
         shader::positionalGraphTextures(*module);
         shader::positionalSerialNames(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
-                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         if (!same) return store(nullptr);
         return store(std::move(module));
     } catch (const std::exception& error) {
         // Named once a frame: a draw the post pass skipped says why, instead of leaving a target that reads empty.
+        const std::string note = std::string("TN_POST_AUX_REFUSED: ") + error.what();
+        if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
+        return store(nullptr);
+    }
+}
+
+// PRD-914: the same builder run again, keeping the built fragment's `color` at location 0 and appending one output per
+// post target, so the scene colour and every aux target leave in one base-pass draw at sampleCount 1. The colour is not
+// replaced and nothing is pruned: the pass still shades the scene. Every uniform, texture and varying is created in the
+// same order, so the layout equals the program's own and the draw's bind groups are valid for it; checked, not assumed.
+const shader::StageModule* Renderer::basePassAuxFragment(Program& program, uint8_t mask,
+                                                         const std::vector<std::string>& slots, bool zeroNamed) {
+    std::string slotKey = (zeroNamed ? "z" : "n") + std::to_string(mask) + "|";
+    for (const auto& name : slots) slotKey += std::to_string(name.size()) + ":" + name + ";";
+    const auto cached = program.baseAux.find(slotKey);
+    if (cached != program.baseAux.end()) return cached->second.get();
+    const auto store = [&](std::unique_ptr<shader::StageModule> module) -> const shader::StageModule* {
+        const auto* result = module.get();
+        program.baseAux.emplace(slotKey, std::move(module));
+        return result;
+    };
+    const shader::VertexVariant& variant = program.variant;
+    const shader::LightLayout layout{program.lightKinds};
+    try {
+        shader::StandardPrograms source;
+        switch (program.kind) {
+        case MaterialKind::Standard: source = shader::buildStandard(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Lambert: source = shader::buildLambert(variant, layout); break;
+        case MaterialKind::Phong: source = shader::buildPhong(variant, layout); break;
+        case MaterialKind::Physical: source = shader::buildPhysical(shader::StandardMaterial{}, variant, layout); break;
+        case MaterialKind::Basic: source = shader::buildBasic(variant); break;
+        }
+        auto& f = source.fragment;
+        if (!f.diagnostics().empty()) return store(nullptr);
+        const std::size_t varyings = f.varyings().size();
+        const bool surface = (program.kind == MaterialKind::Standard || program.kind == MaterialKind::Physical) &&
+                             !variant.nodes.metalnessNode && !variant.nodes.roughnessNode;
+        std::vector<shader::ExprId> outputs;
+        const auto zero = [&] { return f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)}); };
+        if (mask & kAuxNormal)
+            outputs.push_back(zeroNamed ? zero()
+                : normalTarget(f, variant.flatShading, variant.doubleSide, surface,
+                               variant.nodes.normalNode ? source.normal : shader::kInvalid));
+        if (mask & kAuxMaterial)
+            outputs.push_back(zeroNamed ? zero() : source.materialProperties != shader::kInvalid ? source.materialProperties :
+                f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(1.f), f.constant(0.f), f.constant(1.f)}));
+        if (mask & kAuxAlbedo) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.albedo, f.constant(1.f)}));
+        if (mask & kAuxEmissive) outputs.push_back(zeroNamed ? zero() : f.construct(shader::Type::vec(4), {source.emissive, f.constant(1.f)}));
+        if (mask & kAuxIndirect)
+            outputs.push_back(zeroNamed || source.indirectDiffuse == shader::kInvalid ? zero()
+                : f.construct(shader::Type::vec(4), {source.indirectDiffuse, f.constant(1.f)}));
+        for (const auto& name : slots) {
+            const auto found = std::find_if(variant.nodes.mrt.begin(), variant.nodes.mrt.end(),
+                                            [&](const shader::MrtOutput& slot) { return slot.name == name; });
+            shader::ExprId value = shader::kInvalid;
+            if (found != variant.nodes.mrt.end()) {
+                const auto index = std::size_t(found - variant.nodes.mrt.begin());
+                if (index < source.mrt.size()) value = source.mrt[index];
+                if (value == shader::kInvalid)
+                    throw std::runtime_error("TN_NATIVE_MRT_UNSUPPORTED: slot '" + name +
+                                             "' names a node this program lowered no value for");
+            }
+            outputs.push_back(value == shader::kInvalid
+                ? f.construct(shader::Type::vec(4), {f.constant(0.f), f.constant(0.f), f.constant(0.f), f.constant(0.f)})
+                : mrtColour(f, value));
+        }
+        // `color` keeps location 0 from the builder; the targets after it take 1, 2 and 3 in order, then the custom
+        // slots (wgsl.cpp assigns locations by insertion order).
+        static constexpr const char* kAuxOutputs[] = {"aux1", "aux2", "aux3"};
+        for (std::size_t i = 0; i < outputs.size(); ++i) {
+            const std::string name = i < std::size(kAuxOutputs) ? std::string(kAuxOutputs[i])
+                                                                : "mrt" + std::to_string(i - std::size(kAuxOutputs) + 1);
+            f.output(name, outputs[i]);
+        }
+        if (!f.diagnostics().empty() || f.varyings().size() != varyings) return store(nullptr);
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
+        shader::positionalGraphTextures(*module);
+        shader::positionalSerialNames(*module);
+        const auto& own = program.fragment;
+        bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
+        for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
+            same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
+        if (!same) return store(nullptr);
+        return store(std::move(module));
+    } catch (const std::exception& error) {
         const std::string note = std::string("TN_POST_AUX_REFUSED: ") + error.what();
         if (std::find(diagnostics_.begin(), diagnostics_.end(), note) == diagnostics_.end()) diagnostics_.push_back(note);
         return store(nullptr);
@@ -315,12 +411,13 @@ const shader::StageModule* Renderer::prepassFragment(Program& program) {
         const std::size_t varyings = f.varyings().size();
         keepDiscardsOnly(f, variant.alphaToCoverage ? source.alpha : shader::kInvalid);
         if (!f.diagnostics().empty() || f.varyings().size() != varyings) return nullptr;
-        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1));
+        auto module = std::make_unique<shader::StageModule>(shader::buildStage(f, 1, program.sharedView));
         shader::positionalGraphTextures(*module);
         shader::positionalSerialNames(*module);
         const auto& own = program.fragment;
         bool same = module->wgsl.ok() && module->uniforms.size() == own.uniforms.size() &&
-                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize;
+                    module->bindings.size() == own.bindings.size() && module->uniformBlockSize == own.uniformBlockSize &&
+                    module->usesViewGroup == own.usesViewGroup && module->viewLightCount == own.viewLightCount;
         for (std::size_t i = 0; same && i < own.uniforms.size(); ++i)
             same = module->uniforms[i].name == own.uniforms[i].name && module->uniforms[i].offset == own.uniforms[i].offset;
         // A fragment side effect (a storage or storage-texture write) would run twice: such a draw keeps the shipped path.
@@ -338,6 +435,8 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     ++programLookups_;
     shader::VertexVariant kind = variant;
     kind.instanceColor = false;
+    kind.vsmBatched = variant.vsmBatched;
+    kind.gpuCulled = false;  // the shadow pass visits the full instance store; only a main draw reads the culled ids
     kind.vertexColors = 0;
     kind.invariantPosition = false;  // the shadow depth pass shares its vertex stage with nothing
     kind.leafReceiver = false;       // a depth pass receives no shadow
@@ -360,7 +459,8 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     kind.map = (kind.alphaHash || masked) && variant.map;
     kind.normalMap = false;
     kind.pbrMaps = 0;
-    const std::string key = (masked ? "depth-masked|" : "depth|") + kind.key();
+    const bool sharedView = sharedViewEnabled();
+    const std::string key = std::string(masked ? "depth-masked|" : "depth|") + kind.key() + (sharedView ? "|sv1" : "|sv0");
     if (const auto found = programs_.find(key); found != programs_.end()) return *found->second;
     waste::debugAdd(waste::counters().programBuilds);  // PRD-876 Phase 1: the depth pass's own build
     std::string canonical;
@@ -378,7 +478,7 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
     };
     if (masked) {
         const auto source = shader::buildMaskedDepth(kind);
-        shader::StageModule vertex = shader::buildStage(source.vertex, 0), fragment = shader::buildStage(source.fragment, 1);
+        shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView), fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!vertex.wgsl.ok() || !fragment.wgsl.ok()) {
             const auto& errors = vertex.wgsl.ok() ? fragment.wgsl.errors : vertex.wgsl.errors;
             throw std::runtime_error("TN_NATIVE_SHADER_INVALID: masked shadow depth program: " + (errors.empty() ? std::string("no reason") : errors.front()));
@@ -393,15 +493,18 @@ Renderer::Program& Renderer::depthProgram(const shader::VertexVariant& variant, 
                 throw std::runtime_error("TN_NATIVE_SHADOW_ALPHA_UNSUPPORTED: alphaTestNode reads " + binding.name + "; a shadow caster's cutoff supports uniforms, uv, the diffuse map and the node's own textures only");
         return built(std::move(vertex), std::move(fragment));
     }
-    // three's shadow pass draws with the default positionNode, the same transform as a basic material.
-    const auto source = kind.alphaHash ? shader::buildDepth(kind) : shader::buildBasic(kind);
-    shader::StageModule vertex = shader::buildStage(source.vertex, 0);
+    // three's shadow pass draws with the default positionNode, the same transform as a basic material. A batched
+    // VSM draw instead takes its page projection from the page record, and its fragment clips to the page rect.
+    const auto source = kind.alphaHash ? shader::buildDepth(kind)
+                        : kind.vsmBatched ? shader::buildVsmBatchedDepth(kind)
+                                          : shader::buildBasic(kind);
+    shader::StageModule vertex = shader::buildStage(source.vertex, 0, sharedView);
     if (!vertex.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow depth program: " +
         (vertex.wgsl.errors.empty() ? std::string("no reason") : vertex.wgsl.errors.front()));
     shader::StageModule fragment;
     fragment.stage = shader::Stage::Fragment;
-    if (kind.alphaHash) {
-        fragment = shader::buildStage(source.fragment, 1);
+    if (kind.alphaHash || kind.vsmDiscards()) {
+        fragment = shader::buildStage(source.fragment, 1, sharedView);
         if (!fragment.wgsl.ok()) throw std::runtime_error("TN_NATIVE_SHADER_INVALID: shadow alpha coverage");
     }
     return built(std::move(vertex), std::move(fragment));
@@ -445,6 +548,7 @@ Renderer::Program& Renderer::add(const std::string& key, shader::StageModule ver
     shader::positionalSerialNames(vertex);
     shader::positionalSerialNames(fragment);
     auto built = std::make_unique<Program>();
+    built->sharedView = sharedViewEnabled();
     built->vertex = std::move(vertex);
     built->fragment = std::move(fragment);
     {
@@ -489,6 +593,13 @@ void Renderer::rebuildGroups() {
     for (auto& [key, group] : mapGroups_)  // they bind the old uniform buffer
         if (group) wgpuBindGroupRelease(group);
     mapGroups_.clear();
+    for (auto& [key, group] : depthMapGroups_)
+        if (group) wgpuBindGroupRelease(group);
+    depthMapGroups_.clear();
+    gpuCullGroups_.clear();  // they bind the instance and id storages too
+    if (gpuVsm_) gpuVsm_->clearBindGroups();  // they bind the page and record storages
+    for (auto& [light, shadow] : virtualShadows_)
+        if (shadow.pagePool) shadow.pagePool->clearBindGroups();  // they bind vsmTable and vsmGpuPages
     ++groupEpoch_;
     for (auto& [key, program] : programs_) {
         if (!program) continue;  // a refused program

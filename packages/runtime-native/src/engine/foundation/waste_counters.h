@@ -28,6 +28,10 @@ namespace tn::engine::waste {
 // in `shadowPageRows` rows; `shadowCasterChurn` counts casters whose arrival or departure invalidated their bounds.
 // With `tnDebug=1` they land in TN_FRAME_BUDGET.counters.engine, one frame's difference each. `computePasses` counts the
 // compute passes opened and `computeDispatches` the kernels recorded into them (PRD-828: a run of dispatches shares one pass).
+// PRD-913 Phase 1 measures the uniform upload's two scans, which run once per frame over bytes no game can shrink: the
+// frame slab copied into every draw's uniform slot (`uniformSlabCopyBytes`/`Micros`), the whole-arena compare that decides
+// what to send (`uniformMemcmpBytes`/`Micros`, the arena once when nothing moved and once more block by block when it did)
+// and the storage upload's same-bytes scan (`storageSameBytesScanned`/`Micros`).
 #define TN_DEBUG_COUNTERS(X) \
     X(gateAttempts) X(gateDeclinedCapacity) X(gateDeclinedAge) \
     X(bufferCreatedBytes) X(textureCreatedBytes) X(bufferFreedBytes) X(textureFreedBytes) \
@@ -42,7 +46,9 @@ namespace tn::engine::waste {
     X(renderFrames) X(renderDraws) X(prepassDraws) X(shadowDraws) X(auxPasses) X(auxFragments) X(cullCandidates) X(culledObjects) \
     X(shadowRefreshes) X(shadowRefreshPan) X(shadowRefreshRebuild) X(shadowRefreshInvalidation) \
     X(shadowPagesRefreshed) X(shadowPageEvictions) X(shadowPageRows) X(shadowPageInstances) X(shadowCasterChurn) \
-    X(computePasses) X(computeDispatches)
+    X(computePasses) X(computeDispatches) \
+    X(uniformSlabCopyBytes) X(uniformSlabCopyMicros) X(uniformMemcmpBytes) X(uniformMemcmpMicros) \
+    X(storageSameBytesScanned) X(storageSameBytesMicros)
 
 struct Counters {
     std::atomic<uint64_t> gcPauses{0}, gcPauseMicros{0};  // V8-only: Wasm does not expose unobserved GC.

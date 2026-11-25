@@ -50,14 +50,25 @@ void Renderer::setVirtualShadow(std::size_t light, const shadows::AtlasOptions& 
     std::string error;
     auto atlas = shadows::PageAtlas::create(options, error);
     if (!atlas) throw std::runtime_error(error);
-    virtualShadows_.emplace(light, VirtualShadow{std::move(*atlas), {}, {}});
+    VirtualShadow shadow{std::move(*atlas), {}, {}};
+    // PRD-775 Phase 3: with the GPU page manager on, the atlas only names the frame's virtual pages and the table's
+    // page region belongs to the GPU. TN_VSM_GPU_PAGES=0 keeps the CPU pool and table exactly as before.
+    shadow.atlas.setGpuManaged(vsmGpuPagesEnabled());
+    if (shadow.atlas.gpuManaged()) {
+        shadow.pagePool = std::make_unique<shadows::GpuPhysicalPagePool>(uint32_t(shadow.atlas.pageCount()));
+        shadow.pagePool->requestReset();
+        shadow.pagePoolGeneration = shadow.atlas.poolGeneration();
+    }
+    virtualShadows_.emplace(light, std::move(shadow));
     if (options.adaptiveRefresh || options.adaptiveCasterGate) passTimer_->enabled = true;
     // The table and the depth map must exist before a cached material's bind groups can name them: a new scene
     // rebuilds every cached program's groups before its first shadow pass draws the atlas, and a texture binding
     // with no view is an invalid descriptor (the browser port aborts the module on one).
     auto& table = storages_["vsmTable" + std::to_string(light)];
-    table.capacity = uint64_t(options.clipExtents.size() * 10 + 1 + virtualShadows_.at(light).atlas.pageCount()) * 16;
-    table.buffer = gpu_.createBuffer(table.capacity, WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst);
+    // Nine header vec4s and one mover row per level, the page entries, then the filter and shadow-ray rows (two).
+    table.capacity = uint64_t(options.clipExtents.size() * 10 + 2 + virtualShadows_.at(light).atlas.pageCount()) * 16;
+    table.buffer = gpu_.createBuffer(table.capacity,
+        WGPUBufferUsage_Storage | WGPUBufferUsage_CopyDst | WGPUBufferUsage_CopySrc);
     ensureVirtualShadowMap(light);
 }
 
@@ -116,6 +127,7 @@ void Renderer::syncVirtualShadows(const LightState& lights, double tanHalfFov) {
             gpu_.destroy(storage->second.buffer);
             storages_.erase(storage);
         }
+        if (it->second.pagePool) it->second.pagePool->release();
         it = virtualShadows_.erase(it);
         shadowMapsChanged_ = true;
     }

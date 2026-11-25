@@ -590,4 +590,40 @@ describe("the hooks one draw reads", () => {
     tsl.sync({ frameId: 4, kernels: [77] });
     expect(reads).toHaveBeenCalledTimes(3);
   });
+
+  it("caches reads per leaf-mesh material and invalidates when graphVersion or material changes", () => {
+    const { runtime } = setup();
+    let version = 1;
+    const reads = vi.fn(
+      (_root: unknown, _kernels: readonly number[], candidates: readonly number[]) =>
+        candidates.length > 0 ? [0] : [],
+    );
+    runtime.reads = reads;
+    runtime.graphVersion = () => version;
+    const tsl = defineTsl(runtime);
+    const uniform = tsl.exports.uniform as (value: number) => {
+      [TSL_NODE]: number;
+      onRenderUpdate(callback: () => number): unknown;
+    };
+    let a = 0;
+    uniform(0).onRenderUpdate(() => ++a);
+    const mat1 = { name: "mat1" };
+    const mat2 = { name: "mat2" };
+    const quad = { [REF]: { key: "1:0:9:1", type: 1 }, isMesh: true, children: [], material: mat1 };
+
+    tsl.sync({ scene: quad, frameId: 1 });
+    tsl.sync({ scene: quad, frameId: 2 });
+    expect(reads).toHaveBeenCalledTimes(1);
+
+    version = 2;
+    tsl.sync({ scene: quad, frameId: 3 });
+    expect(reads).toHaveBeenCalledTimes(2);
+
+    quad.material = mat2;
+    tsl.sync({ scene: quad, frameId: 4 });
+    expect(reads).toHaveBeenCalledTimes(3);
+
+    tsl.sync({ scene: quad, frameId: 5 });
+    expect(reads).toHaveBeenCalledTimes(3);
+  });
 });

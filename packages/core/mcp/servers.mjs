@@ -52,10 +52,10 @@ export const MCP_SERVERS = Object.freeze({
  * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
   assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.19.0" }),
-  terrain: Object.freeze({ name: "@threenative/terrain", version: "0.1.18" }),
+  terrain: Object.freeze({ name: "@threenative/terrain", version: "0.1.19" }),
   sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
-  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.22" }),
-  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.19" }),
+  engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.23" }),
+  animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.20" }),
   // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from
   // `@threenative/playtest`, so a DevTools trace profiles the same adapter a playtest does and not
   // SwiftShader. An isolated profile keeps the user's own Chrome profile out, and the two opt-outs

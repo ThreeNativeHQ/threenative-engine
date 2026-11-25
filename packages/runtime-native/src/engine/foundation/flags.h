@@ -33,6 +33,14 @@ inline constexpr Flag ShadowPageScan{"TN_SHADOW_PAGE_SCAN", Read::Once};
 inline constexpr Flag ProjectionWalks{"TN_PROJECTION_WALKS", Read::Once};
 inline constexpr Flag BatchDecisionCache{"TN_BATCH_DECISION_CACHE", Read::Once};
 inline constexpr Flag GpuJointDrawUse{"TN_GPU_JOINT_DRAW_USE", Read::Once};
+inline constexpr Flag SharedViewUniform{"TN_SHARED_VIEW_UNIFORM", Read::Live};
+inline constexpr Flag PersistentGpuScene{"TN_PERSISTENT_GPU_SCENE", Read::Live};
+inline constexpr Flag StaticVelocity{"TN_STATIC_VELOCITY", Read::Live};
+inline constexpr Flag UnifiedAuxMrt{"TN_UNIFIED_AUX_MRT", Read::Live};
+inline constexpr Flag GpuInstanceCull{"TN_GPU_INSTANCE_CULL", Read::Live};
+inline constexpr Flag VsmGpuPages{"TN_VSM_GPU_PAGES", Read::Live};
+// `0`: batched VSM records clip by fragment discard even where the device has `clip-distances` (PRD-775 AC-1).
+inline constexpr Flag VsmClipDistances{"TN_VSM_CLIP_DISTANCES", Read::Live};
 
 // Player (the native host).
 inline constexpr Flag GameSpans{"TN_GAME_SPANS", Read::Live};

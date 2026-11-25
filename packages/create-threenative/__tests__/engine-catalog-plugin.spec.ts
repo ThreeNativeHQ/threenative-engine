@@ -306,3 +306,30 @@ describe("createEngineCatalogPlugin", () => {
     }
   });
 });
+
+describe("the Asset Library story frame (PRD-915)", () => {
+  it("imports no three name the engine refuses: a code story runs on the game's engine", async () => {
+    // `Spherical` blanked every story in a kit (TN_NATIVE_UNBOUND_SPHERICAL).
+    const source = await readFile(
+      path.join(REPO, "packages/create-threenative/src/asset-library/story-frame.ts"),
+      "utf8",
+    );
+    const imported = [
+      ...source.matchAll(/import\s*\{([^}]*)\}\s*from\s*"three(?:\/webgpu)?";/gu),
+    ].flatMap((match) =>
+      (match[1] ?? "")
+        .split(",")
+        .map((name) => name.trim())
+        .filter((name) => name !== "" && !name.startsWith("type ")),
+    );
+    // The offline list above also refuses names the runtime binds in JS (GridHelper, WebGPURenderer);
+    // the real boot (`upstreamRefusals` on a kit) refused only this one, so this one is the lock.
+    expect(refusals.has("Spherical")).toBe(true);
+    expect(imported.length).toBeGreaterThan(5);
+    expect(imported).not.toContain("Spherical");
+    // Nor a renderer member the engine refuses: `setAnimationLoop` throws on the Wasm renderer.
+    expect(source).not.toContain("setAnimationLoop(");
+    // And it resets `info` per frame: the engine's draw count adds up until reset (7 became 3022).
+    expect(source).toContain("renderer.info.reset();");
+  });
+});

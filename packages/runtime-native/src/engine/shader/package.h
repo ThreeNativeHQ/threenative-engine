@@ -105,6 +105,8 @@ struct StageModule {
     std::vector<std::pair<std::string, std::string>> graphTextureLabels;
     std::vector<UniformField> uniforms;
     uint32_t uniformBlockSize = 0;
+    bool usesViewGroup = false;
+    uint32_t viewLightCount = 0;
     std::vector<VertexAttribute> attributes;
 };
 
@@ -146,7 +148,7 @@ Layout uniformLayout(const Type& type);
 void writeUniform(std::span<uint8_t> block, const UniformField& field, std::span<const double> values);
 
 /** Builds a stage module: emits WGSL and derives the layouts that WGSL declares. */
-StageModule buildStage(const Program& program, uint32_t group = 0);
+StageModule buildStage(const Program& program, uint32_t group = 0, bool sharedView = false);
 
 /**
  * Names each graph texture (tsl_call's `nodeMapT<ident>`, one per texture as three merges TextureNodes by uuid) by its

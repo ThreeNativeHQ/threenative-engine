@@ -84,7 +84,7 @@ struct Diagnostic {
 using Where = std::source_location;
 
 struct StageModule;
-StageModule buildStage(const class Program& program, uint32_t group);
+StageModule buildStage(const class Program& program, uint32_t group, bool sharedView);
 
 /**
  * One shader stage's IR (PRD-510). Pure expressions are hash-consed, so the same operation on the
@@ -243,7 +243,7 @@ public:
 private:
     uint32_t loopDepth_ = 0;
     friend class WgslEmitter;
-    friend StageModule buildStage(const Program& program, uint32_t group);
+    friend StageModule buildStage(const Program& program, uint32_t group, bool sharedView);
 
     enum class StmtKind : uint8_t { Eval, Assign, Store, TextureStore, Discard, If, Loop, Output, Break, Continue, Return, Barrier };
     struct Stmt {

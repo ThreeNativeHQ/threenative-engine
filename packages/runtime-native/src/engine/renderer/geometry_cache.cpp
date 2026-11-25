@@ -27,8 +27,26 @@ void GeometryCache::upload(Handle buffer, const BufferStore& store, uint64_t off
 
 Handle GeometryCache::sync(BufferStore& store, uint32_t usage) {
     const uint64_t byteLength = (store.byteLength() + 3) & ~uint64_t{3};
+    // Steady-state fast path: the slot this store resolved in answers without the map descent. When no BufferStore
+    // was destroyed or disposed since the last sweep, a tracked entry cannot be expired, so skip the atomic weak_ptr
+    // load too. Anything else falls through to the full path below, which is the same comparison.
+    QuickSlot& quick = quick_[quickIndex(&store)];
+    if (quick.store == &store) {
+        Entry& e = *quick.entry;
+        if ((!e.tracked || sweptAt_ == BufferStore::released()) &&
+            (e.usage & usage) == usage &&
+            e.byteLength == byteLength &&
+            e.epoch == store.epoch() &&
+            e.releases == store.gpuReleases() &&
+            e.version == store.version()) {
+            e.bytes = store.byteLength();
+            e.scalar = store.scalar();
+            return e.buffer;
+        }
+    }
     auto [it, isNew] = entries_.try_emplace(&store);
     Entry& e = it->second;
+    quick = {&store, &e};  // `e` lives in its map node: the slot stays valid until this store is forgotten or swept
     e.bytes = store.byteLength();
     e.scalar = store.scalar();
     // A released store's copy at this address belongs to the dead store, never to this one.
@@ -105,6 +123,9 @@ void GeometryCache::forget(const BufferStore& store) {
     if (it == entries_.end()) return;
     gpu_.destroy(it->second.buffer);
     entries_.erase(it);
+    // The erased node is gone with it: never leave a slot pointing at the freed address.
+    QuickSlot& quick = quick_[quickIndex(&store)];
+    if (quick.store == &store) quick = {};
 }
 
 void GeometryCache::sweep() {
@@ -115,15 +136,19 @@ void GeometryCache::sweep() {
     // A walk checks every entry, so no lock() per entry: a live owner is the store at the key.
     // ponytail: single-thread safe only; PRD-574 needs a strong reference if a second thread
     // can release stores.
+    bool erased = false;
     for (auto it = entries_.begin(); it != entries_.end();) {
         const Entry& e = it->second;
         if (e.tracked && (e.owner.expired() || it->first->gpuReleases() != e.releases)) {
             gpu_.destroy(it->second.buffer);
             it = entries_.erase(it);
+            erased = true;
         } else {
             ++it;
         }
     }
+    // A swept entry's node is gone: every slot it filled points at a freed address.
+    if (erased) quick_.fill({});
 }
 
 }  // namespace tn::engine
