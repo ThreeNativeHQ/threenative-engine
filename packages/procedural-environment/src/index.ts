@@ -1357,8 +1357,9 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
  * @situation furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console
  * @situation furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement
+ * @situation bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
- * @constraint open previews the top drawer, locker door or media console doors; moving groups remain available for animation
+ * @constraint open previews the top drawer or locker, media console and kitchen doors; moving groups remain available for animation
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
  */
@@ -1388,7 +1389,7 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
   ) {
     throw new Error(
-      "bakeWorkshop: open is a boolean for the drawer cabinet, locker or media console",
+      "bakeWorkshop: open is a boolean for the drawer cabinet, locker, media console or kitchen modules",
     );
   }
   if (![undefined, seatRange?.min, seatRange?.max].includes(seats)) {

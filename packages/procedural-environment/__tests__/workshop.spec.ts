@@ -24,6 +24,21 @@ const anchors = {
   "dining-chair": ["dining-seat"],
   "dining-bench": ["bench-seat-left", "bench-seat-right"],
   "dining-set": ["dining-top", "dining-seat-1", "dining-seat-2", "dining-seat-3", "dining-seat-4"],
+  "kitchen-prep": ["prep-surface", "prep-shelf", "prep-join-left", "prep-join-right"],
+  "kitchen-sink": ["sink-basin", "sink-faucet", "sink-join-left", "sink-join-right"],
+  "kitchen-cooktop": [
+    "cooktop-burner-1",
+    "cooktop-burner-4",
+    "cooktop-join-left",
+    "cooktop-join-right",
+  ],
+  "kitchen-run": [
+    "prep-surface",
+    "sink-basin",
+    "cooktop-burner-1",
+    "prep-door-left",
+    "sink-door-right",
+  ],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -257,6 +272,78 @@ describe("Workshop furniture", () => {
     expect(Math.max(...grain) - Math.min(...grain)).toBeGreaterThan(0.75);
   });
 
+  it.each([0.6, 1.2])("joins the kitchen run flush with a %s m prep counter", (width) => {
+    const run = buildWorkshop("kitchen-run", { ...options, width });
+    run.updateMatrixWorld(true);
+    expect(new Box3().setFromObject(run, true).getSize(new Vector3()).x).toBeCloseTo(width + 1.2);
+    for (const [left, right] of [
+      ["prep", "sink"],
+      ["sink", "cooktop"],
+    ] as const) {
+      const a = run.getObjectByName(`${left}-join-right`);
+      const b = run.getObjectByName(`${right}-join-left`);
+      if (!a || !b) throw new Error("Missing kitchen join");
+      const seam = a.getWorldPosition(new Vector3());
+      expect(seam.distanceTo(b.getWorldPosition(new Vector3()))).toBeCloseTo(0);
+      expect(a.getWorldDirection(new Vector3()).x).toBeCloseTo(1);
+      expect(b.getWorldDirection(new Vector3()).x).toBeCloseTo(-1);
+      for (const delta of [-0.006, 0.006]) {
+        const rim = new Raycaster(new Vector3(seam.x + delta, 1.25, 0.28), down);
+        expect(rim.intersectObject(run)[0]?.point.y).toBeCloseTo(seam.y);
+      }
+    }
+  });
+
+  it("bakes a recessed sink with a reachable basin floor and a flush surrounding counter", () => {
+    const sink = buildWorkshop("kitchen-sink", options);
+    sink.updateMatrixWorld(true);
+    const floor = new Raycaster(new Vector3(0.08, 1.2, 0.08), down);
+    const rim = new Raycaster(new Vector3(0.265, 1.2, 0.08), down);
+    expect(floor.intersectObject(sink)[0]?.point.y).toBeCloseTo(0.775);
+    expect(rim.intersectObject(sink)[0]?.point.y).toBeCloseTo(0.91);
+  });
+
+  it("keeps the kitchen back panel clear of nearly coplanar sides", () => {
+    const sink = buildWorkshop("kitchen-sink", options);
+    sink.updateMatrixWorld(true);
+    const rear = new Raycaster(new Vector3(0.272, 0.49, -1), new Vector3(0, 0, 1));
+    const [panel, side] = rear.intersectObject(sink);
+    if (!panel || !side) throw new Error("Missing kitchen back panel or side");
+    expect(side.point.z - panel.point.z).toBeGreaterThan(0.012);
+  });
+
+  it.each([
+    ["prep", 0.6],
+    ["prep", 1.2],
+    ["sink", 0.6],
+    ["cooktop", 0.6],
+  ] as const)("opens %s cabinet doors within their bay with a %s m prep section", (name, width) => {
+    const closed = buildWorkshop(`kitchen-${name}`, options);
+    closed.updateMatrixWorld(true);
+    for (const x of [0.008, 0.13]) {
+      const closedBay = new Raycaster(new Vector3(x, 0.5, 1), new Vector3(0, 0, -1));
+      expect(closedBay.intersectObject(closed)[0]?.point.z).toBeGreaterThan(0.25);
+    }
+    const open = buildWorkshop("kitchen-run", { ...options, width, open: true });
+    open.updateMatrixWorld(true);
+    const module = open.getObjectByName(`kitchen-${name}`);
+    if (!module) throw new Error(`Missing ${name}`);
+    const openBay = new Raycaster(
+      new Vector3(module.position.x + 0.13, 0.5, 1),
+      new Vector3(0, 0, -1),
+    );
+    expect(openBay.intersectObject(open)[0]?.point.z).toBeLessThan(-0.2);
+    for (const side of ["left", "right"]) {
+      const door = module.getObjectByName(`${name}-door-${side}`);
+      const edge = module.getObjectByName(`${name}-join-${side}`);
+      if (!door || !edge) throw new Error("Missing cabinet door or join");
+      const bounds = new Box3().setFromObject(door, true);
+      const edgeX = edge.getWorldPosition(new Vector3()).x;
+      if (side === "left") expect(bounds.min.x).toBeGreaterThan(edgeX);
+      else expect(bounds.max.x).toBeLessThan(edgeX);
+    }
+  });
+
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
     const out = await makeTempDir("tn-workshop-controls-");
     const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
@@ -272,6 +359,13 @@ describe("Workshop furniture", () => {
       seats: 6,
     });
     expect(wideDining?.path).toMatch(/-w2\.3-6-seats\.glb$/u);
+    const [openKitchen] = await bakeWorkshop({
+      module: "workshop-kitchen-run",
+      out,
+      width: 1.08,
+      open: true,
+    });
+    expect(openKitchen?.path).toMatch(/-w1\.08-open\.glb$/u);
     if (!wideDining) throw new Error("Missing six-seat dining GLB");
     const bytes = await readFile(wideDining.path);
     const { nodes } = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {

@@ -2,14 +2,19 @@ import { readFile } from "node:fs/promises";
 import { loadImage } from "@napi-rs/canvas";
 import {
   BoxGeometry,
+  CatmullRomCurve3,
   Color,
+  CylinderGeometry,
   Group,
   MeshStandardMaterial,
   Object3D,
   RepeatWrapping,
   SRGBColorSpace,
   Texture,
+  TorusGeometry,
+  TubeGeometry,
   Vector2,
+  Vector3,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
@@ -26,7 +31,7 @@ export interface IBakeWorkshopOptions {
   readonly scale?: number;
   /** Width in metres before scale for work surfaces, wall shelf and dining bench. */
   readonly width?: number;
-  /** Bake the top drawer pulled out or the locker or media console doors swung outward. */
+  /** Bake the top drawer pulled out or locker, media console or kitchen doors swung outward. */
   readonly open?: boolean;
   /** Sofa or lounge seats (2 or 3), or dining set chairs (4 or 6). */
   readonly seats?: number;
@@ -50,6 +55,10 @@ export const workshopModules = [
   { id: "dining-chair", name: "Slat-back dining chair", category: "Dining" },
   { id: "dining-bench", name: "Two-seat dining bench", category: "Dining" },
   { id: "dining-set", name: "Assembled dining furniture", category: "Arrangements" },
+  { id: "kitchen-prep", name: "Kitchen prep cabinet", category: "Kitchen" },
+  { id: "kitchen-sink", name: "Kitchen sink cabinet", category: "Kitchen" },
+  { id: "kitchen-cooktop", name: "Kitchen cooktop cabinet", category: "Kitchen" },
+  { id: "kitchen-run", name: "Assembled kitchen run", category: "Arrangements" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
@@ -61,6 +70,8 @@ const workbenchWidth = { min: 1.2, max: 2.4, default: 1.65 };
 const shelfWidth = { min: 0.7, max: 1.8, default: 1.05 };
 const coffeeWidth = { min: 0.72, max: 1.5, default: 1.08 };
 const diningWidth = { min: 1.4, max: 2.4, default: 1.68 };
+const kitchenBay = 0.6;
+const kitchenWidth = { min: kitchenBay, max: 2 * kitchenBay, default: kitchenBay };
 export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   workbench: workbenchWidth,
   station: workbenchWidth,
@@ -69,8 +80,18 @@ export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   "dining-table": diningWidth,
   "dining-set": diningWidth,
   "dining-bench": { min: 0.92, max: 1.65, default: 1.16 },
+  "kitchen-prep": kitchenWidth,
+  "kitchen-run": kitchenWidth,
 };
-export const workshopOpeningModules = ["drawer", "locker", "media-console"];
+export const workshopOpeningModules = [
+  "drawer",
+  "locker",
+  "media-console",
+  "kitchen-prep",
+  "kitchen-sink",
+  "kitchen-cooktop",
+  "kitchen-run",
+];
 const loungeSeats = { min: 2, max: 3, default: 3 };
 const diningSeats = { min: 4, max: 6, default: 4 };
 export const workshopSeatCounts: Partial<Record<Module, typeof loungeSeats>> = {
@@ -129,10 +150,11 @@ function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
   };
 }
 
-function anchor(group: Group, name: string, position: XYZ): void {
+function anchor(group: Group, name: string, position: XYZ, yaw = 0): void {
   const marker = new Object3D();
   marker.name = name;
   marker.position.set(...position);
+  marker.rotation.y = yaw;
   group.add(marker);
 }
 
@@ -502,6 +524,160 @@ function diningSet(palette: Palette, width: number, seats: number): Group {
   return group;
 }
 
+const counterTop = 0.91;
+const counterDepth = 0.65;
+const counterThickness = 0.047;
+const kitchenSections = ["prep", "sink", "cooktop"] as const;
+type KitchenSection = (typeof kitchenSections)[number];
+
+function kitchenSink(mesh: Part): void {
+  const holeWidth = 0.408;
+  const holeFront = 0.221;
+  const holeBack = -0.121;
+  const halfDepth = counterDepth / 2;
+  const topY = counterTop - counterThickness / 2;
+  for (const side of [-1, 1]) {
+    const rail = (kitchenBay - holeWidth) / 2;
+    mesh.block(
+      "linen",
+      [rail, counterThickness, counterDepth],
+      [(side * (kitchenBay - rail)) / 2, topY, 0],
+      0.01,
+    );
+    mesh.block("steel", [0.023, 0.131, 0.34], [side * 0.193, 0.8395, 0.05], 0.009);
+  }
+  for (const [start, end] of [
+    [-halfDepth, holeBack],
+    [holeFront, halfDepth],
+  ] as const) {
+    mesh.block(
+      "linen",
+      [holeWidth, counterThickness, end - start],
+      [0, topY, (end + start) / 2],
+      0.01,
+    );
+  }
+  for (const z of [-0.109, 0.209]) {
+    mesh.block("steel", [0.408, 0.131, 0.026], [0, 0.8395, z], 0.009);
+  }
+  mesh.block("steel", [0.401, 0.027, 0.334], [0, 0.7615, 0.05], 0.015);
+  mesh.add("dark", new CylinderGeometry(0.023, 0.023, 0.004, 16).translate(0, 0.777, 0.04));
+  mesh.add("steel", new CylinderGeometry(0.031, 0.035, 0.026, 16).translate(0, 0.921, -0.23));
+  const faucet: XYZ[] = [
+    [0, 0.925, -0.23],
+    [0, 1.044, -0.23],
+    [0, 1.117, -0.197],
+    [0, 1.111, -0.113],
+    [0, 1.061, -0.071],
+  ];
+  const pipe = new CatmullRomCurve3(faucet.map((point) => new Vector3(...point)));
+  mesh.add("steel", new TubeGeometry(pipe, 16, 0.014, 8));
+  mesh.block("steel", [0.079, 0.014, 0.021], [0.029, 0.96, -0.23], 0.006);
+}
+
+const cooktopBurners: [x: number, z: number, radius: number][] = [
+  [-0.112, 0.063, 0.081],
+  [0.112, 0.063, 0.072],
+  [-0.112, -0.111, 0.064],
+  [0.112, -0.111, 0.075],
+];
+
+function kitchenCooktop(mesh: Part): void {
+  mesh.block("dark", [0.49, 0.018, 0.465], [0, 0.917, -0.004], 0.008);
+  for (const [i, [x, z, r]] of cooktopBurners.entries()) {
+    mesh.add(
+      "steel",
+      new TorusGeometry(r, 0.003, 6, 20).rotateX(-Math.PI / 2).translate(x, 0.927, z),
+    );
+    mesh.add(
+      "steel",
+      new CylinderGeometry(0.013, 0.016, 0.011, 12).translate((i - 1.5) * 0.052, 0.928, 0.18),
+    );
+  }
+}
+
+function kitchenCabinet(
+  palette: Palette,
+  section: KitchenSection,
+  width: number,
+  open: boolean,
+): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  mesh.block("dark", [width - 0.07, 0.102, 0.48], [0, 0.051, -0.025], 0.007);
+  timber(mesh, [width - 0.008, 0.043, 0.564], [0, 0.116, -0.028], 0.008);
+  mesh.block("insert", [width - 0.017, 0.737, 0.032], [0, 0.493, -0.307], 0.005);
+  for (const side of [-1, 1]) {
+    timber(
+      mesh,
+      [0.042, 0.745, 0.579],
+      [side * (width / 2 - 0.028), 0.49, -0.016],
+      0.006,
+      "vertical",
+    );
+  }
+  timber(mesh, [width - 0.079, 0.031, 0.518], [0, 0.3735, -0.018], 0.008);
+  mesh.block("accent", [width - 0.01, 0.058, 0.039], [0, 0.835, 0.249], 0.008);
+  if (section === "sink") kitchenSink(mesh);
+  else
+    mesh.block(
+      "linen",
+      [width, counterThickness, counterDepth],
+      [0, counterTop - counterThickness / 2, 0],
+      0.012,
+    );
+  if (section === "cooktop") kitchenCooktop(mesh);
+  const group = mesh.finish(`kitchen-${section}`, palette);
+  anchor(group, `${section}-join-left`, [-width / 2, counterTop, 0], -Math.PI / 2);
+  anchor(group, `${section}-join-right`, [width / 2, counterTop, 0], Math.PI / 2);
+  anchor(group, `${section}-shelf`, [0, 0.389, 0]);
+  if (section === "prep") anchor(group, "prep-surface", [0, counterTop, 0]);
+  if (section === "sink") {
+    anchor(group, "sink-basin", [0.08, 0.775, 0.08]);
+    anchor(group, "sink-faucet", [0, 1.053, -0.071]);
+  }
+  if (section === "cooktop") {
+    for (const [i, [x, z]] of cooktopBurners.entries()) {
+      anchor(group, `cooktop-burner-${i + 1}`, [x, 0.926, z]);
+    }
+  }
+  const hingeInset = 0.06;
+  const panelWidth = width / 2 - hingeInset - 0.003;
+  for (const side of [-1, 1]) {
+    const panel = new StaticKitMesh<Finish>();
+    timber(panel, [panelWidth, 0.665, 0.036], [(-side * panelWidth) / 2, 0, 0], 0.013, "vertical");
+    panel.block(
+      "accent",
+      [panelWidth - 0.037, 0.604, 0.014],
+      [(-side * panelWidth) / 2, 0, 0.019],
+      0.014,
+    );
+    panel.add(
+      "steel",
+      new CylinderGeometry(0.016, 0.012, 0.021, 12)
+        .rotateX(Math.PI / 2)
+        .translate(-side * (panelWidth - 0.048), 0.205, 0.035),
+    );
+    const door = panel.finish(`${section}-door-${side < 0 ? "left" : "right"}`, palette);
+    door.position.set(side * (width / 2 - hingeInset), 0.47, 0.278);
+    door.rotation.y = open ? side * Math.PI * 0.49 : 0;
+    group.add(door);
+  }
+  return group;
+}
+
+function kitchenRun(palette: Palette, prepWidth: number, open: boolean): Group {
+  const group = new Group();
+  let edge = -prepWidth / 2 - kitchenBay;
+  for (const section of kitchenSections) {
+    const width = section === "prep" ? prepWidth : kitchenBay;
+    const cabinet = kitchenCabinet(palette, section, width, open);
+    cabinet.position.x = edge + width / 2;
+    group.add(cabinet);
+    edge += width;
+  }
+  return group;
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
@@ -540,6 +716,10 @@ export function buildWorkshop(
     },
     "dining-bench": () => diningBench(palette, width),
     "dining-set": () => diningSet(palette, width, seats),
+    "kitchen-prep": () => kitchenCabinet(palette, "prep", width, options.open ?? false),
+    "kitchen-sink": () => kitchenCabinet(palette, "sink", kitchenBay, options.open ?? false),
+    "kitchen-cooktop": () => kitchenCabinet(palette, "cooktop", kitchenBay, options.open ?? false),
+    "kitchen-run": () => kitchenRun(palette, width, options.open ?? false),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;

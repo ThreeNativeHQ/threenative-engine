@@ -45,10 +45,10 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
 ### Workshop Kit
 
-Open **Workshop Kit** for workshop, bedroom, lounge and dining furniture. Change **Width** to
-resize the workbench, wall shelf, coffee table, dining table or dining bench. Pick two or three
+Open **Workshop Kit** for workshop, bedroom, lounge, dining and kitchen furniture. Change **Width** to
+resize the workbench, wall shelf, coffee table, dining table, dining bench or prep cabinet. Pick two or three
 **Seats** for the sofa or lounge, or four or six for the dining set. **Open** previews the top
-drawer, locker door or media console doors. **Scale**, **Seed** and **Accent color** make size
+drawer or the doors on the locker, media console and kitchen. **Scale**, **Seed** and **Accent color** make size
 and finish variants.
 
 | Asset | Named nodes and placement |
@@ -63,6 +63,10 @@ and finish variants.
 | Media console | Rotate `console-door-left` and `console-door-right` around their local Y axes. Place props at `console-top` or `console-shelf`. |
 | Dining table and set | Place dishes at `dining-top`. The set adds four or six separately movable chairs with `dining-seat-1` through `dining-seat-6`. Seat local +Z faces the table. |
 | Dining chair and bench | Place characters at `dining-seat`, `bench-seat-left` or `bench-seat-right`. |
+| Kitchen | Align each module's `{section}-join-right` with the next `{section}-join-left`, facing their local +Z axes toward each other. Counter height is 0.91 m before scale. `prep-surface`, `sink-basin`, `sink-faucet` and `cooktop-burner-1` through `cooktop-burner-4` mark work positions. Rotate `{section}-door-left` or `{section}-door-right` around local Y. |
+
+The assembled kitchen run includes prep, sink and cooktop cabinets. Changing **Width** resizes
+the prep section while the sink and cooktop remain 0.6 m wide.
 
 The furniture uses +Y up and faces +Z. The 512 px wood color and normal maps come from
 [Poly Haven's CC0 Cherry Veneer](https://polyhaven.com/a/cherry_veneer) and ship embedded as WebP.

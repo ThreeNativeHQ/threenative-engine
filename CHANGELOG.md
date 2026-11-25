@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Workshop Kit adds matching kitchen prep, sink and cooktop cabinets, with
+  a width-adjustable run, named snap points, recessed basin and individually hinged doors.
+
 - The Asset Library's Workshop Kit adds a dining table, slat-back chair, bench, and a four- or
   six-seat dining set with adjustable table width and named seat placements.
 
