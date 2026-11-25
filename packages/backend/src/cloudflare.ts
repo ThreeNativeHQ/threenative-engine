@@ -10,6 +10,8 @@ import {
   type IBackendD1,
   type IDocRow,
   type IKvRow,
+  type IRoomLobbyRow,
+  type IRoomRow,
   SELECT_DOC,
   SELECT_KV,
   UPDATE_DOC,
@@ -25,11 +27,21 @@ import {
   DEFAULT_PREFIX,
   DOCS_MAX,
   DOC_MAX,
+  type IRoomCodeResponse,
+  type IRoomListResponse,
   KEYS_MAX,
   LIST_MAX,
+  MARKER_HEADER,
+  MARKER_VALUE,
+  ROOM_PLAYERS_DEFAULT,
+  ROOM_PLAYERS_MIN,
+  ROOM_STALE_MS,
   VALUE_MAX,
   isValidName,
+  randomRoomCode,
 } from "./protocol.js";
+
+export { BackendRoom } from "./room-do.js";
 
 export type {
   IBackendD1,
@@ -45,6 +57,29 @@ export interface IBackendHandlerOptions {
   readonly playerId: string;
   /** Where the host mounted the routes. Default `DEFAULT_PREFIX`. */
   readonly prefix?: string;
+  /** The room namespace the host binds to `BackendRoom`. Without it every `/v1/rooms` route is 404. */
+  readonly rooms?: IBackendRoomsNamespace;
+  /** The owner's plan cap on players per room. The host computes it; the client never sends it. */
+  readonly maxPlayers?: number;
+}
+
+/** The one method `handleBackend` calls on a room object it hands a request to. */
+export interface IBackendRoomStub {
+  fetch(request: Request): Promise<Response>;
+}
+
+/**
+ * A Durable Object namespace, structurally: a real one satisfies it, and so does the stand-in a
+ * test uses. A room is named `${gameId}:${code}`, so two games never share a room.
+ */
+export interface IBackendRoomsNamespace<IId = unknown> {
+  idFromName(name: string): IId;
+  get(id: IId): IBackendRoomStub;
+}
+
+interface IRoomContext extends IRouteContext {
+  readonly rooms: IBackendRoomsNamespace;
+  readonly maxPlayers: number;
 }
 
 interface IRouteContext {
@@ -268,6 +303,115 @@ async function deleteDoc(context: IRouteContext, name: string, id: string): Prom
   return respond({});
 }
 
+/** One lobby row: the only thing `list` and `quickJoin` need, and what the room keeps fresh. */
+const ROOM_INSERT =
+  "INSERT INTO rooms (game_id, code, public, players, max, created_at, updated_at) VALUES (?, ?, ?, 0, ?, ?, ?) ON CONFLICT DO NOTHING";
+const ROOM_LIST =
+  "SELECT code, players, max FROM rooms WHERE game_id = ? AND public = 1 AND updated_at > ? AND players < max ORDER BY updated_at DESC LIMIT ?";
+const ROOM_QUICK =
+  "SELECT code FROM rooms WHERE game_id = ? AND public = 1 AND updated_at > ? AND players < max ORDER BY players DESC, updated_at DESC LIMIT 1";
+const ROOM_FIND = "SELECT code, players, max, public FROM rooms WHERE game_id = ? AND code = ?";
+
+/** The owner's cap, floored at the smallest room: a host that names no cap gets the default. */
+function playerCap(options: IBackendHandlerOptions): number {
+  const cap = options.maxPlayers ?? ROOM_PLAYERS_DEFAULT;
+  if (!Number.isFinite(cap)) return ROOM_PLAYERS_DEFAULT;
+  return Math.max(ROOM_PLAYERS_MIN, Math.floor(cap));
+}
+
+/** `max` from the request body, clamped to `[ROOM_PLAYERS_MIN, cap]`; anything but a number is the cap. */
+function clampMax(value: unknown, cap: number): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) return cap;
+  return Math.min(cap, Math.max(ROOM_PLAYERS_MIN, Math.floor(value)));
+}
+
+/** A code no room of this game holds yet: the primary key clash is the retry, not a second read. */
+async function insertRoom(
+  db: IBackendD1,
+  gameId: string,
+  isPublic: boolean,
+  max: number,
+): Promise<string> {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = randomRoomCode();
+    const now = Date.now();
+    const result = await db
+      .prepare(ROOM_INSERT)
+      .bind(gameId, code, isPublic ? 1 : 0, max, now, now)
+      .run();
+    if (changes(result) > 0) return code;
+  }
+  throw new Error("@threenative/backend: could not allocate a room code");
+}
+
+async function createRoom(context: IRoomContext): Promise<Response> {
+  const body = (await readObject(context.request)) ?? {};
+  // A room is private unless it asks to be listed: a code is something you share on purpose.
+  const code = await insertRoom(
+    context.db,
+    context.gameId,
+    body.public === true,
+    clampMax(body.max, context.maxPlayers),
+  );
+  return respond({ code } satisfies IRoomCodeResponse);
+}
+
+async function listRooms(context: IRoomContext): Promise<Response> {
+  const rows = await context.db
+    .prepare(ROOM_LIST)
+    .bind(context.gameId, Date.now() - ROOM_STALE_MS, LIST_MAX)
+    .all<IRoomRow>();
+  const items = rows.results.map((row) => ({
+    code: row.code,
+    players: row.players,
+    max: row.max,
+  }));
+  return respond({ items } satisfies IRoomListResponse);
+}
+
+async function quickJoinRoom(context: IRoomContext): Promise<Response> {
+  const row = await context.db
+    .prepare(ROOM_QUICK)
+    .bind(context.gameId, Date.now() - ROOM_STALE_MS)
+    .first<Pick<IRoomRow, "code">>();
+  if (row !== null) return respond({ code: row.code } satisfies IRoomCodeResponse);
+  const code = await insertRoom(context.db, context.gameId, true, context.maxPlayers);
+  return respond({ code } satisfies IRoomCodeResponse);
+}
+
+/**
+ * Joins a room, or answers what joining it would mean.
+ *
+ * A browser cannot read the HTTP status of a failed WebSocket handshake, so a plain `GET` answers
+ * the same `room_not_found`/`room_full` verdict the upgrade would; the client asks it first and
+ * only then opens the socket.
+ */
+async function joinRoom(context: IRoomContext, code: string): Promise<Response> {
+  const row = await context.db.prepare(ROOM_FIND).bind(context.gameId, code).first<IRoomLobbyRow>();
+  if (row === null) return fail("room_not_found", 404);
+  if (context.request.headers.get("upgrade")?.toLowerCase() !== "websocket") {
+    if (row.players >= row.max) return fail("room_full", 409);
+    return respond({ code: row.code, players: row.players, max: row.max });
+  }
+
+  // Only the host's own values: a client header named `x-backend-*` never reaches the room.
+  const headers = new Headers();
+  headers.set("upgrade", "websocket");
+  headers.set("x-backend-game", context.gameId);
+  headers.set("x-backend-code", row.code);
+  headers.set("x-backend-max", String(row.max));
+  headers.set("x-backend-public", row.public === 1 ? "1" : "0");
+  const request = new Request("https://room/", { method: "GET", headers });
+  const response = await context.rooms
+    .get(context.rooms.idFromName(`${context.gameId}:${row.code}`))
+    .fetch(request);
+  if (response.status === 101) return response;
+  // Every other answer is an ordinary response, and stays recognisable as ours.
+  const marked = new Headers(response.headers);
+  marked.set(MARKER_HEADER, MARKER_VALUE);
+  return new Response(await response.text(), { status: response.status, headers: marked });
+}
+
 /**
  * Answers one `/_backend` request: `200` with the body, or `{ error }` with 400/403/404/409/413.
  *
@@ -307,6 +451,22 @@ export async function handleBackend(
     if (method === "DELETE") return deleteValue(context, name);
     return fail("not_found", 404);
   }
+  if (group === "rooms") {
+    if (options.rooms === undefined) return fail("not_found", 404);
+    const roomContext: IRoomContext = {
+      ...context,
+      rooms: options.rooms,
+      maxPlayers: playerCap(options),
+    };
+    if (name === undefined) {
+      if (method === "POST") return createRoom(roomContext);
+      return method === "GET" ? listRooms(roomContext) : fail("not_found", 404);
+    }
+    if (id !== undefined || parts.length > 3) return fail("not_found", 404);
+    if (name === "quick")
+      return method === "POST" ? quickJoinRoom(roomContext) : fail("not_found", 404);
+    return method === "GET" ? joinRoom(roomContext, name) : fail("not_found", 404);
+  }
   if (group === "collections" && name !== undefined) {
     if (id === undefined) {
       return method === "GET" ? listDocs(context, name) : fail("not_found", 404);
@@ -320,7 +480,7 @@ export async function handleBackend(
 }
 
 /**
- * Removes every row a game owns, in both tables, and nothing else — what a game or account
+ * Removes every row a game owns, in all three tables, and nothing else — what a game or account
  * deletion calls, while revoking a share link keeps the players' saves.
  *
  * @situation delete a published game and all of its players' data in one call
@@ -331,5 +491,6 @@ export async function deleteGameData(db: IBackendD1, gameId: string): Promise<vo
   await db.batch([
     db.prepare("DELETE FROM kv WHERE game_id = ?").bind(gameId),
     db.prepare("DELETE FROM docs WHERE game_id = ?").bind(gameId),
+    db.prepare("DELETE FROM rooms WHERE game_id = ?").bind(gameId),
   ]);
 }

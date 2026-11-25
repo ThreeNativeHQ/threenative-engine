@@ -660,7 +660,7 @@
       "requires": ["npm i @threenative/backend"],
       "signature": "export async function deleteGameData(db: IBackendD1, gameId: string): Promise<void> { … }",
       "situations": ["delete a published game and all of its players' data in one call"],
-      "summary": "Removes every row a game owns, in both tables, and nothing else — what a game or account deletion calls, while revoking a share link keeps the players' saves.",
+      "summary": "Removes every row a game owns, in all three tables, and nothing else — what a game or account deletion calls, while revoking a share link keeps the players' saves.",
       "supersedes": [],
       "symbol": "deleteGameData"
     },

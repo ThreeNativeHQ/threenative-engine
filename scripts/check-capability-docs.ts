@@ -44,6 +44,8 @@ export interface ICapabilityPackageCensusReport {
 export const INTERNAL_ALLOWLIST: Readonly<Record<string, string>> = {
   "@threenative/core/hot#assertPortableState":
     "Hot-update implementation detail; game code calls acceptHotUpdate instead.",
+  "@threenative/backend/cloudflare#BackendRoom":
+    "Durable Object class a host binds as a namespace and lists in its migrations; a game talks to a room through the client.",
   "@threenative/backend/cloudflare#deleteGameData":
     "Server-side purge a host calls when a game or account is deleted; a game never imports it.",
   "@threenative/backend/cloudflare#handleBackend":

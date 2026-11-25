@@ -40,6 +40,18 @@ export interface IDocRow {
   readonly version: number;
 }
 
+/** A lobby row as `list` and `quickJoin` read it. */
+export interface IRoomRow {
+  readonly code: string;
+  readonly players: number;
+  readonly max: number;
+}
+
+/** The same row plus the visibility the join route forwards into the room. */
+export interface IRoomLobbyRow extends IRoomRow {
+  readonly public: number;
+}
+
 export interface ITotalsRow {
   readonly rows: number;
   readonly bytes: number;

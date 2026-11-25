@@ -4,6 +4,7 @@
  */
 import { type IStorageContext, readStorage } from "./cache.js";
 import {
+  BACKEND_ERROR_CODES,
   type BackendErrorCode,
   DEFAULT_PREFIX,
   MARKER_HEADER,
@@ -13,15 +14,7 @@ import {
 
 /** Three retries for a write the network did not take; a game waits 350 ms at worst. */
 const RETRY_DELAYS_MS = [50, 100, 200];
-const ERROR_CODES = new Set<string>([
-  "version_conflict",
-  "too_large",
-  "forbidden",
-  "invalid_key",
-  "not_found",
-  "no_host",
-  "rate_limited",
-]);
+const ERROR_CODES = new Set<string>(BACKEND_ERROR_CODES);
 const STATUS_CODES: Readonly<Record<number, BackendErrorCode>> = {
   400: "invalid_key",
   403: "forbidden",

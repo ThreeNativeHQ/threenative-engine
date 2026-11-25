@@ -23,6 +23,7 @@ import {
   type IDbValueResponse,
   isValidName,
 } from "./protocol.js";
+import { BackendRooms } from "./rooms.js";
 import {
   BackendError,
   type IBackendContext,
@@ -43,9 +44,10 @@ export interface IBackendWriteOptions {
   readonly ifVersion?: number;
 }
 
-/** What `createBackend` hands a game: one namespace of keys and any number of collections. */
+/** What `createBackend` hands a game: one namespace of keys, collections, and the game's rooms. */
 export interface IBackend {
   readonly db: BackendDb;
+  readonly rooms: BackendRooms;
 }
 
 function requireName(value: string): void {
@@ -414,5 +416,6 @@ export class BackendCollection {
  * @example const shared = await backend.db.collection("levels").list();
  */
 export function createBackend(options: IBackendOptions = {}): IBackend {
-  return { db: new BackendDb(createContext(options)) };
+  const context = createContext(options);
+  return { db: new BackendDb(context), rooms: new BackendRooms(context) };
 }

@@ -3,7 +3,7 @@
  * own migration applied: AC-2 plus the owner, scope, limit and cleanup rules the wire contract
  * promises.
  */
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { Miniflare } from "miniflare";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createBackend } from "../src/client.js";
@@ -42,15 +42,16 @@ beforeAll(async () => {
     ],
   });
   db = await miniflare.getD1Database("DB", "backend");
-  const migration = await readFile(
-    new URL("../migrations/0001_backend.sql", import.meta.url),
-    "utf8",
-  );
-  // `wrangler d1 migrations apply` runs the whole file; here each statement runs on its own, so
-  // the comments come off first.
-  for (const statement of migration.replace(/^--.*$/gmu, "").split(";")) {
-    const sql = statement.trim();
-    if (sql.length > 0) await db.prepare(sql).run();
+  // Every migration, in order, the way `wrangler d1 migrations apply` runs them: the handler's
+  // wipe reaches the rooms table `0002` adds.
+  const migrations = (await readdir(new URL("../migrations", import.meta.url))).sort();
+  for (const name of migrations) {
+    const migration = await readFile(new URL(`../migrations/${name}`, import.meta.url), "utf8");
+    // Each statement runs on its own, so the comments come off first.
+    for (const statement of migration.replace(/^--.*$/gmu, "").split(";")) {
+      const sql = statement.trim();
+      if (sql.length > 0) await db.prepare(sql).run();
+    }
   }
 });
 
