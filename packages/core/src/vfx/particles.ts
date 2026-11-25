@@ -381,7 +381,7 @@ function particleMaterial(
     authoredAlpha
       .mul(styleMask(layer.style, clock?.age ?? time))
       .mul(stretched ? 0.92 : 1)
-      .mul(clock?.burst === true ? float(1).sub(step(1, phaseVarying)) : 1),
+      .mul(clock?.burst === true ? float(1).sub(smoothstep(0.85, 0.99, phaseVarying)) : 1),
   );
   const spawn = shapePosition(layer, seed);
   const launch = velocityDirection(layer, spawn, seed);
