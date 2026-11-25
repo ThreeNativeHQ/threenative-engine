@@ -1,5 +1,55 @@
 import { GPUParticles3D, type ICtx, Scene, type SceneFrame } from "@threenative/core";
 import {
+  type IPortalVortex,
+  type IVfxOverrides,
+  createAshPlume,
+  createBloodSplash,
+  createBonfire,
+  createBubbleStream,
+  createBurstFlash,
+  createCartoonSmokeBlast,
+  createConfettiBurst,
+  createCurlingFlame,
+  createDustCloud,
+  createEmberFountain,
+  createExplosionCloud,
+  createFire,
+  createFireflies,
+  createFlameWithEmbers,
+  createFrostAura,
+  createFrostBurst,
+  createGroundMist,
+  createHealingAura,
+  createHolyGlow,
+  createIceShatter,
+  createImpactBurst,
+  createImpactDust,
+  createImpactFlash,
+  createImpactSparks,
+  createJetFlame,
+  createLeafSwirl,
+  createLightningBurst,
+  createLightningColumn,
+  createLightningSphere,
+  createMagicBeam,
+  createMagicOrb,
+  createMagicWisp,
+  createMuzzleFlash,
+  createPoisonCloud,
+  createPortalVortex,
+  createRain,
+  createShieldBreak,
+  createSlashArc,
+  createSmoke,
+  createSnow,
+  createSparkStreaks,
+  createSteamPlume,
+  createWaterfallMist,
+  createWhirlwind,
+  createWindGust,
+  createWindStreaks,
+} from "@threenative/core/vfx";
+import {
   BoxGeometry,
   Color,
   GridHelper,
@@ -10,60 +60,6 @@ import {
   PlaneGeometry,
   Vector3,
 } from "three";
-import {
-  createBurstFlash,
-  createEffekseerHit01,
-  createEffekseerHit02,
-  createEmberFountain,
-  createImpactSparks,
-  createMuzzleFlash,
-  createSparkStreaks,
-} from "../render/combat.js";
-import {
-  createGodotBloodSplash,
-  createGodotFireflies,
-  createGodotShieldBreak,
-  createGodotWaterfallMist,
-  createKenneyConfettiBurst,
-  createKenneyLeafSwirl,
-  createKenneySlashArc,
-  createPixiBubbleStream,
-  createPixiCartoonSmokeBlast,
-} from "../render/extras.js";
-import {
-  createAshPlume,
-  createDustCloud,
-  createEffekseerWind01,
-  createEffekseerWind02,
-  createEffekseerWind03,
-  createExplosionCloud,
-  createFire,
-  createGroundMist,
-  createImpactDust,
-  createJetFlame,
-  createPoisonCloud,
-  createRain,
-  createSmoke,
-  createSnow,
-  createSteamPlume,
-} from "../render/fireSmokeWeather.js";
-import {
-  createEffekseerFire01,
-  createEffekseerFire02,
-  createEffekseerFire03,
-  createEffekseerHoly01,
-  createEffekseerIce01,
-  createEffekseerIce02,
-  createEffekseerIce03,
-  createEffekseerLightning01,
-  createEffekseerLightning02,
-  createEffekseerLightning03,
-  createHealingAura,
-  createMagicBeam,
-  createMagicOrb,
-  createMagicWisp,
-} from "../render/magic.js";
-import { type IPortalVortex, createPortalVortex } from "../render/portalVortex.js";
 import { createBurstProbe } from "./burstProbe.js";
 
 const EFFECT_IDS = [
@@ -333,7 +329,12 @@ class GalleryEffectEntity {
 }
 
 type GalleryParticleOptions = ConstructorParameters<typeof GPUParticles3D>[0];
-type GalleryEffectFactory = (seed: number) => readonly GalleryParticleOptions[];
+type GalleryEffectFactory = (overrides: IVfxOverrides) => readonly GalleryParticleOptions[];
+
+// A bounded representative count per layer, so all 46 effects stay resident during one capture.
+// Games get the donor capacity by default.
+const galleryAmount = (donorCapacity: number): number =>
+  Math.max(18, Math.min(96, Math.round(Math.sqrt(donorCapacity) * 2.5)));
 type GalleryEffectDefinition = {
   readonly id: string;
   readonly index: number;
@@ -363,30 +364,30 @@ const EFFECT_DEFINITIONS: readonly GalleryEffectDefinition[] = [
   { id: "magic-orb", index: 18, factory: createMagicOrb, seed: 107 },
   { id: "magic-beam", index: 19, factory: createMagicBeam, seed: 109 },
   { id: "healing-aura", index: 20, factory: createHealingAura, seed: 113 },
-  { id: "effekseer-fire01", index: 21, factory: createEffekseerFire01, seed: 127 },
-  { id: "effekseer-fire02", index: 22, factory: createEffekseerFire02, seed: 131 },
-  { id: "effekseer-fire03", index: 23, factory: createEffekseerFire03, seed: 137 },
-  { id: "effekseer-lightning01", index: 24, factory: createEffekseerLightning01, seed: 139 },
-  { id: "effekseer-lightning02", index: 25, factory: createEffekseerLightning02, seed: 149 },
-  { id: "effekseer-lightning03", index: 26, factory: createEffekseerLightning03, seed: 151 },
-  { id: "effekseer-ice01", index: 27, factory: createEffekseerIce01, seed: 157 },
-  { id: "effekseer-ice02", index: 28, factory: createEffekseerIce02, seed: 163 },
-  { id: "effekseer-ice03", index: 29, factory: createEffekseerIce03, seed: 167 },
-  { id: "effekseer-holy01", index: 30, factory: createEffekseerHoly01, seed: 173 },
-  { id: "effekseer-hit01", index: 31, factory: createEffekseerHit01, seed: 97 },
-  { id: "effekseer-hit02", index: 32, factory: createEffekseerHit02, seed: 101 },
-  { id: "effekseer-wind01", index: 33, factory: createEffekseerWind01, seed: 59 },
-  { id: "effekseer-wind02", index: 34, factory: createEffekseerWind02, seed: 61 },
-  { id: "effekseer-wind03", index: 35, factory: createEffekseerWind03, seed: 67 },
-  { id: "kenney-slash-arc", index: 36, factory: createKenneySlashArc, seed: 179 },
-  { id: "kenney-confetti-burst", index: 37, factory: createKenneyConfettiBurst, seed: 181 },
-  { id: "kenney-leaf-swirl", index: 38, factory: createKenneyLeafSwirl, seed: 191 },
-  { id: "pixi-bubble-stream", index: 39, factory: createPixiBubbleStream, seed: 193 },
-  { id: "pixi-cartoon-smoke-blast", index: 40, factory: createPixiCartoonSmokeBlast, seed: 197 },
-  { id: "godot-fireflies", index: 41, factory: createGodotFireflies, seed: 199 },
-  { id: "godot-blood-splash", index: 43, factory: createGodotBloodSplash, seed: 211 },
-  { id: "godot-shield-break", index: 44, factory: createGodotShieldBreak, seed: 223 },
-  { id: "godot-waterfall-mist", index: 45, factory: createGodotWaterfallMist, seed: 227 },
+  { id: "effekseer-fire01", index: 21, factory: createCurlingFlame, seed: 127 },
+  { id: "effekseer-fire02", index: 22, factory: createFlameWithEmbers, seed: 131 },
+  { id: "effekseer-fire03", index: 23, factory: createBonfire, seed: 137 },
+  { id: "effekseer-lightning01", index: 24, factory: createLightningBurst, seed: 139 },
+  { id: "effekseer-lightning02", index: 25, factory: createLightningColumn, seed: 149 },
+  { id: "effekseer-lightning03", index: 26, factory: createLightningSphere, seed: 151 },
+  { id: "effekseer-ice01", index: 27, factory: createFrostBurst, seed: 157 },
+  { id: "effekseer-ice02", index: 28, factory: createFrostAura, seed: 163 },
+  { id: "effekseer-ice03", index: 29, factory: createIceShatter, seed: 167 },
+  { id: "effekseer-holy01", index: 30, factory: createHolyGlow, seed: 173 },
+  { id: "effekseer-hit01", index: 31, factory: createImpactBurst, seed: 97 },
+  { id: "effekseer-hit02", index: 32, factory: createImpactFlash, seed: 101 },
+  { id: "effekseer-wind01", index: 33, factory: createWindStreaks, seed: 59 },
+  { id: "effekseer-wind02", index: 34, factory: createWindGust, seed: 61 },
+  { id: "effekseer-wind03", index: 35, factory: createWhirlwind, seed: 67 },
+  { id: "kenney-slash-arc", index: 36, factory: createSlashArc, seed: 179 },
+  { id: "kenney-confetti-burst", index: 37, factory: createConfettiBurst, seed: 181 },
+  { id: "kenney-leaf-swirl", index: 38, factory: createLeafSwirl, seed: 191 },
+  { id: "pixi-bubble-stream", index: 39, factory: createBubbleStream, seed: 193 },
+  { id: "pixi-cartoon-smoke-blast", index: 40, factory: createCartoonSmokeBlast, seed: 197 },
+  { id: "godot-fireflies", index: 41, factory: createFireflies, seed: 199 },
+  { id: "godot-blood-splash", index: 43, factory: createBloodSplash, seed: 211 },
+  { id: "godot-shield-break", index: 44, factory: createShieldBreak, seed: 223 },
+  { id: "godot-waterfall-mist", index: 45, factory: createWaterfallMist, seed: 227 },
 ];
 
 function tilePosition(index: number): Vector3 {
@@ -461,13 +462,15 @@ export class Gallery extends Scene<GalleryState> {
 
     const mountParticles = (definition: GalleryEffectDefinition): void => {
       const position = tilePosition(definition.index);
-      const particles = definition.factory(definition.seed).map((option, layerIndex) => {
-        const particle = ctx.add(new GPUParticles3D(option));
-        particle.name = `vfx-${definition.id}-${layerIndex}`;
-        particle.position.copy(position);
-        particle.graceSeconds = graceSeconds();
-        return particle;
-      });
+      const particles = definition
+        .factory({ seed: definition.seed, amount: galleryAmount })
+        .map((option, layerIndex) => {
+          const particle = ctx.add(new GPUParticles3D(option));
+          particle.name = `vfx-${definition.id}-${layerIndex}`;
+          particle.position.copy(position);
+          particle.graceSeconds = graceSeconds();
+          return particle;
+        });
       entityFor(definition.id).setObjects(
         particles,
         particles.reduce((total, particle) => total + particle.amount, 0),
@@ -476,7 +479,7 @@ export class Gallery extends Scene<GalleryState> {
     };
 
     const mountPortal = (): void => {
-      const nextPortal = createPortalVortex(229);
+      const nextPortal = createPortalVortex({ amount: galleryAmount });
       const portalRing = ctx.add(new GPUParticles3D(nextPortal.ring));
       portalRing.name = "vfx-godot-portal-vortex-ring";
       portalRing.position.copy(tilePosition(42));

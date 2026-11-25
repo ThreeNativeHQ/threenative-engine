@@ -87,6 +87,10 @@
       "types": "./dist/spells/ultra/index.d.ts",
       "import": "./dist/spells/ultra/index.js"
     },
+    "./vfx": {
+      "types": "./dist/vfx/index.d.ts",
+      "import": "./dist/vfx/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {

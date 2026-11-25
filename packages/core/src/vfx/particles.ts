@@ -30,26 +30,8 @@ import {
   type SpriteNodeMaterial,
   type StorageBufferNode,
 } from "three/webgpu";
-import * as THREE from "three/webgpu";
-import {
-  type ArchiveLayer,
-  type ArchiveVec3,
-  ashPlumeLayers,
-  dustCloudLayers,
-  effekseerWind01Layers,
-  effekseerWind02Layers,
-  effekseerWind03Layers,
-  explosionCloudLayers,
-  fireLayers,
-  groundMistLayers,
-  impactDustLayers,
-  jetFlameLayers,
-  poisonCloudLayers,
-  rainLayers,
-  smokeLayers,
-  snowLayers,
-  steamPlumeLayers,
-} from "./archivePresets.js";
+import * as three from "three/webgpu";
+import type { ArchiveLayer, ArchiveVec3, ArchiveVec4 } from "./presets.js";
 
 export interface IParticleBuffers {
   readonly positions: StorageBufferNode<"vec3">;
@@ -64,18 +46,6 @@ export interface IParticleOptions {
 }
 
 const TAU = Math.PI * 2;
-const GALLERY_PARTICLE_LIMIT = 96;
-const GALLERY_PARTICLE_FLOOR = 18;
-const GALLERY_WORLD_SCALE = 1;
-
-function particleAmount(layer: ArchiveLayer): number {
-  // The donor capacities remain authoritative in archivePresets.ts. The gallery uses a bounded
-  // representative count so all 46 compositions can stay resident during one browser capture.
-  return Math.max(
-    GALLERY_PARTICLE_FLOOR,
-    Math.min(GALLERY_PARTICLE_LIMIT, Math.round(Math.sqrt(layer.capacity) * 2.5)),
-  );
-}
 
 function random(index: typeof instanceIndex, seed: number, salt: number) {
   return hash(index.add(seed + salt));
@@ -216,10 +186,14 @@ function velocityDirection(layer: ArchiveLayer, spawn: Node<"vec3">, seed: numbe
     const origin = vec3(...(velocity.origin ?? [0, 0, 0]));
     return normalize(spawn.sub(origin).add(vec3(0.0001, 0.0002, 0.0003))).mul(speed);
   }
-  const direction = normalize(vec3(...(velocity.direction ?? [0, 1, 0])));
+  const raw = velocity.direction ?? [0, 1, 0];
+  const direction = normalize(vec3(...raw));
   const angle = velocity.angle ?? 0;
   if (angle <= 0) return direction.mul(speed);
-  const tangent = Math.abs(velocity.direction?.[1] ?? 1) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0);
+  // Test the NORMALISED direction: a short vertical one such as [0, 0.12, 0] must still pick the X
+  // tangent, or cross() is zero and every particle position becomes NaN (a GPU fault on NVIDIA).
+  const tangent =
+    Math.abs(raw[1]) / Math.hypot(raw[0], raw[1], raw[2]) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0);
   const bitangent = normalize(cross(direction, tangent));
   const coneAngle = float(angle).mul(random(instanceIndex, seed, 43).sqrt());
   const azimuth = random(instanceIndex, seed, 47).mul(TAU);
@@ -299,7 +273,7 @@ function moveParticle(
   }
   if (layer.floor !== undefined)
     position = vec3(position.x, position.y.max(layer.floor.height), position.z);
-  return position.mul(GALLERY_WORLD_SCALE);
+  return position;
 }
 
 function styleMask(style: number) {
@@ -358,8 +332,8 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
   const material = new SpriteMaterial({
     blending:
       layer.blend === "alpha" || layer.blend === "masked"
-        ? THREE.NormalBlending
-        : THREE.AdditiveBlending,
+        ? three.NormalBlending
+        : three.AdditiveBlending,
     depthWrite: false,
     toneMapped: false,
     transparent: true,
@@ -382,10 +356,7 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
   const width = stretched
     ? Math.max(baseSize * 0.42, (layer.ribbonWidth ?? baseSize) * 1.8)
     : baseSize;
-  material.scaleNode = vec2(width, length)
-    .mul(authoredSize)
-    .mul(lifetimeScale)
-    .mul(GALLERY_WORLD_SCALE);
+  material.scaleNode = vec2(width, length).mul(authoredSize).mul(lifetimeScale);
   material.colorNode = vec4(
     authoredColor,
     authoredAlpha.mul(styleMask(layer.style)).mul(stretched ? float(0.92) : float(1)),
@@ -398,16 +369,75 @@ function particleMaterial(layer: ArchiveLayer, seed: number): SpriteNodeMaterial
   return material;
 }
 
-export function createDonorParticle(layer: ArchiveLayer, seed: number): IParticleOptions {
-  const amount = particleAmount(layer);
+/** Named overrides every VFX factory takes. Each one rewrites donor data before a pipeline is built. */
+export interface IVfxOverrides {
+  /** Hash seed. Each layer adds 97 per layer index. Default: the effect's stock seed. */
+  readonly seed?: number;
+  /** Particles per layer: a count, or a function of the donor capacity. Default: the donor capacity. */
+  readonly amount?: number | ((donorCapacity: number) => number);
+  /** Tint multiplied into every layer colour and colour-curve point. Default: white (no change). */
+  readonly color?: three.ColorRepresentation;
+  /** Multiplier on every sprite and ribbon size. Default: 1. */
+  readonly size?: number;
+  /** Multiplier on every particle lifetime, so the effect plays slower above 1. Default: 1. */
+  readonly lifetime?: number;
+}
+
+export function layerAmount(layer: ArchiveLayer, amount: IVfxOverrides["amount"]): number {
+  const value =
+    amount === undefined
+      ? layer.capacity
+      : typeof amount === "number"
+        ? amount
+        : amount(layer.capacity);
+  if (!Number.isInteger(value) || value < 1) {
+    throw new Error(`VFX layer ${layer.id}: amount must be a positive integer, got ${value}.`);
+  }
+  return value;
+}
+
+export function overrideLayer(layer: ArchiveLayer, overrides: IVfxOverrides): ArchiveLayer {
+  const size = overrides.size ?? 1;
+  const lifetime = overrides.lifetime ?? 1;
+  if (!(size > 0) || !(lifetime > 0)) {
+    throw new Error(`VFX layer ${layer.id}: size and lifetime must be positive.`);
+  }
+  const tint = overrides.color === undefined ? undefined : new three.Color(overrides.color);
+  const tinted = <T extends readonly number[]>(rgb: T): T =>
+    tint === undefined
+      ? rgb
+      : (rgb.map((value, index) =>
+          index === 0
+            ? value * tint.r
+            : index === 1
+              ? value * tint.g
+              : index === 2
+                ? value * tint.b
+                : value,
+        ) as unknown as T);
+  return {
+    ...layer,
+    size: layer.size * size,
+    ...(layer.ribbonWidth === undefined ? {} : { ribbonWidth: layer.ribbonWidth * size }),
+    lifetime: [layer.lifetime[0] * lifetime, layer.lifetime[1] * lifetime],
+    color: tinted(layer.color) as ArchiveVec4,
+    ...(layer.colorCurve === undefined
+      ? {}
+      : { colorCurve: layer.colorCurve.map(([at, rgb]) => [at, tinted(rgb)] as const) }),
+  };
+}
+
+export function createDonorParticle(
+  layer: ArchiveLayer,
+  seed: number,
+  amount: number,
+): IParticleOptions {
   const material = particleMaterial(layer, seed);
   const start = ({ positions, velocities }: IParticleBuffers): ComputeNode =>
     Fn(() => {
       const spawn = shapePosition(layer, seed);
-      positions.element(instanceIndex).assign(spawn.mul(GALLERY_WORLD_SCALE));
-      velocities
-        .element(instanceIndex)
-        .assign(velocityDirection(layer, spawn, seed).mul(GALLERY_WORLD_SCALE));
+      positions.element(instanceIndex).assign(spawn);
+      velocities.element(instanceIndex).assign(velocityDirection(layer, spawn, seed));
     })().compute(amount);
   const process = ({ positions, velocities }: IParticleBuffers): ComputeNode =>
     Fn(() => {
@@ -422,53 +452,15 @@ export function createDonorParticle(layer: ArchiveLayer, seed: number): IParticl
 
 export function createDonorEffect(
   layers: (position: ArchiveVec3) => ArchiveLayer[],
-  seed: number,
+  stockSeed: number,
+  overrides: IVfxOverrides,
 ): readonly IParticleOptions[] {
-  return layers([0, 0, 0]).map((layer, index) => createDonorParticle(layer, seed + index * 97));
-}
-
-export function createFire(seed = 11): readonly IParticleOptions[] {
-  return createDonorEffect(fireLayers, seed);
-}
-export function createJetFlame(seed = 13): readonly IParticleOptions[] {
-  return createDonorEffect(jetFlameLayers, seed);
-}
-export function createSmoke(seed = 17): readonly IParticleOptions[] {
-  return createDonorEffect(smokeLayers, seed);
-}
-export function createDustCloud(seed = 19): readonly IParticleOptions[] {
-  return createDonorEffect(dustCloudLayers, seed);
-}
-export function createSteamPlume(seed = 23): readonly IParticleOptions[] {
-  return createDonorEffect(steamPlumeLayers, seed);
-}
-export function createAshPlume(seed = 29): readonly IParticleOptions[] {
-  return createDonorEffect(ashPlumeLayers, seed);
-}
-export function createExplosionCloud(seed = 31): readonly IParticleOptions[] {
-  return createDonorEffect(explosionCloudLayers, seed);
-}
-export function createImpactDust(seed = 37): readonly IParticleOptions[] {
-  return createDonorEffect(impactDustLayers, seed);
-}
-export function createGroundMist(seed = 41): readonly IParticleOptions[] {
-  return createDonorEffect(groundMistLayers, seed);
-}
-export function createPoisonCloud(seed = 43): readonly IParticleOptions[] {
-  return createDonorEffect(poisonCloudLayers, seed);
-}
-export function createRain(seed = 47): readonly IParticleOptions[] {
-  return createDonorEffect(rainLayers, seed);
-}
-export function createSnow(seed = 53): readonly IParticleOptions[] {
-  return createDonorEffect(snowLayers, seed);
-}
-export function createEffekseerWind01(seed = 59): readonly IParticleOptions[] {
-  return createDonorEffect(effekseerWind01Layers, seed);
-}
-export function createEffekseerWind02(seed = 61): readonly IParticleOptions[] {
-  return createDonorEffect(effekseerWind02Layers, seed);
-}
-export function createEffekseerWind03(seed = 67): readonly IParticleOptions[] {
-  return createDonorEffect(effekseerWind03Layers, seed);
+  const seed = overrides.seed ?? stockSeed;
+  return layers([0, 0, 0]).map((layer, index) =>
+    createDonorParticle(
+      overrideLayer(layer, overrides),
+      seed + index * 97,
+      layerAmount(layer, overrides.amount),
+    ),
+  );
 }

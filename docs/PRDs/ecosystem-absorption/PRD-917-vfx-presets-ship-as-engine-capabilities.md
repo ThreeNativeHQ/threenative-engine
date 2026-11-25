@@ -65,19 +65,21 @@ flowchart LR
 ## Decisions
 
 - 2026-11-25 (João): The VFX presets become engine capabilities (option 1), not generated source in every project (option 2). With option 1, an unused effect stays out of the game bundle, and an agent finds each effect through the capability search.
+- 2026-11-25 (agent): The fireflies recipe faulted the GPU on develop (NVIDIA Xid 31, `VK_ERROR_DEVICE_LOST`; bisected to `godot-fireflies` alone). Its cone direction `[0, 0.12, 0]` failed the raw-`y` parallel test, so `cross()` was zero and every position was NaN. `particles.ts` now tests the normalized direction. Red at 15:06:58 (fireflies alone), green after the fix (0 Xid, 0 device lost, full gallery). This fix ships in this PRD because the code becomes an engine capability.
 - 2026-11-25 (agent): Public symbols describe the effect (for example `createHealingAura`), not the donor brand. The donor IDs stay in `scripts/fixtures/vfx-niagara-46-effects.json`.
 
 ## Execution Phases
 
 #### Phase 1: The presets live in core, and the gallery consumes them
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/core/src/vfx/*` (moved from `examples/vfx-gallery/src/render/`), `packages/core/package.json`, `packages/core/tsup.config.ts`, `examples/vfx-gallery/src/scenes/Gallery.ts`, `scripts/fixtures/vfx-niagara-46-effects.json`.
 **Implementation:** Add the `./vfx` export and the tsup entry. Move the files and give each preset its own export. Remove the gallery cap from the defaults and pass it back as the gallery's `amount` override. Delete the gallery copies and point the fixture `renderSource` paths at core.
 
-- [ ] Core builds the `./vfx` entry, and the gallery typechecks against it. — proof: `pnpm typecheck` — covers AC-1 wiring.
+- [x] Core builds the `./vfx` entry, and the gallery typechecks against it. — proof: `pnpm typecheck` — exit 0, 2026-11-25; `pnpm --filter @threenative/core build` writes `dist/vfx/index.js`, publint "All good" — covers AC-1 wiring.
 - [ ] The gallery playtest and the visual check see all 46 effects. — proof: `pnpm test:vfx-gallery` — covers AC-1.
-- [ ] The provenance fixture still covers all 46 effects. — proof: `pnpm exec tsx scripts/vfx-niagara-coverage.ts` — covers AC-1 provenance.
+  2026-11-25, RTX 2080 (Turing), headed WebGPU: the tile check passes (46 of 46 tiles occupied). The scenario then fails `TN_CAPTURE_BLANK` (bright pixel ratio 0.03478 < 0.05). Develop with only the fireflies fix fails identically (0.03429), so this red is pre-existing. The guard's dark-frame path requires max luminance ≤ 0.5, and the gallery's white HTML labels exceed it. Open: fix that playtest guard or the gallery scenario.
+- [x] The provenance fixture still covers all 46 effects. — proof: `pnpm exec tsx scripts/vfx-niagara-coverage.ts` — "46 accounted (21 webgpu-vfx, 15 Effekseer, 10 extras)", exit 0, 2026-11-25 — covers AC-1 provenance.
 
 #### Phase 2: Agents find and tune the effects
 
