@@ -32,6 +32,8 @@ export interface IBakeWorkshopOptions {
   readonly scale?: number;
   /** Width in metres before scale for work surfaces, wall shelf and dining bench. */
   readonly width?: number;
+  /** Swivel chair seat height in metres for the chair or office workstation. */
+  readonly height?: number;
   /** Bake the drawer, cabinet doors or toilet lid in their open pose. */
   readonly open?: boolean;
   /** Sofa or lounge seats (2 or 3), or dining set chairs (4 or 6). */
@@ -63,10 +65,14 @@ export const workshopModules = [
   { id: "bath-vanity", name: "Vessel sink vanity", category: "Bathroom" },
   { id: "bath-tub", name: "Freestanding bathtub", category: "Bathroom" },
   { id: "bath-toilet", name: "Close-coupled toilet", category: "Bathroom" },
+  { id: "office-desk", name: "Timber office desk", category: "Office" },
+  { id: "office-chair", name: "Rolling swivel chair", category: "Office" },
+  { id: "office-monitor", name: "Desktop monitor", category: "Office" },
+  { id: "office-set", name: "Assembled office workstation", category: "Arrangements" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
-type Finish = "wood" | "accent" | "dark" | "linen" | "steel" | "insert" | "ceramic";
+type Finish = "wood" | "accent" | "dark" | "linen" | "steel" | "insert" | "ceramic" | "screen";
 type Palette = Record<Finish, MeshStandardMaterial>;
 type Part = StaticKitMesh<Finish>;
 
@@ -76,6 +82,8 @@ const coffeeWidth = { min: 0.72, max: 1.5, default: 1.08 };
 const diningWidth = { min: 1.4, max: 2.4, default: 1.68 };
 const kitchenBay = 0.6;
 const kitchenWidth = { min: kitchenBay, max: 2 * kitchenBay, default: kitchenBay };
+const officeWidth = { min: 0.95, max: 1.8, default: 1.32 };
+const chairHeight = { min: 0.42, max: 0.57, default: 0.47 };
 export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   workbench: workbenchWidth,
   station: workbenchWidth,
@@ -88,6 +96,12 @@ export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   "kitchen-run": kitchenWidth,
   "bath-vanity": { min: 0.64, max: 1.2, default: 0.78 },
   "bath-tub": { min: 1.4, max: 1.9, default: 1.65 },
+  "office-desk": officeWidth,
+  "office-set": officeWidth,
+};
+export const workshopHeights: Partial<Record<Module, typeof chairHeight>> = {
+  "office-chair": chairHeight,
+  "office-set": chairHeight,
 };
 export const workshopOpeningModules = [
   "drawer",
@@ -155,6 +169,7 @@ function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
     steel: finish("Workshop handle metal", 0xb8c6c3, 0.42, 0.4),
     insert: finish("Workshop accent inset", paint.clone().multiplyScalar(0.67), 0.77),
     ceramic: finish("Workshop glazed ceramic", 0xf4f0e9, 0.29),
+    screen: finish("Workshop matte display", 0x15232d, 0.72),
   };
 }
 
@@ -898,14 +913,132 @@ function bathToilet(palette: Palette, open: boolean): Group {
   return group;
 }
 
+const officeDeskTop = 0.747;
+const deskMonitorMount: XYZ = [0, officeDeskTop, -0.12];
+
+function officeDesk(palette: Palette, width: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const legSpan = width - 0.19;
+  for (const x of [-legSpan / 2, legSpan / 2]) {
+    mesh.block("dark", [0.094, 0.046, 0.55], [x, 0.023, 0.006], 0.02);
+    mesh.block("dark", [0.063, 0.677, 0.082], [x, 0.3675, -0.105], 0.018);
+    mesh.block("dark", [0.11, 0.038, 0.484], [x, 0.674, -0.009], 0.015);
+  }
+  mesh.block("insert", [legSpan, 0.183, 0.029], [0, 0.595, -0.237], 0.019);
+  timber(mesh, [width, 0.058, 0.648], [0, officeDeskTop - 0.029, 0], 0.022);
+  const grommetX = width / 2 - 0.12;
+  mesh.add(
+    "dark",
+    new CylinderGeometry(0.023, 0.023, 0.004, 16).translate(
+      grommetX,
+      officeDeskTop + 0.001,
+      -0.232,
+    ),
+  );
+  const group = mesh.finish("office-desk", palette);
+  anchor(group, "desk-surface", [0, officeDeskTop, 0]);
+  anchor(group, "desk-monitor", deskMonitorMount);
+  anchor(group, "desk-keyboard", [0, officeDeskTop, 0.157]);
+  anchor(group, "desk-cable", [grommetX, officeDeskTop + 0.003, -0.232]);
+  return group;
+}
+
+function officeChair(palette: Palette, height: number): Group {
+  const base = new StaticKitMesh<Finish>();
+  const swivelY = height - 0.065;
+  base.add("dark", new CylinderGeometry(0.061, 0.066, 0.132, 18).translate(0, 0.132, 0));
+  base.add(
+    "steel",
+    new CylinderGeometry(0.024, 0.024, swivelY - 0.181, 18).translate(0, (swivelY + 0.169) / 2, 0),
+  );
+  for (let i = 0; i < 5; i++) {
+    const yaw = (2 * Math.PI * i) / 5;
+    base.add(
+      "dark",
+      new RoundedBoxGeometry(0.049, 0.047, 0.244, 1, 0.014).translate(0, 0.085, 0.146).rotateY(yaw),
+    );
+    base.add("dark", new BoxGeometry(0.058, 0.048, 0.056).translate(0, 0.055, 0.258).rotateY(yaw));
+    for (const x of [-0.023, 0.023]) {
+      base.add(
+        "dark",
+        new CylinderGeometry(0.035, 0.035, 0.022, 16)
+          .rotateZ(Math.PI / 2)
+          .translate(x, 0.035, 0.258)
+          .rotateY(yaw),
+      );
+    }
+  }
+
+  const seat = new StaticKitMesh<Finish>();
+  seat.block("dark", [0.425, 0.042, 0.415], [0, -0.025, 0.013], 0.02);
+  seat.block("accent", [0.48, 0.102, 0.455], [0, 0.014, 0.017], 0.037);
+  seat.add(
+    "dark",
+    new RoundedBoxGeometry(0.09, 0.322, 0.052, 1, 0.022).rotateX(-0.15).translate(0, 0.139, -0.2),
+  );
+  seat.add(
+    "insert",
+    new RoundedBoxGeometry(0.447, 0.387, 0.084, 2, 0.04).rotateX(-0.15).translate(0, 0.284, -0.225),
+  );
+  seat.add(
+    "accent",
+    new RoundedBoxGeometry(0.408, 0.344, 0.059, 2, 0.025).rotateX(-0.15).translate(0, 0.286, -0.18),
+  );
+  seat.block("steel", [0.103, 0.021, 0.029], [0.178, -0.034, 0.04], 0.007);
+  const swivel = seat.finish("chair-swivel", palette);
+  swivel.position.y = swivelY;
+  anchor(swivel, "chair-seat", [0, 0.065, 0.025]);
+  const group = base.finish("office-chair", palette);
+  group.add(swivel);
+  return group;
+}
+
+function officeMonitor(palette: Palette): Group {
+  const stand = new StaticKitMesh<Finish>();
+  stand.block("dark", [0.275, 0.023, 0.23], [0, 0.0115, 0.005], 0.012);
+  stand.block("steel", [0.045, 0.27, 0.056], [0, 0.148, -0.085], 0.018);
+  stand.add(
+    "dark",
+    new CylinderGeometry(0.023, 0.023, 0.073, 16).rotateZ(Math.PI / 2).translate(0, 0.277, -0.073),
+  );
+  const panel = new StaticKitMesh<Finish>();
+  panel.block("dark", [0.518, 0.315, 0.047], [0, -0.006, 0], 0.021);
+  panel.block("screen", [0.48, 0.27, 0.011], [0, 0, 0.0305], 0.008);
+  panel.add(
+    "accent",
+    new CylinderGeometry(0.006, 0.006, 0.003, 12)
+      .rotateX(Math.PI / 2)
+      .translate(0.222, -0.148, 0.024),
+  );
+  const head = panel.finish("monitor-panel", palette);
+  head.position.set(0, 0.277, -0.054);
+  head.rotation.x = -0.09;
+  anchor(head, "monitor-display", [0, 0, 0.036]);
+  anchor(head, "monitor-screen-top-left", [-0.24, 0.135, 0.036]);
+  anchor(head, "monitor-screen-bottom-right", [0.24, -0.135, 0.036]);
+  const group = stand.finish("office-monitor", palette);
+  group.add(head);
+  return group;
+}
+
+function officeSet(palette: Palette, width: number, height: number): Group {
+  const chair = officeChair(palette, height);
+  chair.position.z = 0.49;
+  chair.rotation.y = Math.PI;
+  const monitor = officeMonitor(palette);
+  monitor.position.set(...deskMonitorMount);
+  return new Group().add(officeDesk(palette, width), monitor, chair);
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
-    Pick<IBakeWorkshopOptions, "width" | "open" | "seats">,
+    Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats">,
   veneer?: IVeneer,
 ): Group {
   const palette = materials(options.seed, options.accent, veneer);
   const width = options.width ?? workshopWidths[id]?.default ?? workbenchWidth.default;
+  const height = options.height ?? chairHeight.default;
   const seats = options.seats ?? workshopSeatCounts[id]?.default ?? loungeSeats.default;
   const builders = {
     workbench: () => workbench(palette, width),
@@ -943,6 +1076,10 @@ export function buildWorkshop(
     "bath-vanity": () => bathVanity(palette, width),
     "bath-tub": () => bathTub(palette, width),
     "bath-toilet": () => bathToilet(palette, options.open ?? false),
+    "office-desk": () => officeDesk(palette, width),
+    "office-chair": () => officeChair(palette, height),
+    "office-monitor": () => officeMonitor(palette),
+    "office-set": () => officeSet(palette, width, height),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;

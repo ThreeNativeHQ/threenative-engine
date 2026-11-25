@@ -45,7 +45,7 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
 ### Workshop Kit
 
-Open **Workshop Kit** for workshop, bedroom, lounge, dining, kitchen and bathroom furniture.
+Open **Workshop Kit** for workshop, bedroom, lounge, dining, kitchen, bathroom and office furniture.
 Use **Width** to resize work surfaces, the wall shelf, dining bench, vanity or bathtub. Pick two or three
 **Seats** for the sofa or lounge, or four or six for the dining set. **Open** previews the top
 drawer, cabinet doors, or toilet lid. **Scale**, **Seed** and **Accent color** make size
@@ -66,6 +66,8 @@ and finish variants.
 | Kitchen | Align each module's `{section}-join-right` with the next `{section}-join-left`, facing their local +Z axes toward each other. Counter height is 0.91 m before scale. `prep-surface`, `sink-basin`, `sink-faucet` and `cooktop-burner-1` through `cooktop-burner-4` mark work positions. Rotate `{section}-door-left` or `{section}-door-right` around local Y. |
 | Vanity and tub | Place props at `vanity-shelf`, `vanity-basin` or `tub-bottom`. Water outlet nodes are `vanity-faucet` and `tub-spout`. Detach or reposition the `tub-faucet` group at its floor mount, `tub-filler`. The tub's long axis is local X. |
 | Toilet | Rotate `toilet-seat` or `toilet-lid` upward around local −X. `toilet-sit` follows the seat and `toilet-flush` marks the button. |
+| Office desk and workstation | Use `desk-monitor`, `desk-keyboard` and `desk-cable` to place equipment. The workstation includes the desk, swivel chair and monitor. **Width** changes the desk size and **Seat height** adjusts the chair independently. |
+| Swivel chair and monitor | Turn `chair-swivel` around local Y. `chair-seat` follows its cushion. Rotate `monitor-panel` around local X to tilt it. Attach a 16:9 UI at `monitor-display`, facing local +Z. The screen corner nodes mark its 0.48 × 0.27 m area before scaling. |
 
 The assembled kitchen run includes prep, sink and cooktop cabinets. Changing **Width** resizes
 the prep section while the sink and cooktop remain 0.6 m wide.

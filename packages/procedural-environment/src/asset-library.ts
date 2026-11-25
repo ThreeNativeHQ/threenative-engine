@@ -18,6 +18,7 @@ import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 import {
   workshopAccent,
+  workshopHeights,
   workshopOpeningModules,
   workshopSeatCounts,
   workshopWidths,
@@ -115,15 +116,22 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     workshop: [
       { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
       { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
-      ...Object.entries(workshopWidths).map(
-        ([id, width]): IControl => ({
-          key: "width",
-          label: "Width",
-          type: "range",
-          step: 0.01,
-          ...width,
-          only: [`workshop-${id}`],
-        }),
+      ...(
+        [
+          ["width", "Width", workshopWidths],
+          ["height", "Seat height", workshopHeights],
+        ] as const
+      ).flatMap(([key, label, ranges]) =>
+        Object.entries(ranges).map(
+          ([id, range]): IControl => ({
+            key,
+            label,
+            type: "range",
+            step: 0.01,
+            ...range,
+            only: [`workshop-${id}`],
+          }),
+        ),
       ),
       {
         key: "open",
@@ -422,6 +430,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("accent", q.get("accent") ?? undefined),
         ...opt("scale", num(q, "scale")),
         ...opt("width", num(q, "width")),
+        ...opt("height", num(q, "height")),
         ...opt("open", toggle(q, "open")),
         ...opt("seats", num(q, "seats")),
       });

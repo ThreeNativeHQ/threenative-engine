@@ -42,6 +42,15 @@ const anchors = {
   "bath-vanity": ["vanity-basin", "vanity-faucet", "vanity-shelf", "vanity-wall"],
   "bath-tub": ["tub-bottom", "tub-drain", "tub-filler", "tub-faucet", "tub-spout"],
   "bath-toilet": ["toilet-seat", "toilet-lid", "toilet-sit", "toilet-flush"],
+  "office-desk": ["desk-surface", "desk-monitor", "desk-keyboard"],
+  "office-chair": ["chair-swivel", "chair-seat"],
+  "office-monitor": [
+    "monitor-panel",
+    "monitor-display",
+    "monitor-screen-top-left",
+    "monitor-screen-bottom-right",
+  ],
+  "office-set": ["desk-surface", "chair-seat", "monitor-display"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -75,7 +84,7 @@ describe("Workshop furniture", () => {
     expect(json.nodes.map(({ name }) => name)).toEqual(expect.arrayContaining([...nodes]));
     expect(entry.bounds.min[1]).toBeCloseTo(0, 5);
     expect(entry.triangles).toBeLessThan(6500);
-    if (id === "bath-tub" || id === "bath-toilet") {
+    if (["bath-tub", "bath-toilet", "office-chair", "office-monitor"].includes(id)) {
       expect(json.images ?? []).toHaveLength(0);
       return;
     }
@@ -402,6 +411,51 @@ describe("Workshop furniture", () => {
     expect(open.getObjectByName("toilet-lid")?.rotation.x).toBeLessThan(-1.5);
   });
 
+  it.each([0.42, 0.57])("keeps the swivel chair grounded at %s m high", (height) => {
+    const chair = buildWorkshop("office-chair", { ...options, height });
+    chair.updateMatrixWorld(true);
+    const anchor = chair.getObjectByName("chair-seat");
+    if (!anchor) throw new Error("Missing chair seat");
+    const position = anchor.getWorldPosition(new Vector3());
+    expect(position.y).toBeCloseTo(height);
+    const ray = new Raycaster(position.clone().add(new Vector3(0, 0.1, 0)), down);
+    expect(ray.intersectObject(chair)[0]?.point.y).toBeCloseTo(height);
+    expect(new Box3().setFromObject(chair, true).min.y).toBeCloseTo(0, 5);
+  });
+
+  it("positions the 16:9 display anchors on the monitor face after tilting", () => {
+    const monitor = buildWorkshop("office-monitor", options);
+    const head = monitor.getObjectByName("monitor-panel");
+    const middle = monitor.getObjectByName("monitor-display");
+    const top = monitor.getObjectByName("monitor-screen-top-left");
+    const bottom = monitor.getObjectByName("monitor-screen-bottom-right");
+    if (!head || !middle || !top || !bottom) throw new Error("Missing display mounts");
+    head.rotation.x = -0.26;
+    monitor.updateMatrixWorld(true);
+    expect(top.position.x + 0.48).toBeCloseTo(bottom.position.x);
+    expect(top.position.y - 0.27).toBeCloseTo(bottom.position.y);
+    const surface = middle.getWorldPosition(new Vector3());
+    const normal = middle.getWorldDirection(new Vector3());
+    const ray = new Raycaster(surface.clone().addScaledVector(normal, 0.08), normal.negate());
+    expect(ray.intersectObject(monitor)[0]?.point.distanceTo(surface)).toBeLessThan(0.002);
+  });
+
+  it("fits a high chair and monitor at the narrowest desk setting", () => {
+    const set = buildWorkshop("office-set", { ...options, width: 0.95, height: 0.57 });
+    set.updateMatrixWorld(true);
+    const desk = set.getObjectByName("office-desk");
+    const monitor = set.getObjectByName("office-monitor");
+    const mount = desk?.getObjectByName("desk-monitor");
+    const seat = set.getObjectByName("chair-seat");
+    if (!desk || !monitor || !mount || !seat) throw new Error("Missing workstation part");
+    expect(new Box3().setFromObject(desk, true).getSize(new Vector3()).x).toBeCloseTo(0.95);
+    expect(monitor.position.distanceTo(mount.position)).toBeCloseTo(0);
+    const forwards = seat.getWorldDirection(new Vector3());
+    expect(forwards.z).toBeCloseTo(-1);
+    const knees = new Raycaster(seat.getWorldPosition(new Vector3()).setY(0.62), forwards, 0, 0.62);
+    expect(knees.intersectObject(desk)).toHaveLength(0);
+  });
+
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
     const out = await makeTempDir("tn-workshop-controls-");
     const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
@@ -424,6 +478,19 @@ describe("Workshop furniture", () => {
       open: true,
     });
     expect(openKitchen?.path).toMatch(/-w1\.08-open\.glb$/u);
+    const [office] = await bakeWorkshop({
+      module: "workshop-office-set",
+      out,
+      width: 1.69,
+      height: 0.54,
+    });
+    expect(office?.path).toMatch(/-w1\.69-h0\.54\.glb$/u);
+    await expect(
+      bakeWorkshop({ module: "workshop-office-chair", out, height: 0.6 }),
+    ).rejects.toThrow(/height/u);
+    await expect(bakeWorkshop({ module: "workshop-stool", out, height: 0.54 })).rejects.toThrow(
+      /height/u,
+    );
     if (!wideDining) throw new Error("Missing six-seat dining GLB");
     const bytes = await readFile(wideDining.path);
     const { nodes } = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {

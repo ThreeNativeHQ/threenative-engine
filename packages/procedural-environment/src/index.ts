@@ -54,6 +54,7 @@ import {
   buildWorkshop,
   loadWorkshopVeneer,
   workshopAccent,
+  workshopHeights,
   workshopModules,
   workshopOpeningModules,
   workshopSeatCounts,
@@ -1359,6 +1360,7 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @situation furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement
  * @situation bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors
  * @situation furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid
+ * @situation bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
  * @constraint open previews the drawer, cabinet doors or toilet lid; moving groups remain available for animation
  * @requires npm i -D @threenative/procedural-environment
@@ -1372,19 +1374,10 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     workshopModules,
     workshopAccent,
   );
-  const range = workshopWidths[kit.id];
+  const widthSuffix = workshopDimension("width", options.width, workshopWidths[kit.id], kit.id);
+  const heightSuffix = workshopDimension("height", options.height, workshopHeights[kit.id], kit.id);
   const seatRange = workshopSeatCounts[kit.id];
-  const { width = range?.default, open, seats = seatRange?.default } = options;
-  if (
-    width !== undefined &&
-    (!range || !Number.isFinite(width) || width < range.min || width > range.max)
-  ) {
-    throw new Error(
-      range
-        ? `bakeWorkshop: width must be between ${range.min} and ${range.max}`
-        : `bakeWorkshop: width does not apply to workshop-${kit.id}`,
-    );
-  }
+  const { open, seats = seatRange?.default } = options;
   if (
     open !== undefined &&
     (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
@@ -1400,14 +1393,27 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
         : `bakeWorkshop: seats does not apply to workshop-${kit.id}`,
     );
   }
-  const size = width === range?.default ? "" : `-w${width}`;
   const seatSuffix = seats === seatRange?.default ? "" : `-${seats}-seats`;
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${size}${seatSuffix}${open ? "-open" : ""}.glb`,
+    `${widthSuffix}${heightSuffix}${seatSuffix}${open ? "-open" : ""}.glb`,
   );
   const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
   return writeStaticKit(group, options.out, filename, true);
+}
+
+function workshopDimension(
+  key: "width" | "height",
+  value: number | undefined,
+  range: { min: number; max: number; default: number } | undefined,
+  module: string,
+): string {
+  if (value === undefined) return "";
+  if (!range) throw new Error(`bakeWorkshop: ${key} does not apply to workshop-${module}`);
+  if (!Number.isFinite(value) || value < range.min || value > range.max) {
+    throw new Error(`bakeWorkshop: ${key} must be between ${range.min} and ${range.max}`);
+  }
+  return value === range.default ? "" : `-${key[0]}${value}`;
 }
 
 function resolvePaintedKit<Id extends string>(
