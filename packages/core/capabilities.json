@@ -641,7 +641,7 @@
       "requires": ["npm i @threenative/backend"],
       "signature": "export function createBackend(options: IBackendOptions = { … }",
       "situations": [
-        "save player progress on a published game so it survives a cache clear",
+        "save player progress in the cloud on a published game so it survives a cache clear",
         "share documents between the players of one game",
         "keep working in a preview build that has no backend"
       ],

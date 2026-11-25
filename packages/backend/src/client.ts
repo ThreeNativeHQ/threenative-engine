@@ -328,7 +328,7 @@ export class BackendCollection {
  * The cloud store a published game saves into. With no host, no `fetch` and no `localStorage`
  * every call still resolves, so a preview build runs the same game code.
  *
- * @situation save player progress on a published game so it survives a cache clear
+ * @situation save player progress in the cloud on a published game so it survives a cache clear
  * @situation share documents between the players of one game
  * @situation keep working in a preview build that has no backend
  * @requires npm i @threenative/backend

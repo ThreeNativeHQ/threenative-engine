@@ -1385,6 +1385,9 @@ importers:
       '@threenative/assets':
         specifier: workspace:*
         version: link:../assets
+      '@threenative/backend':
+        specifier: workspace:*
+        version: link:../backend
       '@threenative/blender-bridge':
         specifier: workspace:*
         version: link:../blender-bridge
