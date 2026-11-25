@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Workshop Kit adds a width-adjustable vanity and bathtub, and a toilet
+  with separately movable seat and lid.
+
 - The Asset Library's Workshop Kit adds matching kitchen prep, sink and cooktop cabinets, with
   a width-adjustable run, named snap points, recessed basin and individually hinged doors.
 

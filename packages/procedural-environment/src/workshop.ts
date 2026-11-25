@@ -6,6 +6,7 @@ import {
   Color,
   CylinderGeometry,
   Group,
+  LatheGeometry,
   MeshStandardMaterial,
   Object3D,
   RepeatWrapping,
@@ -31,7 +32,7 @@ export interface IBakeWorkshopOptions {
   readonly scale?: number;
   /** Width in metres before scale for work surfaces, wall shelf and dining bench. */
   readonly width?: number;
-  /** Bake the top drawer pulled out or locker, media console or kitchen doors swung outward. */
+  /** Bake the drawer, cabinet doors or toilet lid in their open pose. */
   readonly open?: boolean;
   /** Sofa or lounge seats (2 or 3), or dining set chairs (4 or 6). */
   readonly seats?: number;
@@ -59,10 +60,13 @@ export const workshopModules = [
   { id: "kitchen-sink", name: "Kitchen sink cabinet", category: "Kitchen" },
   { id: "kitchen-cooktop", name: "Kitchen cooktop cabinet", category: "Kitchen" },
   { id: "kitchen-run", name: "Assembled kitchen run", category: "Arrangements" },
+  { id: "bath-vanity", name: "Vessel sink vanity", category: "Bathroom" },
+  { id: "bath-tub", name: "Freestanding bathtub", category: "Bathroom" },
+  { id: "bath-toilet", name: "Close-coupled toilet", category: "Bathroom" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
-type Finish = "wood" | "accent" | "dark" | "linen" | "steel" | "insert";
+type Finish = "wood" | "accent" | "dark" | "linen" | "steel" | "insert" | "ceramic";
 type Palette = Record<Finish, MeshStandardMaterial>;
 type Part = StaticKitMesh<Finish>;
 
@@ -82,6 +86,8 @@ export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   "dining-bench": { min: 0.92, max: 1.65, default: 1.16 },
   "kitchen-prep": kitchenWidth,
   "kitchen-run": kitchenWidth,
+  "bath-vanity": { min: 0.64, max: 1.2, default: 0.78 },
+  "bath-tub": { min: 1.4, max: 1.9, default: 1.65 },
 };
 export const workshopOpeningModules = [
   "drawer",
@@ -91,6 +97,7 @@ export const workshopOpeningModules = [
   "kitchen-sink",
   "kitchen-cooktop",
   "kitchen-run",
+  "bath-toilet",
 ];
 const loungeSeats = { min: 2, max: 3, default: 3 };
 const diningSeats = { min: 4, max: 6, default: 4 };
@@ -147,6 +154,7 @@ function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
     linen: finish("Workshop light linen", 0xf2eee4, 0.86),
     steel: finish("Workshop handle metal", 0xb8c6c3, 0.42, 0.4),
     insert: finish("Workshop accent inset", paint.clone().multiplyScalar(0.67), 0.77),
+    ceramic: finish("Workshop glazed ceramic", 0xf4f0e9, 0.29),
   };
 }
 
@@ -530,6 +538,19 @@ const counterThickness = 0.047;
 const kitchenSections = ["prep", "sink", "cooktop"] as const;
 type KitchenSection = (typeof kitchenSections)[number];
 
+function curvedFaucet(mesh: Part, y: number, z: number): void {
+  mesh.add("steel", new CylinderGeometry(0.031, 0.035, 0.026, 16).translate(0, y + 0.011, z));
+  const profile = [
+    new Vector3(0, y + 0.015, z),
+    new Vector3(0, y + 0.134, z),
+    new Vector3(0, y + 0.207, z + 0.033),
+    new Vector3(0, y + 0.201, z + 0.117),
+    new Vector3(0, y + 0.151, z + 0.159),
+  ];
+  mesh.add("steel", new TubeGeometry(new CatmullRomCurve3(profile), 16, 0.014, 8));
+  mesh.block("steel", [0.079, 0.014, 0.021], [0.029, y + 0.05, z], 0.006);
+}
+
 function kitchenSink(mesh: Part): void {
   const holeWidth = 0.408;
   const holeFront = 0.221;
@@ -562,17 +583,7 @@ function kitchenSink(mesh: Part): void {
   }
   mesh.block("steel", [0.401, 0.027, 0.334], [0, 0.7615, 0.05], 0.015);
   mesh.add("dark", new CylinderGeometry(0.023, 0.023, 0.004, 16).translate(0, 0.777, 0.04));
-  mesh.add("steel", new CylinderGeometry(0.031, 0.035, 0.026, 16).translate(0, 0.921, -0.23));
-  const faucet: XYZ[] = [
-    [0, 0.925, -0.23],
-    [0, 1.044, -0.23],
-    [0, 1.117, -0.197],
-    [0, 1.111, -0.113],
-    [0, 1.061, -0.071],
-  ];
-  const pipe = new CatmullRomCurve3(faucet.map((point) => new Vector3(...point)));
-  mesh.add("steel", new TubeGeometry(pipe, 16, 0.014, 8));
-  mesh.block("steel", [0.079, 0.014, 0.021], [0.029, 0.96, -0.23], 0.006);
+  curvedFaucet(mesh, counterTop, -0.23);
 }
 
 const cooktopBurners: [x: number, z: number, radius: number][] = [
@@ -678,6 +689,215 @@ function kitchenRun(palette: Palette, prepWidth: number, open: boolean): Group {
   return group;
 }
 
+function oval(
+  mesh: Part,
+  finish: Finish,
+  profile: readonly [radius: number, height: number][],
+  radiusX: number,
+  radiusZ: number,
+  center: XYZ,
+): void {
+  mesh.add(
+    finish,
+    new LatheGeometry(
+      profile.map(([r, y]) => new Vector2(r, y)),
+      36,
+    )
+      .scale(radiusX, 1, radiusZ)
+      .translate(...center),
+  );
+}
+
+function bathVanity(palette: Palette, width: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const top = 0.813;
+  for (const x of [-width / 2 + 0.057, width / 2 - 0.057]) {
+    for (const z of [-0.199, 0.199]) {
+      timber(mesh, [0.058, 0.77, 0.06], [x, 0.385, z], 0.009, "vertical");
+    }
+    mesh.block("insert", [0.035, 0.107, 0.4], [x, 0.727, 0], 0.009);
+  }
+  for (const z of [-0.199, 0.199]) {
+    mesh.block("accent", [width - 0.114, 0.107, 0.033], [0, 0.727, z], 0.01);
+  }
+  timber(mesh, [width - 0.092, 0.036, 0.452], [0, 0.206, 0], 0.014);
+  mesh.block("ceramic", [width, 0.052, 0.54], [0, top - 0.026, 0], 0.02);
+  oval(
+    mesh,
+    "ceramic",
+    [
+      [0, 0],
+      [0.73, 0],
+      [0.82, 0.011],
+      [0.98, 0.085],
+      [1, 0.103],
+      [0.98, 0.123],
+      [0.88, 0.129],
+      [0.84, 0.116],
+      [0.71, 0.043],
+      [0.59, 0.024],
+      [0, 0.024],
+    ],
+    0.233,
+    0.151,
+    [0, top, 0.04],
+  );
+  mesh.add("steel", new CylinderGeometry(0.021, 0.02, 0.004, 16).translate(0, top + 0.025, 0.055));
+  curvedFaucet(mesh, top, -0.208);
+  const group = mesh.finish("bath-vanity", palette);
+  anchor(group, "vanity-basin", [0.035, top + 0.024, 0.06]);
+  anchor(group, "vanity-faucet", [0, top + 0.144, -0.049]);
+  anchor(group, "vanity-shelf", [0, 0.224, 0]);
+  anchor(group, "vanity-wall", [0, top, -0.27]);
+  return group;
+}
+
+function bathTub(palette: Palette, width: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  oval(
+    mesh,
+    "accent",
+    [
+      [0, 0],
+      [0.61, 0],
+      [0.64, 0.028],
+      [0.8, 0.095],
+      [0.92, 0.27],
+      [0.985, 0.466],
+      [0.99, 0.523],
+    ],
+    width / 2,
+    0.386,
+    [0, 0, 0],
+  );
+  oval(
+    mesh,
+    "ceramic",
+    [
+      [0.99, 0.523],
+      [1, 0.535],
+      [0.99, 0.55],
+      [0.94, 0.559],
+      [0.89, 0.551],
+      [0.875, 0.515],
+      [0.82, 0.35],
+      [0.74, 0.18],
+      [0.57, 0.114],
+      [0.37, 0.1],
+      [0, 0.1],
+    ],
+    width / 2,
+    0.386,
+    [0, 0, 0],
+  );
+  const drainX = width * 0.15;
+  mesh.add("steel", new CylinderGeometry(0.034, 0.034, 0.006, 20).translate(drainX, 0.103, 0));
+  mesh.add("dark", new CylinderGeometry(0.022, 0.022, 0.003, 20).translate(drainX, 0.106, 0));
+  const group = mesh.finish("bath-tub", palette);
+  anchor(group, "tub-bottom", [0, 0.1, 0]);
+  anchor(group, "tub-drain", [drainX, 0.1075, 0]);
+
+  const mount: XYZ = [0, 0, -0.445];
+  const tap = new StaticKitMesh<Finish>();
+  tap.add("steel", new CylinderGeometry(0.049, 0.055, 0.025, 16).translate(0, 0.0125, 0));
+  tap.add("steel", new CylinderGeometry(0.023, 0.027, 0.552, 16).translate(0, 0.293, 0));
+  curvedFaucet(tap, 0.555, 0);
+  const fixture = tap.finish("tub-faucet", palette);
+  fixture.position.set(...mount);
+  anchor(fixture, "tub-spout", [0, 0.698, 0.159]);
+  anchor(group, "tub-filler", mount);
+  group.add(fixture);
+  return group;
+}
+
+function bathToilet(palette: Palette, open: boolean): Group {
+  const body = new StaticKitMesh<Finish>();
+  oval(
+    body,
+    "ceramic",
+    [
+      [0, 0],
+      [0.58, 0],
+      [0.6, 0.025],
+      [0.54, 0.13],
+      [0.56, 0.215],
+      [0.78, 0.3],
+      [0.94, 0.37],
+      [1, 0.425],
+      [1, 0.444],
+      [0.95, 0.452],
+      [0.81, 0.452],
+      [0.78, 0.438],
+      [0.72, 0.383],
+      [0.62, 0.32],
+      [0.38, 0.29],
+      [0, 0.29],
+    ],
+    0.196,
+    0.268,
+    [0, 0, 0.095],
+  );
+  body.block("ceramic", [0.258, 0.201, 0.168], [0, 0.375, -0.139], 0.044);
+  body.block("ceramic", [0.359, 0.331, 0.182], [0, 0.615, -0.227], 0.04);
+  body.block("ceramic", [0.376, 0.035, 0.197], [0, 0.781, -0.227], 0.016);
+  body.add("steel", new CylinderGeometry(0.022, 0.023, 0.01, 16).translate(0, 0.803, -0.227));
+  for (const x of [-0.09, 0.09]) {
+    body.add(
+      "steel",
+      new CylinderGeometry(0.014, 0.014, 0.039, 14)
+        .rotateZ(Math.PI / 2)
+        .translate(x, 0.463, -0.115),
+    );
+  }
+  const group = body.finish("bath-toilet", palette);
+  anchor(group, "toilet-flush", [0, 0.808, -0.227]);
+
+  const seatMesh = new StaticKitMesh<Finish>();
+  oval(
+    seatMesh,
+    "ceramic",
+    [
+      [0.79, 0.006],
+      [0.94, 0.006],
+      [0.977, 0.012],
+      [0.971, 0.023],
+      [0.934, 0.03],
+      [0.807, 0.03],
+      [0.78, 0.021],
+      [0.79, 0.006],
+    ],
+    0.196,
+    0.268,
+    [0, 0, 0.21],
+  );
+  const seat = seatMesh.finish("toilet-seat", palette);
+  seat.position.set(0, 0.446, -0.115);
+  anchor(seat, "toilet-sit", [0, 0.03, 0.235]);
+
+  const lidMesh = new StaticKitMesh<Finish>();
+  oval(
+    lidMesh,
+    "accent",
+    [
+      [0, 0],
+      [0.92, 0],
+      [0.971, 0.006],
+      [0.982, 0.015],
+      [0.96, 0.023],
+      [0.9, 0.027],
+      [0, 0.027],
+    ],
+    0.196,
+    0.268,
+    [0, 0, 0.21],
+  );
+  const lid = lidMesh.finish("toilet-lid", palette);
+  lid.position.set(0, 0.475, -0.115);
+  lid.rotation.x = open ? -Math.PI * 0.5 : 0;
+  group.add(seat, lid);
+  return group;
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
@@ -720,6 +940,9 @@ export function buildWorkshop(
     "kitchen-sink": () => kitchenCabinet(palette, "sink", kitchenBay, options.open ?? false),
     "kitchen-cooktop": () => kitchenCabinet(palette, "cooktop", kitchenBay, options.open ?? false),
     "kitchen-run": () => kitchenRun(palette, width, options.open ?? false),
+    "bath-vanity": () => bathVanity(palette, width),
+    "bath-tub": () => bathTub(palette, width),
+    "bath-toilet": () => bathToilet(palette, options.open ?? false),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;

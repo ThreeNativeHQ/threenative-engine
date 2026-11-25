@@ -39,13 +39,16 @@ const anchors = {
     "prep-door-left",
     "sink-door-right",
   ],
+  "bath-vanity": ["vanity-basin", "vanity-faucet", "vanity-shelf", "vanity-wall"],
+  "bath-tub": ["tub-bottom", "tub-drain", "tub-filler", "tub-faucet", "tub-spout"],
+  "bath-toilet": ["toilet-seat", "toilet-lid", "toilet-sit", "toilet-flush"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
 
 describe("Workshop furniture", () => {
-  it("exports all grounded Asset Library pieces with named nodes and embedded compressed scans", async () => {
-    const out = await makeTempDir("tn-workshop-");
+  it("lists every workshop asset in the catalog", async () => {
+    const out = await makeTempDir("tn-workshop-catalog-");
     const rows = environmentElements({ kind: "workshop" });
     expect(rows.map(({ id }) => id)).toEqual(Object.keys(anchors).map((id) => `workshop-${id}`));
     const catalog = (await proceduralEnvironmentSource({ root: out }).catalog()) as {
@@ -54,37 +57,43 @@ describe("Workshop furniture", () => {
     expect(catalog.elements.filter(({ kind }) => kind === "workshop")).toMatchObject(
       rows.map(({ id }) => ({ id, styleTags: ["stylized"] })),
     );
-    for (const [id, nodes] of Object.entries(anchors)) {
-      const [entry] = await bakeWorkshop({ module: `workshop-${id}`, out });
-      if (!entry) throw new Error(`Missing GLB for ${id}`);
-      const bytes = await readFile(entry.path);
-      const length = bytes.readUInt32LE(12);
-      expect(bytes.readUInt32LE(0)).toBe(0x46546c67);
-      const json = JSON.parse(bytes.subarray(20, 20 + length).toString()) as {
-        nodes: { name: string }[];
-        extensionsRequired: string[];
-        images: { mimeType: string; bufferView: number }[];
-        bufferViews: { byteLength: number; byteOffset?: number }[];
-      };
-      expect(json.nodes.map(({ name }) => name)).toEqual(expect.arrayContaining([...nodes]));
-      expect(entry.bounds.min[1]).toBeCloseTo(0, 5);
-      expect(entry.triangles).toBeLessThan(6500);
-      expect(json.extensionsRequired).toContain("EXT_texture_webp");
-      expect(json.images).toHaveLength(2);
-      let textureBytes = 0;
-      for (const image of json.images) {
-        expect(image.mimeType).toBe("image/webp");
-        const view = json.bufferViews[image.bufferView];
-        if (!view) throw new Error("Missing texture buffer view");
-        const start = 28 + length + (view.byteOffset ?? 0);
-        const { format, width, height } = await sharp(
-          bytes.subarray(start, start + view.byteLength),
-        ).metadata();
-        expect({ format, width, height }).toEqual({ format: "webp", width: 512, height: 512 });
-        textureBytes += view.byteLength;
-      }
-      expect(textureBytes).toBeLessThan(32 * 1024);
+  });
+
+  it.each(Object.entries(anchors))("exports grounded %s with named nodes", async (id, nodes) => {
+    const out = await makeTempDir("tn-workshop-");
+    const [entry] = await bakeWorkshop({ module: `workshop-${id}`, out });
+    if (!entry) throw new Error(`Missing GLB for ${id}`);
+    const bytes = await readFile(entry.path);
+    const length = bytes.readUInt32LE(12);
+    expect(bytes.readUInt32LE(0)).toBe(0x46546c67);
+    const json = JSON.parse(bytes.subarray(20, 20 + length).toString()) as {
+      nodes: { name: string }[];
+      extensionsRequired?: string[];
+      images?: { mimeType: string; bufferView: number }[];
+      bufferViews: { byteLength: number; byteOffset?: number }[];
+    };
+    expect(json.nodes.map(({ name }) => name)).toEqual(expect.arrayContaining([...nodes]));
+    expect(entry.bounds.min[1]).toBeCloseTo(0, 5);
+    expect(entry.triangles).toBeLessThan(6500);
+    if (id === "bath-tub" || id === "bath-toilet") {
+      expect(json.images ?? []).toHaveLength(0);
+      return;
     }
+    expect(json.extensionsRequired).toContain("EXT_texture_webp");
+    expect(json.images).toHaveLength(2);
+    let textureBytes = 0;
+    for (const image of json.images ?? []) {
+      expect(image.mimeType).toBe("image/webp");
+      const view = json.bufferViews[image.bufferView];
+      if (!view) throw new Error("Missing texture buffer view");
+      const start = 28 + length + (view.byteOffset ?? 0);
+      const { format, width, height } = await sharp(
+        bytes.subarray(start, start + view.byteLength),
+      ).metadata();
+      expect({ format, width, height }).toEqual({ format: "webp", width: 512, height: 512 });
+      textureBytes += view.byteLength;
+    }
+    expect(textureBytes).toBeLessThan(32 * 1024);
   });
 
   it.each([1.2, 1.65, 2.4])("seats the stool and drawer inside the %s m workbench", (width) => {
@@ -342,6 +351,55 @@ describe("Workshop furniture", () => {
       if (side === "left") expect(bounds.min.x).toBeGreaterThan(edgeX);
       else expect(bounds.max.x).toBeLessThan(edgeX);
     }
+  });
+
+  it.each([1.4, 1.9])("keeps the bathtub hollow at %s m wide", (width) => {
+    const tub = buildWorkshop("bath-tub", { ...options, width });
+    tub.updateMatrixWorld(true);
+    const bounds = new Box3().setFromObject(tub, true);
+    expect(bounds.getSize(new Vector3()).x).toBeCloseTo(width);
+    const floor = new Raycaster(new Vector3(0, 0.8, 0), down);
+    const rim = new Raycaster(new Vector3(width * 0.47, 0.8, 0), down);
+    expect(floor.intersectObject(tub)[0]?.point.y).toBeCloseTo(0.1);
+    expect(rim.intersectObject(tub)[0]?.point.y).toBeGreaterThan(0.53);
+    const tap = tub.getObjectByName("tub-faucet");
+    const mount = tub.getObjectByName("tub-filler");
+    const spout = tap?.getObjectByName("tub-spout");
+    if (!tap || !mount || !spout) throw new Error("Missing removable tub filler");
+    expect(tap.position.distanceTo(mount.position)).toBeCloseTo(0);
+    const flow = new Raycaster(
+      spout.getWorldPosition(new Vector3()).addScaledVector(down, 0.02),
+      down,
+    );
+    const hit = flow.intersectObject(tub)[0];
+    expect(hit?.point.y).toBeGreaterThan(0.1);
+    expect(hit?.point.y).toBeLessThan(0.3);
+  });
+
+  it("preserves the vanity bowl and tap placement as the cabinet widens", () => {
+    for (const width of [0.64, 1.2]) {
+      const vanity = buildWorkshop("bath-vanity", { ...options, width });
+      vanity.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(vanity, true).getSize(new Vector3()).x).toBeCloseTo(width);
+      const bowl = vanity.getObjectByName("vanity-basin");
+      const tap = vanity.getObjectByName("vanity-faucet");
+      if (!bowl || !tap) throw new Error("Missing bathroom attachment");
+      const ray = new Raycaster(bowl.position.clone().setY(1.2), down);
+      expect(ray.intersectObject(vanity)[0]?.point.y).toBeCloseTo(bowl.position.y);
+      expect(tap.position.y).toBeGreaterThan(0.94);
+    }
+  });
+
+  it("pivots the toilet lid clear of the bowl and leaves the seat in place", () => {
+    const closed = buildWorkshop("bath-toilet", options);
+    const open = buildWorkshop("bath-toilet", { ...options, open: true });
+    closed.updateMatrixWorld(true);
+    open.updateMatrixWorld(true);
+    const bowl = new Raycaster(new Vector3(0, 1.1, 0.14), down);
+    expect(bowl.intersectObject(closed)[0]?.point.y).toBeGreaterThan(0.49);
+    expect(bowl.intersectObject(open)[0]?.point.y).toBeCloseTo(0.29);
+    expect(open.getObjectByName("toilet-seat")?.rotation.x).toBe(0);
+    expect(open.getObjectByName("toilet-lid")?.rotation.x).toBeLessThan(-1.5);
   });
 
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {

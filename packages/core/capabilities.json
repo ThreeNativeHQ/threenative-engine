@@ -8824,7 +8824,7 @@
       "aliases": [],
       "constraints": [
         "the workbench width changes while the matching stool and cabinet keep their sizes",
-        "open previews the top drawer or locker, media console and kitchen doors; moving groups remain available for animation"
+        "open previews the drawer, cabinet doors or toilet lid; moving groups remain available for animation"
       ],
       "example": "await bakeWorkshop({ module: \"workshop-drawer\", open: true, out: \"assets/furniture\" });",
       "importPath": "@threenative/procedural-environment",
@@ -8838,7 +8838,8 @@
         "bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf",
         "furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console",
         "furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement",
-        "bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors"
+        "bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors",
+        "furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid"
       ],
       "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
       "supersedes": [],
