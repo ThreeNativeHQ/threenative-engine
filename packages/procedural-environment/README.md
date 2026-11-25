@@ -43,6 +43,27 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Pickups
+
+Open **Pickups** for seven stylized props for recovery, access and equipment: a medkit,
+potion, access keycard, shield, vault key, parchment scroll and repair wrench. Use **Accent color**
+for variants that need to read differently in play, **Scale** for size (0.5× to 2×), and **Seed** for
+subtle changes in the finish. Set **Pose** to Flat on the access card, shield, vault key or wrench
+for a face-up prop in an overhead game. GLBs use opaque PBR materials and sit at y = 0. Upright
+props face +Z.
+
+```ts
+import { bakePickup, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "pickup" });
+await bakePickup({
+  module: "pickup-keycard",
+  accent: "#ed5166",
+  scale: 1.5,
+  out: "assets/pickups",
+});
+```
+
 ### Frontier Kit
 
 Open **Frontier Kit** for industrial buildings and props for strategy, colony and base-building

@@ -8631,6 +8631,26 @@
       "symbol": "bakeFrontier"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2"
+      ],
+      "example": "await bakePickup({ module: \"pickup-medkit\", accent: \"#ed5166\", scale: 1.5, out: \"assets/pickups\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "generate a medkit, potion bottle, access keycard, shield, vault key, scroll or repair wrench pickup model",
+        "recolor or scale a physical pickup model for a shooter, adventure, puzzle or racing game"
+      ],
+      "summary": "Bake a stylized pickup prop as an opaque PBR GLB with configurable accent and scale.",
+      "supersedes": [],
+      "symbol": "bakePickup"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",

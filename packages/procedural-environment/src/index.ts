@@ -17,6 +17,13 @@ import {
   frontierAccent,
   frontierModules,
 } from "./frontier.js";
+import {
+  type IBakePickupOptions,
+  buildPickup,
+  flatPickupModules,
+  pickupAccent,
+  pickupModules,
+} from "./pickups.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
 import {
   type IBakeStationOptions,
@@ -30,6 +37,7 @@ import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
+export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeStationOptions } from "./station.js";
 
 export interface IVegetationPreset {
@@ -601,7 +609,8 @@ export type EnvironmentKind =
   | "rock"
   | "city"
   | "station"
-  | "frontier";
+  | "frontier"
+  | "pickup";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -632,6 +641,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "city",
   "station",
   "frontier",
+  "pickup",
 ];
 
 /**
@@ -727,7 +737,15 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeFrontier({ module: "frontier-${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city, ...station, ...frontier].filter((element) => {
+  const pickups = pickupModules.map(({ id, name, category }) => ({
+    id: `pickup-${id}`,
+    name,
+    kind: "pickup" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakePickup({ module: "pickup-${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city, ...station, ...frontier, ...pickups].filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
@@ -1100,25 +1118,66 @@ export async function bakeStation(options: IBakeStationOptions): Promise<IEnviro
  * @example await bakeFrontier({ module: "frontier-command", accent: "#628ac4", scale: 1.5, out: "assets/frontier" });
  */
 export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> {
-  const { module, out, seed = 1, accent = frontierAccent, scale = 1 } = options;
-  const entry = frontierModules.find(({ id }) => module === `frontier-${id}`);
-  if (!entry) {
-    const ids = frontierModules.map(({ id }) => `frontier-${id}`);
+  const kit = resolvePaintedKit(
+    options,
+    "bakeFrontier",
+    "frontier",
+    frontierModules,
+    frontierAccent,
+  );
+  return writeStaticKit(buildFrontier(kit.id, kit), options.out, kit.filename);
+}
+
+/**
+ * Bake a stylized pickup prop as an opaque PBR GLB with configurable accent and scale.
+ * @situation generate a medkit, potion bottle, access keycard, shield, vault key, scroll or repair wrench pickup model
+ * @situation recolor or scale a physical pickup model for a shooter, adventure, puzzle or racing game
+ * @constraint models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakePickup({ module: "pickup-medkit", accent: "#ed5166", scale: 1.5, out: "assets/pickups" });
+ */
+export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakePickup", "pickup", pickupModules, pickupAccent);
+  const { pose = "upright" } = options;
+  if (pose !== "upright" && (pose !== "flat" || !flatPickupModules.includes(kit.id)))
     throw new Error(
-      `bakeFrontier: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
+      "bakePickup: pose must be upright, or flat for a keycard, shield, vault key or wrench",
+    );
+  const file = pose === "flat" ? kit.filename.replace(/\.glb$/u, "-flat.glb") : kit.filename;
+  return writeStaticKit(buildPickup(kit.id, { ...kit, pose }), options.out, file);
+}
+
+function resolvePaintedKit<Id extends string>(
+  options: IBakeFrontierOptions | IBakePickupOptions,
+  caller: string,
+  prefix: string,
+  modules: readonly { readonly id: Id }[],
+  defaultAccent: string,
+) {
+  const { module, seed = 1, accent = defaultAccent, scale = 1 } = options;
+  const entry = modules.find(({ id }) => module === `${prefix}-${id}`);
+  if (!entry) {
+    const ids = modules.map(({ id }) => `${prefix}-${id}`);
+    throw new Error(
+      `${caller}: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
     );
   }
   if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
-    throw new Error("bakeFrontier: seed must be an unsigned 32-bit integer");
+    throw new Error(`${caller}: seed must be an unsigned 32-bit integer`);
   if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))
-    throw new Error("bakeFrontier: accent must be a six-digit hex color, such as #e6a44b");
+    throw new Error(`${caller}: accent must be a six-digit hex color, such as ${defaultAccent}`);
   if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
-    throw new Error("bakeFrontier: scale must be between 0.5 and 2");
+    throw new Error(`${caller}: scale must be between 0.5 and 2`);
   const paint = accent.toLowerCase();
-  const group = buildFrontier(entry.id, { seed, accent: paint, scale });
-  const tint = paint === frontierAccent ? "" : `-${paint.slice(1)}`;
+  const tint = paint === defaultAccent ? "" : `-${paint.slice(1)}`;
   const size = scale === 1 ? "" : `-s${scale}`;
-  return writeStaticKit(group, out, `${module}-${seed}${tint}${size}.glb`);
+  return {
+    id: entry.id,
+    seed,
+    accent: paint,
+    scale,
+    filename: `${module}-${seed}${tint}${size}.glb`,
+  };
 }
 
 async function writeStaticKit(

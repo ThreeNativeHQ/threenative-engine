@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
+import { flatPickupModules, pickupAccent } from "./pickups.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 
@@ -90,6 +91,18 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     tree: [TEXTURES],
     cover: [TEXTURES],
     debris: [TEXTURES],
+    pickup: [
+      { key: "accent", label: "Accent color", type: "color", default: pickupAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "pose",
+        label: "Pose",
+        type: "select",
+        options: ["upright", "flat"],
+        default: "upright",
+        only: flatPickupModules.map((id) => `pickup-${id}`),
+      },
+    ],
     frontier: [
       {
         key: "accent",
@@ -279,12 +292,14 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
     case "city":
       return cityBake(pkg, q, { seed, out });
     case "frontier":
-      return pkg.bakeFrontier({
+    case "pickup":
+      return (kind === "frontier" ? pkg.bakeFrontier : pkg.bakePickup)({
         module: q.get("id") ?? "",
         seed,
         out,
         ...opt("accent", q.get("accent") ?? undefined),
         ...opt("scale", num(q, "scale")),
+        ...(kind === "pickup" ? opt("pose", q.get("pose") ?? undefined) : {}),
       });
     case "station":
       return pkg.bakeStation({
@@ -323,6 +338,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  pickup: { name: "Pickups" },
   frontier: { name: "Frontier Kit" },
   station: { name: "Station Kit" },
   stylized: { runtime: true, name: "Stylized Biome Kit", pack: "Biome Kit" },
@@ -437,7 +453,7 @@ export function proceduralEnvironmentSource(
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
             styleTags: [
-              entry.kind === "station" || entry.kind === "frontier" ? "stylized" : "realistic",
+              ["station", "frontier", "pickup"].includes(entry.kind) ? "stylized" : "realistic",
             ],
           })),
           ...stylizedAssets().map((entry) => ({
