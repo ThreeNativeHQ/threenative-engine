@@ -633,6 +633,26 @@
     {
       "aliases": [],
       "constraints": [],
+      "example": "const rooms = createBackend().rooms;\nconst room = await rooms.quickJoin();\nconst open = await rooms.list();",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendRooms { … }",
+      "situations": [
+        "add online multiplayer to a published game without writing a server",
+        "run a lobby where players join a room by a six-character code",
+        "find someone to play with by joining the fullest public room",
+        "send messages between the players of one room, peer to peer when it connects"
+      ],
+      "summary": "The game's rooms: one call to open one, join one or list what is open.",
+      "supersedes": [],
+      "symbol": "BackendRooms"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
       "example": "const backend = createBackend();\nawait backend.db.set(\"save\", { level: 3 });\nconst shared = await backend.db.collection(\"levels\").list();",
       "importPath": "@threenative/backend",
       "kind": "function",
@@ -648,6 +668,25 @@
       "summary": "The cloud store a published game saves into. With no host, no `fetch` and no `localStorage` every call still resolves, so a preview build runs the same game code.",
       "supersedes": [],
       "symbol": "createBackend"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const room = await createBackend().rooms.create({ max: 4 });\nroom.send({ move: \"e4\" }, room.peers[0]);\nroom.transport(room.peers[0]); // \"p2p\" or \"relay\"",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class Room { … }",
+      "situations": [
+        "play a match with another player in the same room",
+        "carry room messages over a peer-to-peer data channel, with the relay as the fallback",
+        "check whether a message to a player went peer to peer or through the relay"
+      ],
+      "summary": "One live room: a socket, its members and the shared state the room has confirmed.",
+      "supersedes": [],
+      "symbol": "Room"
     },
     {
       "aliases": [],
@@ -12366,7 +12405,7 @@
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
     {
-      "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
+      "guidance": "The framework runs hosted rooms in @threenative/backend: createBackend().rooms.create(), .join(code) or .quickJoin() open a lobby, room.send() reaches everybody or one peer and room.state is ordered by the room's Durable Object, and a pair of players upgrades those messages to an ordered WebRTC data channel when both can reach each other (the relay is the fallback, and rtc: { iceServers: [] } forces it). The authenticated transport seam stays at @threenative/core/net: import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Not owned: authoritative replication, snapshots, prediction, interpolation and rejoin policy, which stay game rules in your project's src/ on either transport.",
       "id": "networked-multiplayer",
       "situations": ["authoritative replication", "client prediction"]
     },

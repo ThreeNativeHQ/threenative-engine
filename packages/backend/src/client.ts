@@ -37,6 +37,8 @@ import {
 } from "./wire.js";
 
 export type { BackendErrorCode, DocScope, ICollectionItem, IDbItem } from "./protocol.js";
+export type { IRtcOptions } from "./p2p.js";
+export { BackendRooms, Room } from "./rooms.js";
 export { BackendError, type IBackendOptions } from "./wire.js";
 
 export interface IBackendWriteOptions {

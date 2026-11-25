@@ -78,9 +78,22 @@ resolve with a joined room and reject with `no_host` (no host), `room_not_found`
 than 30 frames per second, or state over 64 KB is closed with a reason (1009/1008), and a frame
 that is not JSON with 1003.
 
-`createBackend` takes `endpoint` (default `/_backend`), `fetch` and `storage`. The client treats a
-missing `x-threenative-backend: 1` header, a 404, a network error or a missing `fetch` as "no
-host" and remembers that for its lifetime; concurrent first-load calls share one probe.
+Between any two players that can reach each other, `room.send()` moves on its own ordered WebRTC
+data channel instead of the relay: `room.transport(peer)` says `"p2p"` once that channel carries
+`send()`, `"relay"` while the room's socket does. `join`, `leave`, `room.state` and the WebRTC
+signaling itself always take the socket, so the room stays the one authority on order — a pair
+that has just switched puts a barrier on the relay first, so nothing sent before the switch can
+arrive behind a message that took the channel. A pair that cannot connect (strict NAT, a 5 s
+timeout) and a room over 8 players stay on the relay, and so does any runtime without
+`RTCPeerConnection`, such as Node or the native host. `createBackend({ rtc })` chooses the ICE
+servers (public `stun:stun.cloudflare.com:3478` by default, never a TURN relay) and the
+timeout; `rtc: { iceServers: [], iceTransportPolicy: "relay" }` forces the relay. `room.send()`
+never echoes to its sender on either transport; `room.deliveries(peer)` counts what arrived, by
+transport, for a debug overlay.
+
+`createBackend` takes `endpoint` (default `/_backend`), `fetch`, `storage` and `rtc`. The client
+treats a missing `x-threenative-backend: 1` header, a 404, a network error or a missing `fetch` as
+"no host" and remembers that for its lifetime; concurrent first-load calls share one probe.
 
 ## Server
 

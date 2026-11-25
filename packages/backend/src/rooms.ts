@@ -2,9 +2,12 @@
  * Rooms, from the page: create one, join one by code, or take the fullest public one open.
  *
  * A room is one WebSocket into a Durable Object that relays every member's messages and orders
- * the shared state. `peerId` is a random public room id, never the player's identity: a game can
- * show it. With no host, every call rejects with `no_host`, exactly like the cloud store.
+ * the shared state; between any two members that CAN reach each other, messages move on their own
+ * ordered data channel instead, and the relay stays the fallback. `peerId` is a random public room
+ * id, never the player's identity: a game can show it. With no host, every call rejects with
+ * `no_host`, exactly like the cloud store.
  */
+import { type IRtcOptions, P2P_PLAYERS_MAX, PeerLinks } from "./p2p.js";
 import {
   type IRoomCreateRequest,
   type IRoomInfo,
@@ -17,6 +20,7 @@ import {
 import { BackendError, type IBackendContext, failureOf, hosted, readJson, send } from "./wire.js";
 
 export type { IRoomCreateRequest, IRoomInfo } from "./protocol.js";
+export type { IRtcOptions } from "./p2p.js";
 
 /** The shared state of one room as this client has confirmed it from the room's order. */
 export interface IRoomState {
@@ -66,7 +70,7 @@ function openRoom(context: IBackendContext, code: string): Promise<Room> {
       if (room !== undefined) return;
       const message = parseRoomServerMessage(decodeRoomFrame(event.data));
       if (message?.t !== "welcome") return;
-      room = new Room(code, socket, message);
+      room = new Room(code, socket, message, context.rtc);
       resolve(room);
     });
     socket.addEventListener("error", () => {
@@ -81,11 +85,13 @@ function openRoom(context: IBackendContext, code: string): Promise<Room> {
 /**
  * One live room: a socket, its members and the shared state the room has confirmed.
  *
- * @situation play a round of a published game with another player in the same room
- * @situation exchange moves over a relay when a peer-to-peer connection is not available
+ * @situation play a match with another player in the same room
+ * @situation carry room messages over a peer-to-peer data channel, with the relay as the fallback
+ * @situation check whether a message to a player went peer to peer or through the relay
  * @requires npm i @threenative/backend
  * @example const room = await createBackend().rooms.create({ max: 4 });
  * @example room.send({ move: "e4" }, room.peers[0]);
+ * @example room.transport(room.peers[0]); // "p2p" or "relay"
  */
 export class Room {
   /** The code another player types to join: `room.code`. */
@@ -96,10 +102,11 @@ export class Room {
   readonly #others = new Set<string>();
   readonly #values = new Map<string, unknown>();
   readonly #listeners = new Map<RoomEvent, Set<(...args: never[]) => void>>();
+  readonly #links: PeerLinks;
   #peerId: string;
   #open = true;
 
-  constructor(code: string, socket: WebSocket, welcome: RoomWelcome) {
+  constructor(code: string, socket: WebSocket, welcome: RoomWelcome, rtc?: IRtcOptions) {
     this.code = code;
     this.#socket = socket;
     this.#peerId = welcome.peerId;
@@ -109,9 +116,23 @@ export class Room {
       get: (key) => this.#values.get(key),
       set: (key, value) => this.#command({ t: "state", key, value }),
     };
+    this.#links = new PeerLinks(
+      {
+        self: welcome.peerId,
+        signal: (to, data) => this.#command({ t: "signal", to, data }),
+        relay: (to, data) => this.#command({ t: "send", data, to }),
+        deliver: (from, data) => this.#emit("message", data, from),
+      },
+      rtc,
+    );
+    // A room of nine is a mesh of 36 connections: past P2P_PLAYERS_MAX every pair stays relayed.
+    if (this.#others.size < P2P_PLAYERS_MAX) {
+      for (const peerId of this.#others) this.#links.add(peerId);
+    }
     socket.addEventListener("message", (event) => this.#receive(event.data));
     socket.addEventListener("close", () => {
       this.#open = false;
+      this.#links.reset();
     });
   }
 
@@ -132,12 +153,39 @@ export class Room {
 
   /** Sends `data` to everybody, or to one peer. Throws once the room is closed. */
   send(data: unknown, to?: string): void {
-    this.#command({ t: "send", data, to });
+    if (!this.#open) throw new BackendError("room_not_found");
+    if (to !== undefined) {
+      this.#links.send(to, data);
+      return;
+    }
+    // One relay frame still reaches everybody while no pair has a channel; a room that is partly
+    // upgraded sends per peer, so a pair already on its channel never falls back to the relay.
+    if (this.#links.anyLive()) {
+      for (const peerId of this.#others) this.#links.send(peerId, data);
+      return;
+    }
+    this.#command({ t: "send", data });
   }
 
   /**
-   * Listens for one event and returns its unsubscribe. Handlers run in the room's order: a
-   * `message` handler sees the same sequence every member does.
+   * How this client's messages to one peer travel: `"p2p"` once a data channel carries them,
+   * `"relay"` while the room's socket does.
+   */
+  transport(peerId: string): "relay" | "p2p" {
+    return this.#links.transport(peerId);
+  }
+
+  /**
+   * Messages received from one peer, by path: the `p2p` ones came over the data channel. A debug
+   * counter for a HUD or a test, never something a game's rules depend on.
+   */
+  deliveries(peerId: string): { readonly p2p: number; readonly relay: number } {
+    return this.#links.deliveries(peerId);
+  }
+
+  /**
+   * Listens for one event and returns its unsubscribe. Handlers run in the room's order, and a
+   * `message` handler sees every other member's messages, never its own, on either transport.
    */
   on(type: "message", handler: RoomMessageHandler): () => void;
   on(type: "join" | "leave", handler: RoomPeerHandler): () => void;
@@ -160,6 +208,7 @@ export class Room {
       // A socket already closing needs no farewell; the room sees the close anyway.
     }
     this.#open = false;
+    this.#links.reset();
     this.#listeners.clear();
     this.#socket.close(1000, "left");
   }
@@ -174,16 +223,24 @@ export class Room {
     if (message === undefined || message.t === "welcome") return;
     if (message.t === "join") {
       this.#others.add(message.peerId);
+      // The member that makes the room too large closes every channel, including the new pair's.
+      if (this.#others.size < P2P_PLAYERS_MAX) this.#links.add(message.peerId);
+      else this.#links.reset();
       this.#emit("join", message.peerId);
       return;
     }
     if (message.t === "leave") {
       this.#others.delete(message.peerId);
+      this.#links.remove(message.peerId);
       this.#emit("leave", message.peerId);
       return;
     }
     if (message.t === "message") {
-      this.#emit("message", message.data, message.from);
+      this.#links.receiveRelay(message.from, message.data);
+      return;
+    }
+    if (message.t === "signal") {
+      this.#links.receive(message.from, message.data);
       return;
     }
     this.#values.set(message.key, message.value);
@@ -200,9 +257,10 @@ export class Room {
 /**
  * The game's rooms: one call to open one, join one or list what is open.
  *
- * @situation add online play to a published game without writing a server
- * @situation let a player host a room another player joins by a six-character code
+ * @situation add online multiplayer to a published game without writing a server
+ * @situation run a lobby where players join a room by a six-character code
  * @situation find someone to play with by joining the fullest public room
+ * @situation send messages between the players of one room, peer to peer when it connects
  * @requires npm i @threenative/backend
  * @example const rooms = createBackend().rooms;
  * @example const room = await rooms.quickJoin();

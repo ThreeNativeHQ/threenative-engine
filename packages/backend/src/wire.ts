@@ -3,6 +3,7 @@
  * every write shares. No class here holds a cache; that is `cache.ts`.
  */
 import { type IStorageContext, readStorage } from "./cache.js";
+import type { IRtcOptions } from "./p2p.js";
 import {
   BACKEND_ERROR_CODES,
   type BackendErrorCode,
@@ -31,6 +32,8 @@ export interface IBackendOptions {
   readonly fetch?: typeof fetch;
   /** `null` turns the local cache off. Defaults to `localStorage` when the page has one. */
   readonly storage?: Storage | null;
+  /** How a room moves `send()` traffic between players: peer to peer by default, the relay if that fails. */
+  readonly rtc?: IRtcOptions;
 }
 
 /**
@@ -59,6 +62,8 @@ export class BackendError extends Error {
 export interface IBackendContext extends IStorageContext {
   readonly endpoint: string;
   readonly fetch: typeof fetch | undefined;
+  /** The room transport this client was built with; `undefined` uses the defaults. */
+  readonly rtc: IRtcOptions | undefined;
   /** `undefined` until the first probe answers, then true or false for this client's life. */
   host: boolean | undefined;
   probe: Promise<boolean> | undefined;
@@ -83,6 +88,7 @@ export function createContext(options: IBackendOptions): IBackendContext {
     endpoint: readEndpoint(options),
     fetch: readFetch(options),
     storage: readStorage(options.storage),
+    rtc: options.rtc,
     host: undefined,
     probe: undefined,
   };

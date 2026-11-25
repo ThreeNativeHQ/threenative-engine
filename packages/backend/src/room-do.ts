@@ -130,23 +130,38 @@ export class BackendRoom {
     return new Response(null, { status: 101, webSocket: pair[0] } as ResponseInit);
   }
 
-  /** One frame from one member: a message, a state write, or a request to leave. */
+  /** One frame from one member: a message, a signal, a state write, or a request to leave. */
   async webSocketMessage(socket: IWorkerSocket, raw: string | ArrayBuffer): Promise<void> {
     const peerId = peerIdOf(socket);
     if (peerId === undefined) return;
-    if (!this.#allow(socket)) return this.#close(socket, ROOM_CLOSE_LIMIT, "rate");
     if (typeof raw !== "string") return this.#close(socket, ROOM_CLOSE_BAD_FRAME, "json");
     if (byteLength(raw) > ROOM_FRAME_MAX) return this.#close(socket, ROOM_CLOSE_TOO_BIG, "frame");
 
     const message = parseRoomClientMessage(decodeRoomFrame(raw));
     if (message === undefined) return this.#close(socket, ROOM_CLOSE_BAD_FRAME, "json");
+    // Signaling is control traffic: one pair sends offer, answer and several candidates in a burst,
+    // so it rides past the budget that bounds a game's own messages. Its size is still checked here
+    // and it reaches one peer, so a burst costs the room no more than the socket that sent it.
+    if (message.t === "signal") return this.#relaySignal(peerId, message.to, message.data);
+    if (!this.#allow(socket)) return this.#close(socket, ROOM_CLOSE_LIMIT, "rate");
     if (message.t === "leave") return this.#close(socket, 1000, "left");
     if (message.t === "state") return this.#writeState(socket, peerId, message.key, message.value);
 
     const frame: RoomServerMessage = { t: "message", from: peerId, data: message.data };
-    if (message.to === undefined) return this.#broadcast(frame);
+    // Never back to the sender: a data channel is one way per sender, so the relay has to match it.
+    if (message.to === undefined) return this.#broadcast(frame, socket);
+    this.#sendTo(message.to, frame);
+  }
+
+  /** WebRTC signaling for one pair: relayed to that peer alone, never stored, never ordered. */
+  #relaySignal(from: string, to: string, data: unknown): void {
+    this.#sendTo(to, { t: "signal", from, data });
+  }
+
+  #sendTo(peerId: string, frame: RoomServerMessage): void {
+    const payload = JSON.stringify(frame);
     for (const member of this.ctx.getWebSockets()) {
-      if (peerIdOf(member) === message.to) member.send(JSON.stringify(frame));
+      if (peerIdOf(member) === peerId) member.send(payload);
     }
   }
 

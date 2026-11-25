@@ -42,7 +42,9 @@
         "@threenative/backend#BackendCollection": "export class BackendCollection { … }",
         "@threenative/backend#BackendDb": "export class BackendDb { … }",
         "@threenative/backend#BackendError": "export class BackendError extends Error { … }",
-        "@threenative/backend#createBackend": "export function createBackend(options: IBackendOptions = { … }"
+        "@threenative/backend#BackendRooms": "export class BackendRooms { … }",
+        "@threenative/backend#createBackend": "export function createBackend(options: IBackendOptions = { … }",
+        "@threenative/backend#Room": "export class Room { … }"
       }
     },
     "@threenative/blender-bridge": {

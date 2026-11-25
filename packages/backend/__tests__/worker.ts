@@ -44,17 +44,42 @@ async function transpile(name: string): Promise<string> {
   }).outputText;
 }
 
+/**
+ * The package's own modules under `entries`, transpiled and keyed by path from the package root.
+ * The browser spec serves exactly this, so a page runs the client a game gets.
+ */
+export async function transpiledModules(
+  entries: readonly string[],
+): Promise<Record<string, string>> {
+  const modules: Record<string, string> = {};
+  const seen = new Set<string>();
+  const pending = [...entries];
+  while (pending.length > 0) {
+    const name = pending.pop() as string;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const contents = await transpile(name);
+    modules[name] = contents;
+    for (const match of contents.matchAll(RELATIVE_IMPORT)) {
+      pending.push(moduleName(name, match[1] ?? ""));
+    }
+  }
+  return modules;
+}
+
 /** Every module the test Worker loads, keyed the way workerd's ESM resolver expects them. */
-export async function workerModules(): Promise<Record<string, { type: "esm"; contents: string }>> {
+export async function workerModules(
+  entry: string = ENTRY,
+): Promise<Record<string, { type: "esm"; contents: string }>> {
   const modules: Record<string, { type: "esm"; contents: string }> = {
-    [ENTRY_NAME]: { type: "esm", contents: ENTRY },
+    [ENTRY_NAME]: { type: "esm", contents: entry },
   };
   const seen = new Set([ENTRY_NAME]);
   const pending = [ENTRY_NAME];
   while (pending.length > 0) {
     const name = pending.pop() as string;
-    // The entry itself is the literal above; only the package's own modules are read from disk.
-    const contents = name === ENTRY_NAME ? ENTRY : await transpile(name);
+    // The entry itself is the literal the caller passed; only package modules are read from disk.
+    const contents = name === ENTRY_NAME ? entry : await transpile(name);
     modules[name] = { type: "esm", contents };
     for (const match of contents.matchAll(RELATIVE_IMPORT)) {
       const dependency = moduleName(name, match[1] ?? "");

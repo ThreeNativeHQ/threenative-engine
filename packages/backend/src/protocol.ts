@@ -173,6 +173,8 @@ export type RoomState = Readonly<Record<string, unknown>>;
 export type RoomClientMessage =
   | { readonly t: "send"; readonly data: unknown; readonly to?: string }
   | { readonly t: "state"; readonly key: string; readonly value: unknown }
+  /** WebRTC offer, answer or candidate for one peer: the room relays it and never reads it. */
+  | { readonly t: "signal"; readonly to: string; readonly data: unknown }
   | { readonly t: "leave" };
 
 export type RoomServerMessage =
@@ -185,6 +187,7 @@ export type RoomServerMessage =
   | { readonly t: "join"; readonly peerId: string }
   | { readonly t: "leave"; readonly peerId: string }
   | { readonly t: "message"; readonly from: string; readonly data: unknown }
+  | { readonly t: "signal"; readonly from: string; readonly data: unknown }
   | { readonly t: "state"; readonly key: string; readonly value: unknown; readonly from: string };
 
 /** Random lowercase hex from the platform's crypto: peer ids, never derived from the player. */
@@ -210,6 +213,9 @@ export function parseRoomClientMessage(raw: unknown): RoomClientMessage | undefi
   if (!isRecord(raw)) return undefined;
   if (raw.t === "send")
     return { t: "send", data: raw.data, to: roomPeerId(raw.to) ? raw.to : undefined };
+  if (raw.t === "signal" && roomPeerId(raw.to)) {
+    return { t: "signal", to: raw.to, data: raw.data };
+  }
   if (raw.t === "state" && typeof raw.key === "string" && isValidName(raw.key)) {
     return { t: "state", key: raw.key, value: raw.value };
   }
@@ -232,6 +238,9 @@ export function parseRoomServerMessage(raw: unknown): RoomServerMessage | undefi
   if (raw.t === "leave" && roomPeerId(raw.peerId)) return { t: "leave", peerId: raw.peerId };
   if (raw.t === "message" && roomPeerId(raw.from)) {
     return { t: "message", from: raw.from, data: raw.data };
+  }
+  if (raw.t === "signal" && roomPeerId(raw.from)) {
+    return { t: "signal", from: raw.from, data: raw.data };
   }
   if (
     raw.t === "state" &&
