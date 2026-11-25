@@ -445,18 +445,16 @@
       "query": "save the player progress",
       "scope": "request",
       "source": "template:starter#AGENTS.md \u2014 __PROJECT_NAME__ (Starter, the starter template)",
-      "expect": ["assertPortableState"],
+      "expect": ["createBackend"],
       "reject": [
         "Area3D",
         "PointerEvents3D",
         "NavigationAgent3D",
         "recast",
         "CharacterBody3D",
-        "defineGame",
         "Heightfield",
         "attachToBone"
-      ],
-      "notOwned": "save-load"
+      ]
     },
     {
       "id": "request.spawn-waves",

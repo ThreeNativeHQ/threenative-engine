@@ -34,6 +34,17 @@
         "@threenative/assets#wrapTiles": "export function wrapTiles(wrapS: number | undefined, wrapT: number | undefined): boolean { … }"
       }
     },
+    "@threenative/backend": {
+      "exports": [".", "./cloudflare", "./package.json"],
+      "symbols": {
+        "@threenative/backend/cloudflare#deleteGameData": "export async function deleteGameData(db: IBackendD1, gameId: string): Promise<void> { … }",
+        "@threenative/backend/cloudflare#handleBackend": "export async function handleBackend( request: Request, options: IBackendHandlerOptions, ): Promise<Response> { … }",
+        "@threenative/backend#BackendCollection": "export class BackendCollection { … }",
+        "@threenative/backend#BackendDb": "export class BackendDb { … }",
+        "@threenative/backend#BackendError": "export class BackendError extends Error { … }",
+        "@threenative/backend#createBackend": "export function createBackend(options: IBackendOptions = { … }"
+      }
+    },
     "@threenative/blender-bridge": {
       "exports": [".", "./bridge", "./package.json"],
       "symbols": {}
