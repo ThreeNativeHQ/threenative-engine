@@ -486,7 +486,7 @@
       "default": "full-size UASTC, anisotropy 8",
       "override": "cook `maxSize`; marker `anisotropy`",
       "marker": "TN_TEXTURE_PROJECTION_ANISOTROPY",
-      "kits": ["action-rpg", "adventure", "collectathon", "platformer", "shooter"]
+      "kits": ["adventure", "platformer", "shooter"]
     }
   ]
 }

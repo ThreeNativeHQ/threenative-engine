@@ -116,7 +116,7 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "620c8f7b397e6cd8b81789c3a0234490bf25c4dec768437fd1381b5c80ffd63f",
+    shared: "5a270fdd53c85bdd08703b7d12e4a87645de2a689c2325c41a4e7757821abd35",
     kit: "bfdbbbfb5d7f2b4f3a9436a399accc60d495ee681104fb3a3d66e09e3aa36332",
   },
   adventure: {
@@ -124,7 +124,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "8dc463f9853da7bf8db0bf1c084f11147546a132b5ddfb66482dc5aa57e1007e",
   },
   collectathon: {
-    shared: "186ef67e94ad3795983bbd07feea3db88c5d327b4632e293fa5de11c3a792845",
+    shared: "286d99635909bce71593cef36e8d7e7ba289820490bca7fe0f93b41f11d6b8bc",
     kit: "8ce1ee8f91de66e4b109e266c39a34d5922f4bd7061fb39ad6f432a240de4219",
   },
   kart: {
