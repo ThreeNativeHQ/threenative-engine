@@ -116,6 +116,7 @@
     "@types/react": "catalog:",
     "@types/react-reconciler": "0.32.1",
     "@types/three": "0.187.0",
+    "esbuild": "catalog:",
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",

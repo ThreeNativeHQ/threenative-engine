@@ -61,8 +61,9 @@ export { RibbonField } from "./portal.js";
 
 /**
  * The portal vortex: a particle ring plus a GPU ribbon field that spirals into its centre.
- * @situation a portal, a warp gate or a summoning circle
- * @situation a swirling vortex that pulls particles inward
+ * @situation a swirling magic portal
+ * @situation a warp gate or a summoning circle
+ * @situation a vortex that pulls particles into its centre
  * @constraint add `new GPUParticles3D(portal.ring)` and `portal.ribbons` with ctx.add; both are compute-driven
  * @override seed, amount, color, size, lifetime
  * @example const portal = createPortalVortex();
@@ -126,7 +127,7 @@ export function createMuzzleFlash(overrides: IVfxOverrides = {}): readonly IPart
 
 /**
  * Grey smoke that rises and spreads as it fades.
- * @situation smoke rising from a fire or a chimney
+ * @situation a smoke plume rising from a fire, a chimney or a burning building
  * @situation a smoke plume over a battlefield
  * @constraint every colour, size, count and timing is a named override on the call
  * @constraint add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect
@@ -179,7 +180,7 @@ export function createAshPlume(overrides: IVfxOverrides = {}): readonly IParticl
 /**
  * A fireball cloud that blooms and rolls into smoke.
  * @situation an explosion with a fire cloud
- * @situation a barrel or a car that blows up
+ * @situation a barrel or a car that explodes in fire and smoke
  * @constraint every colour, size, count and timing is a named override on the call
  * @constraint add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect
  * @override seed, amount, color, size, lifetime

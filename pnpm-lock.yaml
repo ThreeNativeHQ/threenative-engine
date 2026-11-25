@@ -1294,6 +1294,9 @@ importers:
       '@typescript/native':
         specifier: 'catalog:'
         version: typescript@7.0.2
+      esbuild:
+        specifier: 'catalog:'
+        version: 0.27.0
       publint:
         specifier: 0.3.22
         version: 0.3.22

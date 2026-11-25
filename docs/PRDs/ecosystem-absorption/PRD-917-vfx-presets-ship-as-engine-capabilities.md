@@ -49,9 +49,9 @@ flowchart LR
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The gallery renders all 46 effects from `@threenative/core/vfx` with no local preset copies. — proof: `pnpm test:vfx-gallery` — Evidence: pending.
-- [ ] AC-2 [local]: A capability search for each of 10 representative effects (healing aura, muzzle flash, smoke plume, rain, snow, poison cloud, impact sparks, portal vortex, fireflies, blood splash) returns its factory as the top match. — proof: `pnpm caps:recall` — Evidence: pending.
-- [ ] AC-3 [local]: Colour, count, size and timing overrides change the layer output of a factory, and the defaults match the donor values. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: A bundle that imports only `createHealingAura` contains no data from other presets. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — Evidence: pending.
+- [x] AC-2 [local]: A capability search for each of 10 representative effects (healing aura, muzzle flash, smoke plume, rain, snow, poison cloud, impact sparks, portal vortex, fireflies, blood splash) returns its factory as the top match. — proof: `pnpm caps:recall` — Evidence: Phase 2 box 1.
+- [x] AC-3 [local]: Colour, count, size and timing overrides change the layer output of a factory, and the defaults match the donor values. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — Evidence: Phase 2 box 2.
+- [x] AC-4 [local]: A bundle that imports only `createHealingAura` contains no data from other presets. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — Evidence: Phase 2 box 3.
 - [ ] AC-5 [local]: A fresh visual judge reports NEUTRAL or IMPROVEMENT for the gallery between develop and this branch, at the same pose, headed WebGPU, two runs per arm. — proof: visual judge subagent verdict on the PR — Evidence: pending.
 - [ ] AC-6 [local]: AGENTS.md rule 3 names the `@threenative/core/vfx` exception, and the mirrors are current. — proof: `pnpm sync:agents --check && pnpm check:docs` — Evidence: pending.
 
@@ -83,13 +83,13 @@ flowchart LR
 
 #### Phase 2: Agents find and tune the effects
 
-**Status:** NOT STARTED
+**Status:** DONE
 **Files:** `packages/core/src/vfx/*` (JSDoc tags, override types), `packages/core/__tests__/vfx-presets.spec.ts`, `packages/core/__tests__/vfx-tree-shake.spec.ts`, the recall case list read by `pnpm caps:recall`.
 **Implementation:** Write the JSDoc tags for every factory. Add the override object. Add 10 recall cases. Bundle a one-import fixture and assert that no other preset's data is present.
 
-- [ ] Recall finds 10 representative effects. — proof: `pnpm caps:recall` — covers AC-2.
-- [ ] Overrides and defaults behave as specified. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — covers AC-3.
-- [ ] One import ships one preset. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — covers AC-4.
+- [x] Recall finds 10 representative effects. — proof: `pnpm caps:recall` — exit 0, 2026-11-25: all 10 `vfx.*` rows return their factory first; recallAtK 0.952703 (141/148), above the old floor 0.949275. `ScenePicker` gained the situation "find which target a shot hit" so `brief.fps.9` keeps its recall after the 46 new rows moved the term weights — covers AC-2.
+- [x] Overrides and defaults behave as specified. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-presets.spec.ts` — 5 passed, 2026-11-25. It also checks every cone layer of all 46 recipes for a non-parallel spread axis; the old raw-`y` test fails it on `godot-fireflies` — covers AC-3.
+- [x] One import ships one preset. — proof: `pnpm exec vitest run packages/core/__tests__/vfx-tree-shake.spec.ts` — 1 passed, 2026-11-25: a `createHealingAura` bundle carries 0 layer ids of the other 45 recipes; adding `createRain` makes it fail with `rainLayers:rain` — covers AC-4.
 
 #### Phase 3: The rule and the look are confirmed
 

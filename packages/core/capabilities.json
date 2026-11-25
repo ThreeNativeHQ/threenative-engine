@@ -3530,7 +3530,8 @@
       "signature": "export class ScenePicker { … }",
       "situations": [
         "select an object under the pointer",
-        "interact with the first collider or mesh hit"
+        "interact with the first collider or mesh hit",
+        "find which target a shot hit, so the struck target can score and react"
       ],
       "summary": "Raycast the game scene using the framework's picker.",
       "supersedes": ["new Raycaster("],
@@ -5585,7 +5586,10 @@
       "overrides": ["seed, amount, color, size, lifetime"],
       "package": "@threenative/core",
       "signature": "export function createExplosionCloud(overrides: IVfxOverrides = { … }",
-      "situations": ["an explosion with a fire cloud", "a barrel or a car that blows up"],
+      "situations": [
+        "an explosion with a fire cloud",
+        "a barrel or a car that explodes in fire and smoke"
+      ],
       "summary": "A fireball cloud that blooms and rolls into smoke.",
       "supersedes": [],
       "symbol": "createExplosionCloud"
@@ -5996,8 +6000,9 @@
       "package": "@threenative/core",
       "signature": "export function createPortalVortex(overrides: IVfxOverrides = { … }",
       "situations": [
-        "a portal, a warp gate or a summoning circle",
-        "a swirling vortex that pulls particles inward"
+        "a swirling magic portal",
+        "a warp gate or a summoning circle",
+        "a vortex that pulls particles into its centre"
       ],
       "summary": "The portal vortex: a particle ring plus a GPU ribbon field that spirals into its centre.",
       "supersedes": [],
@@ -6066,7 +6071,10 @@
       "overrides": ["seed, amount, color, size, lifetime"],
       "package": "@threenative/core",
       "signature": "export function createSmoke(overrides: IVfxOverrides = { … }",
-      "situations": ["smoke rising from a fire or a chimney", "a smoke plume over a battlefield"],
+      "situations": [
+        "a smoke plume rising from a fire, a chimney or a burning building",
+        "a smoke plume over a battlefield"
+      ],
       "summary": "Grey smoke that rises and spreads as it fades.",
       "supersedes": [],
       "symbol": "createSmoke"

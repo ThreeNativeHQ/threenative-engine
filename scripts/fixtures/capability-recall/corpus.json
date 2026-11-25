@@ -1155,6 +1155,86 @@
       "source": "sandbox:studio-model-trial#lane-briefs",
       "expect": ["environmentElements"],
       "reject": []
+    },
+    {
+      "id": "vfx.healing-aura",
+      "query": "a healing aura that glows around the player when they drink a potion",
+      "scope": "mechanic",
+      "source": "template:action-rpg#This kit",
+      "expect": ["createHealingAura"],
+      "reject": []
+    },
+    {
+      "id": "vfx.muzzle-flash",
+      "query": "a muzzle flash when the gun fires",
+      "scope": "mechanic",
+      "source": "template:shooter#This kit",
+      "expect": ["createMuzzleFlash"],
+      "reject": []
+    },
+    {
+      "id": "vfx.smoke-plume",
+      "query": "a smoke plume rising from a burning building",
+      "scope": "mechanic",
+      "source": "template:shooter#This kit",
+      "expect": ["createSmoke"],
+      "reject": []
+    },
+    {
+      "id": "vfx.rain",
+      "query": "rain falling over the level",
+      "scope": "mechanic",
+      "source": "template:starter#This kit",
+      "expect": ["createRain"],
+      "reject": []
+    },
+    {
+      "id": "vfx.snow",
+      "query": "snow falling over the scene",
+      "scope": "mechanic",
+      "source": "template:starter#This kit",
+      "expect": ["createSnow"],
+      "reject": []
+    },
+    {
+      "id": "vfx.poison-cloud",
+      "query": "a toxic poison gas cloud that hurts players inside it",
+      "scope": "mechanic",
+      "source": "template:action-rpg#This kit",
+      "expect": ["createPoisonCloud"],
+      "reject": []
+    },
+    {
+      "id": "vfx.impact-sparks",
+      "query": "sparks where a bullet hits a metal wall",
+      "scope": "mechanic",
+      "source": "template:shooter#This kit",
+      "expect": ["createImpactSparks"],
+      "reject": []
+    },
+    {
+      "id": "vfx.portal-vortex",
+      "query": "a swirling magic portal effect at the end of the level",
+      "scope": "mechanic",
+      "source": "template:action-rpg#This kit",
+      "expect": ["createPortalVortex"],
+      "reject": []
+    },
+    {
+      "id": "vfx.fireflies",
+      "query": "fireflies drifting in a forest clearing at night",
+      "scope": "mechanic",
+      "source": "template:starter#This kit",
+      "expect": ["createFireflies"],
+      "reject": []
+    },
+    {
+      "id": "vfx.blood-splash",
+      "query": "a blood splash when an enemy takes damage",
+      "scope": "mechanic",
+      "source": "template:action-rpg#This kit",
+      "expect": ["createBloodSplash"],
+      "reject": []
     }
   ]
 }

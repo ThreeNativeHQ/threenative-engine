@@ -190,10 +190,7 @@ function velocityDirection(layer: ArchiveLayer, spawn: Node<"vec3">, seed: numbe
   const direction = normalize(vec3(...raw));
   const angle = velocity.angle ?? 0;
   if (angle <= 0) return direction.mul(speed);
-  // Test the NORMALISED direction: a short vertical one such as [0, 0.12, 0] must still pick the X
-  // tangent, or cross() is zero and every particle position becomes NaN (a GPU fault on NVIDIA).
-  const tangent =
-    Math.abs(raw[1]) / Math.hypot(raw[0], raw[1], raw[2]) > 0.9 ? vec3(1, 0, 0) : vec3(0, 1, 0);
+  const tangent = vec3(...coneTangent(raw));
   const bitangent = normalize(cross(direction, tangent));
   const coneAngle = float(angle).mul(random(instanceIndex, seed, 43).sqrt());
   const azimuth = random(instanceIndex, seed, 47).mul(TAU);
@@ -204,6 +201,16 @@ function velocityDirection(layer: ArchiveLayer, spawn: Node<"vec3">, seed: numbe
       .add(tangent.mul(cos(azimuth)).mul(spread))
       .add(bitangent.mul(sin(azimuth)).mul(spread)),
   ).mul(speed);
+}
+
+/**
+ * The axis a cone spreads around. It tests the NORMALISED direction: a short vertical one such as
+ * [0, 0.12, 0] must still pick the X axis, or cross() is zero and every particle position becomes
+ * NaN (an MMU fault and a lost device on NVIDIA).
+ */
+export function coneTangent(direction: ArchiveVec3): ArchiveVec3 {
+  const length = Math.hypot(direction[0], direction[1], direction[2]);
+  return Math.abs(direction[1]) / length > 0.9 ? [1, 0, 0] : [0, 1, 0];
 }
 
 function acceleration(layer: ArchiveLayer) {
