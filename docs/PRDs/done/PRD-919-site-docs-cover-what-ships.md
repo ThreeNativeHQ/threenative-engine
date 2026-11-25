@@ -99,13 +99,6 @@ Keep each fix at the source: edit `docs/guides/*.md`, a package README or a reci
 ## Blocked on
 
 Nothing. The iOS wording and the licence wording were the only open owner calls; both are recorded in Decisions with the default the code supports, and either can be overridden without reopening a box.
-- Owner call: **licence wording.** `@threenative/core` declares `MIT AND GPL-2.0-or-later` while the site says "MIT end to end". Site-only, so untouched here.
-
-## Blocked on
-
-- Owner call: **iOS status.** Code ships `build --target ios` (simulator, unsigned) and `playtest --target ios`. `native-runtime.md:17` says "not supported", `CURRENT-CHALLENGES.md:20,65-66` says no public text claims iOS, and `comparison-matrix.ts:200` says "experimental". João picks one sentence; Phase 1 box 4 and Phase 3 box 2 use it.
-- Owner call: **licence wording.** `@threenative/core` declares `MIT AND GPL-2.0-or-later` while the site says "MIT end to end". Either narrow the package field (if the GPL code is a separate package) or narrow the claim. João decides which.
-- Owner call: **`pnpm studio`.** Seven kit `package.json` files define `"studio": "threenative-studio"` (`templates/starter/package.json:8`) and no package here ships that bin. This is probably the private Studio's binary, so the scouts' "dead script" finding is dropped unless João says otherwise.
 
 ## Appendix — finding index
 
