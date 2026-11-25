@@ -1,7 +1,10 @@
 # @threenative/physics
 
 Godot-shaped physics nodes backed by Rapier: `RigidBody3D`, `Area3D`,
-`CharacterBody3D`, and `CollisionShape3D`.
+`CharacterBody3D`, `CollisionShape3D`, `VehicleBody3D`, `Buoyancy3D`, `Joint3D`, `SoftBody3D`, plus
+`buildStaticColliders`, `ScatterColliders` and `PhysicsDirectSpaceState3D`. Navmesh pathfinding ships
+on the `@threenative/physics/navigation` subpath, which is Recast through WebAssembly and therefore
+web-only today.
 
 ## Backend portability
 

@@ -6,21 +6,20 @@ Scaffold a ThreeNative game:
 pnpm create threenative my-game
 ```
 
-The default template is `starter`. Choose `minimal`, `platformer`, `action-rpg`, `tower-defense`,
-`racing`, `sailing`, `rain`, `shooter`, or `snow` for a different starting point:
+The default template is `starter`. Sixteen templates ship, and `pnpm create threenative --help`
+lists every one with its title, blurb and `--genre` aliases. Name one with `--template`, or name a
+genre with `--genre`:
 
 ```sh
 pnpm create threenative my-game --template minimal
-pnpm create threenative my-game --template starter
-pnpm create threenative my-game --template platformer
-pnpm create threenative my-game --template action-rpg
 pnpm create threenative my-game --template tower-defense
-pnpm create threenative my-game --template racing
-pnpm create threenative my-game --template sailing
-pnpm create threenative my-game --template rain
-pnpm create threenative my-game --template shooter
-pnpm create threenative my-game --template snow
+pnpm create threenative my-game --genre mario     # collectathon
+pnpm create threenative my-game --genre zelda     # adventure
 ```
+
+`--genre` matches a kit's `genre` or one of the words in its `kit.json` `aliases`. A word no kit
+claims starts from `minimal`, because a genre word is authoring input and not an invitation to
+guess the nearest preset. Two kits claiming one word fails with `TN_KIT_GENRE_AMBIGUOUS`.
 
 Prerequisites are Node.js 20.19.0 or newer and pnpm 10 or newer. npm is also supported for the
 same clean-room workflow:
@@ -72,8 +71,9 @@ hidden by the install recipe.
 Inside a generated project, `npx threenative doctor --text` reports what would break a build:
 missing or version-mismatched `@threenative` packages, a portable entry with no default game
 export, no web entry, no scenario, no capability search for your agent. Naming the build you
-intend — `--target web|desktop|android|ios` (iOS is not a supported target yet), optionally with `--mode debug|release` — makes that
-build's prerequisites decide the verdict instead of warning beside "available".
+intend — `--target web|desktop|android|ios`, optionally with `--mode debug|release` — makes that
+build's prerequisites decide the verdict instead of warning beside "available". iOS builds and runs
+in the simulator only, unsigned: no iOS hardware is qualified.
 
 Tool discovery reports four separate facts, because three of them are routinely mistaken for the
 fourth:
@@ -85,11 +85,20 @@ fourth:
 | `model conversion` | Blender is on this machine and the server is up | that a conversion has ever run |
 | `model conversion` detail | what the bake manifest records as converted | anything, when no manifest exists |
 
-Every repair is one you run in your own game, and doctor performs none of them:
+Every repair below is one you can run in your own game. `doctor --fix` is the exception: it
+rewrites this game's authoring layer — `AGENTS.md`, `CLAUDE.md`, the skills, the hooks and the MCP
+configs — from the installed `create-threenative`, then checks again. A file this game edited is
+kept and listed, and the run exits 1 with `TN_AUTHORING_LAYER_EDITED`; `--force` overwrites it. Git
+is the undo, and `.threenative/agent-files.json` records what was written. An MCP config it cannot
+parse is left untouched and named, so a config holding servers of your own survives.
 
-- **A host config is unreadable or missing servers.** Doctor names the exact file and stops. The
-  file is yours: reinstall `@threenative/core` to rewrite the configs its postinstall owns, or fix
-  the named file by hand. Doctor never edits it, so a config holding servers of your own survives.
+Updating an existing game:
+
+```sh
+pnpm up --latest create-threenative @threenative/*
+pnpm exec threenative doctor --fix
+```
+
 - **Your host is not listed.** Windsurf, Cline, Amp and the JetBrains assistants read a
   machine-wide config only. Installing a library into one game must never edit a file that governs
   every other project on your machine, so those are wired by hand, once, in that host's own

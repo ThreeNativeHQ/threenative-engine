@@ -1,9 +1,9 @@
 {
-  "comment": "The terrain MCP surface a generated project gets once it installs @threenative/terrain. `tools` is set-equal to the tool table version 0.1.10 serves. Regenerate with `pnpm tsx scripts/capture-terrain-mcp-tools.ts`.",
-  "version": "0.1.10",
+  "comment": "The terrain MCP surface a generated project gets once it installs @threenative/terrain. `tools` is set-equal to the tool table version 0.1.19 serves. Regenerate with `pnpm tsx scripts/capture-terrain-mcp-tools.ts`.",
+  "version": "0.1.19",
   "serverInfo": {
     "name": "threenative-terrain",
-    "version": "0.1.10"
+    "version": "0.1.19"
   },
   "recommended": ["terrain_generate", "terrain_patch"],
   "tools": ["terrain_biome_new", "terrain_generate", "terrain_patch"],

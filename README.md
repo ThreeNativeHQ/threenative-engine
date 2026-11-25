@@ -52,7 +52,7 @@ pnpm dev
 ```
 
 That is a complete game: a loop, physics, a React HUD, a playtest scenario, and a scene you can
-edit. Requires Node 20.19+ and a WebGPU-capable browser (WebGL2 fallback is automatic).
+edit. Requires Node 20.19+ and a WebGPU-capable browser.
 
 ## A small game
 
@@ -132,6 +132,9 @@ kit adds modular masonry, props, and animated fire in three themes.
 | `action-rpg` | A three-room dungeon with melee, loot, equipment, and persistence |
 | `tower-defense` | Four tower types, three upgrade levels, twelve waves and an orbital strike on a polished diorama |
 | `racing` | Three laps, checklines, rescue sectors, boost pads |
+| `runner` | Endless runner: three lanes, a track that builds itself ahead of you, obstacles that end the run |
+| `rts` | Real-time strategy: three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in `src/sim/` |
+| `puzzle` | Physics puzzle: a forty-five body vault, a glowing ward and a seal to stand on |
 | `sailing` | Wind, waves, buoyancy, and an ordered course |
 | `rain` | A procedural coastal storm, weather controls, and a free-fly camera |
 | `shooter` | Hitscan and projectile weapons, hunting targets, timed pickups |
@@ -145,7 +148,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | --- | --- |
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
-| `create-threenative` | Scaffold a readable game project from eight templates |
+| `create-threenative` | Scaffold a readable game project from sixteen templates |
 | `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
@@ -165,7 +168,8 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 
 ThreeNative is **alpha**: the API is settling and versions are `0.x`.
 
-**Supported targets: web, Windows, macOS, Linux and Android. iOS is not supported yet.**
+**Supported targets: web, Windows, macOS, Linux and Android.** iOS builds and runs in the
+simulator only, unsigned; no iOS hardware is qualified.
 
 **You sign your own game.** A desktop or Android release is signed with *your* certificate and
 keys, because the signature names the publisher of the game a player downloads. ThreeNative ships
@@ -174,10 +178,10 @@ no certificate; `threenative build --mode release` signs with yours. See
 
 | Platform | Renderer | State |
 | --- | --- | --- |
-| Web | WebGPU, WebGL2 fallback | Verified every CI run |
-| Desktop (Linux, macOS, Windows) | Owned native host | Verified — 300 native frames and a non-blank capture |
-| Android | Owned native host | Emulator lane runs; physical-device performance is being measured |
-| iOS | — | **Not supported.** Experimental host code exists; no release supports it |
+| Web | Owned engine, WebGPU | Verified every CI run |
+| Desktop (Linux, macOS, Windows) | Owned engine player | Verified — 300 native frames and a non-blank capture |
+| Android | Legacy host | Emulator lane runs; physical-device performance is being measured |
+| iOS | Legacy host | Simulator only, unsigned. No iOS hardware is qualified |
 
 Every claim here is backed by a run. The current numbers live in
 [`docs/verification/runtime-perf-state.md`](docs/verification/runtime-perf-state.md), and
