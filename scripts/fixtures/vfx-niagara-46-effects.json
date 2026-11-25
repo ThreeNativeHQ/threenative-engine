@@ -4,7 +4,11 @@
     "file": "threenative-vfx-niagara-46-effects.zip",
     "sha256": "6554c40f862f0ab1b977417d1a01716f76dc3937a3ecb507bedfa230ab6cac0a"
   },
-  "requiredGroups": { "webgpu-vfx": 21, "Effekseer": 15, "extras": 10 },
+  "requiredGroups": {
+    "webgpu-vfx": 21,
+    "Effekseer": 15,
+    "extras": 10
+  },
   "effects": [
     {
       "id": "fire",
@@ -14,7 +18,7 @@
       "donorFile": "package/src/preset-builders/fire.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createFire",
+      "renderSource": "packages/core/src/vfx/index.ts#createFire",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createFire",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -27,7 +31,7 @@
       "donorFile": "package/src/preset-builders/fire.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createJetFlame",
+      "renderSource": "packages/core/src/vfx/index.ts#createJetFlame",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createJetFlame",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -40,7 +44,7 @@
       "donorFile": "package/src/preset-builders/flash.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createBurstFlash",
+      "renderSource": "packages/core/src/vfx/index.ts#createBurstFlash",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createBurstFlash",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -53,7 +57,7 @@
       "donorFile": "package/src/preset-builders/flash.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createMuzzleFlash",
+      "renderSource": "packages/core/src/vfx/index.ts#createMuzzleFlash",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createMuzzleFlash",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -66,7 +70,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createSmoke",
+      "renderSource": "packages/core/src/vfx/index.ts#createSmoke",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createSmoke",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -79,7 +83,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createDustCloud",
+      "renderSource": "packages/core/src/vfx/index.ts#createDustCloud",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createDustCloud",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -92,7 +96,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createSteamPlume",
+      "renderSource": "packages/core/src/vfx/index.ts#createSteamPlume",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createSteamPlume",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -105,7 +109,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createAshPlume",
+      "renderSource": "packages/core/src/vfx/index.ts#createAshPlume",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createAshPlume",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -118,7 +122,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createExplosionCloud",
+      "renderSource": "packages/core/src/vfx/index.ts#createExplosionCloud",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createExplosionCloud",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -131,7 +135,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createImpactDust",
+      "renderSource": "packages/core/src/vfx/index.ts#createImpactDust",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createImpactDust",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -144,7 +148,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createGroundMist",
+      "renderSource": "packages/core/src/vfx/index.ts#createGroundMist",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createGroundMist",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -157,7 +161,7 @@
       "donorFile": "package/src/preset-builders/smoke.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createPoisonCloud",
+      "renderSource": "packages/core/src/vfx/index.ts#createPoisonCloud",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createPoisonCloud",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -170,7 +174,7 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createRain",
+      "renderSource": "packages/core/src/vfx/index.ts#createRain",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createRain",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -183,7 +187,7 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createSnow",
+      "renderSource": "packages/core/src/vfx/index.ts#createSnow",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createSnow",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -196,7 +200,7 @@
       "donorFile": "package/src/preset-builders/sparks.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createSparkStreaks",
+      "renderSource": "packages/core/src/vfx/index.ts#createSparkStreaks",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createSparkStreaks",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -209,7 +213,7 @@
       "donorFile": "package/src/preset-builders/sparks.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createImpactSparks",
+      "renderSource": "packages/core/src/vfx/index.ts#createImpactSparks",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createImpactSparks",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -222,7 +226,7 @@
       "donorFile": "package/src/preset-builders/sparks.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createEmberFountain",
+      "renderSource": "packages/core/src/vfx/index.ts#createEmberFountain",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEmberFountain",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -235,7 +239,7 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createMagicWisp",
+      "renderSource": "packages/core/src/vfx/index.ts#createMagicWisp",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createMagicWisp",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -248,7 +252,7 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createMagicOrb",
+      "renderSource": "packages/core/src/vfx/index.ts#createMagicOrb",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createMagicOrb",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -261,7 +265,7 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createMagicBeam",
+      "renderSource": "packages/core/src/vfx/index.ts#createMagicBeam",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createMagicBeam",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -274,12 +278,11 @@
       "donorFile": "package/src/preset-builders/ambient.ts",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createHealingAura",
+      "renderSource": "packages/core/src/vfx/index.ts#createHealingAura",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createHealingAura",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
-
     {
       "id": "effekseer-fire01",
       "group": "Effekseer",
@@ -288,8 +291,8 @@
       "donorFile": "Effects/Materials/mt_fire01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerFire01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerFire01",
+      "renderSource": "packages/core/src/vfx/index.ts#createCurlingFlame",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createCurlingFlame",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -301,8 +304,8 @@
       "donorFile": "Effects/Materials/mt_fire02.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerFire02",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerFire02",
+      "renderSource": "packages/core/src/vfx/index.ts#createFlameWithEmbers",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createFlameWithEmbers",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -314,8 +317,8 @@
       "donorFile": "Effects/Materials/mt_fire03.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerFire03",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerFire03",
+      "renderSource": "packages/core/src/vfx/index.ts#createBonfire",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createBonfire",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -327,8 +330,8 @@
       "donorFile": "Effects/Materials/mt_lightning01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerLightning01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerLightning01",
+      "renderSource": "packages/core/src/vfx/index.ts#createLightningBurst",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createLightningBurst",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -340,8 +343,8 @@
       "donorFile": "Effects/Materials/mt_lightning02.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerLightning02",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerLightning02",
+      "renderSource": "packages/core/src/vfx/index.ts#createLightningColumn",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createLightningColumn",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -353,8 +356,8 @@
       "donorFile": "Effects/Materials/mt_lightning03.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerLightning03",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerLightning03",
+      "renderSource": "packages/core/src/vfx/index.ts#createLightningSphere",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createLightningSphere",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -366,8 +369,8 @@
       "donorFile": "Effects/Materials/mt_ice01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerIce01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerIce01",
+      "renderSource": "packages/core/src/vfx/index.ts#createFrostBurst",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createFrostBurst",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -379,8 +382,8 @@
       "donorFile": "Effects/Materials/mt_ice02.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerIce02",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerIce02",
+      "renderSource": "packages/core/src/vfx/index.ts#createFrostAura",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createFrostAura",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -392,8 +395,8 @@
       "donorFile": "Effects/Materials/mt_ice03.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerIce03",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerIce03",
+      "renderSource": "packages/core/src/vfx/index.ts#createIceShatter",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createIceShatter",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -405,8 +408,8 @@
       "donorFile": "Effects/Materials/mt_holy01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/magic.ts#createEffekseerHoly01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerHoly01",
+      "renderSource": "packages/core/src/vfx/index.ts#createHolyGlow",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createHolyGlow",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -418,8 +421,8 @@
       "donorFile": "Effects/Materials/mt_hit01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createEffekseerHit01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerHit01",
+      "renderSource": "packages/core/src/vfx/index.ts#createImpactBurst",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createImpactBurst",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -431,8 +434,8 @@
       "donorFile": "Effects/Materials/mt_hit02.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/combat.ts#createEffekseerHit02",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerHit02",
+      "renderSource": "packages/core/src/vfx/index.ts#createImpactFlash",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createImpactFlash",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -444,8 +447,8 @@
       "donorFile": "Effects/Materials/mt_wind01.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createEffekseerWind01",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerWind01",
+      "renderSource": "packages/core/src/vfx/index.ts#createWindStreaks",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createWindStreaks",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -457,8 +460,8 @@
       "donorFile": "Effects/Materials/mt_wind02.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createEffekseerWind02",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerWind02",
+      "renderSource": "packages/core/src/vfx/index.ts#createWindGust",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createWindGust",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -470,12 +473,11 @@
       "donorFile": "Effects/Materials/mt_wind03.efkmat",
       "license": "CC0-1.0",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/fireSmokeWeather.ts#createEffekseerWind03",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createEffekseerWind03",
+      "renderSource": "packages/core/src/vfx/index.ts#createWhirlwind",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createWhirlwind",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
-
     {
       "id": "kenney-slash-arc",
       "group": "extras",
@@ -484,8 +486,8 @@
       "donorFile": "addons/kenney_particle_pack/slash_01.png",
       "license": "CC0-1.0",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createKenneySlashArc",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createKenneySlashArc",
+      "renderSource": "packages/core/src/vfx/index.ts#createSlashArc",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createSlashArc",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -497,8 +499,8 @@
       "donorFile": "addons/kenney_particle_pack/star_01.png",
       "license": "CC0-1.0",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createKenneyConfettiBurst",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createKenneyConfettiBurst",
+      "renderSource": "packages/core/src/vfx/index.ts#createConfettiBurst",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createConfettiBurst",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -510,8 +512,8 @@
       "donorFile": "addons/kenney_particle_pack/twirl_01.png",
       "license": "CC0-1.0",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createKenneyLeafSwirl",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createKenneyLeafSwirl",
+      "renderSource": "packages/core/src/vfx/index.ts#createLeafSwirl",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createLeafSwirl",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -523,8 +525,8 @@
       "donorFile": "docs/examples/bubbleStream.html",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createPixiBubbleStream",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createPixiBubbleStream",
+      "renderSource": "packages/core/src/vfx/index.ts#createBubbleStream",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createBubbleStream",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -536,8 +538,8 @@
       "donorFile": "docs/examples/cartoonSmokeBlast.html",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createPixiCartoonSmokeBlast",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createPixiCartoonSmokeBlast",
+      "renderSource": "packages/core/src/vfx/index.ts#createCartoonSmokeBlast",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createCartoonSmokeBlast",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -549,8 +551,8 @@
       "donorFile": "addons/vfx_library/effects/fireflies.tscn",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createGodotFireflies",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createGodotFireflies",
+      "renderSource": "packages/core/src/vfx/index.ts#createFireflies",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createFireflies",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -562,7 +564,7 @@
       "donorFile": "addons/vfx_library/effects/portal_vortex.tscn",
       "license": "MIT",
       "adaptation": "direct-tsl-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/portalVortex.ts#createPortalVortex",
+      "renderSource": "packages/core/src/vfx/index.ts#createPortalVortex",
       "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createPortalVortex",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
@@ -575,8 +577,8 @@
       "donorFile": "addons/vfx_library/effects/blood_splash.tscn",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createGodotBloodSplash",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createGodotBloodSplash",
+      "renderSource": "packages/core/src/vfx/index.ts#createBloodSplash",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createBloodSplash",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -588,8 +590,8 @@
       "donorFile": "addons/vfx_library/effects/shield_break.tscn",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createGodotShieldBreak",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createGodotShieldBreak",
+      "renderSource": "packages/core/src/vfx/index.ts#createShieldBreak",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createShieldBreak",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     },
@@ -601,8 +603,8 @@
       "donorFile": "addons/vfx_library/effects/waterfall_mist.tscn",
       "license": "MIT",
       "adaptation": "independent-recreation",
-      "renderSource": "examples/vfx-gallery/src/render/extras.ts#createGodotWaterfallMist",
-      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createGodotWaterfallMist",
+      "renderSource": "packages/core/src/vfx/index.ts#createWaterfallMist",
+      "caller": "examples/vfx-gallery/src/scenes/Gallery.ts#createWaterfallMist",
       "runtimeCodeCopied": false,
       "binaryAssetCopied": false
     }

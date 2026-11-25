@@ -3675,7 +3675,8 @@
       "signature": "export class ScenePicker { … }",
       "situations": [
         "select an object under the pointer",
-        "interact with the first collider or mesh hit"
+        "interact with the first collider or mesh hit",
+        "find which target a shot hit, so the struck target can score and react"
       ],
       "summary": "Raycast the game scene using the framework's picker.",
       "supersedes": ["new Raycaster("],
@@ -5541,6 +5542,822 @@
       "summary": "Mirror the game's published state on the UI side.",
       "supersedes": [],
       "symbol": "subscribeUiState"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createAshPlume()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createAshPlume(overrides: IVfxOverrides = { … }",
+      "situations": ["volcanic ash or a burnt-out building", "a dark smoke column"],
+      "summary": "A dark column of ash that billows upward.",
+      "supersedes": [],
+      "symbol": "createAshPlume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBloodSplash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBloodSplash(overrides: IVfxOverrides = { … }",
+      "situations": ["blood when a character takes damage", "a gore or hit splatter"],
+      "summary": "A splash of blood droplets on a hit.",
+      "supersedes": [],
+      "symbol": "createBloodSplash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBonfire()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBonfire(overrides: IVfxOverrides = { … }",
+      "situations": ["a bonfire or a large campfire", "a burning pile with smoke"],
+      "summary": "A big fire with flame, smoke and embers.",
+      "supersedes": [],
+      "symbol": "createBonfire"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBubbleStream()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBubbleStream(overrides: IVfxOverrides = { … }",
+      "situations": ["bubbles under water or from a diver", "a bubbling potion or a fish tank"],
+      "summary": "A stream of bubbles that rises.",
+      "supersedes": [],
+      "symbol": "createBubbleStream"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBurstFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBurstFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a flash when a grenade, pickup or spell goes off", "a bright pop on impact"],
+      "summary": "A short, bright flash that bursts outward once.",
+      "supersedes": [],
+      "symbol": "createBurstFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createCartoonSmokeBlast()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createCartoonSmokeBlast( overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a cartoon poof when something appears or vanishes",
+        "a stylised explosion puff"
+      ],
+      "summary": "A puffy cartoon smoke blast.",
+      "supersedes": [],
+      "symbol": "createCartoonSmokeBlast"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createConfettiBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createConfettiBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["confetti for a win, a level-up or a celebration", "a party popper"],
+      "summary": "Coloured confetti that bursts and flutters down.",
+      "supersedes": [],
+      "symbol": "createConfettiBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createCurlingFlame()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createCurlingFlame(overrides: IVfxOverrides = { … }",
+      "situations": ["a stylised, curling flame", "a magic fire"],
+      "summary": "A flame whose tongues curl as they rise.",
+      "supersedes": [],
+      "symbol": "createCurlingFlame"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createDustCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createDustCloud(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a dust cloud from a landing, a stomp or a vehicle",
+        "dust kicked up off dry ground"
+      ],
+      "summary": "A low cloud of tan dust that swells and settles.",
+      "supersedes": [],
+      "symbol": "createDustCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createEmberFountain()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createEmberFountain(overrides: IVfxOverrides = { … }",
+      "situations": ["embers rising from a fire", "a fountain of glowing sparks"],
+      "summary": "Glowing embers that shoot up and drift down.",
+      "supersedes": [],
+      "symbol": "createEmberFountain"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createExplosionCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createExplosionCloud(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "an explosion with a fire cloud",
+        "a barrel or a car that explodes in fire and smoke"
+      ],
+      "summary": "A fireball cloud that blooms and rolls into smoke.",
+      "supersedes": [],
+      "symbol": "createExplosionCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFire()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFire(overrides: IVfxOverrides = { … }",
+      "situations": ["a campfire, torch or brazier flame", "a burning object that keeps burning"],
+      "summary": "A steady flame that licks upward from one point.",
+      "supersedes": [],
+      "symbol": "createFire"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFireflies()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFireflies(overrides: IVfxOverrides = { … }",
+      "situations": ["fireflies in a forest at night", "glowing insects or floating lights"],
+      "summary": "Fireflies that blink and drift over an area.",
+      "supersedes": [],
+      "symbol": "createFireflies"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFlameWithEmbers()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFlameWithEmbers(overrides: IVfxOverrides = { … }",
+      "situations": ["a fire with flying embers", "a burning torch with sparks"],
+      "summary": "A flame that throws off embers.",
+      "supersedes": [],
+      "symbol": "createFlameWithEmbers"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFrostAura()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFrostAura(overrides: IVfxOverrides = { … }",
+      "situations": ["a frost aura around a character", "a cold, freezing area"],
+      "summary": "A slow swirl of frost around a point.",
+      "supersedes": [],
+      "symbol": "createFrostAura"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFrostBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFrostBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["a frost nova or an ice hit", "a freezing burst"],
+      "summary": "A burst of frost crystals out from a point.",
+      "supersedes": [],
+      "symbol": "createFrostBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createGroundMist()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createGroundMist(overrides: IVfxOverrides = { … }",
+      "situations": ["fog or mist creeping along the ground", "a swamp or graveyard haze"],
+      "summary": "Low mist that drifts along the floor.",
+      "supersedes": [],
+      "symbol": "createGroundMist"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createHealingAura()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createHealingAura(overrides: IVfxOverrides = { … }",
+      "situations": ["a healing aura around a character", "a regeneration or buff effect"],
+      "summary": "A soft green aura of rising motes around a point.",
+      "supersedes": [],
+      "symbol": "createHealingAura"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createHolyGlow()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createHolyGlow(overrides: IVfxOverrides = { … }",
+      "situations": ["a holy blessing, a shrine or a resurrection", "a divine light effect"],
+      "summary": "A golden glow with rays and orbiting light.",
+      "supersedes": [],
+      "symbol": "createHolyGlow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createIceShatter()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createIceShatter(overrides: IVfxOverrides = { … }",
+      "situations": ["ice shattering or a frozen enemy breaking", "ice shards on impact"],
+      "summary": "Ice shards that fly up and bounce on the floor.",
+      "supersedes": [],
+      "symbol": "createIceShatter"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["a heavy melee hit", "a punch or hammer impact"],
+      "summary": "Sparks and dust thrown out by a heavy hit.",
+      "supersedes": [],
+      "symbol": "createImpactBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactDust()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactDust(overrides: IVfxOverrides = { … }",
+      "situations": ["dust where a bullet or a heavy blow hits the ground", "a ground impact puff"],
+      "summary": "A puff of dust thrown out where something hits the ground.",
+      "supersedes": [],
+      "symbol": "createImpactDust"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a critical hit flash", "a hit confirm effect"],
+      "summary": "A bright flash with sparks on a hit.",
+      "supersedes": [],
+      "symbol": "createImpactFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactSparks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactSparks(overrides: IVfxOverrides = { … }",
+      "situations": ["sparks where a bullet hits metal", "a sword clash or a hit spark"],
+      "summary": "A spray of sparks where a hit lands.",
+      "supersedes": [],
+      "symbol": "createImpactSparks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createJetFlame()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createJetFlame(overrides: IVfxOverrides = { … }",
+      "situations": ["a rocket thruster or jet engine exhaust", "a flamethrower stream"],
+      "summary": "A fast, narrow jet of flame, like a thruster or a flamethrower.",
+      "supersedes": [],
+      "symbol": "createJetFlame"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLeafSwirl()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLeafSwirl(overrides: IVfxOverrides = { … }",
+      "situations": ["falling or swirling leaves", "an autumn wind effect"],
+      "summary": "Leaves that swirl in the wind.",
+      "supersedes": [],
+      "symbol": "createLeafSwirl"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["an electric discharge or a shock hit", "a spark gap or a taser zap"],
+      "summary": "A short burst of jagged electric arcs.",
+      "supersedes": [],
+      "symbol": "createLightningBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningColumn()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningColumn(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "an electric pylon, a tesla coil or a charged weapon",
+        "a column of crackling lightning"
+      ],
+      "summary": "Electric arcs that crackle upward without stopping.",
+      "supersedes": [],
+      "symbol": "createLightningColumn"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningSphere()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningSphere(overrides: IVfxOverrides = { … }",
+      "situations": ["a ball of lightning or an electric shield", "a plasma globe"],
+      "summary": "Electric arcs that whirl around a sphere.",
+      "supersedes": [],
+      "symbol": "createLightningSphere"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicBeam()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicBeam(overrides: IVfxOverrides = { … }",
+      "situations": ["a magic beam or a laser spell", "a column of energy"],
+      "summary": "A straight beam of magic energy.",
+      "supersedes": [],
+      "symbol": "createMagicBeam"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicOrb()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicOrb(overrides: IVfxOverrides = { … }",
+      "situations": ["a magic orb, a charged spell or a power core", "a glowing energy ball"],
+      "summary": "A glowing orb of swirling magic.",
+      "supersedes": [],
+      "symbol": "createMagicOrb"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicWisp()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicWisp(overrides: IVfxOverrides = { … }",
+      "situations": ["a will-o'-the-wisp or a fairy light", "a floating magic mote"],
+      "summary": "A small floating wisp of magic light.",
+      "supersedes": [],
+      "symbol": "createMagicWisp"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMuzzleFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMuzzleFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a muzzle flash when a gun fires", "a quick flare at a barrel tip"],
+      "summary": "The flash at the muzzle of a gun when it fires.",
+      "supersedes": [],
+      "symbol": "createMuzzleFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createPoisonCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createPoisonCloud(overrides: IVfxOverrides = { … }",
+      "situations": ["a poison or toxic gas cloud", "a damage-over-time area hazard"],
+      "summary": "A green toxic cloud that lingers in place.",
+      "supersedes": [],
+      "symbol": "createPoisonCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "add `new GPUParticles3D(portal.ring)` and `portal.ribbons` with ctx.add; both are compute-driven"
+      ],
+      "example": "const portal = createPortalVortex();\nctx.add(new GPUParticles3D(portal.ring)).position.copy(gate);\nctx.add(portal.ribbons).position.copy(gate);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createPortalVortex(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a swirling magic portal",
+        "a warp gate or a summoning circle",
+        "a vortex that pulls particles into its centre"
+      ],
+      "summary": "The portal vortex: a particle ring plus a GPU ribbon field that spirals into its centre.",
+      "supersedes": [],
+      "symbol": "createPortalVortex"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createRain()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createRain(overrides: IVfxOverrides = { … }",
+      "situations": ["rain falling over the scene", "a rainy weather effect"],
+      "summary": "Falling rain streaks over an area.",
+      "supersedes": [],
+      "symbol": "createRain"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createShieldBreak()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createShieldBreak(overrides: IVfxOverrides = { … }",
+      "situations": ["a shield or barrier breaking", "a glass or crystal shatter"],
+      "summary": "A shield that cracks into flying shards.",
+      "supersedes": [],
+      "symbol": "createShieldBreak"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSlashArc()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSlashArc(overrides: IVfxOverrides = { … }",
+      "situations": ["a sword slash or a melee swing trail", "a claw swipe"],
+      "summary": "A curved arc that follows a weapon swing.",
+      "supersedes": [],
+      "symbol": "createSlashArc"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSmoke()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSmoke(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a smoke plume rising from a fire, a chimney or a burning building",
+        "a smoke plume over a battlefield"
+      ],
+      "summary": "Grey smoke that rises and spreads as it fades.",
+      "supersedes": [],
+      "symbol": "createSmoke"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSnow()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSnow(overrides: IVfxOverrides = { … }",
+      "situations": ["snow falling over the scene", "a snowy weather effect"],
+      "summary": "Snowflakes that drift down over an area.",
+      "supersedes": [],
+      "symbol": "createSnow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSparkStreaks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSparkStreaks(overrides: IVfxOverrides = { … }",
+      "situations": ["sparks from grinding metal or a short circuit", "welding sparks"],
+      "summary": "Bright spark streaks that fly out and fall.",
+      "supersedes": [],
+      "symbol": "createSparkStreaks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSteamPlume()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSteamPlume(overrides: IVfxOverrides = { … }",
+      "situations": ["steam from a vent, a pipe or a hot spring", "a white vapour plume"],
+      "summary": "A pale plume of steam that rises from a vent.",
+      "supersedes": [],
+      "symbol": "createSteamPlume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWaterfallMist()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWaterfallMist(overrides: IVfxOverrides = { … }",
+      "situations": ["spray at the foot of a waterfall", "mist from a fountain or rapids"],
+      "summary": "Mist that rolls off falling water.",
+      "supersedes": [],
+      "symbol": "createWaterfallMist"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWhirlwind()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWhirlwind(overrides: IVfxOverrides = { … }",
+      "situations": ["a whirlwind, a tornado or a dust devil", "a spinning wind spell"],
+      "summary": "A whirlwind that spins around a point.",
+      "supersedes": [],
+      "symbol": "createWhirlwind"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWindGust()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWindGust(overrides: IVfxOverrides = { … }",
+      "situations": ["a gust of wind or a fan blast", "a push or knockback wind"],
+      "summary": "A gust of air that swirls as it blows.",
+      "supersedes": [],
+      "symbol": "createWindGust"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWindStreaks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWindStreaks(overrides: IVfxOverrides = { … }",
+      "situations": ["wind lines blowing across the scene", "a speed or dash effect"],
+      "summary": "Streaks of wind that blow sideways.",
+      "supersedes": [],
+      "symbol": "createWindStreaks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "build it with `createPortalVortex`, then add it with ctx.add; it is compute-driven"
+      ],
+      "example": "ctx.add(createPortalVortex().ribbons);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class RibbonField extends InstancedMesh implements IComputeDriven { … }",
+      "situations": ["the spiral ribbons of a portal or a warp gate"],
+      "summary": "The GPU ribbon field that spirals into a portal vortex; `createPortalVortex` builds it.",
+      "supersedes": [],
+      "symbol": "RibbonField"
     },
     {
       "aliases": [],

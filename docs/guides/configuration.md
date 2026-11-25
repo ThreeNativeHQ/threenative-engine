@@ -33,9 +33,33 @@ const config: IThreeNativeConfig = {
 export default config;
 ```
 
-`maxFps` defaults to 60, and `resolutionScale` defaults to `"auto"`: the engine scales the 3D
-drawing buffer to hold that frame rate. A number in (0, 1] pins the scale instead. `ui.renderer`
-is `"native"` for an in-scene HUD or `"web"` for a web UI overlay.
+`maxFps` unset follows the display: it is capped at 120 on desktop and web, and stays 60 on mobile,
+where the ceiling is power and heat rather than pixels. `0` removes the ceiling, and a number pins
+it. `resolutionScale` defaults to `"auto"`: the engine scales the 3D drawing buffer to hold that
+frame rate. A number in (0, 1] pins the scale instead. `ui.renderer` is `"native"` for an in-scene
+HUD or `"web"` for a web UI overlay.
+
+## Choose the engine
+
+`engine` picks what draws the game on web and desktop. It defaults to ThreeNative's own C++ engine —
+compiled to Wasm on web, the V8 engine player on desktop. `engine: "threejs"` is the named override:
+it keeps upstream Three.js on web and the legacy host on desktop. Android and iOS run the legacy
+host either way. The choice costs no code: the scene, materials and render settings are the same
+files.
+
+```ts
+import type { IThreeNativeConfig } from "@threenative/core";
+
+const config: IThreeNativeConfig = {
+  engine: "threejs",
+};
+
+export default config;
+```
+
+A desktop build with `engine: "threejs"` needs the legacy runtime on the machine, and
+`threenative doctor --text` says where it comes from or how to build it. See
+[Rendering](rendering.md) for what needs WebGPU.
 
 ## Branding
 
@@ -55,13 +79,25 @@ is the engine default. Replace it before you ship.
 ## Doctor
 
 Run doctor with the target and mode you plan to build. It checks the project and required tools
-and names what to fix. It never edits your files.
+and names what to fix. It never touches your game's source.
 
 ```sh
 pnpm exec threenative doctor --text --target web
 pnpm exec threenative doctor --text --target desktop --mode release
 pnpm typecheck
 pnpm build:web
+```
+
+`--fix` is the one command that writes: it regenerates the authoring layer — `AGENTS.md`,
+`CLAUDE.md`, the skills, the hooks and the MCP configs — from the installed `create-threenative`,
+then checks again. A file the game edited is kept and listed, and the run exits 1 with
+`TN_AUTHORING_LAYER_EDITED`; `--force` overwrites it. Git is the undo, and
+`.threenative/agent-files.json` records what was written. An MCP config it cannot parse is left
+alone and named, so servers of your own survive.
+
+```sh
+pnpm up --latest create-threenative @threenative/*
+pnpm exec threenative doctor --fix
 ```
 
 Doctor also reports whether each MCP server starts, whether Blender is installed and whether a

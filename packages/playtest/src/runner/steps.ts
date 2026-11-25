@@ -22,7 +22,13 @@ import {
   type IPlaytestVisualRegionBounds,
   type PlaytestVec3,
 } from "../index.js";
-import { assertCaptureNotBlank, CaptureGuardError } from "../capture.js";
+import {
+  assertCaptureNotBlank,
+  assertDesktopCaptureNotBlank,
+  CaptureGuardError,
+  type ICaptureFrameStats,
+  inspectFrame,
+} from "../capture.js";
 import { chromium, type Browser, type CDPSession, type Page } from "playwright";
 
 import { advanceTimeoutMs, connectPlaytestBridge, PlaytestBridgeError, type IPlaytestBridgeClient } from "./bridgeClient.js";
@@ -94,6 +100,35 @@ export async function captureVisualSurface(
   const content = await page.screenshot({ clip: bounds, timeout: SCREENSHOT_TIMEOUT_MS });
   if (artifactPath !== undefined) await writeFile(artifactPath, content);
   return content;
+}
+
+/** Hides every HTML overlay for one screenshot and leaves the canvases drawn. */
+const CANVAS_ONLY_STYLE =
+  "*:not(canvas) { visibility: hidden !important; } canvas { visibility: visible !important; }";
+
+/**
+ * The browser non-blank guard for a page screenshot. HTML labels count in the bright-pixel floor,
+ * so a dark scene with a few glowing effects and bright labels fails it. On that failure alone,
+ * the canvas is captured again with the DOM hidden and must pass the desktop rule (not uniform,
+ * some content): a blank canvas under bright labels still fails.
+ */
+export async function assertBrowserCaptureNotBlank(
+  page: Page,
+  png: Buffer,
+  label: string,
+): Promise<ICaptureFrameStats> {
+  try {
+    return assertCaptureNotBlank(png, label);
+  } catch (error) {
+    if (!(error instanceof CaptureGuardError) || !error.reason.startsWith("bright pixel ratio"))
+      throw error;
+    const canvasOnly = await page.screenshot({
+      style: CANVAS_ONLY_STYLE,
+      timeout: SCREENSHOT_TIMEOUT_MS,
+    });
+    assertDesktopCaptureNotBlank(canvasOnly, `${label} (canvas only)`);
+    return error.stats ?? inspectFrame(png);
+  }
 }
 
 export async function sampleVisualElementBounds(

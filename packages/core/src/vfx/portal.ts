@@ -1,4 +1,3 @@
-import type { IComputeDriven } from "@threenative/core";
 import { InstancedMesh, PlaneGeometry } from "three";
 import {
   Fn,
@@ -18,15 +17,18 @@ import {
   vec4,
 } from "three/tsl";
 import { type ComputeNode, MeshBasicNodeMaterial, type StorageBufferNode } from "three/webgpu";
-import * as THREE from "three/webgpu";
-import { type ArchiveLayer, godotPortalVortexLayers } from "./archivePresets.js";
-import { type IParticleOptions, createDonorParticle } from "./fireSmokeWeather.js";
+import * as three from "three/webgpu";
+import type { IComputeDriven } from "../compute-driven.js";
+import {
+  type IParticleOptions,
+  type IVfxOverrides,
+  createDonorParticle,
+  layerAmount,
+  overrideLayer,
+} from "./particles.js";
+import { type ArchiveLayer, godotPortalVortexLayers } from "./presets.js";
 
 type ComputeRenderer = Parameters<IComputeDriven["process"]>[0];
-
-function ribbonAmount(layer: ArchiveLayer): number {
-  return Math.max(24, Math.min(96, Math.round(Math.sqrt(layer.capacity) * 2.5)));
-}
 
 function layerPhase(layer: ArchiveLayer, seed: number) {
   const lifetime = float(layer.lifetime[0]).add(
@@ -35,6 +37,12 @@ function layerPhase(layer: ArchiveLayer, seed: number) {
   return fract(time.div(lifetime).add(hash(instanceIndex.add(seed + 59))));
 }
 
+/**
+ * The GPU ribbon field that spirals into a portal vortex; `createPortalVortex` builds it.
+ * @situation the spiral ribbons of a portal or a warp gate
+ * @constraint build it with `createPortalVortex`, then add it with ctx.add; it is compute-driven
+ * @example ctx.add(createPortalVortex().ribbons);
+ */
 export class RibbonField extends InstancedMesh implements IComputeDriven {
   readonly warmupNodes: readonly ComputeNode[];
   readonly capacity: number;
@@ -45,12 +53,11 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
   #released = false;
   #dispatches = 0;
 
-  constructor(layer: ArchiveLayer, seed: number) {
-    const capacity = ribbonAmount(layer);
+  constructor(layer: ArchiveLayer, seed: number, capacity: number) {
     const positions = instancedArray(capacity, "vec3");
     const color = layer.color;
     const material = new MeshBasicNodeMaterial({
-      blending: THREE.AdditiveBlending,
+      blending: three.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
       transparent: true,
@@ -151,15 +158,24 @@ export interface IPortalVortex {
   readonly gpuCapacity: number;
 }
 
-export function createPortalVortex(seed = 229): IPortalVortex {
+export function createPortalVortex(overrides: IVfxOverrides = {}): IPortalVortex {
+  const seed = overrides.seed ?? 229;
   const layers = godotPortalVortexLayers([0, 0, 0]);
   const ringLayer = layers[0];
   const ribbonLayer = layers[1];
   if (ringLayer === undefined || ribbonLayer === undefined) {
     throw new Error("Donor godot-portal-vortex must contain ring and ribbon layers.");
   }
-  const ring = createDonorParticle(ringLayer, seed);
-  const ribbons = new RibbonField(ribbonLayer, seed + 1);
+  const ring = createDonorParticle(
+    overrideLayer(ringLayer, overrides),
+    seed,
+    layerAmount(ringLayer, overrides.amount),
+  );
+  const ribbons = new RibbonField(
+    overrideLayer(ribbonLayer, overrides),
+    seed + 1,
+    layerAmount(ribbonLayer, overrides.amount),
+  );
   return {
     ring,
     ribbons,

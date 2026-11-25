@@ -9,12 +9,24 @@ players can install.
 with its own renderer, not inside a WebView. ThreeNative is alpha and all packages are `0.x`. Keep
 the `@threenative` package versions in step with each other.
 
-| Platform | Renderer | Status |
+| Platform | Draws with | Status |
 | --- | --- | --- |
-| Web | WebGPU, WebGL2 fallback | Supported |
-| Windows, macOS, Linux | Native host | Supported |
-| Android | Native host | Supported |
-| iOS | None | Not supported |
+| Web | Owned engine, compiled to Wasm | Supported. Needs WebGPU |
+| Windows x64, Linux x64 | Owned engine player | Supported, prebuilt published |
+| macOS (Apple silicon) | Owned engine player | Supported, built from an engine checkout |
+| Android | Legacy host | Supported |
+| iOS | Legacy host | Simulator only, unsigned; no hardware qualified |
+
+`engine: "threejs"` swaps the first four rows for upstream Three.js on web and the legacy host on
+desktop. Android and iOS run the legacy host under either setting.
+
+## Choose the engine
+
+`engine` in `threenative.config.ts` decides what draws the game. It defaults to ThreeNative's own
+C++ engine behind the Three.js API — compiled to Wasm on web, the V8 engine player on desktop — and
+`engine: "threejs"` is the named override, which keeps upstream Three.js on web and the legacy host
+on desktop. Android and iOS run the legacy host either way. The game source, materials and render
+settings are the same files under both, so the choice is a line in the config and not a port.
 
 ## Build for desktop
 
@@ -58,8 +70,9 @@ Supply the key through `ORG_GRADLE_PROJECT_threenativeKeystore`,
 `ORG_GRADLE_PROJECT_threenativeKeystoreAlias`, `ORG_GRADLE_PROJECT_threenativeKeystorePassword` and
 `ORG_GRADLE_PROJECT_threenativeKeyPassword`.
 
-Check textures and sound on the device. Android has no Basis transcoder or Meshopt decoder. See
-[Assets](assets.md) and [Audio](audio.md) for the formats it loads.
+Check textures and sound on the device. Android on V8 decodes KTX2 and Meshopt as the web does; a
+QuickJS Android build does not, and the build then wants `assets.textures: "none"`. See
+[Assets](assets.md) and [Audio](audio.md) for the formats each loads.
 
 ## Choose the UI renderer
 

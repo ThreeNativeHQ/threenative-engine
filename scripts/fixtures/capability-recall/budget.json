@@ -1,5 +1,5 @@
 {
-  "recallAtK": 0.9565217391304348,
+  "recallAtK": 0.9527027027027027,
   "recalledRows": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -50,7 +50,6 @@
     "request.tower-defense-game",
     "request.enemy-ai",
     "request.third-person-camera",
-    "request.save-progress",
     "request.spawn-waves",
     "request.pick-up-item",
     "request.multiplayer",
@@ -132,10 +131,20 @@
     "request.scatter-rocks-debris-and-plants-over-terrain",
     "request.street-trees-along-a-road",
     "request.trees",
-    "request.vegetation-for-a-biome"
+    "request.vegetation-for-a-biome",
+    "vfx.healing-aura",
+    "vfx.muzzle-flash",
+    "vfx.smoke-plume",
+    "vfx.rain",
+    "vfx.snow",
+    "vfx.poison-cloud",
+    "vfx.impact-sparks",
+    "vfx.portal-vortex",
+    "vfx.fireflies",
+    "vfx.blood-splash"
   ],
-  "rejectHits": 16,
-  "rowCount": 138,
+  "rejectHits": 15,
+  "rowCount": 148,
   "rowIds": [
     "brief.endless-runner.1",
     "brief.endless-runner.2",
@@ -274,10 +283,20 @@
     "request.scatter-rocks-debris-and-plants-over-terrain",
     "request.street-trees-along-a-road",
     "request.trees",
-    "request.vegetation-for-a-biome"
+    "request.vegetation-for-a-biome",
+    "vfx.healing-aura",
+    "vfx.muzzle-flash",
+    "vfx.smoke-plume",
+    "vfx.rain",
+    "vfx.snow",
+    "vfx.poison-cloud",
+    "vfx.impact-sparks",
+    "vfx.portal-vortex",
+    "vfx.fireflies",
+    "vfx.blood-splash"
   ],
   "version": 1,
-  "zeroResultRate": 0.028985507246376812,
+  "zeroResultRate": 0.033783783783783786,
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",

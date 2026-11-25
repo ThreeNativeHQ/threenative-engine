@@ -318,6 +318,10 @@ describe("core constraints", () => {
           // AGENTS.md rule 3, second exception (owner, 2026-10-31): every `@threenative/core/spells`
           // factory ships a stock look, and each colour, size and timing is a named override.
           !file.startsWith("spells/") &&
+          // The same exception for `@threenative/core/vfx` (owner, 2026-11-25, PRD-917): each of the
+          // 46 stock effects ships its donor look, and seed, amount, colour, size and lifetime are
+          // named overrides on the call.
+          !file.startsWith("vfx/") &&
           // PRD-833 moved the environment measure-and-sample mechanism out of the twelve kits that
           // held byte-identical copies. None of it originates appearance: it reads the scene's own
           // environment and refuses by name. The backlight is NOT here — its shader constants decide

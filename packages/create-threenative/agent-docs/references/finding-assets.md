@@ -6,7 +6,7 @@ asset tools when the asset is conventional; build anything specific to this game
 
 Installing `@threenative/core` writes the `.mcp.json` that launches `threenative-asset-mcp`, so
 your host lists its tools alongside your own. Your host reads that file from the directory it was
-launched in: start the session in this project, not in a parent of it. It advertises 44; these 8
+launched in: start the session in this project, not in a parent of it. It advertises 60; these 8
 are the loop you will use for nearly everything:
 
 For a humanoid that needs a skeleton or more motion, use the complete

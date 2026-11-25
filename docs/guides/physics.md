@@ -63,10 +63,55 @@ Each step, the player sets `body.velocity` from input and calls `body.moveAndSli
 `body.grounded` to allow a jump. Call `dispose()` on a body when its scene ends. `Area3D.on`
 returns a function that removes the handler.
 
+## More node types
+
+These follow the same lifecycle: build with the physics context, add through `ctx.add`, dispose at
+scene exit.
+
+| Class | Use it for |
+| --- | --- |
+| `VehicleBody3D` | A car, truck or bike on ray-cast suspension. Write `engineForce`, `brake` and `steering` every physics update; a car with no input does not move. `suspensionStiffness` is a frequency squared, not newtons per metre: 100 is a road car, 20 bottoms out. |
+| `Buoyancy3D` | Float a rigid body on a height source — `WaveField`, `SpectralOcean`, a fluid's surface. Supply hull points, density, drag and the source; forces are applied in fixed-step order. |
+| `Joint3D` | A Godot-style joint: `Joint3D.hinge(options)`, `Joint3D.pin(options)` or `Joint3D.fixed(options)`. Both bodies must belong to the same physics context. |
+| `SoftBody3D` | Cloth and deformable bodies, optionally skinned to a mesh. It needs WebGPU compute. A teleport or an extreme deformation resets it, printing `TN_SOFTBODY_RESET` with the cause. |
+
+Two helpers build collision you would otherwise hand-place. `buildStaticColliders(ctx, level, {
+predicate })` turns the meshes you authored in a scene root into fixed trimesh bodies, and throws when
+the predicate selects nothing. `ScatterColliders` makes streamed or instanced props solid near a
+followed point: it measures each instance's solid part, so a slender base becomes a trunk capsule,
+the rest an 18-DOP hull, and pieces under 0.25 m get none. Call `update()` every frame; it rescans
+only after the follow point moves a quarter of `radius`.
+
+## Navigation
+
+`@threenative/physics/navigation` is a separate subpath with its own plugin. Add it after `rapier()`:
+
+```ts
+import { rapier } from "@threenative/physics";
+import { NavigationAgent3D, NavigationRegion3D, recast } from "@threenative/physics/navigation";
+
+const game = defineGame<GameState, IPhysicsContext>({
+  plugins: [rapier(), recast()],
+});
+
+const region = new NavigationRegion3D({ navigation: ctx.physics.navigation, meshes: [floor] });
+ctx.add(region);
+const agent = new NavigationAgent3D({ navigation: ctx.physics.navigation, object: enemy.mesh });
+```
+
+`NavigationRegion3D` bakes walkable geometry, so bake before creating agents or obstacles.
+`NavigationAgent3D` follows a path with the crowd; `NavigationObstacle3D` keeps a path around
+something that moves.
+
+Navigation is Recast through WebAssembly, so it is web-only today: a native build has no navmesh, and
+an enemy that walks around a wall is a web feature. It also requires `rapier()` earlier in the
+plugins array, and throws a named error when it is missing.
+
 ## Web and native
 
 Browser builds run Rapier through WebAssembly. Desktop and Android builds use the native runtime's
-Rapier. ThreeNative picks the backend for the target, so the node API stays the same. See
+Rapier. ThreeNative picks the backend for the target, so the node API stays the same. Navigation is
+the exception: Recast is WebAssembly only, so it runs on the web and not on a native build. See
 [Native runtime](native-runtime.md) for platform support.
 
 ## Raw access
