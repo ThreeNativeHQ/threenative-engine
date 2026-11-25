@@ -53,6 +53,34 @@ function requireName(value: string): void {
 }
 
 /**
+ * One promise chain per cache key, so two writes to the same key can never share a base version.
+ *
+ * A save the game fires without awaiting (`set` every room) used to race itself: both writes read
+ * the cached base, the second took a 409, the game swallowed it and the cache settled on the first
+ * value, losing the newest save locally and on the host. A write therefore queues behind the one
+ * before it and reads its own base version only when its turn starts. Reads never queue: they
+ * answer from the cache and refresh it, and a read behind a write would wait on the network.
+ */
+const writeChains = new WeakMap<IBackendContext, Map<string, Promise<unknown>>>();
+
+function serialized<T>(
+  context: IBackendContext,
+  cacheKey: string,
+  write: () => Promise<T>,
+): Promise<T> {
+  const chains = writeChains.get(context) ?? new Map<string, Promise<unknown>>();
+  writeChains.set(context, chains);
+  const previous = chains.get(cacheKey) ?? Promise.resolve();
+  // A failed write still runs the next one, and its rejection stays the caller's alone.
+  const next = previous.then(write, write);
+  chains.set(
+    cacheKey,
+    next.catch(() => undefined),
+  );
+  return next;
+}
+
+/**
  * The caller's own key/value store: private per player, per game.
  *
  * @situation save game progress in the cloud so clearing the browser cache does not lose it
@@ -116,6 +144,23 @@ export class BackendDb {
   async set(key: string, value: unknown, options: IBackendWriteOptions = {}): Promise<number> {
     requireName(key);
     const cacheKey = `kv:${key}`;
+    // The local copy is written now, ahead of the queue: a save is durable before the network, and
+    // the queued half re-writes it with the version the previous write confirmed.
+    putItem(this.context, cacheKey, {
+      value,
+      version: options.ifVersion ?? item<ICachedValue>(this.context, cacheKey)?.version ?? 0,
+      dirty: true,
+    });
+    return serialized(this.context, cacheKey, () => this.#upload(key, cacheKey, value, options));
+  }
+
+  /** The queued half of `set`: it runs only once every earlier write to this key has settled. */
+  async #upload(
+    key: string,
+    cacheKey: string,
+    value: unknown,
+    options: IBackendWriteOptions,
+  ): Promise<number> {
     const baseVersion =
       options.ifVersion ?? item<ICachedValue>(this.context, cacheKey)?.version ?? 0;
     // An unconfirmed write keeps the host's version, never the one it would take: sending
@@ -145,6 +190,11 @@ export class BackendDb {
   async delete(key: string, options: IBackendWriteOptions = {}): Promise<void> {
     requireName(key);
     const cacheKey = `kv:${key}`;
+    return serialized(this.context, cacheKey, () => this.#remove(key, cacheKey, options));
+  }
+
+  /** The queued half of `delete`, so a delete cannot overtake a write to the same key. */
+  async #remove(key: string, cacheKey: string, options: IBackendWriteOptions): Promise<void> {
     const cached = item<ICachedValue>(this.context, cacheKey);
     const ifVersion = options.ifVersion ?? cached?.version ?? 0;
     dropItem(this.context, cacheKey);
@@ -269,6 +319,27 @@ export class BackendCollection {
   ): Promise<number> {
     requireName(id);
     const cacheKey = `doc:${this.name}/${id}`;
+    // Same rule as `BackendDb.set`: the local copy lands before the queue, never after it.
+    putItem(this.context, cacheKey, {
+      data,
+      scope,
+      version: options.ifVersion ?? item<ICachedDoc>(this.context, cacheKey)?.version ?? 0,
+      isOwner: true,
+      dirty: true,
+    });
+    return serialized(this.context, cacheKey, () =>
+      this.#uploadDoc(cacheKey, id, data, scope, options),
+    );
+  }
+
+  /** The queued half of `put`: it runs only once every earlier write to this document settled. */
+  async #uploadDoc(
+    cacheKey: string,
+    id: string,
+    data: unknown,
+    scope: DocScope,
+    options: IBackendWriteOptions,
+  ): Promise<number> {
     const cached = item<ICachedDoc>(this.context, cacheKey);
     const baseVersion = options.ifVersion ?? cached?.version ?? 0;
     // Same rule as `BackendDb.set`: the cached version stays the host's while the write is pending.
@@ -308,7 +379,13 @@ export class BackendCollection {
   /** Deletes the caller's own document; another player's rejects with `forbidden`. */
   async delete(id: string): Promise<void> {
     requireName(id);
-    dropItem(this.context, `doc:${this.name}/${id}`);
+    const cacheKey = `doc:${this.name}/${id}`;
+    return serialized(this.context, cacheKey, () => this.#removeDoc(cacheKey, id));
+  }
+
+  /** The queued half of `delete`, so a document delete cannot overtake a write to it. */
+  async #removeDoc(cacheKey: string, id: string): Promise<void> {
+    dropItem(this.context, cacheKey);
     if (!(await hosted(this.context))) return;
 
     const response = await send(

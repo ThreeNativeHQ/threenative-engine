@@ -127,6 +127,52 @@ describe("two clients, one key (AC-2)", () => {
   });
 });
 
+describe("overlapping writes to one key", () => {
+  // A save made every room can overlap: the kit fires `set` without awaiting. Two writes in
+  // flight shared the cached base version, the second took a 409, its rejection was swallowed and
+  // the cache settled on the FIRST value: the newest save was lost here and on the host.
+  it("keeps the newest value when three sets are in flight at once", async () => {
+    const backend = clientFor("player-1");
+
+    const writes = [
+      backend.db.set("save", 1),
+      backend.db.set("save", 2),
+      backend.db.set("save", 3),
+    ];
+    // The newest value is local before any upload lands, so a crash here loses nothing.
+    await expect(backend.db.get("save")).resolves.toBe(3);
+    await expect(Promise.all(writes)).resolves.toEqual([1, 2, 3]);
+
+    const stored = await db
+      .prepare("SELECT value, version FROM kv WHERE game_id = ? AND player_id = ? AND key = ?")
+      .bind(GAME, "player-1", "save")
+      .first<{ value: string; version: number }>();
+    expect(stored).toEqual({ value: "3", version: 3 });
+    await expect(clientFor("player-1").db.get("save")).resolves.toBe(3);
+  });
+
+  it("keeps the newest document when three puts are in flight at once", async () => {
+    const board = clientFor("player-1").db.collection("board");
+
+    const writes = [
+      board.put("level", { n: 1 }, "public"),
+      board.put("level", { n: 2 }, "public"),
+      board.put("level", { n: 3 }, "public"),
+    ];
+    await expect(Promise.all(writes)).resolves.toEqual([1, 2, 3]);
+
+    const stored = await db
+      .prepare("SELECT data, version FROM docs WHERE game_id = ? AND collection = ? AND doc_id = ?")
+      .bind(GAME, "board", "level")
+      .first<{ data: string; version: number }>();
+    expect(stored).toEqual({ data: JSON.stringify({ n: 3 }), version: 3 });
+    await expect(clientFor("player-1").db.collection("board").get("level")).resolves.toMatchObject({
+      data: { n: 3 },
+      version: 3,
+    });
+  });
+});
+
 describe("a write the host never took", () => {
   it("keeps the key's last confirmed version so the next write is not rejected as stale", async () => {
     const { backend, state } = flakyClientFor("player-1");
