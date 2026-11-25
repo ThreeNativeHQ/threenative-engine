@@ -294,8 +294,40 @@ StaticWatch& staticWatchOf(Object3D& root) {
 
 // PRD-898 J4: the spheres a posed-bounds root measures, as core's envelope lists them.
 struct SphereSet {
+    struct CompiledNode {
+        std::weak_ptr<Object3D> weak;
+        const Object3D* raw = nullptr;
+        int32_t parentIdx = -1;
+        bool isBone = false;
+        bool hasChild = false;  // no child composes against this node, so only its origin is measured
+    };
     std::vector<std::weak_ptr<Object3D>> objects;
     std::vector<double> radii;
+    std::vector<CompiledNode> nodes;
+    std::vector<std::pair<uint32_t, double>> sphereNodeIndices;
+    const Object3D* compiledModel = nullptr;
+    uint64_t compiledHierarchy = 0;
+    bool compiledValid = false;
+    bool compiledCanFast = false;
+    std::vector<std::array<double, 10>> cachedNodeTrs;
+    std::vector<std::array<double, 12>> cachedLocalMats;
+    std::vector<uint8_t> nodeChangedScratch;
+    bool cachedPoseValid = false;
+    std::vector<std::array<double, 4>> cachedLocalSpheres;
+    double cachedUprightScaleY = 0.0;
+    double cachedUprightMinY = 0.0;
+    // Whether `model` hangs under the group the last `__tnGroundSnapApply` named; the chain to the root only
+    // moves on a hierarchy change, so this is a compare a frame instead of a walk up the spine.
+    const Object3D* cachedCarriesGroup = nullptr;
+    uint64_t cachedCarriesHierarchy = 0;
+    bool cachedCarriesValid = false;
+    bool cachedCarriesValue = false;
+    // A rig whose every bone holds a deferred pose stands still while no skeleton holding it ticked and no
+    // non-bone link moved: the set answers its cached lowest without visiting a bone.
+    std::vector<std::pair<std::shared_ptr<std::atomic<uint64_t>>, uint64_t>> cachedSkeletonVersions;
+    std::vector<uint32_t> nonBoneIndices;
+    std::vector<uint64_t> cachedBoneVersions;  // the deferredVersion each bone's cachedNodeTrs was read at; 0 = none
+    bool allBonesDeferred = false;
 };
 
 SphereSet& sphereSetOf(Object3D& root) {
@@ -316,11 +348,23 @@ struct ModelLodState {
     double maxPixelError = 0;
     double hysteresis = 0;
     int current = 0;
+    // The world sphere and scale the kept level was selected against. `mesh.matrixWorld` only moves when the
+    // mesh's revision does, so a still mesh answers from these instead of walking its 4x4 every frame.
+    uint64_t cachedRevision = 0;
+    Sphere worldSphere{};
+    double maxScale = 1.0;
+    bool worldValid = false;
 };
 
-// The batched set core handed over last (`__tnModelLodMeshes`), in its order.
-std::vector<std::weak_ptr<Object3D>>& modelLodMeshes() {
-    static std::vector<std::weak_ptr<Object3D>> meshes;
+// The batched set core handed over last (`__tnModelLodMeshes`), in its order. The state it selects against is
+// captured here, so a frame's selection takes no map probe per mesh.
+struct ModelLodEntry {
+    std::weak_ptr<Object3D> object;
+    ModelLodState* state = nullptr;
+};
+
+std::vector<ModelLodEntry>& modelLodMeshes() {
+    static std::vector<ModelLodEntry> meshes;
     return meshes;
 }
 
@@ -328,7 +372,8 @@ ModelLodState& modelLodOf(Object3D& mesh) {
     static std::unordered_map<const Object3D*, std::pair<std::weak_ptr<Object3D>, ModelLodState>> states;
     auto& entry = states[&mesh];
     if (entry.first.expired()) {
-        // Sweep dead meshes only when a new one arrives, so the per-frame lookup stays a hash probe.
+        // Sweep dead meshes only when a new one arrives, so a frame's handover stays a hash probe per mesh.
+        // A live mesh's element stays put across a rehash, so ModelLodEntry::state keeps pointing at it.
         for (auto it = states.begin(); it != states.end();)
             it = (it->first != &mesh && it->second.first.expired()) ? states.erase(it) : std::next(it);
         entry = {mesh.weak_from_this(), ModelLodState{}};
@@ -1180,87 +1225,264 @@ void registerObject3D(ClassBinding& b) {
         const bool enabled = flag(a.at(4));
         const double biasY = number(a.at(5));
 
-        const SphereSet& set = sphereSetOf(model);
+        SphereSet& set = sphereSetOf(model);
         if (set.radii.empty()) throw Unsupported{"__tnGroundSnapApply before __tnSphereBoundsAttach"};
-        for (const auto& weakObj : set.objects) {
-            if (weakObj.expired()) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+        const uint64_t hv = Object3D::hierarchyVersion();
+        // A set compiled at this hierarchy version holds only live nodes (a linked node's death moves the version),
+        // so only a set still to compile, or one falling back to the slow walk, is swept here beforehand.
+        const bool compiledFast = set.compiledValid && set.compiledHierarchy == hv && set.compiledModel == &model &&
+                                  set.compiledCanFast && !set.nodes.empty();
+        if (!compiledFast) {
+            for (const auto& weakObj : set.objects) {
+                if (weakObj.expired())
+                    throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+            }
         }
 
         auto measureLowest = [&]() -> double {
-            bool fastOk = true;
             model.updateWorldMatrix(true, false, false);
-            // MSVC cannot name an enclosing lambda's thread_local from the nested lambda below (C2228, C2109), so the
-            // nested one captures plain references to the per-thread storage.
-            static thread_local std::vector<std::pair<const Object3D*, Matrix4>> cacheStore;
-            static thread_local std::vector<const Object3D*> chainStore;
-            auto& cache = cacheStore;
-            auto& chain = chainStore;
-            cache.clear();
-            chain.clear();
-            const auto findWorld = [&](const Object3D* target, Matrix4& outWorld) -> bool {
-                chain.clear();
-                const Object3D* cur = target;
-                bool reached = false;
-                while (cur != nullptr) {
-                    bool cached = false;
-                    for (const auto& entry : cache) {
-                        if (entry.first == cur) {
-                            outWorld = entry.second;
-                            cached = true;
+            if (!set.compiledValid || set.compiledHierarchy != hv || set.compiledModel != &model) {
+                set.nodes.clear();
+                set.sphereNodeIndices.clear();
+                set.compiledModel = &model;
+                set.compiledHierarchy = hv;
+                // Only a finished build is valid: a set that throws on a dead object above is rebuilt next call.
+                set.compiledValid = false;
+                set.compiledCanFast = true;
+                set.cachedPoseValid = false;
+                set.cachedNodeTrs.clear();
+                set.cachedLocalMats.clear();
+                set.nonBoneIndices.clear();
+                set.cachedSkeletonVersions.clear();
+                set.cachedBoneVersions.clear();
+                set.allBonesDeferred = false;
+                static thread_local std::vector<const Object3D*> buildChain;
+                for (size_t i = 0; i < set.objects.size(); ++i) {
+                    const std::shared_ptr<Object3D> held = set.objects[i].lock();
+                    if (!held) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
+                    buildChain.clear();
+                    const Object3D* cur = held.get();
+                    bool reached = false;
+                    while (cur != nullptr) {
+                        if (cur == &model) {
+                            reached = true;
                             break;
                         }
+                        buildChain.push_back(cur);
+                        cur = cur->parent;
                     }
-                    if (cached) {
-                        reached = true;
+                    if (!reached) {
+                        set.compiledCanFast = false;
                         break;
                     }
-                    if (cur == &model) {
-                        outWorld = cur->matrixWorld;
-                        reached = true;
-                        break;
+                    int32_t parentIdx = -1;
+                    for (std::size_t idx = buildChain.size(); idx-- > 0;) {
+                        const Object3D* n = buildChain[idx];
+                        int32_t foundIdx = -1;
+                        for (std::size_t ni = 0; ni < set.nodes.size(); ++ni) {
+                            if (set.nodes[ni].raw == n) {
+                                foundIdx = static_cast<int32_t>(ni);
+                                break;
+                            }
+                        }
+                        if (foundIdx < 0) {
+                            foundIdx = static_cast<int32_t>(set.nodes.size());
+                            set.nodes.push_back({const_cast<Object3D*>(n)->weak_from_this(), n, parentIdx,
+                                                 n->type() == "Bone"});
+                        }
+                        // A parent is pushed before its children, so linking a child marks its parent.
+                        if (parentIdx >= 0) set.nodes[static_cast<std::size_t>(parentIdx)].hasChild = true;
+                        parentIdx = foundIdx;
                     }
-                    chain.push_back(cur);
-                    cur = cur->parent;
+                    set.sphereNodeIndices.emplace_back(static_cast<uint32_t>(parentIdx), set.radii[i]);
                 }
-                if (!reached) return false;
-                Matrix4 localMat;
-                Vector3 pos, scl;
-                Quaternion quat;
-                for (std::size_t idx = chain.size(); idx-- > 0;) {
-                    const Object3D& n = *chain[idx];
-                    if (!n.matrixAutoUpdate || !n.matrixWorldAutoUpdate || n.pivot.has_value()) return false;
-                    const auto* flags = n.ownTransformTracking();
-                    if (flags && flags[2]) return false;
-                    if (const auto* bone = dynamic_cast<const Bone*>(&n); bone && bone->hasDeferredTransform()) {
-                        const auto& trs = bone->deferredTRSInternal();
-                        pos.set(trs[0], trs[1], trs[2]);
-                        quat.set(trs[3], trs[4], trs[5], trs[6]);
-                        scl.set(trs[7], trs[8], trs[9]);
-                        localMat.compose(pos, quat, scl);
-                    } else {
-                        localMat.compose(n.position, n.quaternion, n.scale);
-                    }
-                    outWorld.multiply(localMat);
-                    cache.emplace_back(&n, outWorld);
-                }
-                return true;
-            };
-            double minY = std::numeric_limits<double>::infinity();
-            Matrix4 worldMat;
-            for (size_t i = 0; i < set.objects.size(); ++i) {
-                const std::shared_ptr<Object3D> held = set.objects[i].lock();
-                if (!held) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
-                if (!findWorld(held.get(), worldMat)) {
-                    fastOk = false;
-                    break;
-                }
-                const double cy = worldMat.elements[13];
-                const double r = set.radii[i];
-                if (cy - r < minY) minY = cy - r;
+                for (std::size_t ni = 0; ni < set.nodes.size(); ++ni)
+                    if (!set.nodes[ni].isBone) set.nonBoneIndices.push_back(static_cast<uint32_t>(ni));
+                set.compiledValid = true;
             }
-            if (fastOk) return minY + biasY;
+
+            if (set.compiledCanFast && !set.nodes.empty()) {
+                const std::size_t nCount = set.nodes.size();
+                if (set.cachedNodeTrs.size() != nCount || set.cachedLocalMats.size() != nCount) {
+                    set.cachedPoseValid = false;
+                    set.cachedNodeTrs.resize(nCount);
+                    set.cachedLocalMats.resize(nCount);
+                }
+                set.nodeChangedScratch.resize(nCount);
+                set.cachedBoneVersions.resize(nCount, 0);
+                bool fastOk = true;
+                bool anyNodeChanged = !set.cachedPoseValid;
+                // The set compiled at this hierarchy version, so every node still hangs under `model` and is
+                // alive: a linked node's death moves the version. No per-node weak check is needed here.
+                bool rigHeld = set.cachedPoseValid && set.allBonesDeferred && !set.cachedSkeletonVersions.empty();
+                for (std::size_t k = 0; rigHeld && k < set.cachedSkeletonVersions.size(); ++k) {
+                    const auto& [version, seen] = set.cachedSkeletonVersions[k];
+                    rigHeld = version->load(std::memory_order_relaxed) == seen;
+                }
+                for (std::size_t k = 0; rigHeld && k < set.nonBoneIndices.size(); ++k) {
+                    const uint32_t ni = set.nonBoneIndices[k];
+                    const Object3D& n = *set.nodes[ni].raw;
+                    const auto& t = set.cachedNodeTrs[ni];
+                    rigHeld = n.matrixAutoUpdate && n.matrixWorldAutoUpdate && !n.pivot.has_value() &&
+                        t[0] == n.position.x && t[1] == n.position.y && t[2] == n.position.z &&
+                        t[3] == n.quaternion.x && t[4] == n.quaternion.y && t[5] == n.quaternion.z &&
+                        t[6] == n.quaternion.w && t[7] == n.scale.x && t[8] == n.scale.y && t[9] == n.scale.z;
+                }
+                bool allDeferred = true, sawBone = false;
+                for (std::size_t ni = 0; !rigHeld && ni < nCount; ++ni) {
+                    const auto& node = set.nodes[ni];
+                    const Object3D& n = *node.raw;
+                    if (!n.matrixAutoUpdate || !n.matrixWorldAutoUpdate || n.pivot.has_value()) {
+                        fastOk = false;
+                        break;
+                    }
+                    const Bone* const bone = node.isBone ? static_cast<const Bone*>(&n) : nullptr;
+                    const bool deferredBone = bone != nullptr && bone->hasDeferredTransform();
+                    if (bone != nullptr) {
+                        sawBone = true;
+                        if (!deferredBone || bone->poseVersions().empty()) allDeferred = false;
+                    }
+                    const uint64_t bv = deferredBone ? bone->deferredVersion() : 0;
+                    auto& prevTrs = set.cachedNodeTrs[ni];
+                    // An unchanged deferred version means the deferred TRS is the one cached: no compare.
+                    const bool versionHeld = set.cachedPoseValid && bv != 0 && set.cachedBoneVersions[ni] == bv;
+                    double px, py, pz, x, y, z, w, sx, sy, sz;
+                    bool trsChanged = false;
+                    if (!versionHeld) {
+                        if (deferredBone) {
+                            const auto& trs = bone->deferredTRSInternal();
+                            px = trs[0]; py = trs[1]; pz = trs[2];
+                            x = trs[3]; y = trs[4]; z = trs[5]; w = trs[6];
+                            sx = trs[7]; sy = trs[8]; sz = trs[9];
+                        } else {
+                            px = n.position.x; py = n.position.y; pz = n.position.z;
+                            x = n.quaternion.x; y = n.quaternion.y; z = n.quaternion.z; w = n.quaternion.w;
+                            sx = n.scale.x; sy = n.scale.y; sz = n.scale.z;
+                        }
+                        trsChanged = !set.cachedPoseValid ||
+                            prevTrs[0] != px || prevTrs[1] != py || prevTrs[2] != pz ||
+                            prevTrs[3] != x  || prevTrs[4] != y  || prevTrs[5] != z  || prevTrs[6] != w ||
+                            prevTrs[7] != sx || prevTrs[8] != sy || prevTrs[9] != sz;
+                        set.cachedBoneVersions[ni] = bv;
+                    }
+                    const bool parentChanged = node.parentIdx >= 0 &&
+                        set.nodeChangedScratch[static_cast<std::size_t>(node.parentIdx)] != 0;
+                    const bool changed = trsChanged || parentChanged;
+                    set.nodeChangedScratch[ni] = changed ? 1 : 0;
+                    if (!changed) continue;
+                    anyNodeChanged = true;
+                    if (trsChanged) prevTrs = {px, py, pz, x, y, z, w, sx, sy, sz};
+                    // A held version still composes against a moved parent, from the TRS it cached.
+                    if (versionHeld) {
+                        px = prevTrs[0]; py = prevTrs[1]; pz = prevTrs[2];
+                        x = prevTrs[3]; y = prevTrs[4]; z = prevTrs[5]; w = prevTrs[6];
+                        sx = prevTrs[7]; sy = prevTrs[8]; sz = prevTrs[9];
+                    }
+
+                    auto& out = set.cachedLocalMats[ni];
+                    const double* const p = node.parentIdx >= 0
+                        ? set.cachedLocalMats[static_cast<std::size_t>(node.parentIdx)].data()
+                        : nullptr;
+                    // A leaf's origin is all the sphere read below takes: no later node composes against its
+                    // rotation, so its rows 0..8 and their 27 multiplies are left alone.
+                    if (!node.hasChild) {
+                        if (p == nullptr) {
+                            out[9] = px; out[10] = py; out[11] = pz;
+                        } else {
+                            out[9]  = p[0] * px + p[3] * py + p[6] * pz + p[9];
+                            out[10] = p[1] * px + p[4] * py + p[7] * pz + p[10];
+                            out[11] = p[2] * px + p[5] * py + p[8] * pz + p[11];
+                        }
+                        continue;
+                    }
+                    if (p != nullptr && x == 0.0 && y == 0.0 && z == 0.0 && w == 1.0 && sx == 1.0 && sy == 1.0 &&
+                        sz == 1.0) {
+                        // Unrotated and unscaled: the parent's rotation is already this node's rotation.
+                        for (std::size_t row = 0; row < 9; ++row) out[row] = p[row];
+                        out[9]  = p[0] * px + p[3] * py + p[6] * pz + p[9];
+                        out[10] = p[1] * px + p[4] * py + p[7] * pz + p[10];
+                        out[11] = p[2] * px + p[5] * py + p[8] * pz + p[11];
+                        continue;
+                    }
+                    const double x2 = x + x, y2 = y + y, z2 = z + z;
+                    const double xx = x * x2, xy = x * y2, xz = x * z2;
+                    const double yy = y * y2, yz = y * z2, zz = z * z2;
+                    const double wx = w * x2, wy = w * y2, wz = w * z2;
+                    const double l0 = (1.0 - (yy + zz)) * sx, l1 = (xy + wz) * sx, l2 = (xz - wy) * sx;
+                    const double l3 = (xy - wz) * sy, l4 = (1.0 - (xx + zz)) * sy, l5 = (yz + wx) * sy;
+                    const double l6 = (xz + wy) * sz, l7 = (yz - wx) * sz, l8 = (1.0 - (xx + yy)) * sz;
+                    if (p == nullptr) {
+                        out = {l0, l1, l2, l3, l4, l5, l6, l7, l8, px, py, pz};
+                    } else {
+                        out[0] = p[0] * l0 + p[3] * l1 + p[6] * l2;
+                        out[1] = p[1] * l0 + p[4] * l1 + p[7] * l2;
+                        out[2] = p[2] * l0 + p[5] * l1 + p[8] * l2;
+                        out[3] = p[0] * l3 + p[3] * l4 + p[6] * l5;
+                        out[4] = p[1] * l3 + p[4] * l4 + p[7] * l5;
+                        out[5] = p[2] * l3 + p[5] * l4 + p[8] * l5;
+                        out[6] = p[0] * l6 + p[3] * l7 + p[6] * l8;
+                        out[7] = p[1] * l6 + p[4] * l7 + p[7] * l8;
+                        out[8] = p[2] * l6 + p[5] * l7 + p[8] * l8;
+                        out[9]  = p[0] * px + p[3] * py + p[6] * pz + p[9];
+                        out[10] = p[1] * px + p[4] * py + p[7] * pz + p[10];
+                        out[11] = p[2] * px + p[5] * py + p[8] * pz + p[11];
+                    }
+                }
+                if (!fastOk) {
+                    set.cachedPoseValid = false;
+                    set.allBonesDeferred = false;
+                } else {
+                    if (!rigHeld) {
+                        set.allBonesDeferred = sawBone && allDeferred;
+                        set.cachedSkeletonVersions.clear();
+                        if (set.allBonesDeferred) {
+                            for (const auto& node : set.nodes) {
+                                if (!node.isBone) continue;
+                                for (const auto& version : static_cast<const Bone*>(node.raw)->poseVersions()) {
+                                    bool known = false;
+                                    for (const auto& held : set.cachedSkeletonVersions) known = known || held.first == version;
+                                    if (!known)
+                                        set.cachedSkeletonVersions.emplace_back(version,
+                                                                                version->load(std::memory_order_relaxed));
+                                }
+                            }
+                        }
+                    }
+                    if (anyNodeChanged) {
+                        set.cachedLocalSpheres.resize(set.sphereNodeIndices.size());
+                        for (std::size_t si = 0; si < set.sphereNodeIndices.size(); ++si) {
+                            const auto [nIdx, r] = set.sphereNodeIndices[si];
+                            const auto& lm = set.cachedLocalMats[nIdx];
+                            set.cachedLocalSpheres[si] = {lm[9], lm[10], lm[11], r};
+                        }
+                        set.cachedPoseValid = true;
+                        set.cachedUprightScaleY = 0.0;
+                    }
+                    const auto& mw = model.matrixWorld.elements;
+                    const double m1 = mw[1], m5 = mw[5], m9 = mw[9], m13 = mw[13];
+                    if (std::abs(m1) < 1e-12 && std::abs(m9) < 1e-12 && m5 > 0.0) {
+                        if (set.cachedUprightScaleY != m5) {
+                            double best = std::numeric_limits<double>::infinity();
+                            for (const auto& s : set.cachedLocalSpheres) {
+                                const double v = m5 * s[1] - s[3];
+                                if (v < best) best = v;
+                            }
+                            set.cachedUprightMinY = best;
+                            set.cachedUprightScaleY = m5;
+                        }
+                        return m13 + set.cachedUprightMinY + biasY;
+                    }
+                    double minY = std::numeric_limits<double>::infinity();
+                    for (const auto& s : set.cachedLocalSpheres) {
+                        const double cy = m1 * s[0] + m5 * s[1] + m9 * s[2] + m13;
+                        if (cy - s[3] < minY) minY = cy - s[3];
+                    }
+                    return minY + biasY;
+                }
+            }
+
             model.updateWorldMatrix(true, true, false);
-            minY = std::numeric_limits<double>::infinity();
+            double minY = std::numeric_limits<double>::infinity();
             for (size_t i = 0; i < set.objects.size(); ++i) {
                 const std::shared_ptr<Object3D> held = set.objects[i].lock();
                 if (!held) throw Unsupported{"__tnGroundSnapApply: an attached object is gone; attach again"};
@@ -1274,13 +1496,21 @@ void registerObject3D(ClassBinding& b) {
         const double lowest = measureLowest();
         if (!std::isfinite(lowest)) return Value::of(std::numeric_limits<double>::quiet_NaN());
 
-        bool carries = false;
-        for (const Object3D* node = &model; node != nullptr; node = node->parent) {
-            if (node == &group) {
-                carries = true;
-                break;
+        // `model`'s chain to the group it hangs under holds still unless the hierarchy or the group changes.
+        if (!set.cachedCarriesValid || set.cachedCarriesHierarchy != hv || set.cachedCarriesGroup != &group) {
+            bool carries = false;
+            for (const Object3D* node = &model; node != nullptr; node = node->parent) {
+                if (node == &group) {
+                    carries = true;
+                    break;
+                }
             }
+            set.cachedCarriesGroup = &group;
+            set.cachedCarriesHierarchy = hv;
+            set.cachedCarriesValue = carries;
+            set.cachedCarriesValid = true;
         }
+        const bool carries = set.cachedCarriesValue;
 
         const double desired = surfaceY - lowest;
         const bool hasRate = std::isfinite(maxRate) && maxRate >= 0.0;
@@ -1294,13 +1524,19 @@ void registerObject3D(ClassBinding& b) {
                 group.position.y += correction;
             } else {
                 group.parent->updateWorldMatrix(true, false, false);
-                Matrix4 parentInverse;
-                parentInverse.copy(group.parent->matrixWorld).invert();
-                Vector3 origin(0.0, 0.0, 0.0);
-                Vector3 target(0.0, correction, 0.0);
-                origin.applyMatrix4(parentInverse);
-                target.applyMatrix4(parentInverse);
-                group.position.add(target.sub(origin));
+                const auto& pm = group.parent->matrixWorld.elements;
+                // Upright parent: one divide, as shiftWorldYInPlace takes it. A rotated one needs the inverse.
+                if (std::abs(pm[1]) < 1e-12 && std::abs(pm[9]) < 1e-12 && std::abs(pm[5]) > 1e-12) {
+                    group.position.y += correction / pm[5];
+                } else {
+                    Matrix4 parentInverse;
+                    parentInverse.copy(group.parent->matrixWorld).invert();
+                    Vector3 origin(0.0, 0.0, 0.0);
+                    Vector3 target(0.0, correction, 0.0);
+                    origin.applyMatrix4(parentInverse);
+                    target.applyMatrix4(parentInverse);
+                    group.position.add(target.sub(origin));
+                }
             }
             group.markLocalTransformDirty();
         };
@@ -1336,9 +1572,12 @@ void registerObject3D(ClassBinding& b) {
         return Value::undefined();
     };
     b.methods["__tnModelLodMeshes"] = [](void*, const Args& a, Store& store) {
-        std::vector<std::weak_ptr<Object3D>>& meshes = modelLodMeshes();
+        std::vector<ModelLodEntry>& meshes = modelLodMeshes();
         meshes.clear();
-        for (const Value& mesh : refsOf(a.at(0))) meshes.push_back(objectArg(store, mesh).weak_from_this());
+        for (const Value& mesh : refsOf(a.at(0))) {
+            Object3D& object = objectArg(store, mesh);
+            meshes.push_back({object.weak_from_this(), &modelLodOf(object)});
+        }
         return Value::undefined();
     };
     b.methods["__tnModelLodSelect"] = [](void* self, const Args& a, Store&) {
@@ -1346,25 +1585,32 @@ void registerObject3D(ClassBinding& b) {
         if (camera == nullptr) throw Unsupported{"__tnModelLodSelect runs on a camera"};
         const double viewportHeight = number(a.at(0));
         const double bias = number(a.at(1)); // core's adaptive bias, which the engine's lodBias() does not see
-        const std::vector<std::weak_ptr<Object3D>>& meshes = modelLodMeshes();
+        const std::vector<ModelLodEntry>& meshes = modelLodMeshes();
         std::vector<double> changed;
         std::string error;
         for (std::size_t i = 0; i < meshes.size(); ++i) {
-            const std::shared_ptr<Object3D> held = meshes[i].lock();
+            const std::shared_ptr<Object3D> held = meshes[i].object.lock();
             if (!held) throw Unsupported{"__tnModelLodSelect: a mesh in the set is gone; hand the set over again"};
             Object3D& mesh = *held;
-            ModelLodState& state = modelLodOf(mesh);
+            ModelLodState& state = *meshes[i].state;
             if (state.errors.empty()) throw Unsupported{"__tnModelLodSelect before __tnModelLodAttach"};
             mesh.joinDeferredWorldTransform();
-            const Sphere world = lod::worldSphere(state.local, mesh.matrixWorld);
+            // A still mesh rereads nothing: its world matrix only moves with its revision, and a local edit
+            // that composed the matrix without publishing it is the second signal.
+            if (!state.worldValid || state.cachedRevision != mesh.revision() || mesh.matrixWorldNeedsUpdate) {
+                state.worldSphere = lod::worldSphere(state.local, mesh.matrixWorld);
+                state.maxScale =
+                    std::max(mesh.matrixWorld.getMaxScaleOnAxis(), std::numeric_limits<double>::epsilon());
+                state.cachedRevision = mesh.revision();
+                state.worldValid = true;
+            }
+            const Sphere& world = state.worldSphere;
             double depth = 0;
             bool degenerate = false;
             lod::conservativeViewDepth(*camera, world.center, world.radius, lod::cameraNear(*camera), depth, degenerate);
             const lod::LodView view{camera, degenerate, depth * bias, viewportHeight, false};
             int level = 0;
-            if (!lod::selectLodLevel(state.errors, state.current,
-                                     state.maxPixelError /
-                                         std::max(mesh.matrixWorld.getMaxScaleOnAxis(), std::numeric_limits<double>::epsilon()),
+            if (!lod::selectLodLevel(state.errors, state.current, state.maxPixelError / state.maxScale,
                                      state.hysteresis, {view}, level, error))
                 throw Unsupported{error};
             if (level == state.current) continue;
@@ -1825,6 +2071,7 @@ std::vector<std::shared_ptr<Material>> materialsArg(Store& store, const Value& a
 // Structured intersection results preserve the actual scene object and publish real vector wrappers.
 Value intersections(Store& store, const std::vector<Intersection>& hits) {
     std::vector<Value> values;
+    values.reserve(hits.size());
     for (const auto& h : hits) {
         const auto vector = [&](const auto& v, const char* cls) {
             using V = std::decay_t<decltype(v)>;
@@ -1836,17 +2083,50 @@ Value intersections(Store& store, const std::vector<Intersection>& hits) {
                 {"barycoord", Value{}}, {"object", foundObject(store, h.object)}}));
             continue;
         }
-        std::vector<std::pair<std::string, Value>> fields = {
-            {"distance", Value::of(h.distance)}, {"point", vector(h.point, "Vector3")},
-            {"object", foundObject(store, h.object)}, {"faceIndex", Value::of(double(h.faceIndex))},
-            {"face", Value::record({{"a", Value::of(double(h.face.a))}, {"b", Value::of(double(h.face.b))},
-                {"c", Value::of(double(h.face.c))}, {"normal", vector(h.face.normal, "Vector3")},
-                {"materialIndex", Value::of(h.face.materialIndex)}})},
-            {"barycoord", vector(h.barycoord, "Vector3")}
-        };
+        std::vector<std::pair<std::string, Value>> fields;
+        fields.reserve(10);
+        fields.emplace_back("distance", Value::of(h.distance));
+        fields.emplace_back("point", vector(h.point, "Vector3"));
+        fields.emplace_back("object", foundObject(store, h.object));
+        fields.emplace_back("faceIndex", Value::of(double(h.faceIndex)));
+        fields.emplace_back("face", Value::record({{"a", Value::of(double(h.face.a))}, {"b", Value::of(double(h.face.b))},
+            {"c", Value::of(double(h.face.c))}, {"normal", vector(h.face.normal, "Vector3")},
+            {"materialIndex", Value::of(h.face.materialIndex)}}));
+        fields.emplace_back("barycoord", vector(h.barycoord, "Vector3"));
         if (h.uv) fields.emplace_back("uv", vector(*h.uv, "Vector2"));
         if (h.uv1) fields.emplace_back("uv1", vector(*h.uv1, "Vector2"));
         if (h.normal) fields.emplace_back("normal", vector(*h.normal, "Vector3"));
+        if (h.instanceId) fields.emplace_back("instanceId", Value::of(double(*h.instanceId)));
+        values.push_back(Value::record(std::move(fields)));
+    }
+    return Value::array(std::move(values));
+}
+// The same records with every vector as a plain number list: no wrapper handle per hit (core's `__tnIntersect*`).
+Value flatIntersections(Store& store, const std::vector<Intersection>& hits) {
+    std::vector<Value> values;
+    values.reserve(hits.size());
+    const auto v3 = [](const Vector3& v) { return Value::list({v.x, v.y, v.z}); };
+    const auto v2 = [](const Vector2& v) { return Value::list({v.x, v.y}); };
+    for (const auto& h : hits) {
+        if (h.index) {  // three's Line hit: the segment index, no face
+            values.push_back(Value::record({{"distance", Value::of(h.distance)}, {"point", v3(h.point)},
+                {"index", Value::of(double(*h.index))}, {"face", Value{}}, {"faceIndex", Value{}},
+                {"barycoord", Value{}}, {"object", foundObject(store, h.object)}}));
+            continue;
+        }
+        std::vector<std::pair<std::string, Value>> fields;
+        fields.reserve(10);
+        fields.emplace_back("distance", Value::of(h.distance));
+        fields.emplace_back("point", v3(h.point));
+        fields.emplace_back("object", foundObject(store, h.object));
+        fields.emplace_back("faceIndex", Value::of(double(h.faceIndex)));
+        fields.emplace_back("face", Value::record({{"a", Value::of(double(h.face.a))}, {"b", Value::of(double(h.face.b))},
+            {"c", Value::of(double(h.face.c))}, {"normal", v3(h.face.normal)},
+            {"materialIndex", Value::of(h.face.materialIndex)}}));
+        fields.emplace_back("barycoord", v3(h.barycoord));
+        if (h.uv) fields.emplace_back("uv", v2(*h.uv));
+        if (h.uv1) fields.emplace_back("uv1", v2(*h.uv1));
+        if (h.normal) fields.emplace_back("normal", v3(*h.normal));
         if (h.instanceId) fields.emplace_back("instanceId", Value::of(double(*h.instanceId)));
         values.push_back(Value::record(std::move(fields)));
     }
@@ -1918,6 +2198,15 @@ void registerRaycaster(ClassBinding& b) {
         if (a.at(0).kind != Value::Kind::Numbers || !a.at(0).numbers.empty())
             for (const auto& v : refsOf(a.at(0))) objects.push_back(&objectArg(store, v));
         return intersections(store, as<Raycaster>(self)->intersectObjects(objects, boolean(a, 1, true)));
+    };
+    b.methods["__tnIntersectObject"] = [](void* self, const Args& a, Store& store) {
+        return flatIntersections(store, as<Raycaster>(self)->intersectObject(objectArg(store, a.at(0)), boolean(a, 1, true)));
+    };
+    b.methods["__tnIntersectObjects"] = [](void* self, const Args& a, Store& store) {
+        std::vector<Object3D*> objects;
+        if (a.at(0).kind != Value::Kind::Numbers || !a.at(0).numbers.empty())
+            for (const auto& v : refsOf(a.at(0))) objects.push_back(&objectArg(store, v));
+        return flatIntersections(store, as<Raycaster>(self)->intersectObjects(objects, boolean(a, 1, true)));
     };
 }
 void registerLOD(ClassBinding& b) {

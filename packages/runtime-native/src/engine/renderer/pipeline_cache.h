@@ -47,7 +47,7 @@ struct PipelineTarget {
     WGPUTextureFormat color = WGPUTextureFormat_RGBA8Unorm;  // Undefined: depth-only (shadow) pass
     WGPUTextureFormat depth = WGPUTextureFormat_Depth32Float;
     WGPUCullMode cull = WGPUCullMode_Back;
-    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark; 5 `blendState`
+    uint8_t blend = 0;       // 0 none, three's NormalBlending (1) or AdditiveBlending (2), premultipliedAlpha false; 3 premultiplied "over" (a UI overlay); 4 the TRAA responsive mark; 5 `blendState`; 6 TRAA incomplete-motion blue-channel zero mark
     bool depthWrite = true;  // material.depthWrite
     bool colorWrite = true;  // material.colorWrite: false masks every colour channel
     uint32_t sampleCount = 1;
@@ -219,7 +219,8 @@ public:
     PipelineLayoutCache& operator=(const PipelineLayoutCache&) = delete;
 
     WGPUBindGroupLayout bindGroup(const std::string& key, const std::vector<WGPUBindGroupLayoutEntry>& entries);
-    WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second);
+    WGPUPipelineLayout pipeline(const std::string& key, WGPUBindGroupLayout first, WGPUBindGroupLayout second,
+                                WGPUBindGroupLayout third = nullptr);
     /** Distinct pipeline layouts: a browser hands out a new handle per creation, where Dawn native dedupes equal ones. */
     size_t pipelineLayouts() const { return pipelines_.size(); }
 

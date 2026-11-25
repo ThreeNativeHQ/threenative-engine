@@ -234,12 +234,18 @@ public:
     // Renderer-owned Bone boundaries only; explicit world queries always use the eager chain.
     std::weak_ptr<bool> gpuJointBoundary;
     uint64_t gpuJointHierarchy = 0;
+    uint64_t gpuJointSkinnedEpoch = 0;
     uint64_t subtreeVersion_ = 0;
     /** Counts one hierarchy change at `node` and stamps it on `node` and every ancestor. */
     static void markHierarchy(Object3D* node);
     bool skipsGpuJointSubtree() const {
+        if (gpuJointSkinnedEpoch != 0) {
+            if (gpuJointSkinnedEpoch != skinnedHierarchyVersion()) return false;
+        } else {
+            if (gpuJointHierarchy != hierarchyVersion()) return false;
+        }
         const auto valid = gpuJointBoundary.lock();
-        return valid && *valid && gpuJointHierarchy == hierarchyVersion();
+        return valid && *valid;
     }
     inline static uint64_t matrixEvaluations_ = 0, joinDependencyVisits_ = 0;
     // Counted by the matrix walk, which runs on the job pool's threads (updateMatrixWorldVisibleJobs).
@@ -288,6 +294,8 @@ public:
     /** three's `_object3DId ++`: a process-wide counter starting at zero. */
     [[nodiscard]] uint64_t id() const { return id_; }
     [[nodiscard]] static uint64_t hierarchyVersion();
+    /** Bumps only on hierarchy mutations involving a Bone, SkinnedMesh, or direct child of one. */
+    [[nodiscard]] static uint64_t skinnedHierarchyVersion();
     /** Where `hierarchyVersion()` lives, so a back end (Wasm) reads it in place instead of asking. */
     [[nodiscard]] static const uint64_t* hierarchyVersionAddress();
     /** The `hierarchyVersion()` of the last add, remove, attach or destroy under this node (or at it), so a
@@ -469,6 +477,10 @@ public:
     /** three's `copy` without its `recursive` branch: fields only, because `clone` is not ported. */
     Object3D& copy(const Object3D& source);
 
+protected:
+    void markSkinnedNode();
+    void markBoneNode();
+
 private:
     void bump() { ++revision_; }
     uint64_t worldParentId_ = 0, worldParentRevision_ = 0;
@@ -495,6 +507,12 @@ private:
     std::vector<std::shared_ptr<Object3D>> owned_;  // shared-owned children, held while attached
     uint32_t walkNodes_ = 0;  // nodes the last updateMatrixWorldVisibleJobs from here visited
     uint32_t walkComposes_ = 0;  // matrices that walk composed
+    bool isSkinnedNode_ = false;
+    bool isBoneNode_ = false;
+    uint32_t skinnedSubtreeCount_ = 0;
+    uint32_t directSkinnedChildren_ = 0;
+    void adjustSkinnedSubtree(int32_t delta);
+    static void markSkinnedHierarchy();
     // The walk's step at this node: -1 when its subtree waits, else the force its children take.
     int visitMatrixWorldVisible(bool force, bool prune);
     void own(Object3D& child);

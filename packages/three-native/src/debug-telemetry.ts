@@ -1,5 +1,10 @@
 import { PLAYTEST_OBSERVING_GLOBAL, callerOf } from "./bridge-meter.js";
 
+// The bridge meter and uniform sync ask every frame; parsing an unchanged `location.search` again
+// cost 0.82% self CPU on the browser profile. A changed search string (pushState) reparses.
+let cachedSearch: string | undefined;
+let cachedSearchParam: string | null = null;
+
 /**
  * Kept local to the bridge so three-native does not depend on core, and held to core's rule by
  * `scripts/__tests__/launch-flag-parity.spec.ts`: `0` and `false` are off, a named-but-empty value
@@ -17,8 +22,11 @@ export function debugRequested(): boolean {
   if (typeof env === "string" && env !== "") values.push(env);
   const search = globalThis.location?.search;
   if (typeof search === "string") {
-    const fromQuery = new URLSearchParams(search).get("tnDebug");
-    if (fromQuery !== null) values.push(fromQuery);
+    if (search !== cachedSearch) {
+      cachedSearchParam = new URLSearchParams(search).get("tnDebug");
+      cachedSearch = search;
+    }
+    if (cachedSearchParam !== null) values.push(cachedSearchParam);
   }
   const set = host.__THREENATIVE_DEBUG__;
   if (typeof set === "string") values.push(set);

@@ -1594,4 +1594,20 @@ describe("the main pass's draw bundles", () => {
       spy.mockRestore();
     }
   });
+
+  it("skips JS BundleGroup creation when the renderer owns native bundles", async () => {
+    const { renderer, world: cells } = await world({ bundles: true });
+    const ownedRenderer = {
+      ...renderer,
+      raw: { ...(renderer.raw as object), info: { engine: "native" } },
+    } as unknown as IRendererLike;
+    cells.update(ownedRenderer, eastCamera());
+    await flushed(cells, ownedRenderer, eastCamera());
+
+    expect(mainBundleGroups(cells)).toEqual([]);
+    expect(chunkBundles(cells)).toEqual([]);
+    expect(cells.stats().bundle.on).toBe(false);
+    expect(mainKeys(cells).length + chunkMeshes(cells).length).toBeGreaterThan(0);
+    cells.dispose();
+  });
 });

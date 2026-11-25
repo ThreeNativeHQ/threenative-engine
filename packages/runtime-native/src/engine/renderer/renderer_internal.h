@@ -254,7 +254,7 @@ constexpr const char* kSlotNames[] = {
     "specularIntensityMapUvTransform", "clearcoatMapUvTransform", "clearcoatRoughnessMapUvTransform",
     "clearcoatNormalMapUvTransform", "anisotropyMapUvTransform", "aoMapIntensity", "clearcoat", "clearcoatRoughness", "clearcoatNormalScale", "bumpScale",
     "pmremMaxMip", "pmremRotation", "screenSize", "cameraNear", "cameraFar",
-    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector"};
+    "modelNormalMatrix", "subsurfaceColor", "shadowNoiseFrame", "viewMipBias", "anisotropyVector", "gpuCullIdBase", "vsmRecordBase"};
 constexpr const char* kLightFieldNames[] = {"Color",       "Direction",        "Position",     "Distance",
                                             "Decay",       "Axis",             "ConeCos",      "PenumbraCos",
                                             "ShadowMatrix", "ShadowBias",      "ShadowNormalBias", "ShadowRadius",
@@ -501,6 +501,14 @@ struct Renderer::Planned {
     // empty for a row that draws the one caster it points at.
     const DrawItem* const* members = nullptr;
     uint32_t memberCount = 0;
+    uint32_t viewOffset = 0;
+    bool shadowViewSlice = false;
+    /** PRD-914 Phase 3: the GPU cull's indirect record for this draw, drawn in place of `instanceCount`. */
+    WGPUBuffer gpuIndirect = nullptr;
+    uint64_t gpuIndirectOffset = 0;
+    /** PRD-775: a batched VSM draw's base in `vsmPageRecords` and its five-word indirect record's slot. */
+    uint32_t vsmRecordBase = 0;
+    uint32_t vsmArgsSlot = 0;
 };
 
 /**
@@ -518,9 +526,9 @@ struct Renderer::MainRow {
     uintptr_t material = 0, positions = 0, indices = 0;
     uint64_t id = 0, slot = 0;
     WGPURenderPipeline pipeline = nullptr;
-    WGPUBindGroup vertexGroup = nullptr, mapGroup = nullptr;
-    uint32_t vertexOffset = 0, fragmentOffset = 0;
-    bool fragmentBlock = false;
+    WGPUBindGroup vertexGroup = nullptr, mapGroup = nullptr, viewGroup = nullptr;
+    uint32_t vertexOffset = 0, fragmentOffset = 0, viewOffset = 0;
+    bool vertexBlock = true, fragmentBlock = false;
     struct Vertex { uint32_t location; WGPUBuffer buffer; uint64_t offset, size; };
     std::vector<Vertex> vertex;
     WGPUBuffer index = nullptr;
@@ -585,6 +593,10 @@ struct Renderer::ShadowPass {
     bool lamp = false;  // a spot or point light's own map (PRD-650): counted and timed apart from the sun's
     bool mover = false;  // one light's mover map, drawn for the casters that are moving this frame
     int x = 0, y = 0, size = 0; // zero: ordinary map; otherwise one atlas page's guarded viewport
+    // PRD-775: one pass clears and draws every static page of a light from GPU-built (instance, page) records.
+    bool batchedVsm = false;
+    uint32_t vsmPageOffset = 0, vsmPageCount = 0;
+    std::vector<int> vsmLevels;  // the granted levels this batched pass writes, for cost attribution
     // The camera this pass draws through, kept so the retained draws pack after the lamp cache decides.
     Matrix view{}, projection{};
     std::vector<Planned> draws;
@@ -599,8 +611,13 @@ struct Renderer::FrameJob {
     // velocity pass (zero copies nothing), and whether a seeded frame copies them before it too.
     std::array<uint64_t, 2> previousBytes{};
     bool previousSeed = false;
+    bool instancesMutated = false;
+    bool traaSeedFrame = false;
     std::vector<Planned> plan, velocityPlan, auxPlan, translucentPlan;
-    std::unordered_map<uint64_t, DeformationFrame> deformationFrames;
+    // PRD-914: the records this frame changed, committed into Renderer::deformationFrames_ by encodeFrame(). A draw
+    // whose record an entry already holds adds nothing, so a steady frame allocates no per-draw vector.
+    std::vector<std::pair<uint64_t, DeformationFrame>> deformationUpserts;
+    uint64_t deformationEpoch = 0;  // the submitted frame these upserts belong to (0: a compile records nothing)
     std::vector<ShadowPass> shadowPasses;
     uint32_t keptShadowMaps = 0;  // FrameStats::keptShadowMaps, counted by the plan
     uint64_t uniformBytes = 0;  // FrameStats::uniformBytes, written by the plan
@@ -608,6 +625,9 @@ struct Renderer::FrameJob {
     uint32_t shadowGroupRows = 0;  // FrameStats::shadowGroupRows, counted by the plan
     uint32_t instanceCopies = 0;  // FrameStats::instanceCopies, counted by the plan
     std::deque<DrawItem> shadowLodItems;
+    // PRD-775: each batched VSM draw's row (its instance count is the record capacity, its indirect record the
+    // GPU's count). A deque: a planned draw points at its row until the frame is encoded.
+    std::deque<DrawItem> vsmDrawItems;
     // FM8: a page's grouped casters as rows (one per page and group) and each row's member list. Both are
     // deques: a plan's row points at its members' array until the frame is encoded.
     std::deque<DrawItem> shadowGroupItems;
@@ -627,6 +647,11 @@ struct Renderer::FrameJob {
     bool debugTimestampRequested = true;
     uint8_t auxMask = 0;  // the AuxTarget bits the aux pass writes, in attachment order
     std::vector<std::string> auxMrt;  // the custom MRT slots the aux pass writes after them, in name order
+    // PRD-914: the main pass writes the post targets after its colour (one unified base pass at sampleCount 1).
+    bool unifiedAux = false;
+    uint8_t unifiedAuxMask = 0;
+    std::vector<std::string> unifiedAuxMrt;
+    uint64_t mainAuxKey = 0;  // the aux layout the main bundles were recorded for
     bool translucentActive = false;  // the post graph reads "translucent": the transparent draws have their own pass
     uint64_t source = 0;  // the caller frame id this frame's timed sample is reported under
     // The main, aux and velocity bundles' inputs, built while the draws' stores were live; and each shadow pass's.
@@ -638,6 +663,20 @@ struct Renderer::FrameJob {
     std::vector<uint64_t> tailKey;      // the draws from there to the viewport copy
     PassRows mainRows, auxRows, velocityRows;
     std::vector<std::vector<uint64_t>> shadowKeys;
+    /** PRD-914 Phase 3: this frame's GPU frustum cull, filled while the main plan resolves the draws it can cull. */
+    std::vector<GpuCullDrawDesc> gpuCullDraws;
+    std::vector<uint32_t> gpuCullDrawCounts;  // per draw, in `gpuCullDraws` order: its index or vertex count
+    std::array<float, 28> gpuCullFrustum{};  // 6 vec4 planes + u32 vec4(totalDraws, totalInstances, 0, 0) via memcpy
+    uint32_t gpuCullTotalInstances = 0;
+    /** PRD-775 Phase 1: one batched static VSM pass per light, and the compute dispatch that fills its records. */
+    uint32_t staticVsmPasses = 0;
+    bool dispatchVsmCull = false;
+    /** PRD-775 Phase 3: the page managers that write their light's table and page entries before the cull runs. */
+    struct VsmPageDispatch {
+        shadows::GpuPhysicalPagePool* pool = nullptr;
+        std::size_t light = 0;
+    };
+    std::vector<VsmPageDispatch> vsmPageDispatches;
 };
 
 

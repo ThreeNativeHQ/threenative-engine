@@ -457,6 +457,39 @@ export function createNativePhysicsSimulation(
       position: finiteQueryVector(hit.position, "query hit position"),
     };
   };
+  // The hot ray path (every walker's sight line, every frame): the same checks, labels and hit
+  // shape as `nativeHit` plus `finiteQueryVector`, built as one hit with no copies between.
+  const rayOutputHit = (): IPhysicsRayHit => {
+    const bodyId = rayOutput[0];
+    const distance = rayOutput[7] as number;
+    if (
+      bodyId === undefined ||
+      !Number.isSafeInteger(bodyId) ||
+      bodyId < 0 ||
+      distance === undefined
+    )
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output is malformed");
+    const body = bodyHandle(bodyId);
+    const px = rayOutput[1] as number;
+    const py = rayOutput[2] as number;
+    const pz = rayOutput[3] as number;
+    if (!Number.isFinite(px) || !Number.isFinite(py) || !Number.isFinite(pz))
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: query hit position contains a non-finite vector");
+    if (!Number.isFinite(distance) || distance < 0)
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid");
+    const nx = rayOutput[4] as number;
+    const ny = rayOutput[5] as number;
+    const nz = rayOutput[6] as number;
+    if (!Number.isFinite(nx) || !Number.isFinite(ny) || !Number.isFinite(nz))
+      throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output normal contains a non-finite vector");
+    return {
+      body,
+      entity: body.entity,
+      position: { x: px, y: py, z: pz },
+      distance,
+      normal: { x: nx, y: ny, z: nz },
+    };
+  };
   // The native ABI has no per-body transform call, only the bulk render read the renderer already
   // makes. `readBodyTransform` is the seam a game uses through `syncFromPhysics()`, so serve it
   // from one cached bulk read per step rather than adding an ABI entry point or reading N times.
@@ -759,29 +792,7 @@ export function createNativePhysicsSimulation(
         if (hit === 0) return undefined;
         if (hit !== 1)
           throw new Error("TN_NATIVE_PHYSICS_INVALID: ray query returned an invalid status");
-        const bodyId = rayOutput[0];
-        const position = {
-          x: rayOutput[1] as number,
-          y: rayOutput[2] as number,
-          z: rayOutput[3] as number,
-        };
-        const normal = {
-          x: rayOutput[4] as number,
-          y: rayOutput[5] as number,
-          z: rayOutput[6] as number,
-        };
-        const distance = rayOutput[7] as number;
-        if (
-          bodyId === undefined ||
-          !Number.isSafeInteger(bodyId) ||
-          bodyId < 0 ||
-          distance === undefined
-        )
-          throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output is malformed");
-        const base = nativeHit({ bodyId, position });
-        if (!Number.isFinite(distance) || distance < 0)
-          throw new Error("TN_NATIVE_PHYSICS_INVALID: ray output distance is invalid");
-        return { ...base, distance, normal: finiteQueryVector(normal, "ray output normal") };
+        return rayOutputHit();
       }
       if (hit === undefined || hit === null) return undefined;
       if (!Number.isFinite(hit.distance) || hit.distance < 0)

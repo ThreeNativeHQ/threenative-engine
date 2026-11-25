@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <memory>
 #include <unordered_map>
@@ -73,9 +74,23 @@ private:
         Scalar scalar = Scalar::F32;
         WGPUBufferUsage usage = 0;  // the usages this copy was created with, CopyDst included
     };
+    /**
+     * The store a slot last resolved, probed by address before the map descent: a frame re-syncs a store once per
+     * pass it draws in, and a 256-entry direct-mapped table answers the steady ones without hashing a pointer.
+     * `entry` stays valid until that store is forgotten or swept, which resets the slot.
+     */
+    struct QuickSlot {
+        const BufferStore* store = nullptr;
+        Entry* entry = nullptr;
+    };
+    static std::size_t quickIndex(const BufferStore* store) {
+        const auto bits = reinterpret_cast<uintptr_t>(store);
+        return ((bits >> 6) ^ (bits >> 14)) & 255;
+    }
     GpuResources& gpu_;
     uint64_t sweptAt_ = ~uint64_t{0};  // BufferStore::released() at the last sweep
     std::unordered_map<const BufferStore*, Entry> entries_;
+    std::array<QuickSlot, 256> quick_{};
     std::vector<std::pair<uint64_t, uint64_t>> spans_;  // sync's byte ranges, kept to reuse its storage
     Stats stats_;
 };

@@ -4,6 +4,8 @@
 #include <cmath>
 #include <memory>
 #include <optional>
+#include <unordered_set>
+#include <vector>
 #include "engine/foundation/math/Matrix.h"
 
 namespace tn::engine { class BufferGeometry; }
@@ -75,6 +77,18 @@ struct AtlasPage {
     double lowU = 0, highU = 0, lowV = 0, highV = 0;
 };
 
+/**
+ * PRD-775 Phase 3: one virtual page a frame keeps resident, as the GPU page manager consumes it. `id` is the packed
+ * `pageId`; `flags` bit 0 is granted, bit 1 a kept panning page and bit 2 invalidated; `gpuPageIndex` indexes the
+ * frame's drawn pages, or is ~0u for a page kept without a draw; `tableEntry` is the page's vec4 in the atlas table.
+ */
+struct PlannedPageRequest {
+    uint64_t id = 0;
+    uint32_t flags = 0;
+    uint32_t gpuPageIndex = 0xFFFFFFFFu;
+    uint32_t tableEntry = 0;
+};
+
 /** What a caster's geometry last was, as the virtual shadow planner compares it: a version triple rather than a
  *  string, because every caster of a scene is compared every frame (PRD-872: the `play` frame built 1,145 of them). */
 struct CasterSignature {
@@ -104,9 +118,23 @@ public:
     // their last state, so a count that crosses zero is the content change any count change is: the owner
     // names the region (the streamed world does, per changed batch) and the atlas redraws nothing for it.
     void updateCasters(const std::vector<CasterState>& casters, const std::vector<uint64_t>& emptied = {});
+    /**
+     * PRD-775 Phase 2: the change set path. `changed` holds the casters the frame touched, `removed` the keys
+     * whose draw left the caster stage; every other caster keeps its state and costs one quiet advance only
+     * while it is a mover. With no changed caster, no removed key and no active mover it visits none.
+     */
+    void updateCastersChanged(const std::vector<CasterState>& changed, const std::vector<uint64_t>& removed,
+                              const std::vector<uint64_t>& emptied = {});
     bool isMover(uint64_t key) const;
     bool drawsStatic(uint64_t key) const;
     void appendMoverPages(std::vector<AtlasPage>& pages) const;
+    /** Caster states the last update examined: every caster on a full scan, only the change set and the movers
+     *  on a change-set frame, and zero when nothing changed (PRD-775 Phase 2). */
+    uint64_t lastCasterVisits() const { return lastCasterVisits_; }
+    /** True once a caster update has run: the renderer may seed from a change set only after one did. */
+    bool seeded() const { return seeded_; }
+    bool hasActiveMovers() const { return !activeMovers_.empty(); }
+    const std::unordered_set<uint64_t>& activeMoverKeys() const { return activeMovers_; }
     std::pair<int, int> moverOrigin(int level) const;
     void recordCost(int level, double milliseconds, double frameSeconds);
     double refreshStep(int level) const;
@@ -130,6 +158,22 @@ public:
     const AtlasOptions& options() const { return options_; }
     const DirectionalClipmap& clipmap() const { return *clipmap_; }
     const std::vector<float>& table() const { return table_; }
+    /**
+     * PRD-775 Phase 3: the CPU keeps only per-level state and hands the GPU page manager this frame's requests; the
+     * table's `[header, header + pageCount())` region is left for the GPU to write. Off by default, so the CPU pool
+     * and `writeTable` remain the oracle and the `TN_VSM_GPU_PAGES=0` path.
+     */
+    void setGpuManaged(bool enabled) { gpuManaged_ = enabled; }
+    bool gpuManaged() const { return gpuManaged_; }
+    /** The last frame's requests, in the order the CPU pool would have allocated them (grant order, then y, x). */
+    const std::vector<PlannedPageRequest>& frameRequests() const { return requests_; }
+    /** The residents the CPU pool holds, ordered by slot; empty in gpu-managed mode. */
+    std::vector<PhysicalPageEntry> residentPages() const { return pool_ ? pool_->entries() : std::vector<PhysicalPageEntry>{}; }
+    /** Bumped whenever the CPU pool is recreated (a direction change): the GPU pool resets with it. */
+    uint64_t poolGeneration() const { return poolGeneration_; }
+    /** The frame number the last update ran, as `PhysicalPagePool::allocate` uses it. */
+    double frameNumber() const { return frame_; }
+    int slotsPerAxis() const { return slotsPerAxis_; }
     int mapSize(int level) const {
         return options_.levelMapSizes.empty() ? options_.mapSize
             : options_.levelMapSizes[std::min<std::size_t>(std::size_t(level), options_.levelMapSizes.size() - 1)];
@@ -142,6 +186,37 @@ public:
     int edge() const { return slotsPerAxis_ * stride(); }
     std::pair<int, int> origin(int slot) const { return {slot % slotsPerAxis_ * stride(), slot / slotsPerAxis_ * stride()}; }
     bool overlaps(const AtlasPage& page, const Box3& bounds) const;
+    /** Precomputed per-level clipmap projection constants so caster loops avoid repeated level lookups and divisions. */
+    struct PageGrid {
+        Vector3 axisU, axisV;
+        Vector3 absAxisU, absAxisV;
+        double lowU = 0, highU = 0, lowV = 0, highV = 0;
+        double invCellU = 0, invCellV = 0;
+        double slopU = 0, slopV = 0;
+        int last = -1;
+        bool valid = false;
+        void range(const Box3& bounds, int& x0, int& x1, int& y0, int& y1) const {
+            if (!valid) { x0 = y0 = 1; x1 = y1 = 0; return; }
+            const double halfX = (bounds.max.x - bounds.min.x) * 0.5;
+            const double halfY = (bounds.max.y - bounds.min.y) * 0.5;
+            const double halfZ = (bounds.max.z - bounds.min.z) * 0.5;
+            const double centreX = (bounds.max.x + bounds.min.x) * 0.5;
+            const double centreY = (bounds.max.y + bounds.min.y) * 0.5;
+            const double centreZ = (bounds.max.z + bounds.min.z) * 0.5;
+            const double reachU = absAxisU.x * halfX + absAxisU.y * halfY + absAxisU.z * halfZ;
+            const double middleU = centreX * axisU.x + centreY * axisU.y + centreZ * axisU.z;
+            const double reachV = absAxisV.x * halfX + absAxisV.y * halfY + absAxisV.z * halfZ;
+            const double middleV = centreX * axisV.x + centreY * axisV.y + centreZ * axisV.z;
+            x0 = int(std::ceil((middleU - reachU - slopU - highU) * invCellU));
+            x1 = int(std::floor((middleU + reachU + slopU - lowU) * invCellU));
+            y0 = int(std::ceil((middleV - reachV - slopV - highV) * invCellV));
+            y1 = int(std::floor((middleV + reachV + slopV - lowV) * invCellV));
+            x0 = std::max(x0, 0); x1 = std::min(x1, last);
+            y0 = std::max(y0, 0); y1 = std::min(y1, last);
+            if (x1 < x0 || y1 < y0) { x0 = y0 = 1; x1 = y1 = 0; }
+        }
+    };
+    PageGrid pageGrid(int level) const;
     /**
      * The inverse of `overlaps`: the pages of `level` a caster's bounds can reach, as inclusive page indices,
      * clamped to the level's `tiles() - 1`. A page the scan would take is always in the range (the page rects
@@ -162,6 +237,8 @@ private:
         Matrix4 projection;
         bool dirtyAll = false;
         std::set<int> dirtySlots;
+        /** GPU-managed mode's invalidation, by virtual page id: CPU slots are placeholders there. */
+        std::set<uint64_t> dirtyIds;
         std::vector<AtlasPage> pages;
         Matrix4 view, matrix;
         std::vector<int> slots;
@@ -176,15 +253,28 @@ private:
     };
     std::unordered_map<uint64_t, Motion> motion_;
     uint64_t presentEpoch_ = 0;
-    void writeTable();
+    /** PRD-775 Phase 2: the casters whose motion state a change-set frame must still advance. */
+    std::unordered_set<uint64_t> activeMovers_;
+    std::vector<uint64_t> visitedKeysScratch_;
+    std::vector<uint64_t> moversScratch_;
+    std::vector<uint64_t> emptiedKeysScratch_;
+    uint64_t lastCasterVisits_ = 0;
+    bool seeded_ = false;
+    /** One caster's state transition, shared by the full scan and the change-set path; `present` 0 skips the stamp. */
+    void applyCaster(const CasterState& caster, uint64_t present);
+    void writeTable(bool headersOnly = false);
+    /** The id of `page` as `update` allocated it: the window's page at its flipped (x, y) cell. */
+    uint64_t virtualPageId(int level, const AtlasPage& page) const;
     AtlasOptions options_;
     std::optional<DirectionalClipmap> clipmap_;
     std::optional<PhysicalPagePool> pool_;
     std::vector<Level> levels_;
     std::vector<float> table_;
+    std::vector<PlannedPageRequest> requests_;
     Vector3 direction_, previousEye_;
-    bool started_ = false;
+    bool started_ = false, gpuManaged_ = false;
     int slotsPerAxis_ = 0, staticRows_ = 0, nextLevel_ = 0;
+    uint64_t poolGeneration_ = 0;
     double frame_ = 0, now_ = 0, frameSeconds_ = 1.0 / 60;
 };
 

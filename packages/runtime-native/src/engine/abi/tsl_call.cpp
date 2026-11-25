@@ -580,7 +580,8 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
     // ponytail: bounces is accepted and not modelled; a reflection pass hides every reflecting
     // surface, where three draws other mirrors into it. Model it if a scene needs mirrors in mirrors.
     if (!method && name == "reflector") {
-        arity(7);
+        if (args.size() != 7 && args.size() != 10)
+            throw std::runtime_error("reflector expects 7 or 10 arguments");
         const auto object = [&](size_t i, const char* cls) {
             if (args[i].kind != TslArg::Kind::Object || args[i].cls != cls || !args[i].object)
                 throw std::runtime_error(std::string("reflector needs an engine ") + cls + " as argument " + std::to_string(i));
@@ -598,6 +599,14 @@ g::Node tslCall(const std::string& name, const TslArg* receiver, const std::vect
             throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: depth");
         if (number(args[6]) != 0)
             throw std::runtime_error("TN_NATIVE_REFLECTOR_UNSUPPORTED: samples");
+        if (args.size() == 10) {
+            state->excludeInstancedAndSkinned = number(args[7]) != 0;
+            state->minSize = number(args[8]);
+            if (state->minSize < 0) throw std::runtime_error("reflector minSize must be non-negative");
+            const double interval = number(args[9]);
+            if (!(interval >= 1)) throw std::runtime_error("reflector refreshInterval must be at least 1");
+            state->refreshInterval = static_cast<uint32_t>(std::lround(interval));
+        }
         const auto screen = g::screenUV();
         return g::reflectorTexture(state, g::vec2({g::sub(g::float_(1), g::swizzle(screen, "x")), g::swizzle(screen, "y")}));
     }

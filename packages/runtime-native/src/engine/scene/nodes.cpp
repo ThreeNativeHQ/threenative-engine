@@ -102,6 +102,14 @@ InstancedMesh::InstancedMesh(std::shared_ptr<BufferGeometry> g, std::shared_ptr<
 
 InstancedMesh& InstancedMesh::setMatrixAt(uint32_t index, const Matrix4& matrix) {
     const std::array<double, 16> e = matrix.toArray();
+    if (instanceMatrix && instanceMatrix->store && instanceMatrix->store->scalar() == Scalar::F32 &&
+        instanceMatrix->itemSize == 16 &&
+        uint64_t(index) * 16 + 16 <= instanceMatrix->store->count()) {
+        float packed[16];
+        for (int c = 0; c < 16; ++c) packed[c] = static_cast<float>(e[c]);
+        instanceMatrix->store->write(uint64_t(index) * 16 * sizeof(float), packed, sizeof(packed));
+        return *this;
+    }
     for (int c = 0; c < 16; ++c)
         instanceMatrix->setComponent(index, c, e[c]);
     return *this;
@@ -119,6 +127,13 @@ InstancedMesh& InstancedMesh::setColorAt(uint32_t index, const Color& color) {
     if (!instanceColor) {
         const uint64_t capacity = instanceMatrix->count();
         instanceColor = BufferAttribute::fromFloats(std::vector<double>(capacity * 3, 1.0), 3);
+    }
+    if (instanceColor->store && instanceColor->store->scalar() == Scalar::F32 && instanceColor->itemSize == 3 &&
+        uint64_t(index) * 3 + 3 <= instanceColor->store->count()) {
+        const float packed[3] = {static_cast<float>(color.r), static_cast<float>(color.g),
+                                 static_cast<float>(color.b)};
+        instanceColor->store->write(uint64_t(index) * 3 * sizeof(float), packed, sizeof(packed));
+        return *this;
     }
     instanceColor->setXYZ(index, color.r, color.g, color.b);
     return *this;

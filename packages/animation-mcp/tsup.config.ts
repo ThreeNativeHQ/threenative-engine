@@ -3,7 +3,9 @@ import { defineConfig } from "tsup";
 export default defineConfig([
   {
     banner: { js: "#!/usr/bin/env node" },
-    clean: true,
+    // The build script cleans dist once: tsup runs these configs in parallel, and a `clean: true`
+    // DTS step deletes every *.d.ts in dist, including pose-lab.d.ts when it finishes first.
+    clean: false,
     dts: true,
     entry: { index: "src/index.ts" },
     format: ["esm"],
@@ -20,9 +22,25 @@ export default defineConfig([
     treeshake: true,
   },
   {
+    // Pose Lab as a mountable handler (PRD-915): the Asset Library serves it under `/__assets/pose/`.
+    clean: false,
+    dts: true,
+    entry: { "pose-lab": "src/pose-lab.ts" },
+    format: ["esm"],
+    minify: true,
+    noExternal: [/.*/u],
+    outDir: "dist",
+    platform: "node",
+    splitting: false,
+    target: "node20",
+    treeshake: true,
+  },
+  {
     clean: false,
     entry: { app: "src/client/main.tsx" },
     format: ["esm"],
+    // Core carries this file (mcp/client/app.js), so it ships minified.
+    minify: true,
     noExternal: ["react", "react-dom", "react-dom/client", "react/jsx-runtime", "three"],
     outDir: "dist/client",
     platform: "browser",

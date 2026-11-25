@@ -44,6 +44,8 @@ export interface ITslRuntime {
   setUniform(node: number, lanes: readonly number[]): void;
   /** Many `setUniform`s in one crossing: node i takes `counts[i]` of the packed `lanes` (PRD-828). */
   setUniforms?(nodes: readonly number[], counts: readonly number[], lanes: readonly number[]): void;
+  /** Monotonic counter bumped whenever any material shader node slot changes. */
+  graphVersion?(): number;
   /**
    * PRD-878, `tn_tsl_reads`: which of `candidates` (uniform node ids) a draw of `root` (a mesh and what is under it)
    * or a dispatch of `kernels` reads, as indices into `candidates`.
@@ -913,9 +915,15 @@ export function defineTsl(
   };
   const setUniforms = runtime.setUniforms?.bind(runtime);
   const engineReads = runtime.reads?.bind(runtime);
+  const engineGraphVersion = runtime.graphVersion?.bind(runtime);
+  const graphVersionKey = Symbol.for("threenative.materialGraphVersion");
   const readsCache = new WeakMap<
     readonly object[],
-    { ids: number[]; kernelCache?: Map<string, ArrayLike<number> | undefined> }
+    {
+      ids: number[];
+      kernelCache?: Map<string, ArrayLike<number> | undefined>;
+      materialCache?: WeakMap<object, { version: number; picked: ArrayLike<number> | undefined }>;
+    }
   >();
   const live = liveUniforms(
     matrixUniform,
@@ -944,8 +952,9 @@ export function defineTsl(
         if (entry.ids.length < hooked.length) {
           for (let i = entry.ids.length; i < hooked.length; i += 1)
             entry.ids.push((hooked[i] as ITslNode)[TSL_NODE]);
-          // Newly registered uniforms in the same array invalidate prior kernel read selections.
+          // Newly registered uniforms in the same array invalidate prior kernel and material read selections.
           entry.kernelCache?.clear();
+          entry.materialCache = undefined;
         }
         const kernels = frame.kernels;
         if (kernels !== undefined) {
@@ -958,6 +967,30 @@ export function defineTsl(
           if (cache.has(kernelKey)) return cache.get(kernelKey);
           const picked = engineReads(undefined, kernels, entry.ids);
           cache.set(kernelKey, picked);
+          return picked;
+        }
+        const mesh = root as { isMesh?: unknown; children?: unknown[]; material?: unknown };
+        const mat = mesh.material;
+        const children = mesh.children;
+        if (
+          mesh.isMesh === true &&
+          (children === undefined || children.length === 0) &&
+          typeof mat === "object" &&
+          mat !== null &&
+          !Array.isArray(mat)
+        ) {
+          const version =
+            (engineGraphVersion?.() ?? 0) +
+            (((globalThis as Record<symbol, unknown>)[graphVersionKey] as number | undefined) ?? 0);
+          let cache = entry.materialCache;
+          if (cache === undefined) {
+            cache = new WeakMap();
+            entry.materialCache = cache;
+          }
+          const cached = cache.get(mat);
+          if (cached !== undefined && cached.version === version) return cached.picked;
+          const picked = engineReads(ref, [], entry.ids);
+          cache.set(mat, { version, picked });
           return picked;
         }
         return engineReads(ref, [], entry.ids);

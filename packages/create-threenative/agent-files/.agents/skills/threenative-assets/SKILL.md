@@ -16,6 +16,14 @@ in `src/render/`. Start the session from the game root so the project-scoped MCP
    write to the configured project directory.
 4. Add file, source, license, and URL to `CREDITS.md`. Never state a license not returned by a tool.
 
+Check every file before the game loads it. `pnpm dev` serves the Asset Library at `/__assets/`:
+health badges (units, grounding, missing normals or UVs), Raw vs Cooked bytes, LOD switching,
+animation playback with `animation_verify` defects, textures and sounds. Open
+`/__assets/?sheet=turntable#/model/<path>` and wait for `__TN_ASSET_LIBRARY_READY__` to get a
+labelled multi-angle contact sheet for a visual review. A `src/**/*.story.ts` file
+(`defineAssetStory` from `create-threenative/asset-story`) shows one prop with live controls, and
+the Scene Bundler writes `src/scenes/<name>.ts` or `assets/bundles/<name>.glb`.
+
 Many Fab listings are Unreal-only rather than ready-to-load GLBs. Search with `fab_search_assets`,
 check owned listings with `fab_list_owned`, then use `fab_import_asset` to download and convert an
 owned listing; use `asset_import_unreal` for an already-downloaded local pack. Both write textured
@@ -28,6 +36,12 @@ the MCP call. If the WebView login fails (it crashes on Wayland), use the `--man
 the reference below. Never read, copy, print, or persist browser cookies or tokens. The MCP checks
 entitlement and accepts only Fab Standard or CC-BY; it never claims or buys. Full arguments:
 `node_modules/create-threenative/agent-docs/references/finding-assets.md`.
+
+For a gray blockout level or environment, follow `node_modules/create-threenative/agent-docs/references/texture-projection.md`.
+Call `texture_project_quote` first (free, no key), paint one `promptTestView` before the full run,
+and read the `texture_project_inspect` contact sheet before the cook. It spends `OPENROUTER_API_KEY`
+credit per view; the cook keeps the painted atlas at its own size and UASTC, and the game sets
+anisotropy 8 on its base-colour map.
 
 For a bespoke animated creature, follow `node_modules/create-threenative/agent-docs/references/creating-creatures.md`. Call the five
 `creature_*` tools through the project asset server, keep the editable spec and claims in

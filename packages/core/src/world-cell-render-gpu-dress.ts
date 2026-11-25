@@ -265,8 +265,8 @@ export class CellGpuDress {
 
   refreshLodMaterials(asset: IAssetState): void {
     for (const shared of this.#host.shared().values()) {
-      if (!shared.mesh.name.startsWith(`${asset.id}:`)) continue;
-      const [levelText, partText] = shared.mesh.name.slice(asset.id.length + 1).split(":");
+      if (!shared.publishedName.startsWith(`${asset.id}:`)) continue;
+      const [levelText, partText] = shared.publishedName.slice(asset.id.length + 1).split(":");
       const level = Number(levelText);
       const partIndex = Number(partText?.split("@")[0]);
       const part = asset.levels[level]?.[partIndex];
@@ -274,8 +274,8 @@ export class CellGpuDress {
         const material = this.lodSurface(asset.id, level, partIndex, part.material);
         if (
           material.userData.tnPublishedLodRange === true &&
-          shared.mesh.geometry.getAttribute("tnPublishedLodRange") === undefined &&
-          shared.mesh.count === 0
+          !shared.hasRangeAttribute &&
+          shared.publishedCount === 0
         )
           shared.rebind(part.geometry, material);
         else shared.surface(material);
@@ -290,8 +290,8 @@ export class CellGpuDress {
     for (const shared of this.#host.shared().values()) {
       if (
         shared.role === "main" &&
-        shared.mesh.visible &&
-        Reflect.get(shared.mesh.material, "userData")?.tnWholeAssetImpostor === true
+        shared.publishedVisible &&
+        Reflect.get(shared.currentMaterial, "userData")?.tnWholeAssetImpostor === true
       )
         drawn += shared.live;
     }
@@ -420,7 +420,7 @@ export class CellGpuDress {
     // indirect record can point at two different generations. The fast path used to watch only
     // `drawn`, and a mesh left holding an old args record was one the dispatch no longer wrote —
     // a forest that drew nothing while the readback said the counts were correct.
-    const geometry = shared.mesh.geometry;
+    const geometry = shared.currentGeometry;
     const liveArgs = scene.args;
     const bound =
       liveArgs !== undefined &&
@@ -429,7 +429,7 @@ export class CellGpuDress {
     if (
       settled !== undefined &&
       shared.mesh.instanceMatrix === settled &&
-      shared.mesh.frustumCulled === false &&
+      shared.publishedFrustumCulled === false &&
       (held?.capacity ?? 0) >= capacity &&
       bound &&
       // Where the mesh hangs is part of what this pass owns: a batch that was retired and handed back
@@ -482,16 +482,16 @@ export class CellGpuDress {
     // correct at draw time, and a dressed forest that drew nothing, until the meshes were fresh
     // objects; a material of its own (below) never changed that on its own.
     if (mesh.instanceMatrix !== drawn) {
-      const next = freshMeshFor(mesh, view, mesh.count) as ICasterScaleMesh;
+      const next = freshMeshFor(mesh, view, shared.publishedCount) as ICasterScaleMesh;
       redressMaterial(next);
       this.#host.carryPrewarm(mesh, next);
       this.seat(shared.replaceMesh(next), next);
       next.instanceMatrix = drawn;
-      next.frustumCulled = false;
+      shared.setFrustumCulled(false);
     } else {
-      mesh.geometry = view;
+      shared.setGeometryView(view);
       mesh.instanceMatrix = drawn;
-      mesh.frustumCulled = false;
+      shared.setFrustumCulled(false);
     }
     // What the record has to say for the draw to name a triangle: the view's own index count, which
     // is the shape this key draws. The scene is told rather than left to guess, so its validation can
@@ -665,12 +665,13 @@ export class CellGpuDress {
     const args = this.#host.gpuScene().args;
     for (const shared of this.#host.shared().values()) {
       if (shared.role !== "main" || shared.gpu === undefined) continue;
-      const geometry = shared.mesh.geometry;
+      const geometry = shared.currentGeometry;
       // `indirectOffset` is typed as an offset or a list of them; a scene's own record is one
       // number, and a list is not a record this check can name, so it is not compared.
       const offset = geometry.indirectOffset;
       if (geometry.indirect === undefined || typeof offset !== "number") continue;
-      const region = this.#host.gpuScene().regionOf(shared.mesh.name);
+      const name = shared.publishedName;
+      const region = this.#host.gpuScene().regionOf(name);
       draws.push({
         // The actual binding, asked of the mesh and the scene at this turn, not the record number:
         // an offset can name the right record while the mesh reads an older args buffer with the
@@ -679,8 +680,8 @@ export class CellGpuDress {
           args !== undefined &&
           geometry.indirect === args &&
           offset === (region?.argsIndex ?? -1) * DRAW_ARGS_BYTES,
-        instances: expected.get(shared.mesh.name) ?? new Float32Array(0),
-        name: shared.mesh.name,
+        instances: expected.get(name) ?? new Float32Array(0),
+        name,
         record: offset / DRAW_ARGS_BYTES,
       });
     }

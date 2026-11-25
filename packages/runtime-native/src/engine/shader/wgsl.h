@@ -34,10 +34,10 @@ struct WgslModule {
 class WgslEmitter {
 public:
     /** `group` is the bind group this stage's resources live in, so two stages never alias one. */
-    static WgslModule emit(const Program& program, uint32_t group = 0);
+    static WgslModule emit(const Program& program, uint32_t group = 0, bool sharedView = false);
 
 private:
-    explicit WgslEmitter(const Program& program);
+    explicit WgslEmitter(const Program& program, bool sharedView = false);
     std::string type(const Type& t) const;
     std::string expr(ExprId id) const;
     /** A filtered read's coordinate argument(s): an array texture takes the uv (xy) and its layer (z, an i32) apart. */
@@ -46,6 +46,7 @@ private:
     void block(uint32_t index, int depth, std::string& out) const;
 
     const Program& p_;
+    bool sharedView_ = false;
     mutable std::vector<std::string> errors_;
     std::vector<uint32_t> uses_;              // parents (and statements) reaching each expression
     mutable std::vector<bool> bound_;         // a `let e<id>` is in scope

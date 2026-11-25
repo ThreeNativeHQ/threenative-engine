@@ -4,15 +4,15 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Asset Library</title>
-    <link rel="icon" href="data:," />
-    <link rel="stylesheet" href="./style.css" />
+    <link rel="icon" type="image/svg+xml" href="%BASE%favicon.svg" />
+    <style>%STYLE%</style>
   </head>
   <body class="grid h-dvh overflow-hidden bg-app font-sans text-[13px] leading-snug text-ink md:grid-cols-[250px_minmax(0,1fr)]">
     <aside id="sidebar" class="hidden min-h-0 flex-col bg-sidebar max-md:fixed max-md:inset-0 max-md:z-30 md:flex">
       <header class="flex flex-col gap-3 p-4 pb-2">
         <div class="flex items-center gap-2">
-          <span data-icon="logo" class="inline-flex size-6 items-center justify-center rounded bg-accent text-white"></span>
-          <h1 class="flex-1 text-base font-extrabold text-white">Asset Library</h1>
+          <span id="logo" class="inline-flex size-6 items-center justify-center rounded bg-brand-ink text-brand" title="ThreeNative"></span>
+          <h1 id="library-title" class="min-w-0 flex-1 text-base leading-tight font-extrabold text-balance text-white">Asset Library</h1>
           <button id="settings" class="tool" data-icon="gear" title="Settings: biome filter" aria-pressed="false" aria-controls="filters"></button>
           <button id="close-tree" class="tool md:hidden" data-icon="close" title="Close the asset list"></button>
         </div>
@@ -42,13 +42,16 @@
         <button id="frame" class="tool" data-icon="reset" title="Reset the view to frame the asset"></button>
         <span class="mx-1.5 h-5 w-px shrink-0 bg-line"></span>
         <button id="grid" class="tool" data-icon="grid" title="1 m grid" aria-pressed="true"></button>
-        <button id="figure" class="tool" data-icon="figure" title="1.8 m scale figure" aria-pressed="true"></button>
         <button id="wire" class="tool" data-icon="wire" title="Wireframe" aria-pressed="false"></button>
         <button id="wind" class="tool" data-icon="wind" title="Animate the _WIND attribute" aria-pressed="true" hidden></button>
-        <button id="background" class="tool" data-icon="background" title="Background: biome sky"></button>
+        <button id="background" class="tool" data-icon="background" title="Background: sky"></button>
+        <label class="ml-1 flex shrink-0 items-center gap-1 text-muted" title="Lighting"><span data-icon="sun"></span>
+          <select id="lighting" name="lighting" class="cursor-pointer rounded bg-transparent py-1 text-ink outline-none hover:bg-hover" aria-label="Lighting"><option value="auto">Auto</option></select>
+        </label>
         <span class="flex-1"></span>
         <button id="toggle-panel" class="tool" data-icon="panel" title="Show or hide the addon panel" aria-pressed="true"></button>
         <button id="fullscreen" class="tool" data-icon="fullscreen" title="Full screen"></button>
+        <button id="open-sheet" class="tool" data-icon="sheet" title="Open the multi-angle contact sheet"></button>
         <button id="new-tab" class="tool" data-icon="external" title="Open in a new tab"></button>
         <button id="copy-link" class="tool" data-icon="link" title="Copy the link to this view"></button>
       </div>
@@ -56,6 +59,13 @@
       <div id="workspace" class="flex min-h-0 flex-1 flex-col data-right:md:flex-row">
         <main id="stage" class="relative min-h-[40dvh] min-w-0 flex-1 overflow-hidden">
           <canvas id="view" class="absolute inset-0 block size-full" aria-label="Asset preview"></canvas>
+          <div id="intro" class="absolute inset-0 grid place-content-center p-6 text-center text-muted" hidden>
+            <div class="grid gap-2 rounded border border-line bg-app/90 px-6 py-5">
+              <h1 class="text-lg font-bold text-ink">Asset Library</h1>
+              <p>Pick an asset in the list to inspect it, or open an overview to see a whole section.</p>
+              <p>Search by name, or filter by style and biome tags.</p>
+            </div>
+          </div>
           <div id="status" role="status" class="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-line bg-app/90 px-2 py-1 text-muted data-error:text-danger">
             Loading the catalog
           </div>
@@ -91,6 +101,6 @@
         </section>
       </div>
     </div>
-    <script type="module" src="./main.ts"></script>
+    <script type="module" src="%ENTRY%"></script>
   </body>
 </html>

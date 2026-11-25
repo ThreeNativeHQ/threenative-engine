@@ -23,6 +23,10 @@
 namespace tn::engine {
 
 struct Reflector;
+namespace shadows {
+struct AtlasControl;  // a virtual shadow's tracked, pinned and LOD casters (atlas.h)
+struct ShadowLodChain;  // one caster's AutoLOD rungs as a shadow level draws them
+}  // namespace shadows
 
 /**
  * The render database (PRD-514 phase 1): `renderer.render(scene, camera)` on the native path. It
@@ -79,6 +83,15 @@ class RenderDatabase {
     }
     /** Why the last render left something out (TN_NATIVE_MATERIAL_UNSUPPORTED, TN_NATIVE_LIGHTS_UNSUPPORTED...). */
     [[nodiscard]] const std::vector<std::string>& diagnostics() const { return diagnostics_; }
+    /** Primitives whose transform, instance buffers, geometry, cast/layers state or scene membership changed in the
+     *  last prepare (PRD-913, PRD-775 Phase 2). */
+    using DirtyPrimitive = tn::engine::DirtyPrimitive;
+    [[nodiscard]] const std::vector<DirtyPrimitive>& dirtyPrimitives() const { return dirtyPrimitives_; }
+    void setTrackDirtyBounds(bool enabled) { trackDirtyBounds_ = enabled; }
+    [[nodiscard]] bool trackDirtyBounds() const { return trackDirtyBounds_; }
+    /** Bumps whenever prepare() adds, removes or reorders draws or changes their caster flags: the VSM caster cache's
+     *  index mapping is only valid for one layout (PRD-775 Phase 2). */
+    [[nodiscard]] uint64_t topologyVersion() const { return topologyVersion_; }
 
     /**
      * Automatic batching (PRD-519): opaque plain meshes that share a geometry and material uniforms
@@ -164,13 +177,26 @@ class RenderDatabase {
         std::weak_ptr<const void> owner;
         Renderer* renderer = nullptr;  // the main renderer's reflectionRenderer(owner)
         std::unique_ptr<RenderDatabase> database;
+        uint64_t lastRenderFrame = 0;
+        uint32_t lastWidth = 0;
+        uint32_t lastHeight = 0;
     };
     ReflectionPass& reflectionPass(Renderer& renderer, const std::shared_ptr<const Reflector>& reflector);
     /** compileAsync's mirror half: each reflector's pass compiles the scene as its mirror would draw it. */
     void precacheReflections(Renderer& renderer, Object3D& root, Camera& camera, Object3D* targetScene,
                              std::vector<std::shared_ptr<PipelineCompilation>>& compilations);
     std::unordered_map<const void*, ReflectionPass> reflections_;
+    struct ReflectionFilterEntry {
+        bool valid = false;
+        const void* geometry = nullptr;
+        uint64_t revision = 0;
+        double minSize = 0.0;
+        bool castShadow = false;
+        bool keep = false;
+    };
+    std::unordered_map<uint64_t, ReflectionFilterEntry> reflectionFilterCache_;
     bool reflecting_ = false;
+    const Reflector* activeReflector_ = nullptr;
     // Set by the frame's database on a reflection pass: the scene's world matrices are already current.
     std::shared_ptr<GpuJointScene> gpuJoints_;
     bool gpuPreparing_ = false;
@@ -192,13 +218,37 @@ class RenderDatabase {
         uint64_t cacheId = UINT64_MAX;  // its slot in byId_, cleared when the sweep erases it
         uint64_t seen = 0; // the render it was last projected in
         uint32_t materialVersion = 0;
-        bool drawable = false, materialized = false;
+        uint32_t lastDirtyRevision = 0;
+        bool lastDirtyCastShadow = false;
+        uint32_t lastDirtyLayers = 0;
         // What refresh()'s material half last wrote: its material's uniform signature and the geometry revision
         // the attribute list was read at. Equal means the draw still reads the same material state (FM1).
         std::size_t materialSignature = 0;
         uint64_t refreshRevision = 0;
+        // The frame this caster last moved: one still for a few frames joins the static shadow batch.
+        uint64_t lastMovedFrame = 0;
+        // 64-bit hash of `matrixWorld` when last tracked; once `worldMoves >= 2` (world transform changed more than
+        // once after first tracking), the caster stays a per-caster virtual shadow row so moving bodies never churn
+        // the shared static shadow batch, while a one-shot transform edit (`worldMoves == 1`) may still settle back.
+        uint64_t trackedWorldHash = 0;
+        bool trackedWorldValid = false;
+        uint8_t worldMoves = 0;
+        // What its world matrix said at `detRevision`/`maxScaleRevision` (`Mesh::revision()`): whether its winding
+        // still faces the camera (a mirrored mesh cannot batch) and how wide its scale is (a settled shadow batch
+        // reads the widest member). Both are bit math over a matrix that only moves with its revision, so a steady
+        // mesh reads neither again. `Record{}` resets them with the rest of the record.
+        uint32_t detRevision = 0;
+        uint32_t maxScaleRevision = 0;
+        double cachedMaxScale = 1.0;
+        bool positiveDet = true;
+        bool detValid = false;
+        bool maxScaleValid = false;
+        bool drawable = false, materialized = false;
         bool materialResolved = false;
         bool convertedInputs = false;  // a colour or custom attribute is a converted (non-float) copy
+        bool dirtyTracked = false;
+        bool dirtyGeomChanged = false;
+        uint16_t lastDirtyFrame16 = 0;
         // Held, so neither is released while the record's item points into it, and a new one can
         // never take its address and pass for it. The mesh is known by its id, never reused.
         std::shared_ptr<const BufferGeometry> geometry;
@@ -225,7 +275,7 @@ class RenderDatabase {
     };
     void project(Object3D& object, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
                  bool updateChildren = false, bool force = false, Record* cached = nullptr, bool plainMesh = false,
-                 bool lightsOnly = false, const Object3D* excluded = nullptr);
+                 bool lightsOnly = false, const Object3D* excluded = nullptr, bool controlProtectedAncestor = false);
     /** A multi-material mesh (three's material array): each geometry group draws as a mesh of its own, with
      *  the group's slice of the index and `materials[group.materialIndex]`, placed where the mesh is. */
     void projectGroups(const Mesh& mesh, const Camera& camera, std::vector<DrawItem>& items, LightState& lights,
@@ -234,6 +284,21 @@ class RenderDatabase {
                const std::vector<std::pair<double, const DrawItem*>>& ordered);
     std::vector<std::shared_ptr<BufferStore>> batchStores_; // reused frame to frame, one per group
     std::vector<std::shared_ptr<BufferStore>> batchColors_;
+    struct BatchStoreCache {
+        uint64_t identity = 0;
+        uint64_t epoch = ~uint64_t(0);
+        uint64_t orderHash = 0;
+        uint32_t count = 0;
+        bool uniform = false;
+    };
+    std::vector<BatchStoreCache> batchStoreCaches_;
+    struct PaletteVersionCache {
+        uint64_t idHash = 0;
+        uint64_t version = 1;
+        uint32_t writes = ~uint32_t(0);
+        uint32_t count = 0;
+    };
+    std::vector<PaletteVersionCache> paletteVersionCaches_;
     std::vector<std::unique_ptr<shader::StandardMaterial>> batchParams_;  // boxed: a draw's material keeps its address as slots grow
     /** PRD-754: each batch keeps one slot (store, colours, cache, material) while its group lives, whichever groups
      *  are in view, so its buffers and draw key hold across culling. A slot unseen for 600 frames is reused. */
@@ -250,6 +315,14 @@ class RenderDatabase {
         uint32_t layersMask = 1;
     };
     std::vector<ShadowFrustum> shadowFrustums_;
+    // The virtual shadow controls this frame's shadow-casting suns carry: a caster one of them tracks or pins keeps
+    // its own shadow row and never joins the settled batch (a caster's AutoLOD chain instead rides with its batch).
+    std::vector<const shadows::AtlasControl*> virtualControls_;
+    // The same controls, answered once per frame instead of once per projected node: does any of them pin or track
+    // a caster (so a node's protection is worth testing at all), and does any carry an AutoLOD chain (so a settled
+    // caster looks one up). A scene whose controls are all empty skips both scans on every node.
+    bool anyControlPinOrTrack_ = false;
+    bool anyControlLods_ = false;
     std::unordered_map<const Light*, DirectLight::Shadow> shadowByLight_;
     bool shadowPointLightActive_ = false;
     bool virtualShadows_ = false;
@@ -304,7 +377,8 @@ class RenderDatabase {
     Record& record(const Mesh& mesh, Record& cached, bool materialize = true);
     DrawItem& refresh(const Mesh& mesh, Record& record);
     void batchMeshes(std::vector<DrawItem>& items);
-    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster);
+    void addBatchMesh(const Mesh& mesh, Record& record, bool mainPass, bool shadowCaster,
+                      const shadows::ShadowLodChain* lodChain = nullptr);
     struct BatchMember {
         const Mesh* mesh;
         const Material* material;
@@ -319,13 +393,17 @@ class RenderDatabase {
     struct MeshGroup {
         GeometryKey geometry;
         std::vector<std::size_t> members;
+        const Material* firstMaterial = nullptr;
         bool orderedIds = true;
+        bool uniform = false;
+        uint32_t dirtyCount = 0;
         uint64_t identity = 0;  // the group's hash and bucket place: the same group every frame it exists
+        // The AutoLOD chain every member shares (null when none does), and the widest member scale it is read at:
+        // a settled shadow batch draws its whole chain as one row, so the pages need no per-caster lookup.
+        const shadows::ShadowLodChain* lodChain = nullptr;
+        double lodMaxScale = 0.0;
     };
     std::vector<BatchMember> batchMeshes_;
-    struct alignas(64) BatchTransform { std::array<float, 16> matrix; };
-    std::vector<BatchTransform> batchTransforms_; // one cache line per matrix, in scene order
-    std::vector<std::array<float, 3>> batchRgb_;
     std::vector<MeshGroup> meshGroups_;
     std::size_t meshGroupCount_ = 0;
     std::unordered_map<std::size_t, std::vector<std::size_t>> meshCandidates_;
@@ -353,6 +431,22 @@ class RenderDatabase {
     std::vector<uint64_t> depthKeys_;
     std::vector<uint32_t> floatKeys_;
     std::vector<std::string> diagnostics_;
+    std::vector<DirtyPrimitive> dirtyPrimitives_;
+    bool trackDirtyBounds_ = false;
+    uint64_t topologyVersion_ = 0;
+    uint64_t topologyLayoutHash_ = 0;
+    std::size_t topologyLayoutCount_ = 0;
+    struct InstanceDirtyState {
+        uint64_t matWrites = 0, matEpoch = 0, colWrites = 0, colEpoch = 0;
+        uint32_t count = 0;
+        bool valid = false;
+    };
+    std::vector<Box3> trackedBoundsById_;
+    std::vector<InstanceDirtyState> trackedInstancesById_;
+    std::vector<std::pair<uint64_t, Box3>> trackedOverflowBounds_;
+    std::vector<std::pair<uint64_t, InstanceDirtyState>> trackedOverflowInstances_;
+    void trackDirty(const Mesh& mesh, Record& r, std::string_view type, bool shadowCaster);
+    Box3 removeTrackedState(const Record& r);
     uint64_t rebuilds_ = 0;
     uint64_t recordLookups_ = 0, recordSweeps_ = 0, sphereMeasures_ = 0;
     // A float32 copy per attribute. The source is held weakly: a freed store (or one whose address a

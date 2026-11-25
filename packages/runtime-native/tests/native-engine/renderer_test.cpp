@@ -621,6 +621,7 @@ std::unique_ptr<Sphere> sphere(int segments, int rings) {
 // A camera at z = 4 looking down -z, three's PerspectiveCamera(50, aspect, 0.1, 100), WebGPU clip z.
 CameraState camera(double aspect) {
     CameraState c;
+    c.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 4, 1};
     c.matrixWorldInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, -4, 1};
     const double top = 0.1 * std::tan(25 * kPi / 180), height = 2 * top, width = aspect * height;
     // three's makePerspective in WebGPUCoordinateSystem, which WebGPURenderer.render switches cameras to.
@@ -2266,8 +2267,10 @@ void traaGhostingAt(float inputScale) {
     // either scale, and nothing before the third frame. The resolve's disocclusion test does not move this fixture's trail:
     // the bars hide the stale grey from the variance clip, and the depth test sees a pixel that was background in the last
     // frame too.
+    // With a valid camera.matrixWorld (previously left zero-initialized, giving NaN over sky gaps at 0.72), `BarField`'s
+    // gaps retain history in the dynamic neighbourhood and uncovered edges settle at 0.58 at 0.72 (`0.47` at 1.0).
     CHECK(rigid.front() < 0.05 && instanced.front() < 0.05);
-    CHECK(rigid.back() < (inputScale == 1 ? 0.7 : 0.5));
+    CHECK(rigid.back() < 0.7);
     // The previous frame's instance matrices give the instance the rigid draw's velocity and motion flag, so it trails exactly
     // like the rigid draw. Without them (0.22 at 1.0, 0.60 at 0.72) the instance read as incomplete motion and upsampling drew
     // the kits' instanced characters from one jittered input.
@@ -3743,7 +3746,12 @@ void transparentKeepsVelocityRows() {
         renderer.setStablePasses(stable);
         renderer.setStableRows(stable);
         std::vector<Seen> seen;
+        items[0].matrixWorld[12] = x[0] - 0.01;
+        items[1].matrixWorld[12] = x[1] - 0.01;
+        renderer.render(std::span<const DrawItem>(items.data(), 3), camera(1), LightState{}, {0, 0, 0, 1});
         for (int frame = 0; frame < 6; ++frame) {
+            items[0].matrixWorld[12] = x[0] + frame * 0.01;
+            items[1].matrixWorld[12] = x[1] + frame * 0.01;
             items[2].material = frame % 2 ? &copies[2] : &materials[2];
             renderer.render(std::span<const DrawItem>(items.data(), frame % 2 ? 4 : 3), camera(1), LightState{}, {0, 0, 0, 1});
             seen.push_back({read(renderer, events), renderer.lastFrame().auxRecorded});
@@ -3826,7 +3834,8 @@ void auxTargets(bool normalOnly, float alphaTest, float opacity, uint32_t sample
         renderer.render(std::span<const DrawItem>(&item, 1), camera(1), LightState{}, {0,0,0,0});
     std::printf("aux targets: %u pass(es), %u draw(s) recorded on a steady frame\n", renderer.lastFrame().auxPasses,
                 renderer.lastFrame().auxRecorded);
-    CHECK(renderer.lastFrame().auxPasses == 1);
+    // PRD-914: at 1x the main pass writes the post targets itself; only 4x keeps the separate single-sampled pass.
+    CHECK(renderer.lastFrame().auxPasses == (samples == 1 ? 0u : 1u));
     CHECK(renderer.lastFrame().auxRecorded == 0);
     const auto centre = [&](GpuStatus (Renderer::*read)(ReadbackCallback)) {
         std::vector<uint8_t> pixels;
@@ -3942,6 +3951,17 @@ void auxTargetsNormalNode() {
 // to its own aux fragment built a whole lit MRT program per draw for the geometry normal the shared pass already
 // writes, so the count of aux fragments is the observable: zero for Lambert, one for Standard.
 void auxRoutesWrittenNormals() {
+    // The separate aux pass is the route this counts: pin the flag off for the fallback `auxFragment` path.
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+    setenv("TN_UNIFIED_AUX_MRT", "0", 1);
     const auto auxFragments = [](bool authored, MaterialKind kind) {
         mystral::webgpu::Context context;
         const bool initialized = context.initializeHeadless();
@@ -4139,9 +4159,1108 @@ void mainInstanceFrustumCull() {
         CHECK(recoveredPx == baselinePx);
     }
 }
+
+// PRD-913 Phase 1: size the per-draw work a frame repeats without needing it. A steady frame still copies every draw's
+// frame slab into its uniform slot, then compares the whole arena against the bytes the GPU holds and sends nothing, so
+// the compare reads exactly the arena; a camera turn moves every slot, so the copy runs again and the compare reads at
+// least the arena; a moved instance makes the storage scan read the page it wrote. Each frame fails on the counter it
+// owns, so a path that came back or went away shows here and not as a pixel difference.
+void uniformScanCounters() {
+    struct SharedViewGuard {
+        std::optional<std::string> prior;
+        std::optional<std::string> priorPersistent;
+        explicit SharedViewGuard(const char* value) {
+            if (const char* current = std::getenv("TN_SHARED_VIEW_UNIFORM")) prior = current;
+            if (const char* current = std::getenv("TN_PERSISTENT_GPU_SCENE")) priorPersistent = current;
+            setenv("TN_SHARED_VIEW_UNIFORM", value, 1);
+            setenv("TN_PERSISTENT_GPU_SCENE", value, 1);
+        }
+        ~SharedViewGuard() {
+            if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
+            else unsetenv("TN_SHARED_VIEW_UNIFORM");
+            if (priorPersistent) setenv("TN_PERSISTENT_GPU_SCENE", priorPersistent->c_str(), 1);
+            else unsetenv("TN_PERSISTENT_GPU_SCENE");
+        }
+    } guard("0");
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    struct Scan {
+        uint64_t slabCopyBytes, slabCopyMicros, memcmpBytes, memcmpMicros, storageBytes, storageMicros;
+    };
+    const auto sample = [] {
+        const auto& c = waste::counters();
+        return Scan{c.uniformSlabCopyBytes.load(),  c.uniformSlabCopyMicros.load(),  c.uniformMemcmpBytes.load(),
+                    c.uniformMemcmpMicros.load(),   c.storageSameBytesScanned.load(), c.storageSameBytesMicros.load()};
+    };
+    const auto since = [](const Scan& before, const Scan& after) {
+        return Scan{after.slabCopyBytes - before.slabCopyBytes, after.slabCopyMicros - before.slabCopyMicros,
+                    after.memcmpBytes - before.memcmpBytes,     after.memcmpMicros - before.memcmpMicros,
+                    after.storageBytes - before.storageBytes,   after.storageMicros - before.storageMicros};
+    };
+
+    constexpr uint32_t kInstances = 4;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial paint;
+    paint.color = {0.8f, 0.5f, 0.3f};
+    BufferStore matrices(Scalar::F32, kInstances * 16);
+    std::vector<float> instanceData(kInstances * 16, 0.0f);
+    for (uint32_t i = 0; i < kInstances; ++i) {
+        float* m = instanceData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = 0.5f;
+        m[15] = 1.0f;
+        m[12] = -1.5f + float(i);  // four half-metre instances across the view, one store they all share
+        m[14] = -0.5f;
+    }
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+
+    std::array<DrawItem, 2> items;
+    for (DrawItem& item : items) {
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions;
+        item.normals = &ball->normals;
+        item.indices = &ball->indices;
+        item.material = &paint;
+    }
+    items[0].key = items[0].id = 1;
+    items[0].instanceMatrices = &matrices;
+    items[0].instanceCount = kInstances;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[0].geometryBox = Box3();
+    items[0].geometryBox->min.set(-1, -1, -1);  // the unit ball each instance scales down
+    items[0].geometryBox->max.set(1, 1, 1);
+    items[1].key = items[1].id = 2;
+    items[1].matrixWorld = {0.5, 0, 0, 0, 0, 0.5, 0, 0, 0, 0, 0.5, 0, 2.5, 0, 0, 1};
+
+    LightState lights;
+    const DirectLight sun = DirectLight::directional({0, 1, 0}, {1, 1, 1});
+    lights.direct.push_back(sun);
+
+    // camera(1) at z = 4 turned by `yaw` about y: a turn moves every draw's view-dependent slot, a held camera none.
+    const auto turned = [](double yaw) {
+        CameraState c = camera(1);
+        const double cs = std::cos(yaw), sn = std::sin(yaw);
+        c.matrixWorld = {cs, 0, -sn, 0, 0, 1, 0, 0, sn, 0, cs, 0, 0, 0, 4, 1};
+        c.matrixWorldInverse = {cs, 0, sn, 0, 0, 1, 0, 0, -sn, 0, cs, 0, 4 * sn, 0, -4 * cs, 1};
+        return c;
+    };
+    const CameraState held = turned(0), turnedCam = turned(0.2);
+
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(32, 32);
+    renderer.setOutput(OutputState{std::nullopt, 1, false});
+    const std::span<const DrawItem> scene(items.data(), items.size());
+    for (int frame = 0; frame < 2; ++frame)  // programs, slots and the first uploads settle
+        renderer.render(scene, held, lights, {0, 0, 0, 1});
+
+    waste::setDebugEnabled(true);
+    auto before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan steady = since(before, sample());
+    const uint64_t steadyBytes = renderer.lastFrame().uniformBytes;
+
+    before = sample();
+    renderer.render(scene, turnedCam, lights, {0, 0, 0, 1});
+    const Scan turn = since(before, sample());
+    const uint64_t turnBytes = renderer.lastFrame().uniformBytes;
+
+    instanceData[12] += 0.25f;  // instance 0 slid 25 cm: the page it lives in no longer matches the GPU's copy
+    matrices.write(0, instanceData.data(), instanceData.size() * sizeof(float));
+    matrices.needsUpdate();
+    before = sample();
+    renderer.render(scene, held, lights, {0, 0, 0, 1});
+    const Scan movedInstance = since(before, sample());
+    waste::setDebugEnabled(false);
+
+    std::fprintf(stderr,
+                 "TN_DEBUG uniform scan: steady %llu slab bytes in %llu us, %llu memcmp bytes in %llu us of %llu; turn "
+                 "%llu slab bytes, %llu memcmp bytes of %llu; moved instance %llu storage bytes in %llu us\n",
+                 (unsigned long long)steady.slabCopyBytes, (unsigned long long)steady.slabCopyMicros,
+                 (unsigned long long)steady.memcmpBytes, (unsigned long long)steady.memcmpMicros,
+                 (unsigned long long)steadyBytes, (unsigned long long)turn.slabCopyBytes,
+                 (unsigned long long)turn.memcmpBytes, (unsigned long long)turnBytes,
+                 (unsigned long long)movedInstance.storageBytes, (unsigned long long)movedInstance.storageMicros);
+    CHECK(steady.slabCopyBytes > 0);  // every draw's slot is written from its program's slab, every frame
+    CHECK(steadyBytes > 0);
+    CHECK(steady.memcmpBytes == steadyBytes);  // one whole-arena pass found nothing to send
+    CHECK(turn.slabCopyBytes > 0);
+    CHECK(turnBytes > 0);
+    CHECK(turn.memcmpBytes >= turnBytes / 2);  // early-exits once half the arena is dirty
+    CHECK(movedInstance.storageBytes > 0);
+}
+
+// PRD-913 Phase 2: the frame-constant half of every draw's uniform block (camera, projection, lights, shadow
+// matrices, hemisphere) moves out of the per-draw arena into one record per view, written once and bound for the
+// pass. A camera turn is where that pays: the legacy path re-copies every draw's frame slab and re-uploads the whole
+// arena, the shared path copies no slab and uploads one view record, for the same pixels. `TN_SHARED_VIEW_UNIFORM=0`
+// restores the legacy blocks by name and says so in diagnostics.
+void sharedViewUniforms() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+
+    Scene scene;
+    PerspectiveCamera camera(50, 1, 0.1, 100);
+    auto sun = std::make_shared<DirectionalLight>(Color().setHex(0xfff2e0), 2.4);
+    sun->position.set(3, 6, 5);
+    sun->setCastShadow(true);
+    scene.add(*sun);
+    auto lamp = std::make_shared<PointLight>(Color().setHex(0xffd0a0), 12, 0, 2);
+    lamp->position.set(-2.5, 1.5, 3);
+    scene.add(*lamp);
+    auto sky = std::make_shared<HemisphereLight>(Color().setHex(0xb0c4de), Color().setHex(0x302820), 0.7);
+    scene.add(*sky);
+    const auto geometry = makeBoxGeometry();
+    for (int i = 0; i < 10; ++i) {  // ten distinct materials: ten uniform slots, every one a camera turn dirties
+        auto material = std::make_shared<Material>(MaterialType::Standard);
+        material->color.setHex(0x335577 + 0x070500 * uint32_t(i));
+        material->roughness = 0.1 + 0.09 * i;
+        auto mesh = std::make_shared<Mesh>(geometry, material);
+        mesh->position.set(-3.6 + 0.8 * i, 0.4 * ((i % 3) - 1), -1.2 + 0.6 * (i / 4));
+        mesh->rotation.set(0.2 * i, 0.15 * i, 0.1 * i);
+        mesh->setCastShadow(true);
+        mesh->setReceiveShadow(true);
+        scene.add(*mesh);
+    }
+
+    const auto look = [&](double x, double y) {  // a moved camera: every view-dependent field of the frame moves
+        camera.position.set(x, y, 12);
+        camera.lookAt(0, 0, 0);
+        camera.updateProjectionMatrix();
+    };
+
+    const char* priorRaw = std::getenv("TN_SHARED_VIEW_UNIFORM");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_SHARED_VIEW_UNIFORM", prior->c_str(), 1);
+            else unsetenv("TN_SHARED_VIEW_UNIFORM");
+        }
+    } restore{prior};
+
+    struct Arm {
+        uint64_t slabBytes = 0, uploadBytes = 0, firstFrameUniformBytes = 0, frameUniformBytes = 0;
+        std::vector<uint8_t> pixels;
+        std::vector<std::string> diagnostics;
+    };
+    // `flag` unset is the default shared view; "0" is the named legacy override.
+    const auto measure = [&](const char* flag) {
+        if (flag) setenv("TN_SHARED_VIEW_UNIFORM", flag, 1);
+        else unsetenv("TN_SHARED_VIEW_UNIFORM");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(96, 96);
+        renderer.setOutput(OutputState{std::nullopt, 1, false});
+        RenderDatabase database;
+        database.shadowMapEnabled = true;
+        look(0, 0);
+        uint64_t firstUniformBytes = 0;
+        for (int frame = 0; frame < 4; ++frame) {  // programs, slots and the first uploads settle
+            database.render(renderer, scene, camera);
+            if (frame == 0) firstUniformBytes = renderer.lastFrame().uniformBytes;
+            renderer.poll();
+            events.drain();
+        }
+        waste::setDebugEnabled(true);
+        const uint64_t slabBefore = waste::counters().uniformSlabCopyBytes.load();
+        const uint64_t uploadBefore = renderer.gpu().queueWriteBytes();
+        look(0.8, 0.3);
+        database.render(renderer, scene, camera);
+        Arm arm;
+        arm.slabBytes = waste::counters().uniformSlabCopyBytes.load() - slabBefore;
+        arm.uploadBytes = renderer.gpu().queueWriteBytes() - uploadBefore;
+        arm.firstFrameUniformBytes = firstUniformBytes;
+        arm.frameUniformBytes = renderer.lastFrame().uniformBytes;
+        arm.pixels = read(renderer, events);
+        waste::setDebugEnabled(false);
+        arm.diagnostics = renderer.diagnostics();
+        return arm;
+    };
+
+    const Arm shared = measure(nullptr);
+    const Arm legacy = measure("0");
+
+    std::fprintf(stderr,
+                 "TN_DEBUG shared view uniforms: default %llu slab bytes, %llu uploaded, %llu/%llu arena; legacy %llu slab "
+                 "bytes, %llu uploaded, %llu/%llu arena\n",
+                 (unsigned long long)shared.slabBytes, (unsigned long long)shared.uploadBytes,
+                 (unsigned long long)shared.firstFrameUniformBytes, (unsigned long long)shared.frameUniformBytes,
+                 (unsigned long long)legacy.slabBytes, (unsigned long long)legacy.uploadBytes,
+                 (unsigned long long)legacy.firstFrameUniformBytes, (unsigned long long)legacy.frameUniformBytes);
+    CHECK(shared.slabBytes == 0);  // a turn writes the view record once, never a draw's block
+    CHECK(legacy.slabBytes > 0);   // the override restores one slab copy per draw
+    CHECK(shared.firstFrameUniformBytes < legacy.firstFrameUniformBytes);
+    CHECK(shared.uploadBytes * 4 <= legacy.uploadBytes);
+    bool reported = false;
+    for (const std::string& note : legacy.diagnostics)
+        if (note.find("TN_SHARED_VIEW_UNIFORM=0") != std::string::npos) reported = true;
+    CHECK(reported);  // the override is reported, never silent
+    // Same picture: the shared record carries the same bytes, they just stop riding in every draw's block.
+    CHECK(shared.pixels.size() == 96 * 96 * 4 && legacy.pixels.size() == shared.pixels.size());
+    int worst = 0;
+    for (std::size_t i = 0; i < shared.pixels.size() && shared.pixels.size() == legacy.pixels.size(); ++i)
+        worst = std::max(worst, std::abs(int(shared.pixels[i]) - int(legacy.pixels[i])));
+    CHECK(worst <= 2);
+}
+
+// PRD-914 Phase 1: an opaque draw whose model matrix, skinning, position node and instance revision are unchanged
+// since the previous frame takes fillVelocity()'s camera reprojection instead of redrawing into the velocity target.
+// Static meshes therefore emit no velocity draw and movers keep their own velocity, and TN_STATIC_VELOCITY=1 restores
+// the static draws and reports the override by name. A temporal effect replaces multisampling, so both requested
+// sample counts draw the scene through the same single-sampled velocity path.
+void traaDynamicOnlyVelocity() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    const std::size_t vertices = ball->positions.count() / 3;
+    BufferStore skinIndices(Scalar::U16, vertices * 4), skinWeights(Scalar::F32, vertices * 4);
+    const std::vector<uint16_t> zero(vertices * 4, 0);
+    std::vector<float> weights(vertices * 4, 0);
+    for (std::size_t i = 0; i < vertices; ++i) weights[i * 4] = 1;
+    skinIndices.write(0, zero.data(), zero.size() * sizeof(uint16_t));
+    skinWeights.write(0, weights.data(), weights.size() * sizeof(float));
+    shader::StandardMaterial material;
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const char* priorRaw = std::getenv("TN_STATIC_VELOCITY");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_STATIC_VELOCITY", prior->c_str(), 1);
+            else unsetenv("TN_STATIC_VELOCITY");
+        }
+    } restore{prior};
+    const auto directory = std::filesystem::current_path() /
+        ("traa-dynamic-only-velocity-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    const auto readVelocity = [&](const std::filesystem::path& folder, int frame) {
+        std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    BufferStore staticMatrices(Scalar::F32, 16);
+    staticMatrices.write(0, identity, sizeof identity);
+    // One rigid and one instanced sphere that never move, under a camera sliding 0.02 along x per frame.
+    const auto staticArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(6, 6);
+        DrawItem items[2];
+        for (int i = 0; i < 2; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.9, 0, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.9, 0, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-static-only-forced" : "-static-only-default"));
+        bool reported = false;
+        for (int frame = 0; frame <= 6; ++frame) {
+            renderer.render(std::span<const DrawItem>(items, 2), slidingCamera(double(width) / height, frame),
+                            LightState{}, {0, 0, 0, 1});
+            if (forceStatic) {
+                CHECK(renderer.lastFrame().velocityDraws == 2);
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            } else if (frame >= 1) {
+                CHECK(renderer.lastFrame().velocityDraws == 0);
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 6);
+    };
+    // Two static spheres and three movers: a rigid sphere, a skinned sphere and an instanced sphere, each sliding 0.02
+    // along x per frame under a still camera.
+    const auto mixedArm = [&](uint32_t samples, const std::string& label, bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(samples);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        BufferStore movingMatrices(Scalar::F32, 16);
+        std::vector<float> bones(identity, identity + 16);
+        std::vector<DrawItem> items(5);
+        for (int i = 0; i < 5; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.4, 0.5, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.4, 0.5, 0, 1};
+        items[1].instanceMatrices = &staticMatrices; items[1].instanceCount = 1;
+        items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, -0.4, 0, 1};
+        items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0.5, -0.4, 0, 1};
+        items[3].skinIndices = &skinIndices; items[3].skinWeights = &skinWeights; items[3].boneMatrices = &bones;
+        items[3].bindMatrix = items[3].bindMatrixInverse = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        items[4].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -0.5, -0.4, 0, 1};
+        items[4].instanceMatrices = &movingMatrices; items[4].instanceCount = 1;
+        const auto folder = directory / (label + (forceStatic ? "-mixed-forced" : "-mixed-default"));
+        std::array<float, 16> moving = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        bool reported = false;
+        for (int frame = 0; frame <= 20; ++frame) {
+            const float offset = 0.02f * float(frame);
+            items[2].matrixWorld[12] = offset;
+            bones[12] = offset;
+            moving[12] = offset;
+            movingMatrices.write(0, moving.data(), moving.size() * sizeof(float));
+            renderer.render(items, slidingCamera(double(width) / height, 0), LightState{}, {0, 0, 0, 1});
+            if (frame == 20) {
+                CHECK(renderer.lastFrame().velocityDraws == (forceStatic ? 5u : 3u));
+                for (const auto& note : renderer.diagnostics())
+                    reported = reported || note.rfind("TN_STATIC_VELOCITY=1", 0) == 0;
+            }
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        if (forceStatic) CHECK(reported);
+        return readVelocity(folder, 20);
+    };
+    for (const uint32_t samples : {1u, 4u}) {
+        const std::string label = "samples-" + std::to_string(samples);
+        const auto staticDefault = staticArm(samples, label, false);
+        const auto staticForced = staticArm(samples, label, true);
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            CHECK(staticDefault[texel * 4 + 2] == 1.0f && staticDefault[texel * 4 + 3] == 1.0f);
+            CHECK(std::abs(staticDefault[texel * 4] - staticForced[texel * 4]) < 1e-4f);
+            CHECK(std::abs(staticDefault[texel * 4 + 1] - staticForced[texel * 4 + 1]) < 1e-4f);
+        }
+        const auto mixedDefault = mixedArm(samples, label, false);
+        const auto mixedForced = mixedArm(samples, label, true);
+        size_t moving = 0;
+        for (size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            const float x = mixedDefault[texel * 4], y = mixedDefault[texel * 4 + 1];
+            const float z = mixedDefault[texel * 4 + 2], w = mixedDefault[texel * 4 + 3];
+            if (std::abs(x) > 0.004f || std::abs(y) > 0.004f || z == 3.0f) ++moving;
+            CHECK(w == 1.0f && mixedForced[texel * 4 + 3] == 1.0f);
+            CHECK(z == 1.0f || z == 3.0f);
+            CHECK(mixedForced[texel * 4 + 2] == z);
+            CHECK(std::abs(x - mixedForced[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(y - mixedForced[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 10);
+    }
+    std::filesystem::remove_all(directory);
+}
+// PRD-914: a draw's deformation record is kept across frames instead of rebuilt every frame, so a steady frame
+// allocates nothing per draw and its velocity still matches the TN_STATIC_VELOCITY=1 path. A compile between frames
+// must change no submitted state, and a mover's matrix or an instanced store's write must still redraw velocity on
+// the frame it changes.
+void traaStaticZeroChurn() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const auto ball = sphere(32, 16);
+    shader::StandardMaterial material;
+    const float identity[16] = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    const char* priorRaw = std::getenv("TN_STATIC_VELOCITY");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_STATIC_VELOCITY", prior->c_str(), 1);
+            else unsetenv("TN_STATIC_VELOCITY");
+        }
+    } restore{prior};
+    const auto directory = std::filesystem::current_path() /
+        ("traa-static-zero-churn-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    constexpr uint32_t width = 32, height = 24;
+    constexpr int lastFrame = 6;  // frame 0 seeds the history; frames 2..6 are the steady ones the dump covers
+    const auto readVelocity = [&](const std::filesystem::path& folder, int frame) {
+        std::ifstream file(folder / ("frame-" + std::to_string(frame) + "-velocity.bin"), std::ios::binary);
+        CHECK(file.good());
+        std::vector<float> texels(size_t{width} * height * 4);
+        file.read(reinterpret_cast<char*>(texels.data()), std::streamsize(texels.size() * sizeof(float)));
+        return texels;
+    };
+    // A rigid sphere and an instanced sphere that never move, and a rigid sphere sliding 0.02 along x per frame, all
+    // under a still camera. The instance store is rewritten once, on frame 4.
+    struct Arm {
+        std::array<uint32_t, lastFrame + 1> draws{};
+        std::array<std::vector<float>, lastFrame - 1> velocity;
+    };
+    const auto arm = [&](bool forceStatic) {
+        if (forceStatic) setenv("TN_STATIC_VELOCITY", "1", 1);
+        else unsetenv("TN_STATIC_VELOCITY");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setSampleCount(1);
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(2, lastFrame);
+        BufferStore instanced(Scalar::F32, 16);
+        instanced.write(0, identity, sizeof identity);
+        std::vector<DrawItem> items(3);
+        for (int i = 0; i < 3; ++i) {
+            items[i].key = items[i].id = uint64_t(i + 1);
+            items[i].kind = MaterialKind::Basic;
+            items[i].positions = &ball->positions; items[i].indices = &ball->indices; items[i].material = &material;
+        }
+        items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -1.1, 0.4, 0, 1};
+        items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0.4, 0, 1};
+        items[1].instanceMatrices = &instanced; items[1].instanceCount = 1;
+        items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 1.1, 0.4, 0, 1};
+        const auto folder = directory / (forceStatic ? "forced" : "default");
+        const auto view = slidingCamera(double(width) / height, 1);
+        Arm result;
+        for (int frame = 0; frame <= lastFrame; ++frame) {
+            items[2].matrixWorld[12] = 1.1 + 0.02 * frame;
+            if (frame == 4) {
+                const std::array<float, 16> moved = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0.12f, 0, 1};
+                instanced.write(0, moved.data(), moved.size() * sizeof(float));
+            }
+            // Preparation between submitted frames: it must neither draw velocity nor disturb a kept record.
+            if (frame == 2 && !forceStatic) renderer.compileAsync(items, view, LightState{});
+            renderer.render(items, view, LightState{}, {0, 0, 0, 1});
+            result.draws[size_t(frame)] = renderer.lastFrame().velocityDraws;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+            if (frame >= 2) result.velocity[size_t(frame - 2)] = readVelocity(folder, frame);
+        }
+        return result;
+    };
+    const auto steady = arm(false);
+    const auto forced = arm(true);
+    // No frame redraws a static draw: the seed frame reuses the camera reprojection for the rigid one and waits one
+    // frame for the instanced one's previous storage, and every later frame keeps the records it already holds.
+    CHECK(steady.draws[0] == 1);
+    for (int frame = 1; frame <= lastFrame; ++frame) {
+        // The mover always, plus the draw whose instance store the write moved on its own frame.
+        CHECK(steady.draws[size_t(frame)] == (frame == 4 ? 2u : 1u));
+        CHECK(forced.draws[size_t(frame)] == 3);
+    }
+    std::size_t moving = 0;
+    for (std::size_t i = 0; i < steady.velocity.size(); ++i) {
+        const auto& texels = steady.velocity[i];
+        const auto& reference = forced.velocity[i];
+        CHECK(texels.size() == reference.size() && texels.size() == size_t{width} * height * 4);
+        if (texels.size() != reference.size()) break;
+        for (std::size_t texel = 0; texel < size_t{width} * height; ++texel) {
+            CHECK(std::abs(texels[texel * 4] - reference[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(texels[texel * 4 + 1] - reference[texel * 4 + 1]) <= 1e-3f);
+            if (i + 2 == std::size_t(lastFrame) && (std::abs(texels[texel * 4]) > 0.004f || std::abs(texels[texel * 4 + 1]) > 0.004f)) ++moving;
+        }
+    }
+    CHECK(moving > 10);  // the mover's own velocity is drawn, not the camera's
+    std::filesystem::remove_all(directory);
+}
+// PRD-914: at sampleCount 1 one unified base pass writes the scene colour and every post target the graph reads,
+// named targets and custom slots alike, instead of a second aux pass over the same draws. The named fallback
+// (TN_UNIFIED_AUX_MRT=0) must produce the same pixels on every target, and a draw that writes no surface (an unlit
+// Basic patch) must keep the named targets clear while its colour still draws.
+void unifiedBasepassMrt() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const char* priorRaw = std::getenv("TN_UNIFIED_AUX_MRT");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_UNIFIED_AUX_MRT", prior->c_str(), 1);
+            else unsetenv("TN_UNIFIED_AUX_MRT");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 32, height = 32;
+    namespace g = shader::graph;
+    const auto lane = [](const char* name) { return g::swizzle(g::texture(name, g::uv()), "x"); };
+    // Reads all five named targets plus one custom MRT slot: 5 + 1 fits beside `color` in the eight attachments.
+    const auto sources = g::vec4({g::add(lane("normal"), lane("metalness")), g::add(lane("roughness"), lane("albedo")),
+                                  g::add(lane("emissive"), lane("indirectDiffuse")), lane("customSlot")});
+
+    const auto big = plane(2, 2), small = plane(1.6, 1.6);
+    const float facing[12] = {0, 0, 1, 0, 0, 1, 0, 0, 1, 0, 0, 1};
+    big->normals.resize(12);
+    big->normals.write(0, facing, sizeof facing);
+    small->normals.resize(12);
+    small->normals.write(0, facing, sizeof facing);
+
+    shader::StandardMaterial litMaterial;
+    litMaterial.color = {0.25f, 0.5f, 1};
+    litMaterial.metalness = 1; litMaterial.roughness = 0.5f;
+    litMaterial.emissive = {1, 0.5f, 0}; litMaterial.emissiveIntensity = 4;
+    shader::StandardMaterial cutMaterial = litMaterial;
+    cutMaterial.alphaTest = 0.5f; cutMaterial.opacity = 0.4f;
+    shader::StandardMaterial basicMaterial;
+    basicMaterial.color = {1, 0, 0};
+    shader::StandardMaterial blendMaterial = litMaterial;
+    blendMaterial.opacity = 0.5f;
+
+    shader::MaterialNodes litNodes;
+    litNodes.normalNode = g::vec3({g::float_(0), g::float_(1), g::float_(1)});
+    litNodes.mrt = {{"customSlot", g::vec4({g::float_(0.5), g::float_(0.75), g::float_(1), g::float_(1)})}};
+    std::array<DrawItem, 4> items;
+    items[0].key = items[0].id = 1;
+    items[0].kind = MaterialKind::Standard;
+    items[0].positions = &big->positions; items[0].normals = &big->normals; items[0].indices = &big->indices;
+    items[0].material = &litMaterial;
+    items[0].nodes = &litNodes;
+    items[0].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    items[1].key = items[1].id = 2;
+    items[1].kind = MaterialKind::Standard;
+    items[1].positions = &small->positions; items[1].normals = &small->normals; items[1].indices = &small->indices;
+    items[1].material = &cutMaterial;
+    items[1].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 3, -3, -3, 1};
+    items[2].key = items[2].id = 3;
+    items[2].kind = MaterialKind::Basic;
+    items[2].positions = &small->positions; items[2].indices = &small->indices;
+    items[2].material = &basicMaterial;
+    items[2].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, 3, -3, 1};
+    items[3].key = items[3].id = 4;
+    items[3].kind = MaterialKind::Standard;
+    items[3].positions = &small->positions; items[3].normals = &small->normals; items[3].indices = &small->indices;
+    items[3].material = &blendMaterial;
+    items[3].transparent = true;
+    items[3].depthWrite = false;
+    items[3].matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, -3, -3, -3, 1};
+
+    const auto pixelOf = [&](double x, double y, double z) {
+        const double depth = 4.0 - z;  // camera(1) sits at z = 4 looking down -z
+        const double tanHalf = std::tan(25.0 * kPi / 180.0);
+        const auto px = static_cast<std::size_t>((x / (depth * tanHalf) * 0.5 + 0.5) * width);
+        const auto py = static_cast<std::size_t>((1.0 - (y / (depth * tanHalf) * 0.5 + 0.5)) * height);
+        return py * width + px;
+    };
+    const auto decodeHalf = [](const std::vector<uint8_t>& bytes, std::size_t component) {
+        const uint16_t half = uint16_t(bytes[component * 2]) | uint16_t(bytes[component * 2 + 1] << 8);
+        const int exponent = (half >> 10) & 31, mantissa = half & 1023;
+        return (half >> 15 ? -1.f : 1.f) *
+               (exponent ? std::ldexp(1.f + mantissa / 1024.f, exponent - 15) : std::ldexp(mantissa / 1024.f, -14));
+    };
+    struct Arm {
+        uint32_t auxPasses = 0;
+        std::vector<std::string> diagnostics;
+        std::vector<uint8_t> colour, normal, albedo, emissive, indirect, custom;
+    };
+    const auto run = [&](const char* flag) {
+        if (flag) setenv("TN_UNIFIED_AUX_MRT", flag, 1);
+        else unsetenv("TN_UNIFIED_AUX_MRT");
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{shader::ToneMapping::Linear, 1, false});
+        renderer.setSampleCount(1);
+        // The final frame keeps the scene colour and adds the aux reads, so the Basic patch's colour is visible.
+        renderer.setPostGraph(g::add(g::texture("scene", g::uv()), g::bloom(sources, 0, 0, 0)));
+        for (int frame = 0; frame < 3; ++frame)
+            renderer.render(std::span<const DrawItem>(items.data(), items.size()), camera(1), LightState{}, {0.1, 0.1, 0.1, 1});
+        Arm arm;
+        arm.auxPasses = renderer.lastFrame().auxPasses;
+        arm.diagnostics = renderer.diagnostics();
+        const auto fetch = [&](GpuStatus (Renderer::*method)(ReadbackCallback)) {
+            std::vector<uint8_t> out;
+            bool done = false;
+            CHECK((renderer.*method)([&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                out = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll(); events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done);
+            return out;
+        };
+        arm.colour = fetch(&Renderer::readPixels);
+        arm.normal = fetch(&Renderer::readNormalPixels);
+        arm.albedo = fetch(&Renderer::readAlbedoPixels);
+        arm.emissive = fetch(&Renderer::readEmissivePixels);
+        arm.indirect = fetch(&Renderer::readIndirectPixels);
+        bool done = false;
+        CHECK(renderer.readMrtPixels("customSlot", 0, 0, width, height,
+            [&](GpuStatus status, std::vector<uint8_t> bytes) {
+                CHECK(status == GpuStatus::Ok);
+                arm.custom = std::move(bytes); done = true;
+            }) == GpuStatus::Ok);
+        for (int i = 0; i < 4000 && !done; ++i) {
+            renderer.poll(); events.drain();
+            if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        CHECK(done);
+        return arm;
+    };
+    const Arm unified = run(nullptr), separate = run("0");
+    std::printf("unified base pass: %u aux pass(es) beside %u; colour %zu/%zu bytes, custom slot %zu/%zu\n",
+                unified.auxPasses, separate.auxPasses, unified.colour.size(), separate.colour.size(),
+                unified.custom.size(), separate.custom.size());
+    CHECK(unified.auxPasses == 0);
+    CHECK(separate.auxPasses == 1);
+    CHECK(std::find(separate.diagnostics.begin(), separate.diagnostics.end(),
+                    "TN_UNIFIED_AUX_MRT=0: separate aux pass enabled") != separate.diagnostics.end());
+    CHECK(unified.colour.size() == std::size_t(width) * height * 4 && separate.colour.size() == unified.colour.size());
+    if (unified.colour.size() != separate.colour.size()) return;
+    std::size_t colourDiff = 0;
+    for (std::size_t i = 0; i < unified.colour.size(); ++i)
+        colourDiff += std::abs(int(unified.colour[i]) - int(separate.colour[i])) > 1;
+    CHECK(colourDiff == 0);
+    const auto sameFloats = [&](const std::vector<uint8_t>& a, const std::vector<uint8_t>& b) {
+        if (a.size() != b.size() || a.empty() || a.size() % 2) return false;
+        for (std::size_t c = 0; c < a.size() / 2; ++c)
+            if (std::abs(decodeHalf(a, c) - decodeHalf(b, c)) > 1e-3f) return false;
+        return true;
+    };
+    CHECK(unified.normal.size() == std::size_t(width) * height * 8);
+    CHECK(sameFloats(unified.normal, separate.normal));
+    CHECK(sameFloats(unified.albedo, separate.albedo));
+    CHECK(sameFloats(unified.emissive, separate.emissive));
+    CHECK(sameFloats(unified.indirect, separate.indirect));
+    CHECK(sameFloats(unified.custom, separate.custom));
+    // The lit plane's authored normal and custom slot land in the unified pass, exactly as the aux pass wrote them.
+    const std::size_t litPixel = pixelOf(0, 0, 0);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 1) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.normal, litPixel * 4 + 2) - 1.0f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4) - 0.5f) < 1e-3f);
+    CHECK(std::abs(decodeHalf(unified.custom, litPixel * 4 + 1) - 0.75f) < 1e-3f);
+    // The unlit Basic patch draws its colour and leaves every named target (and the custom slot) clear.
+    const std::size_t basic = pixelOf(-3, 3, -3);
+    CHECK(unified.colour[basic * 4] > 200 && unified.colour[basic * 4 + 1] < 40 && unified.colour[basic * 4 + 2] < 40);
+    const auto clearAt = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, basic * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(clearAt(unified.normal) && clearAt(unified.albedo) && clearAt(unified.emissive) &&
+          clearAt(unified.indirect) && clearAt(unified.custom));
+    // The cut alpha-tested patch writes nothing: its background stays clear too.
+    const std::size_t cut = pixelOf(3, -3, -3);
+    const auto cutClear = [&](const std::vector<uint8_t>& bytes) {
+        for (int c = 0; c < 4; ++c)
+            if (std::abs(decodeHalf(bytes, cut * 4 + c)) > 1e-4f) return false;
+        return true;
+    };
+    CHECK(cutClear(unified.normal) && cutClear(unified.albedo) && cutClear(unified.emissive) &&
+          cutClear(unified.indirect) && cutClear(unified.custom));
+}
+
+// PRD-914 Phase 3: with TRAA on, a compute pass frustum-culls an instanced mesh's instances and the main and velocity
+// passes draw exactly its survivors through one indirect record. Both passes index current and previous transforms by
+// the persistent original instance id, so a camera pan's motion vectors match the TN_GPU_INSTANCE_CULL=0 arm: culling
+// under temporal AA changes cost, never the picture.
+void traaGpuInstanceCull() {
+    mystral::webgpu::Context context;
+    CHECK(context.initializeHeadless());
+    CHECK(rendersPixels(context));
+    if (!rendersPixels(context)) return;
+    const char* priorRaw = std::getenv("TN_GPU_INSTANCE_CULL");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_GPU_INSTANCE_CULL", prior->c_str(), 1);
+            else unsetenv("TN_GPU_INSTANCE_CULL");
+        }
+    } restore{prior};
+
+    constexpr uint32_t width = 48, height = 36, kCount = 64, kFront = 32;
+    const double aspect = double(width) / height;
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial material;
+    shader::MaterialNodes nodes;
+    BufferStore matrices(Scalar::F32, kCount * 16);
+    std::vector<float> baseX(kCount, 0.0f);
+    std::vector<float> matData(kCount * 16, 0.0f);
+    for (uint32_t i = 0; i < kCount; ++i) {
+        float* m = matData.data() + std::size_t(i) * 16;
+        m[0] = m[5] = m[10] = m[15] = 1.0f;
+        if (i < kFront) {  // in front of camera (0, 0, 4) looking down -z, every sphere well inside the 50-degree view
+            baseX[i] = (float(i % 4) - 1.5f) * 0.8f;
+            m[13] = (i / 4) % 2 == 0 ? 0.5f : -0.5f;
+            m[14] = -2.0f - float(i / 8) * 3.0f;
+        } else {  // behind the camera: z = +10 .. +30, so the near plane rejects all of them
+            baseX[i] = (float(i % 4) - 1.5f) * 0.5f;
+            m[14] = 10.0f + float(i - kFront) * 0.65f;
+        }
+        m[12] = baseX[i];
+    }
+    matrices.write(0, matData.data(), matData.size() * sizeof(float));
+
+    DrawItem item;
+    item.key = item.id = 42;
+    item.kind = MaterialKind::Basic;
+    item.positions = &ball->positions;
+    item.indices = &ball->indices;
+    item.material = &material;
+    item.nodes = &nodes;
+    item.instanceMatrices = &matrices;
+    item.instanceCount = kCount;
+    item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+    item.geometryBox = Box3();
+    item.geometryBox->min.set(-1, -1, -1);
+    item.geometryBox->max.set(1, 1, 1);
+
+    const auto directory = std::filesystem::current_path() /
+        ("traa-gpu-instance-cull-" + std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
+    struct Arm {
+        std::vector<uint32_t> survivors;
+        uint32_t culledDraws = 0, pastAll = UINT32_MAX;
+        bool reported = false;
+        std::vector<uint8_t> colour;
+        std::vector<float> velocity;
+    };
+    const auto run = [&](bool enabled) {
+        if (enabled) unsetenv("TN_GPU_INSTANCE_CULL");
+        else setenv("TN_GPU_INSTANCE_CULL", "0", 1);
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(width, height);
+        renderer.setOutput(OutputState{});
+        renderer.setTraa(TraaOptions{});
+        auto* pass = renderer.traaDebugPass();
+        pass->enableDebugDump(20, 20);
+        const auto folder = directory / (enabled ? "default" : "no-gpu-cull");
+        Arm arm;
+        // The record's second word is the instance count the compute pass wrote; frame 0..14 still, 15..20 a pan.
+        const auto readArgsCount = [&]() -> uint32_t {
+            std::vector<uint8_t> bytes;
+            bool done = false;
+            CHECK(renderer.readGpuCullArgs(1, [&](GpuStatus status, std::vector<uint8_t> out) {
+                if (status == GpuStatus::Ok) bytes = std::move(out);
+                done = true;
+            }) == GpuStatus::Ok);
+            for (int i = 0; i < 4000 && !done; ++i) {
+                renderer.poll();
+                events.drain();
+                if (!done) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            }
+            CHECK(done && bytes.size() == 20);
+            uint32_t words[5] = {};
+            if (bytes.size() == 20) std::memcpy(words, bytes.data(), sizeof words);
+            return words[1];
+        };
+        for (int frame = 0; frame <= 20; ++frame) {
+            for (uint32_t i = 0; i < kCount; ++i)
+                matData[std::size_t(i) * 16 + 12] = baseX[i] + 0.02f * float(frame);
+            matrices.write(0, matData.data(), matData.size() * sizeof(float));
+            matrices.needsUpdate();
+            renderer.render({&item, 1}, frame < 15 ? camera(aspect) : slidingCamera(aspect, frame - 15),
+                            LightState{}, {0, 0, 0, 1});
+            arm.culledDraws = renderer.lastFrame().gpuCulledDraws;
+            if (enabled) arm.survivors.push_back(readArgsCount());
+            for (const auto& note : renderer.diagnostics())
+                arm.reported = arm.reported || note.rfind("TN_GPU_INSTANCE_CULL=0", 0) == 0;
+            tn::fixture::finishTraaDump(*pass, context.getInstance(), folder);
+        }
+        // A camera far to the side of both rows: the frustum holds no instance at all.
+        CameraState pastAll = camera(aspect);
+        pastAll.matrixWorld[12] = 200;
+        pastAll.matrixWorldInverse[12] = -200;
+        renderer.render({&item, 1}, pastAll, LightState{}, {0, 0, 0, 1});
+        arm.pastAll = enabled ? readArgsCount() : 0;
+        arm.colour = read(renderer, events);
+        std::ifstream file(folder / "frame-20-velocity.bin", std::ios::binary);
+        CHECK(file.good());
+        arm.velocity.resize(std::size_t{width} * height * 4);
+        if (file.good()) file.read(reinterpret_cast<char*>(arm.velocity.data()),
+                                   std::streamsize(arm.velocity.size() * sizeof(float)));
+        CHECK(file.good());
+        return arm;
+    };
+    const Arm culled = run(true), cpu = run(false);
+    std::printf("gpu instance cull under TRAA: %u draw(s), %u/%u survivors, past-all %u; no-cull %u\n",
+                culled.culledDraws, culled.survivors.front(), culled.survivors.back(), culled.pastAll,
+                cpu.culledDraws);
+    CHECK(culled.culledDraws == 1);
+    CHECK(cpu.culledDraws == 0);
+    CHECK(!culled.reported && cpu.reported);  // the override is reported, never silent
+    CHECK(culled.survivors.size() == 21);
+    for (std::size_t frame = 0; frame < 15 && frame < culled.survivors.size(); ++frame)
+        CHECK(culled.survivors[frame] == kFront);
+    CHECK(culled.pastAll == 0);
+    // Same picture: the survivors the compute pass kept are the instances the no-cull arm drew.
+    CHECK(culled.colour.size() == std::size_t{width} * height * 4 && cpu.colour.size() == culled.colour.size());
+    if (culled.colour.size() == cpu.colour.size()) {
+        int worst = 0;
+        for (std::size_t i = 0; i < culled.colour.size(); ++i)
+            worst = std::max(worst, std::abs(int(culled.colour[i]) - int(cpu.colour[i])));
+        CHECK(worst <= 2);
+    }
+    // Motion vectors: the moving instances keep TRAA's dynamic mark, and the two arms agree on every texel.
+    CHECK(culled.velocity.size() == std::size_t{width} * height * 4 && cpu.velocity.size() == culled.velocity.size());
+    if (culled.velocity.size() == cpu.velocity.size()) {
+        std::size_t moving = 0;
+        for (std::size_t texel = 0; texel < std::size_t{width} * height; ++texel) {
+            if (culled.velocity[texel * 4 + 2] == 3.0f && culled.velocity[texel * 4 + 3] == 1.0f) ++moving;
+            CHECK(std::abs(culled.velocity[texel * 4] - cpu.velocity[texel * 4]) <= 1e-3f);
+            CHECK(std::abs(culled.velocity[texel * 4 + 1] - cpu.velocity[texel * 4 + 1]) <= 1e-3f);
+        }
+        CHECK(moving > 20);
+    }
+    std::filesystem::remove_all(directory);
+}
+
+// A settled static shadow batch carries its own AutoLOD chain and the largest scale of the meshes it merged: a static
+// page picks its rung from those two, with no per-mesh lookup and no main draw matrix. It must pick the rung the
+// individual path picks at the same scale, and must not coarsen at all once that scale puts every rung's error past the
+// page's budget (a rung coarser than the budget allows is a facet on the shadow's edge).
+void shadowBatchLodRungs() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    const auto ball = sphere(16, 8);                 // the caster the main pass draws
+    const auto coarse = makeSphereGeometry(1, 6, 3);  // one AutoLOD rung: a quarter of the triangles
+    shader::StandardMaterial paint;
+    auto material = std::make_shared<Material>(MaterialType::Standard);
+    auto meshGeometry = makeSphereGeometry(1, 16, 8);
+    Mesh mesh(meshGeometry, material);
+
+    constexpr int kFrames = 8;  // the atlas grants one clip level a frame, so the later ones hold every level
+    struct Arm {
+        std::array<uint64_t, kFrames> triangles{};
+        uint64_t total = 0;
+    };
+    // `chain`: the batch's own chain (null: the caster reads `control.lods` by object id). `scale`: the batch's largest
+    // mesh scale, zero for a caster that has none. `lod`: whether the atlas holds a chain for the mesh at all.
+    const auto arm = [&](const shadows::ShadowLodChain* chain, double scale, bool lod) {
+        EventQueue events;
+        Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+        renderer.setSize(16, 16);
+        renderer.setOutput(OutputState{});
+        shadows::AtlasOptions atlas;
+        atlas.clipExtents = {16, 48, 144};
+        atlas.mapSize = 256; atlas.pageTexels = 64;
+        atlas.staticAfterFrames = 2;  // a caster's pages are its static pages within the run
+        atlas.shadowLodBias = true;
+        // A tiny error, so every level whose budget allows anything draws the rung.
+        if (lod) atlas.control->lods[mesh.id()] = shadows::ShadowLodChain{{coarse}, {1e-6}};
+        renderer.setVirtualShadow(0, atlas);
+
+        DrawItem item;
+        item.key = item.id = 1;
+        item.variantStamp = 1;
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices;
+        item.material = &paint;
+        item.matrixWorld = {1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1};
+        item.geometryBox = Box3();
+        item.geometryBox->min.set(-1, -1, -1);
+        item.geometryBox->max.set(1, 1, 1);
+        item.castShadow = true;
+        item.shadowLodChain = chain;
+        item.shadowLodMaxScale = scale;
+        if (chain == nullptr) item.shadowObject = &mesh;  // the individual path reads its chain by object id
+
+        LightState lights;
+        DirectLight sun = DirectLight::directional({0.35, 1, 0.2}, {1, 1, 1});
+        sun.id = 1;
+        sun.shadow = DirectLight::Shadow{};
+        lights.direct.push_back(sun);
+        Arm result;
+        for (int frame = 0; frame < kFrames; ++frame) {
+            renderer.render({&item, 1}, camera(1), lights, {0, 0, 0, 1});
+            result.triangles[std::size_t(frame)] = renderer.lastFrame().shadowTriangles;
+            result.total += renderer.lastFrame().shadowTriangles;
+        }
+        const auto& notes = renderer.diagnostics();
+        CHECK(std::none_of(notes.begin(), notes.end(), [](const std::string& note) {
+            return note.rfind("TN_VIRTUAL_SHADOW", 0) == 0 || note.rfind("TN_NATIVE_PIPELINE_REFUSED", 0) == 0;
+        }));
+        return result;
+    };
+    const shadows::ShadowLodChain chain{{coarse}, {1e-6}};
+    const Arm plain = arm(nullptr, 0.0, false);       // nobody has a chain: the fine geometry at every level
+    const Arm object = arm(nullptr, 0.0, true);       // the individual path, reading the chain by object id
+    const Arm batch = arm(&chain, 1.0, false);        // the batch, at the scale its meshes were merged at
+    const Arm conservative = arm(&chain, 1e9, false); // a scale no rung's error fits: never coarser than shown
+    std::fprintf(stderr, "shadow batch LOD triangles: plain %llu, object %llu, batch %llu, conservative %llu\n",
+                 (unsigned long long)plain.total, (unsigned long long)object.total,
+                 (unsigned long long)batch.total, (unsigned long long)conservative.total);
+    CHECK(plain.total > 0);
+    CHECK(object.total < plain.total);                    // the individual path drew the coarse rung somewhere
+    CHECK(batch.total == object.total);                   // the batch picked the same rung from its own chain
+    CHECK(batch.triangles == object.triangles);           // ...level for level
+    CHECK(conservative.total == plain.total);             // a scale the rung cannot meet keeps the main geometry
+    CHECK(conservative.triangles == plain.triangles);
+}
+
+// The geometry cache probes a 256-slot direct-mapped table before its map, so a frame's repeated syncs answer without a
+// hash descent. Three hundred stores cannot all hold a slot: a collision must never answer for another store, a version
+// bump must send exactly its window, and a forgotten or swept store must leave no slot that speaks for it.
+void geometryCacheQuickSlots() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    EventQueue events;
+    GpuResources gpu(context.getInstance(), context.getDevice(), context.getQueue(), events, 1);
+    GeometryCache cache(gpu);
+    constexpr std::size_t kStores = 300;  // more than the table's 256 slots
+    std::vector<std::unique_ptr<BufferStore>> stores;
+    stores.reserve(kStores);
+    for (std::size_t i = 0; i < kStores; ++i) {
+        stores.push_back(std::make_unique<BufferStore>(Scalar::F32, 4));
+        const std::array<float, 4> data{float(i), 1, 2, 3};
+        stores.back()->write(0, data.data(), sizeof data);
+    }
+    std::vector<Handle> handles;
+    handles.reserve(kStores);
+    for (auto& store : stores) handles.push_back(cache.sync(*store, WGPUBufferUsage_Vertex));
+    CHECK(cache.stats().fullUploads == kStores);
+    CHECK(cache.entries() == kStores);
+    CHECK(cache.resolved(*stores[17]).buffer.index == handles[17].index);
+    // The steady state: a slot that still holds the store answers at once, the map answers the ones a collision
+    // evicted, and neither moves a copy.
+    for (std::size_t i = 0; i < kStores; ++i) {
+        const Handle again = cache.sync(*stores[i], WGPUBufferUsage_Vertex);
+        CHECK(again.index == handles[i].index && again.generation == handles[i].generation);
+    }
+    CHECK(cache.stats().fullUploads == kStores);
+    CHECK(cache.stats().rangeUploads == 0);
+    // A version bump with an update range sends that window and nothing else.
+    const uint64_t uploadedBefore = cache.stats().bytesUploaded;
+    const float moved = 9;
+    stores[7]->write(0, &moved, sizeof moved);
+    stores[7]->addUpdateRange(0, 1);  // one F32 element
+    stores[7]->needsUpdate();
+    cache.sync(*stores[7], WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().rangeUploads == 1);
+    CHECK(cache.stats().bytesUploaded == uploadedBefore + 4);
+    CHECK(cache.resolved(*stores[7]).buffer.index == handles[7].index);  // a range upload keeps the copy
+    // A forgotten store's slot must not answer for the address it leaves behind.
+    cache.forget(*stores[7]);
+    CHECK(cache.entries() == kStores - 1);
+    bool dropped = false;
+    try { cache.resolved(*stores[7]); } catch (const std::runtime_error&) { dropped = true; }
+    CHECK(dropped);
+    const Handle recreated = cache.sync(*stores[7], WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().fullUploads == kStores + 1);  // nothing answered, so a fresh copy went up
+    CHECK(cache.resolved(*stores[7]).buffer.index == recreated.index);
+    // A shared-owned store is swept once it dies; the slots it and its neighbours filled are dropped with it.
+    auto dying = std::make_shared<BufferStore>(Scalar::F32, 8);
+    const std::array<float, 8> dyingData{};
+    dying->write(0, dyingData.data(), sizeof dyingData);
+    cache.sync(*dying, WGPUBufferUsage_Vertex);
+    CHECK(cache.stats().fullUploads == kStores + 2);
+    cache.sweep();  // nothing released since the last one: no walk
+    const uint64_t sweeps = cache.stats().sweeps;
+    dying.reset();
+    cache.sweep();
+    CHECK(cache.stats().sweeps == sweeps + 1);
+    CHECK(cache.entries() == kStores);
+    for (std::size_t i = 0; i < kStores; ++i) {
+        const Handle again = cache.sync(*stores[i], WGPUBufferUsage_Vertex);
+        if (i != 7) CHECK(again.index == handles[i].index && again.generation == handles[i].generation);
+        CHECK(cache.resolved(*stores[i]).buffer.index == again.index);
+    }
+    CHECK(cache.stats().fullUploads == kStores + 2);  // a swept neighbour never invalidated a surviving copy
+}
+
+// A record keeps the velocity program and its support verdict, and a page's casters keep the grouped depth pipeline
+// they share: a steady frame resolves no program key at all, draws the same motion, and compiles nothing.
+void velocityAndShadowGroupCaches() {
+    mystral::webgpu::Context context;
+    const bool initialized = context.initializeHeadless();
+    CHECK(initialized);
+    if (!initialized) return;
+    // Grouped page rows are the legacy per-page CPU path; PRD-775's GPU pages draw one row per caster.
+    const char* priorRaw = std::getenv("TN_VSM_GPU_PAGES");
+    const std::optional<std::string> prior = priorRaw ? std::optional<std::string>(priorRaw) : std::nullopt;
+    struct RestoreEnv {
+        std::optional<std::string> prior;
+        ~RestoreEnv() {
+            if (prior) setenv("TN_VSM_GPU_PAGES", prior->c_str(), 1);
+            else unsetenv("TN_VSM_GPU_PAGES");
+        }
+    } restore{prior};
+    setenv("TN_VSM_GPU_PAGES", "0", 1);
+    EventQueue events;
+    Renderer renderer(context.getInstance(), context.getDevice(), context.getQueue(), events);
+    renderer.setSize(16, 16);
+    renderer.setOutput(OutputState{});
+    renderer.setSampleCount(1);
+    renderer.setTraa(TraaOptions{});
+    shadows::AtlasOptions atlas;
+    atlas.clipExtents = {16, 48, 144};
+    atlas.mapSize = 256; atlas.pageTexels = 64;
+    atlas.staticAfterFrames = 2;
+    renderer.setVirtualShadow(0, atlas);
+
+    const auto ball = sphere(16, 8);
+    shader::StandardMaterial paint;
+    constexpr std::size_t kCasters = 6;
+    std::vector<DrawItem> items(kCasters + 1);
+    std::vector<DrawCache> caches(items.size());
+    for (std::size_t i = 0; i < items.size(); ++i) {
+        DrawItem& item = items[i];
+        item.key = item.id = uint64_t(i + 1);
+        item.variantStamp = 1;
+        item.kind = MaterialKind::Standard;
+        item.positions = &ball->positions; item.normals = &ball->normals; item.indices = &ball->indices;
+        item.material = &paint;
+        item.cache = &caches[i];
+        item.castShadow = i < kCasters;
+        item.instanceCount = 1;
+        item.matrixWorld = {0.25, 0, 0, 0, 0, 0.25, 0, 0, 0, 0, 0.25, 0, -0.9 + 0.36 * double(i % 6), 0.3 * double(i % 2), 0, 1};
+        item.geometryBox = Box3();
+        item.geometryBox->min.set(-1, -1, -1);
+        item.geometryBox->max.set(1, 1, 1);
+    }
+    LightState lights;
+    DirectLight sun = DirectLight::directional({0.35, 1, 0.2}, {1, 1, 1});
+    sun.id = 1;
+    sun.shadow = DirectLight::Shadow{};
+    lights.direct.push_back(sun);
+
+    std::array<uint32_t, 6> velocityDraws{};
+    uint32_t groupRows = 0, shadowDraws = 0;
+    for (int frame = 0; frame < 6; ++frame) {
+        items[kCasters].matrixWorld[12] = 1.6 + 0.05 * frame;  // the one mover: rigid, its own motion each frame
+        const uint64_t keysBefore = renderer.programKeyBuilds(), compilesBefore = renderer.pipelines().compiles();
+        renderer.render(items, camera(1), lights, {0, 0, 0, 1});
+        velocityDraws[std::size_t(frame)] = renderer.lastFrame().velocityDraws;
+        groupRows = std::max(groupRows, renderer.lastFrame().shadowGroupRows);
+        shadowDraws = std::max(shadowDraws, renderer.lastFrame().shadowDraws);
+        const uint64_t keyDelta = renderer.programKeyBuilds() - keysBefore;
+        std::fprintf(stderr, "velocity/group caches frame %d: %u velocity, %u shadow draws, %u grouped rows, %llu keys, %llu compiles\n",
+                     frame, renderer.lastFrame().velocityDraws, renderer.lastFrame().shadowDraws,
+                     renderer.lastFrame().shadowGroupRows, (unsigned long long)keyDelta,
+                     (unsigned long long)(renderer.pipelines().compiles() - compilesBefore));
+        // A settled frame resolves no depth or main program key: the record's velocity program, its depth program
+        // and every page's grouped pipeline answered from their caches. The mover's own velocity pipeline is first
+        // asked for on the frame it starts moving, so the compile count is read from the frame after that one.
+        if (frame != 0) {
+            CHECK(keyDelta == 0);
+            CHECK(renderer.lastFrame().velocityDraws == 1);  // the mover alone, from the program it kept
+        }
+        if (frame >= 2) CHECK(renderer.pipelines().compiles() == compilesBefore);
+    }
+    CHECK(groupRows > 0);  // the casters shared rows, so a page's pipeline was found by its key
+    CHECK(shadowDraws > 0);
+    for (int frame = 1; frame < 6; ++frame) CHECK(velocityDraws[std::size_t(frame)] == 1);
+    const auto& notes = renderer.diagnostics();
+    CHECK(std::none_of(notes.begin(), notes.end(), [](const std::string& note) {
+        return note.rfind("TN_TRAA", 0) == 0 || note.rfind("TN_NATIVE_PIPELINE_REFUSED", 0) == 0;
+    }));
+}
+
 }  // namespace
 
-TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
+TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only", rawTargetOmitsUnusedOutput}, {"resize_readback", resizeReadback}, {"camera_turn_records", cameraTurnRecords}, {"coplanar_keeps_winner", coplanarKeepsWinner}, {"cull_keeps_main_bundle", cullKeepsMainBundle}, {"emissive_target", emissiveTarget}, {"indirect_target", indirectTarget}, {"aux_targets_one_pass", auxTargetsOnePass}, {"aux_targets_alpha_tested", auxTargetsAlphaTested}, {"aux_targets_normal_node", auxTargetsNormalNode}, {"aux_routes_written_normals", auxRoutesWrittenNormals}, {"unified_basepass_mrt", unifiedBasepassMrt}, {"denoise_face_normal", denoiseFaceNormal}, {"emissive_validation", emissiveValidation}, {"output_ramp", outputRamp},
              {"traa_alpha", traaAlpha},
              {"traa_reset_seed", traaResetSeed},
              {"traa_resolve_blend", traaResolveBlend},
@@ -4189,4 +5308,12 @@ TN_TEST_MAIN({"history_depth_rows", historyDepthRows}, {"raw_target_scene_only",
              {"mipmaps_share_one_submit", mipmapsShareOneSubmit},
              {"indirect_record", indirectRecord},
              {"coalesce_dirty_ranges", coalesceDirtyRangesTest},
-             {"main_instance_frustum_cull", mainInstanceFrustumCull})
+             {"main_instance_frustum_cull", mainInstanceFrustumCull},
+             {"uniform_scan_counters", uniformScanCounters},
+             {"shared_view_uniforms", sharedViewUniforms},
+              {"traa_dynamic_only_velocity", traaDynamicOnlyVelocity},
+              {"traa_static_zero_churn", traaStaticZeroChurn},
+              {"velocity_and_shadow_group_caches", velocityAndShadowGroupCaches},
+              {"geometry_cache_quick_slots", geometryCacheQuickSlots},
+              {"shadow_batch_lod_rungs", shadowBatchLodRungs},
+              {"traa_gpu_instance_cull", traaGpuInstanceCull})

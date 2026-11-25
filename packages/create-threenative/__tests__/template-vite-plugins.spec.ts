@@ -1,6 +1,9 @@
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { build } from "vite";
 import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { threenative } from "../src/kit-plugins.js";
 
 /**
  * Every Vite plugin a template imports must actually be in its `plugins` array.
@@ -57,31 +60,65 @@ describe("template vite configs", () => {
     expect(missing).toEqual([]);
   });
 
-  it("guards every template's dev server with the engine freshness plugin", async () => {
-    // Sandbox games install the engine from a tarball whose filename never changes, and a dev
-    // server booted before a reinstall serves the old build from memory — reported 2026-08-27
-    // as a regression of a fix that had already landed. Every template wires the guard, so the
-    // generated project's agent sees the stale build called out at boot instead of debugging
-    // yesterday's engine.
-    const unwired: string[] = [];
-    for (const template of await templates()) {
-      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
-      if (!source.includes("createEngineFreshnessPlugin("))
-        unwired.push(`${template}: createEngineFreshnessPlugin()`);
-    }
-    expect(unwired).toEqual([]);
-  });
-
-  it("fails every template's refused three import at the edit (PRD-830)", async () => {
-    // A name the Wasm engine refuses otherwise surfaces as an aborted scene at the first frame.
+  it("mounts every shared plugin through threenative(), first, in every template (PRD-915)", async () => {
+    // Engine freshness (a stale tarball build called out at boot), the brand and web engine, the
+    // engine catalog (a refused three import fails at the edit, PRD-830), the Asset Library, the
+    // asset watch and the dev-server defaults: one call, so no kit can drop one of them.
     const unwired: string[] = [];
     for (const template of await templates()) {
       const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
       const plugins = /plugins:\s*\[([^\]]*)\]/.exec(source)?.[1] ?? "";
-      if (!plugins.includes("createEngineCatalogPlugin("))
-        unwired.push(`${template}: createEngineCatalogPlugin()`);
+      if (!plugins.trimStart().startsWith("threenative()")) unwired.push(template);
     }
     expect(unwired).toEqual([]);
+    expect(threenative().map((plugin) => plugin.name)).toEqual([
+      "threenative-engine-freshness",
+      "threenative-web-brand",
+      "threenative-engine-catalog",
+      "threenative-asset-library",
+      "threenative-assets-watch",
+      "threenative-kit-defaults",
+    ]);
+    expect(
+      threenative({ assetLibrary: false, assetsWatch: false }).map((p) => p.name),
+    ).not.toContain("threenative-asset-library");
+  });
+
+  it("keeps a build's own single input: the native HUD build does not get main.html back", async () => {
+    // The native build sets one input and turns code splitting off, then calls build(); plugin
+    // config hooks run inside build(), so the kit defaults merged main.html back in and Vite refused
+    // two inputs without code splitting (merge queue, 2026-11-24, starter desktop artifact).
+    const root = await makeTempDir("tn-kit-input-");
+    for (const page of ["index.html", "main.html"])
+      await writeFile(path.join(root, page), "<!doctype html><title>t</title>");
+    const defaults = threenative().filter((p) => p.name === "threenative-kit-defaults");
+    const out = (await build({
+      root,
+      configFile: false,
+      logLevel: "silent",
+      plugins: defaults,
+      build: {
+        outDir: path.join(root, "dist"),
+        write: false,
+        rolldownOptions: {
+          input: { index: path.join(root, "index.html") },
+          output: { codeSplitting: false },
+        },
+      },
+    })) as { output: { fileName: string }[] };
+    expect(out.output.map((file) => file.fileName)).toContain("index.html");
+    expect(out.output.map((file) => file.fileName)).not.toContain("main.html");
+  });
+
+  it("holds the asset watch until the first cook settles, with the project's asset config", async () => {
+    // A fresh scaffold's `public/` is empty until the dev cook settles, so a page loaded inside the
+    // cook window read every resource from the source fallback (template-nonvisual, 2026-10-01).
+    const source = await readFile(
+      path.resolve("packages/create-threenative/src/kit-plugins.ts"),
+      "utf8",
+    );
+    expect(source).toContain("await handle.ready;");
+    expect(source).toMatch(/config\.assets \? \{ config: config\.assets \}/u);
   });
 
   it("holds every dev server that cooks assets until the first cook settles", async () => {
@@ -104,20 +141,6 @@ describe("template vite configs", () => {
       }
     }
     expect(ungated).toEqual([]);
-  });
-
-  it("passes the project asset config to every dev asset watcher", async () => {
-    const unconfigured: string[] = [];
-    for (const template of await templates()) {
-      const source = await readFile(path.join(TEMPLATE_ROOT, template, "vite.config.ts"), "utf8");
-      if (!source.includes('import config from "./threenative.config.js";')) {
-        unconfigured.push(`${template}: config import`);
-      }
-      if (!/watchAssets\(\{\s*config:\s*config\.assets,/.test(source)) {
-        unconfigured.push(`${template}: watch config`);
-      }
-    }
-    expect(unconfigured).toEqual([]);
   });
 });
 

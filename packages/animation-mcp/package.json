@@ -1,6 +1,6 @@
 {
   "name": "threenative-animation-mcp",
-  "version": "0.1.19",
+  "version": "0.1.20",
   "license": "MIT",
   "description": "Author, repair and verify character animation through one MCP: inspect rigs, attach props, edit and verify clips, and open a calibrator view.",
   "keywords": [
@@ -31,6 +31,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./pose-lab": {
+      "types": "./dist/pose-lab.d.ts",
+      "import": "./dist/pose-lab.js"
+    },
     "./package.json": "./package.json"
   },
   "bin": {
@@ -41,7 +45,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && publint",
+    "build": "node -e \"require('node:fs').rmSync('dist', { force: true, recursive: true })\" && tsup --config tsup.config.ts && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict"
   },

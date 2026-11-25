@@ -116,68 +116,68 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "1604da0f2c85145399532711d70d1721d9a4c35e02973e9e70747633664a72ac",
-    kit: "b481f869ef53eab5c55f9b99f7b8516cb914d49fda831c3697ddf07cdca77c63",
+    shared: "5a270fdd53c85bdd08703b7d12e4a87645de2a689c2325c41a4e7757821abd35",
+    kit: "bfdbbbfb5d7f2b4f3a9436a399accc60d495ee681104fb3a3d66e09e3aa36332",
   },
   adventure: {
-    shared: "45194416ef3e542d2c51e49fea3bb107dcb7fef9d37fb5d443ef01ce025b5b34",
-    kit: "245f731799f22ab8a612a950b5a351c62f4ea58b231bf7c92282001011c618f3",
+    shared: "10e6353cf589913deaf9058c6f44adfba3612f6e07c7d2ae6887bfeb38acfd15",
+    kit: "8dc463f9853da7bf8db0bf1c084f11147546a132b5ddfb66482dc5aa57e1007e",
   },
   collectathon: {
-    shared: "6f5573934867d3d8764f13cc7543bc4b13d5010e4c26f7119460a6fd5f748569",
-    kit: "effacfbf368f5b9d618d7e15c383b8a59bdf38ce02e9167d3257407998b31f4d",
+    shared: "286d99635909bce71593cef36e8d7e7ba289820490bca7fe0f93b41f11d6b8bc",
+    kit: "8ce1ee8f91de66e4b109e266c39a34d5922f4bd7061fb39ad6f432a240de4219",
   },
   kart: {
-    shared: "14170c49b336b1f7bc2f1481e936ac9786bc16591a75a4ceea68734827a1a22c",
-    kit: "8049185dcff1af7640e79fb2c304806c9f6e334e623e013d7d6a8062636bc893",
+    shared: "aa27c27c2bdc682db08963d11215a416f192030384ee9306b58721854aa8ce72",
+    kit: "36701eb226eec2008463379dccd660e6e3d9c246338362686f1282c35678f1b4",
   },
   minimal: {
-    shared: "e05d6092425e1677474f2c6b242bc7e5d82a9e82fb8a1d2ede31446126d4900d",
-    kit: "760b581f80dbb6e324f292eedde8e80801296f3233f446ba3f830de7a3751a6d",
+    shared: "15f20e292b1f04ffaa1430b2a70c0a1f9d592034455ff079efb03eee989b1fcb",
+    kit: "ce1742f8e64813d7b640e71b2b92331be8b8c00b9e57968b2e69e23d6fec67b8",
   },
   platformer: {
-    shared: "6bb64603dfcf2e088c1ca0eb81183b02c3ff4d6cae28a5528203cc53e5a7b922",
-    kit: "7fd109cf8e4529f0cd6f7861f184dd01551e49acd82d41c2ab53e547f1edab18",
+    shared: "3d9caf75c574a4726ca2b46266fa88a81eb994d8955fdfd04d5e421dae302979",
+    kit: "1a347eb3a3e137d19c8de3f1289f92eba8a3d64c33aa8b849c7eb3aa49306984",
   },
   puzzle: {
-    shared: "84be9eaa0dd22e30f1533f92765450299a47784afec3a9f4b20b10cd4c83ebe8",
-    kit: "70becc3e53d4af0f521d955104268ca5456d52ff527ff7284e3367cd7caaff20",
+    shared: "8d9cd4daab460e0b9ccfa6ee136122374ca640950b8bb71a64c8501a99aba35a",
+    kit: "af9b333c35af00bb560ef45b8b2b356f43e7f881a8c3a18060681e17a078af43",
   },
   racing: {
-    shared: "9acca3b5c1e5193e64024f65f923c072ea52b02f8f5ed882b243219fce580ce0",
-    kit: "7957fabbf9705d5ba7af589d125fe23db211d32c4d1869760e07cb1b73bc2a04",
+    shared: "dd29a727ee81fc2002515f26f11a4ef4f8b95c3c04d5514fadec4f32b5d471d8",
+    kit: "7ab030606c8595d21272cf0fb84fd0a8aee81728f03f2dec55d9fc0841609464",
   },
   rain: {
-    shared: "8adb584f3468d4f2f2adec3c0467c70109bdf37bfaf6e377fee5657d28e0be56",
-    kit: "3ce3e91cbadace50fd771d17c06cc747ff879651bffe6fad4ced02e68233900b",
+    shared: "52cfaaf8f94f41783cd1267053b8d596dd640716ff832f18c537c7b415610849",
+    kit: "4d710c24389af6d9a30206815eb266a6d3535642080e90c5daf610d59b290a2a",
   },
   rts: {
-    shared: "ce72da19dae12c8ef2de3ea55b12f03922fa358ce459a5278354e9b15dc0cadc",
-    kit: "a267832260e34ed3753648f3d7bed129a50c45d4774ec76abaf4dd0fbec43635",
+    shared: "2d4e6905bef31b5ae4d59e7245ba6fe5aa9849f06db8579ff6f0f1b48fdf3a6c",
+    kit: "9e4e18985ee72fc19dfa39cf4a93fc223237d266bcda190711d9f5dc144e56c4",
   },
   runner: {
-    shared: "ff6536a81b94a01a87eec9864c05699cefa48452c603eb93c52f0167c2f91e05",
-    kit: "4f490532f3c9d2be1cf720519ea8a411788d6fc1583676d26895d2862fbd5403",
+    shared: "935c2894af238cea6a6362af8da966c151e229ae5c17570412182dc7152f99e8",
+    kit: "c661c53a9b4ebde52f8612fe0be3403e807786ec539c0a480e6d8e0e809a9d93",
   },
   sailing: {
-    shared: "340248cb241b392a48ab4fd86ad94c22af6b9276d69b83d61c63fc7fb074dbda",
-    kit: "5117ac473704046237f61a56d5898996e56b70d85f1d6ab16a6405f3aacb0f91",
+    shared: "2e9f606168376eb8c60617e852cfafa3123ca9f30cd42e0c6a777e16e87a6fff",
+    kit: "93b27a9b51d19f0924eeaacb6d2985fad57bb8b12695ac249e19223d3eeaf80c",
   },
   shooter: {
-    shared: "39563813acfe57ba018189e7cab33696c07f2126a69cc37e416a01332ce4d6f3",
-    kit: "333e32a53066c54345ab44e0371a324fdf339d6e63162398d274fed0d29df9d4",
+    shared: "d587ac04d7340b5d907eadda8974c2cd2bcf4cf4d00f1caa63d6f50448ffe358",
+    kit: "72629c0cfdfa5b72410ffe19b278342f3040807958d94e1431974a0549cf50bc",
   },
   snow: {
-    shared: "e8d68b9424c8d789f82747a4db325168f75ed3b7dd4c4285206ccce2e790b9d4",
-    kit: "4cbb68651f6d498e79f9990e3acfb814ee9b6289478b55e2046cb45c0eb368cb",
+    shared: "72d087285d9de1e364a9838afcfc4b3c1f6f5f75e114e790e8096ddb538db930",
+    kit: "2930725718116c3f54d1bbde19cb945d199c0d40a3cb885d11e5b5d6751bd356",
   },
   starter: {
-    shared: "30f4ca800e0dccd813b6bede270b5b1de6f93c13cc99a42e2b397ab3a7eeaf97",
-    kit: "dcc1744325b7a52efe76f7d62fc4578dac46b6ef9f6f47adc81f4d8335d85aa4",
+    shared: "c3b0cdcd7bd9962bf6fcf9b220b73d53cf5160c193b54f87c156d1af18d23f70",
+    kit: "5d2577e4cf64489fc4ea8b6ad469a2a460b67d97bde412fc4bdf33301e915f8c",
   },
   "tower-defense": {
-    shared: "f7b621d88af9f1949eb968412b873362a689e32ec8d28924421d2213775d6450",
-    kit: "68413189c4b9f3817c15c5c11721ceee42c78bcb7df42412973c9cfb081622e4",
+    shared: "9ef0fcb6821bdf439712b306f2859b61517a405f08aa20245780be46b5a55668",
+    kit: "8aae2b15469c570b83e826ccdb83b9cac1c90259f6c4bc51e932aa3ecda23dcb",
   },
   // scaffold-pin:end
 };
@@ -806,6 +806,13 @@ describe("create-threenative", () => {
       await cp(path.join(TEMPLATE_ROOT, "starter", "assets"), path.join(root, "assets"), {
         recursive: true,
       });
+      // The web cook resolves three's Basis transcoder from the project, as a scaffold would.
+      await mkdir(path.join(root, "node_modules"));
+      await symlink(
+        await realpath(path.resolve("packages/create-threenative/node_modules/three")),
+        path.join(root, "node_modules", "three"),
+        "dir",
+      );
       // Gradients with ±3 levels of noise resist PNG compression without violating PRD-351's quality floor like pure noise.
       const noise = (x: number, y: number, shift: number): number => {
         let value = Math.imul(x + 1, 0x45d9f3b) ^ Math.imul(y + 1, 0x27d4eb2d);

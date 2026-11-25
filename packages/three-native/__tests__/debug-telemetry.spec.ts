@@ -28,6 +28,29 @@ describe("web engine debug telemetry", () => {
     expect(debugRequested()).toBe(true);
   });
 
+  it("parses an unchanged search once and still hears every live seam", () => {
+    const parse = vi.spyOn(URLSearchParams.prototype, "get");
+    vi.stubEnv("TN_DEBUG", "0");
+    vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+    vi.stubGlobal("location", { search: "?tnDebug=0&cache=a" });
+    for (let i = 0; i < 5; i++) expect(debugRequested()).toBe(false);
+    expect(parse).toHaveBeenCalledTimes(1);
+    vi.stubGlobal("location", { search: "?tnDebug=1&cache=a" });
+    expect(debugRequested()).toBe(true);
+    expect(parse).toHaveBeenCalledTimes(2);
+    vi.stubGlobal("location", { search: "?tnDebug=0&cache=a" });
+    expect(debugRequested()).toBe(false);
+    vi.stubEnv("TN_DEBUG", "1");
+    expect(debugRequested()).toBe(true);
+    vi.stubEnv("TN_DEBUG", "0");
+    vi.stubGlobal("__THREENATIVE_DEBUG__", true);
+    expect(debugRequested()).toBe(true);
+    vi.stubGlobal("__THREENATIVE_DEBUG__", false);
+    expect(debugRequested()).toBe(false);
+    expect(parse).toHaveBeenCalledTimes(3);
+    parse.mockRestore();
+  });
+
   /**
    * 995 distinct crossings a frame and not one repeated read: the shooter's RTS-shaped `army.sync`
    * census, which no fix can shrink below one crossing per object. `debug` picks the arm that sees

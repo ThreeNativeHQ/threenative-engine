@@ -520,11 +520,14 @@ export function liveUniforms<TNode extends object>(
         // A nested render of a frame whose frame hooks already ran skips them without walking them.
         const nested = rendererFrame !== undefined && rendererFrame === hookedFrame;
         // A draw of one mesh or a dispatch runs only the hooks its graphs read (the engine answers which).
-        const picked = extra === undefined ? undefined : reads?.(extra, updating);
+        // When nested with no per-render hooks, frame hooks already ran for this frame, so skip both reads and hook walk.
+        const skipHooks = nested && renders.size === 0;
+        const picked = extra === undefined || skipHooks ? undefined : reads?.(extra, updating);
         if (picked !== undefined)
           for (let index = 0; index < picked.length; index += 1)
             updateNode(updating[picked[index] as number] as TNode, rendererFrame);
-        else for (const node of nested ? renders : updating) updateNode(node, rendererFrame);
+        else if (!skipHooks)
+          for (const node of nested ? renders : updating) updateNode(node, rendererFrame);
         // Only once every hook returned: one that threw leaves later frame hooks to the next render. A picked
         // sync ran some hooks only, so it does not stand for the frame's.
         if (picked === undefined) hookedFrame = rendererFrame;
@@ -537,7 +540,12 @@ export function liveUniforms<TNode extends object>(
           }
           dirty.delete(ref);
         }
-        if (extra?.kernels !== undefined && reads !== undefined) {
+        const narrow =
+          extra?.kernels !== undefined ||
+          (typeof extra?.scene === "object" &&
+            extra.scene !== null &&
+            (extra.scene as { isScene?: unknown }).isScene !== true);
+        if (narrow && reads !== undefined) {
           if (objects.size > 0) {
             if (objectNodesVersion !== objectsVersion) {
               const fresh: TNode[] = [];

@@ -274,7 +274,7 @@ export class CellMainCull {
       // what closes the seam for the keys whose main key was dressed before the grow.
       for (const shared of [...this.#host.shared().values()])
         if (shared.role === "key")
-          this.#host.dressShadowKey(shared, shared.mesh.name.slice(0, -GPU_KEY_SUFFIX.length));
+          this.#host.dressShadowKey(shared, shared.publishedName.slice(0, -GPU_KEY_SUFFIX.length));
     }
     // After every key has been dressed, so the asset's answer is the union across its levels and
     // parts.
@@ -439,7 +439,7 @@ export class CellMainCull {
     let mainMeshes = 0;
     for (const shared of this.#host.shared().values()) {
       if (shared.role !== "main") {
-        if (shared.mesh.visible === false) castersHidden += 1;
+        if (shared.publishedVisible === false) castersHidden += 1;
         if (shared.mesh.mainAdmitted === false && shared.live > 0) {
           if (shared.role === "cluster") {
             clusterWithheld += 1;
@@ -452,7 +452,7 @@ export class CellMainCull {
           }
         }
         // Zero records add zero, so an empty batch needs no test of its own here.
-        const triangles = levelTriangles(shared.mesh.geometry) * shared.live;
+        const triangles = levelTriangles(shared.currentGeometry) * shared.live;
         if (shared.role === "cluster") clusterTriangles += triangles;
         else wideTriangles += triangles;
         continue;
@@ -461,7 +461,7 @@ export class CellMainCull {
       if (shared.gpu !== undefined) dressed += 1;
       instances += shared.live;
       drawn += shared.drawn;
-      if (shared.mesh.visible === false) hidden += 1;
+      if (shared.publishedVisible === false) hidden += 1;
     }
     const stats = this.#host.render().stats();
     console.info(

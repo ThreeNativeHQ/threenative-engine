@@ -138,6 +138,13 @@ target_include_directories(tn_engine_shader PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/s
     PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/third_party/stb)
 # stb_image is third-party C in a C++ unit: its own warnings are not this engine's.
 set_source_files_properties(src/engine/shader/graph/smaa_tables.cpp PROPERTIES COMPILE_OPTIONS "-w")
+if(EMSCRIPTEN)
+    # Compile cold shader emission/package/graph units at -Os under Emscripten (native keeps -O3) to hold LIMITS.webEngineBytes.
+    set_source_files_properties(src/engine/shader/wgsl.cpp src/engine/shader/package.cpp
+        src/engine/shader/standard.cpp src/engine/shader/output.cpp src/engine/shader/tonemap.cpp
+        src/engine/shader/graph/graph.cpp src/engine/shader/graph/serialized.cpp
+        src/engine/shader/graph/post_effects.cpp PROPERTIES COMPILE_OPTIONS "-Os")
+endif()
 
 # meshoptimizer's decoders for EXT/KHR_meshopt_compression (provisioned by download-deps): MIT, three
 # translation units and one header, no platform code, so every target the engine builds gets the same
@@ -212,6 +219,7 @@ set(TN_ENGINE_RENDERER_SOURCES src/engine/renderer/gpu_resources.cpp src/engine/
     src/engine/renderer/geometry_cache.cpp src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer.cpp
     src/engine/renderer/renderer_frame.cpp src/engine/renderer/renderer_material.cpp src/engine/renderer/renderer_output.cpp
     src/engine/renderer/renderer_program.cpp src/engine/renderer/renderer_shadow.cpp
+    src/engine/renderer/shadows/virtual/gpu_pages.cpp
     src/engine/renderer/render_database.cpp src/engine/renderer/compute.cpp
     src/engine/renderer/post/traa.cpp src/engine/renderer/post/effects.cpp src/engine/renderer/probes/capture.cpp
     src/engine/renderer/render_target_pass.cpp)
@@ -239,6 +247,10 @@ function(tn_engine_renderer_target)
         "cmake_language(DEFER DIRECTORY \"${CMAKE_SOURCE_DIR}\" CALL tn_engine_renderer_link_check \"${expected}\")")
 endfunction()
 if(EMSCRIPTEN)
+    # Cold renderer setup/PSO/GPU-VSM setup units under -Os on Wasm (hot frame loops remain -O3) to hold LIMITS.webEngineBytes.
+    set_source_files_properties(src/engine/renderer/device_state.cpp src/engine/renderer/package_loader.cpp
+        src/engine/renderer/pipeline_cache.cpp src/engine/renderer/renderer_program.cpp
+        src/engine/renderer/shadows/virtual/gpu_pages.cpp PROPERTIES COMPILE_OPTIONS "-Os")
     # PRD-532: the same renderer over the browser's WebGPU through Dawn's emdawnwebgpu port, whose
     # webgpu.h is Dawn's. No host services: nothing here may assume a native driver.
     tn_engine_renderer_target()
@@ -622,7 +634,9 @@ tn_native_engine_test(tn-native-engine-abi-test tests/native-engine/abi_test.cpp
     native_engine_abi_projected_cull_held_restore=projected_cull_held_restore
     native_engine_abi_instanced_lod_partial_partition=instanced_lod_partial_partition
     native_engine_abi_ground_snap_apply=ground_snap_apply
-    native_engine_abi_billboard_face=billboard_face)
+    native_engine_abi_billboard_face=billboard_face
+    native_engine_abi_ground_snap_skips_unchanged_deferred_skeleton=ground_snap_skips_unchanged_deferred_skeleton_and_tracks_pose_changes
+    native_engine_abi_raycaster_flat_intersections=raycaster_flat_intersections_match_standard_without_handles)
 target_link_libraries(tn-native-engine-abi-test PRIVATE tn_engine_abi)
 
 tn_native_engine_test(tn-native-engine-render-graph-test tests/native-engine/render_graph_test.cpp
@@ -746,7 +760,9 @@ tn_native_engine_test(tn-native-engine-vsm-atlas-test tests/native-engine/vsm/vs
     native_engine_vsm_lod_rung=lod_rung
     native_engine_vsm_packing=packing
     native_engine_vsm_map_sizes=map_sizes
-    native_engine_vsm_caster_plan=caster_plan)
+    native_engine_vsm_caster_plan=caster_plan
+    native_engine_vsm_batched_depth_skips_vsm_page_clip_attr=vsm_batched_depth_skips_vsm_page_clip_attr
+    native_engine_vsm_batched_depth_clips_in_hardware=vsm_batched_depth_clips_in_hardware)
 target_link_libraries(tn-native-engine-vsm-atlas-test PRIVATE tn_engine_vsm tn_engine_shader tn_engine_bindings)
 
 # The header compiles as strict C11 and a C program links against the ABI.
@@ -1018,7 +1034,9 @@ target_include_directories(tn-native-engine-animation-skinned-palette-test PRIVA
 # PRD-531 raycasting and LOD: real three, binary64 oracle tables (CPU only).
 if(NOT EMSCRIPTEN)
     tn_native_engine_test(tn-native-engine-raycast-test tests/native-engine/scene/raycast_test.cpp
-        native_engine_raycaster=raycaster native_engine_lod=lod)
+        native_engine_raycaster=raycaster native_engine_lod=lod
+        native_engine_raycast_nextafter_bounds=nextafter_bounds
+        native_engine_raycast_subtree_bvh_invalidation=subtree_bvh_invalidation)
     target_link_libraries(tn-native-engine-raycast-test PRIVATE tn_engine_scene)
     target_compile_definitions(tn-native-engine-raycast-test PRIVATE
         TN_RAYCASTER_REFERENCE="${CMAKE_CURRENT_SOURCE_DIR}/tests/native-engine/scene/raycaster_reference.json"

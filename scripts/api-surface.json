@@ -505,13 +505,15 @@
       }
     },
     "@threenative/procedural-environment": {
-      "exports": [".", "./package.json", "./stylized"],
+      "exports": [".", "./asset-library", "./package.json", "./stylized"],
       "symbols": {
+        "@threenative/procedural-environment/asset-library#proceduralEnvironmentSource": "export function proceduralEnvironmentSource( options: IProceduralEnvironmentSourceOptions, ): IProceduralSource { … }",
         "@threenative/procedural-environment/stylized#createStylizedAsset": "export function createStylizedAsset( id: string, options: IStylizedAssetOptions = { … }",
         "@threenative/procedural-environment/stylized#scatter": "export function scatter( source: Object3D, placements: { … }",
         "@threenative/procedural-environment/stylized#sky": "export function sky(options?: { … }",
         "@threenative/procedural-environment/stylized#stylizedAssets": "export function stylizedAssets(): IStylizedAsset[] { … }",
         "@threenative/procedural-environment/stylized#terrain": "export function terrain(options: { … }",
+        "@threenative/procedural-environment/stylized#toyboxPush": "export function toyboxPush(index: number, x: number, y: number, z: number, radius: number): void { … }",
         "@threenative/procedural-environment#bakeCity": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
@@ -702,11 +704,19 @@
       }
     },
     "create-threenative": {
-      "exports": [".", "./package.json", "./quality", "./terrain-kit", "./web-brand"],
+      "exports": [
+        ".",
+        "./asset-library",
+        "./asset-story",
+        "./package.json",
+        "./quality",
+        "./terrain-kit",
+        "./web-brand"
+      ],
       "symbols": {}
     },
     "threenative-animation-mcp": {
-      "exports": [".", "./package.json"],
+      "exports": [".", "./package.json", "./pose-lab"],
       "symbols": {}
     },
     "threenative-engine-mcp": {

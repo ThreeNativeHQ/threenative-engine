@@ -313,3 +313,10 @@ It has Unreal's bloom with no threshold (`unrealBloomEnabled`), local exposure (
 ### Optional multiplayer transport
 
 Admission is limited to high hardware desktop WebGPU; mobile/software/WebGL/native retain original materials. Existing authored fill stays authoritative. Core owns adaptation and its readback. Recipe: `node_modules/create-threenative/agent-docs/references/auto-exposure.md`. Fog is height fog: `HEIGHT_FOG` in `src/render/heightFog.ts` (`density`, `heightFalloff`, `fogHeight`, `maxOpacity`, `startDistance`, `sunExponent`, `sunStartDistance`, `cutoffDistance`) is added to the `FogExp2` distance term on `scene.fogNode` and never replaces it, so a streaming fog `far` still holds. Core supplies Unreal filmic and metered defaults through `WorldEnvironment` and `qualityPreset`.
+
+<a id="texture-projection"></a>
+## Projected atlas
+
+Default: a painted level atlas cooks at its own size (up to 4096, the KTX2 encoder ceiling) as UASTC with mips, and loads at anisotropy 8. Override: `assets.models.textures` `maxSize` or a codec override in `threenative.config.ts`; `textureProjection.anisotropy` in the GLB marker. Reports: the cook report line `textureProjection atlas N px` and TN_TEXTURE_PROJECTION_ANISOTROPY.
+
+The asset MCP's `texture_project_paint` marks its atlas with `extras.threenative.textureProjection`. The model cook then skips the 2048 cap, the ETC1S rung and the JPEG rung, which blur, block or quadruple the GPU memory of a surface seen up close. `ctx.assets.model()` raises the anisotropy of a marked map from 1 to 8, so a floor seen at a grazing angle stays sharp. A value the game sets on the texture after load wins. See `references/texture-projection.md`.

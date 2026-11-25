@@ -1541,6 +1541,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
             const value = (await options.model(url)) as T;
             stampAssetProvenance(value, path);
             await attachCompiledLightmaps(path, value);
+            applyProjectedAtlasAnisotropy(path, value);
             return value;
           }
           const parse = async (
@@ -1766,6 +1767,7 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
           }
           stampAssetProvenance(value, path);
           await attachCompiledLightmaps(path, value);
+          applyProjectedAtlasAnisotropy(path, value);
           return value;
         },
         request?.priority ?? "now",
@@ -1884,6 +1886,64 @@ function stampAssetProvenance(value: unknown, logicalPath: string): void {
       }
     });
   }
+}
+
+/** The anisotropy a projected atlas gets while it still carries three's default of 1. */
+const PROJECTED_ATLAS_ANISOTROPY = 8;
+
+/**
+ * The `threenative.textureProjection` marker on a cooked image's extras, which three's
+ * GLTFLoader copies into `texture.userData` (`assignExtrasToUserData(texture, sourceDef)`).
+ * The asset MCP that painted the atlas writes it; the model cook reads the same marker.
+ */
+function textureProjectionMarker(texture: Texture): Record<string, unknown> | undefined {
+  const threenative = (texture.userData as Record<string, unknown>).threenative;
+  if (!isRecord(threenative)) return undefined;
+  const marker = threenative.textureProjection;
+  return isRecord(marker) ? marker : undefined;
+}
+
+/**
+ * A projected atlas is the albedo of a whole level seen at grazing angles in first person, and at
+ * three's default anisotropy of 1 the floor blurs through the mip chain. Every material map
+ * carrying the marker gets {@link PROJECTED_ATLAS_ANISOTROPY}, unless the marker states its own
+ * (the named override on the same object) or the map already runs at something other than the
+ * default — a level the game sets afterwards wins simply by being set afterwards. Three clamps the
+ * request to the renderer's own maximum. Reports once per model, naming what it changed.
+ */
+function applyProjectedAtlasAnisotropy(logicalPath: string, value: unknown): void {
+  const surfaces = new Set<Texture>();
+  for (const root of modelRoots(value)) {
+    root.traverse((object) => {
+      const material = (object as Object3D & { material?: unknown }).material;
+      for (const surface of Array.isArray(material) ? material : [material]) {
+        if (!isRecord(surface)) continue;
+        for (const candidate of Object.values(surface)) {
+          if (isTexture(candidate)) surfaces.add(candidate);
+        }
+      }
+    });
+  }
+  let count = 0;
+  let overridden = false;
+  const applied = new Set<number>();
+  for (const texture of surfaces) {
+    const marker = textureProjectionMarker(texture);
+    if (marker === undefined || texture.anisotropy !== 1) continue;
+    const declared = marker.anisotropy;
+    const override =
+      typeof declared === "number" && Number.isFinite(declared) && declared > 0
+        ? declared
+        : undefined;
+    texture.anisotropy = override ?? PROJECTED_ATLAS_ANISOTROPY;
+    count += 1;
+    applied.add(texture.anisotropy);
+    if (override !== undefined) overridden = true;
+  }
+  if (count === 0) return;
+  console.info(
+    `TN_TEXTURE_PROJECTION_ANISOTROPY ${logicalPath}: ${String(count)} projected atlas texture(s) at anisotropy ${[...applied].join(",")}${overridden ? " (override)" : ""}`,
+  );
 }
 
 function disposeSurface(value: unknown, disposed: IResourceDisposalSets): void {

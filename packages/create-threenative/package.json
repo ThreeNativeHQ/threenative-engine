@@ -1,6 +1,6 @@
 {
   "name": "create-threenative",
-  "version": "0.2.27",
+  "version": "0.2.28",
   "license": "MIT",
   "description": "Scaffold a readable ThreeNative game project.",
   "keywords": [
@@ -58,6 +58,14 @@
       "import": "./dist/terrain-kit.js"
     },
     "./package.json": "./package.json",
+    "./asset-library": {
+      "types": "./dist/asset-library.d.ts",
+      "import": "./dist/asset-library.js"
+    },
+    "./asset-story": {
+      "types": "./dist/asset-story.d.ts",
+      "import": "./dist/asset-story.js"
+    },
     "./quality": {
       "types": "./dist/quality.d.ts",
       "import": "./dist/quality.js"
@@ -68,7 +76,7 @@
   },
   "sideEffects": false,
   "scripts": {
-    "build": "tsup --config tsup.config.ts && publint",
+    "build": "tsup --config tsup.config.ts && vite build --config asset-library.vite.config.ts --logLevel warn && publint",
     "typecheck": "tsc --noEmit",
     "test": "publint --strict",
     "prepack": "node scripts/sync-patches.mjs && node -e \"const {existsSync}=require('node:fs');const {execFileSync}=require('node:child_process');if (existsSync('../../pnpm-workspace.yaml')) execFileSync('pnpm',['--workspace-root','capabilities:sync'],{cwd:'../..',stdio:['ignore',2,2],shell:process.platform==='win32'});else process.stderr.write('prepack: no workspace here, derived capability docs are taken as staged\\n')\"",
@@ -90,13 +98,16 @@
   },
   "devDependencies": {
     "@gltf-transform/core": "catalog:",
+    "@tailwindcss/vite": "catalog:",
     "@threenative/assets": "workspace:*",
     "@threenative/core": "workspace:*",
     "@threenative/physics": "workspace:*",
     "@types/node": "20.19.43",
     "@types/three": "0.187.0",
     "esbuild": "catalog:",
+    "playwright": "1.62.1",
     "publint": "0.3.22",
+    "tailwindcss": "catalog:",
     "@threenative/blender-bridge": "workspace:*",
     "tsup": "8.5.1",
     "vite": "catalog:",
@@ -108,6 +119,6 @@
     "@types/estree": "1.0.8"
   },
   "peerDependencies": {
-    "@threenative/assets": ">=0.3.23 <0.4.0"
+    "@threenative/assets": ">=0.3.24 <0.4.0"
   }
 }

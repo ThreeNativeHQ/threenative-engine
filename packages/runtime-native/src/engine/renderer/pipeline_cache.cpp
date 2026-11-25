@@ -218,7 +218,7 @@ size_t PipelineCache::IdKeyHash::operator()(const IdKey& key) const {
     mix(uint64_t(key.vertexSize) ^ uint64_t(key.fragmentSize) << 32);
     mix(uint64_t(key.target.color) | uint64_t(key.target.depth) << 32 ^ uint64_t(key.target.sampleCount) << 48);
     mix(uint64_t(key.target.cull) | uint64_t(key.target.frontFace) << 8 | uint64_t(key.target.depthCompare) << 16 |
-        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 58 | uint64_t(key.target.colorWrite) << 59);
+        uint64_t(key.target.skinIndex) << 32 | uint64_t(key.target.blend) << 56 | uint64_t(key.target.depthWrite) << 60 | uint64_t(key.target.colorWrite) << 61);
     mix(reinterpret_cast<uintptr_t>(key.target.layout));
     mix(uint64_t(uint32_t(key.target.depthBias)) | uint64_t(std::bit_cast<uint32_t>(key.target.depthBiasSlopeScale)) << 32);
     mix(key.target.instanceStepMask);
@@ -451,7 +451,7 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     if (target.depth != WGPUTextureFormat_Undefined) desc.depthStencil = &depth;
     WGPUColorTargetState color = {};
     color.format = target.color;
-    color.writeMask = !target.colorWrite ? WGPUColorWriteMask_None : target.blend == 4 ? WGPUColorWriteMask_Alpha : WGPUColorWriteMask_All;
+    color.writeMask = !target.colorWrite ? WGPUColorWriteMask_None : target.blend == 4 ? WGPUColorWriteMask_Alpha : target.blend == 6 ? WGPUColorWriteMask_Blue : WGPUColorWriteMask_All;
     // WebGPUPipelineUtils._getBlending without premultiplied alpha: NormalBlending, or AdditiveBlending;
     // 3 is premultiplied "over", a UI overlay's frame whose colour already carries its alpha.
     const WGPUBlendFactor dst = target.blend == 2 ? WGPUBlendFactor_One : WGPUBlendFactor_OneMinusSrcAlpha;
@@ -461,6 +461,8 @@ WGPURenderPipeline PipelineCache::create(WGPUDevice device, const shader::StageM
     blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_One, dst};
     // 4 scales the destination by 1 - alpha and adds nothing: a transparent draw's responsive mark in the motion flag.
     if (target.blend == 4) blend.color = blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_OneMinusSrcAlpha};
+    // 6 clears only the complete-motion channel (.z) to 0 while preserving fillVelocity's xy motion and responsive .w.
+    if (target.blend == 6) blend.color = blend.alpha = {WGPUBlendOperation_Add, WGPUBlendFactor_Zero, WGPUBlendFactor_Zero};
     // 5: a material's own state (materialBlend), 5 bits a factor and 3 an operation.
     if (target.blend == 5) {
         const auto bits = [&](int at, int width) { return (target.blendState >> at) & ((1u << width) - 1); };
@@ -552,14 +554,14 @@ WGPUBindGroupLayout PipelineLayoutCache::bindGroup(const std::string& key,
 }
 
 WGPUPipelineLayout PipelineLayoutCache::pipeline(const std::string& key, WGPUBindGroupLayout first,
-                                                 WGPUBindGroupLayout second) {
+                                                 WGPUBindGroupLayout second, WGPUBindGroupLayout third) {
     if (const auto found = pipelines_.find(key); found != pipelines_.end()) {
         wgpuPipelineLayoutAddRef(found->second);
         return found->second;
     }
-    WGPUBindGroupLayout layouts[2] = {first, second};
+    WGPUBindGroupLayout layouts[3] = {first, second, third};
     WGPUPipelineLayoutDescriptor descriptor = {};
-    descriptor.bindGroupLayoutCount = 2;
+    descriptor.bindGroupLayoutCount = third ? 3 : 2;
     descriptor.bindGroupLayouts = layouts;
     WGPUPipelineLayout layout = wgpuDeviceCreatePipelineLayout(device_, &descriptor);
     if (!layout) return nullptr;

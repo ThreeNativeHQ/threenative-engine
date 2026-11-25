@@ -463,7 +463,10 @@ async function main(argv: string[]): Promise<number> {
         server: {
           command: "pnpm dev --host 127.0.0.1 --port $PORT --strictPort",
           cwd: project,
-          timeoutMs: 120_000,
+          // `pnpm dev` serves nothing until its first asset cook settles, and the first engine's cook is
+          // cold: `build:web` keys its cook on the default engine. The racing cook takes 71 s on an idle
+          // 24-core desktop and passed 120 s on loaded runners (runs 45179474493, 45239861016).
+          timeoutMs: 300_000,
         },
         port: 0,
         headless: false,

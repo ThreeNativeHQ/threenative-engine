@@ -36,12 +36,34 @@ BufferError BufferStore::validate(uint64_t byteOffset, uint64_t byteLength, uint
     return BufferError::None;
 }
 
+void BufferStore::recordDirtyBytes(uint64_t byteOffset, uint64_t byteLength) {
+    if (dirtyAll_ || byteLength == 0) return;
+    const uint64_t byteEnd = byteOffset + byteLength;
+    for (auto& range : dirtyByteRanges_) {
+        const uint64_t rangeEnd = range.start + range.count;
+        if (byteOffset <= rangeEnd && byteEnd >= range.start) {
+            const uint64_t mergedStart = std::min(range.start, byteOffset);
+            const uint64_t mergedEnd = std::max(rangeEnd, byteEnd);
+            range.start = mergedStart;
+            range.count = mergedEnd - mergedStart;
+            return;
+        }
+    }
+    if (dirtyByteRanges_.size() >= 64) {
+        dirtyAll_ = true;
+        dirtyByteRanges_.clear();
+        return;
+    }
+    dirtyByteRanges_.push_back({byteOffset, byteLength});
+}
+
 BufferError BufferStore::write(uint64_t byteOffset, const void* source, uint64_t byteLength) {
     const BufferError error = validate(byteOffset, byteLength);
     if (error != BufferError::None) return error;
     pull();
     ++writes_;
     if (byteLength > 0) std::memcpy(bytes_.data() + byteOffset, source, byteLength);
+    recordDirtyBytes(byteOffset, byteLength);
     return BufferError::None;
 }
 
@@ -72,6 +94,8 @@ bool BufferStore::resize(uint64_t count) {
     bytes_.swap(next);
     ++epoch_;
     ++writes_;
+    dirtyAll_ = true;
+    dirtyByteRanges_.clear();
     return true;
 }
 
@@ -85,6 +109,8 @@ void BufferStore::fill() const {
     }
     if (unfilled_ && bytes_.size() > written) std::memset(data + written, 0, bytes_.size() - written);
     unfilled_ = false;
+    dirtyAll_ = true;
+    dirtyByteRanges_.clear();
 }
 
 void BufferStore::releaseLease() {

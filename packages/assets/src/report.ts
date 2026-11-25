@@ -58,6 +58,11 @@ export interface IEmbeddedTextureRow {
   readonly count: number;
   /** Chosen codec per embedded image, keyed by texture name. */
   readonly formats?: Readonly<Record<string, string>>;
+  /**
+   * Texture-projection images and the atlas edge their marker declared, keyed like `formats`.
+   * Printed per image so a cook that skipped ETC1S and the 2048 cap says why.
+   */
+  readonly projected?: Readonly<Record<string, number>>;
   readonly gpuBytesAfter: number;
   readonly gpuBytesBefore: number;
   readonly resized: number;
@@ -512,6 +517,10 @@ export function formatModelSizes(rows: readonly IModelSizeRow[]): readonly strin
             ...Object.entries(embedded.skippedCompression ?? {}).map(
               ([name, reason]) =>
                 `embedded texture ${row.logicalPath}#${name}: compression skipped: ${reason}`,
+            ),
+            ...Object.entries(embedded.projected ?? {}).map(
+              ([name, atlas]) =>
+                `embedded texture ${row.logicalPath}#${name}: textureProjection atlas ${String(atlas)} px`,
             ),
             ...Object.entries(embedded.quality ?? {}).map(([name, score]) =>
               qualityLine(`${row.logicalPath}#${name}`, score),

@@ -59,7 +59,7 @@
       "name": "Anti-aliasing",
       "default": "4x MSAA on `high`, else SMAA",
       "override": "`temporalAA: true`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": [
         "action-rpg",
         "collectathon",
@@ -137,7 +137,7 @@
       "name": "Loading curtain",
       "default": "`ctx.startup.hold(label, () => ready)`",
       "override": "reveal on measured readiness only",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -183,7 +183,7 @@
       "name": "Stride sync",
       "default": "on",
       "override": "`strideSync: false`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": ["action-rpg", "adventure"]
     },
     {
@@ -191,7 +191,7 @@
       "name": "Feet on the floor",
       "default": "`GroundSnap`",
       "override": "`enabled: false`",
-      "marker": "—",
+      "marker": "\u2014",
       "symbol": "GroundSnap",
       "kits": ["action-rpg", "minimal", "runner", "shooter", "starter"]
     },
@@ -200,7 +200,7 @@
       "name": "Held prop",
       "default": "`attachToBone`",
       "override": "a portable `Bone` named `RightHand`",
-      "marker": "—",
+      "marker": "\u2014",
       "symbol": "attachToBone",
       "kits": ["action-rpg", "adventure", "shooter"]
     },
@@ -209,7 +209,7 @@
       "name": "One metre is one metre",
       "default": "`normaliseToMetres`",
       "override": "per-call options",
-      "marker": "—",
+      "marker": "\u2014",
       "symbol": "normaliseToMetres",
       "kits": ["action-rpg", "minimal", "racing", "runner", "sailing", "shooter", "starter"]
     },
@@ -218,7 +218,7 @@
       "name": "Rigged assets",
       "default": "`.glb` in `assets/`; `AnimationPlayer` drives clips",
       "override": "`ctx.assets.model(\"hero.glb\")` in `Scene.load()`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -256,7 +256,7 @@
       "name": "Rough diffuse",
       "default": "on",
       "override": "`material.roughDiffuse = false`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": ["starter"]
     },
     {
@@ -288,7 +288,7 @@
       "name": "Material backlight",
       "default": "none, as in stock Unreal",
       "override": "`rimGain`; `fillGain`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -325,7 +325,7 @@
       "name": "Pointer look",
       "default": "captures the canvas on click",
       "override": "`captureOnClick: false` + `ctx.input.captureMouse()`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": [
         "action-rpg",
         "adventure",
@@ -365,7 +365,7 @@
       "name": "Spells",
       "default": "every factory ships a stock look",
       "override": "per-call options on `@threenative/core/spells`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": ["action-rpg"]
     },
     {
@@ -381,7 +381,7 @@
       "name": "Desktop window",
       "default": "CLI, then `display.fullscreen`, then `window.maximized`",
       "override": "`--windowed`; `--maximized`; `--fullscreen`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -397,7 +397,7 @@
       "name": "Terrain",
       "default": "authored in the game",
       "override": "optional `@threenative/terrain`; `references/terrain-authoring.md`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -405,7 +405,7 @@
       "name": "Navigation",
       "default": "none; browser-only WASM",
       "override": "import `@threenative/physics/navigation` on purpose",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -421,7 +421,7 @@
       "name": "Move input",
       "default": "`input.vector(\"move\").y` is +up",
       "override": "one explicit `-move.y` conversion",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": [
         "action-rpg",
         "adventure",
@@ -445,7 +445,7 @@
       "name": "Scene change",
       "default": "`ctx.goto(name)` keeps state",
       "override": "`game.goto(name)` resets state",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -453,7 +453,7 @@
       "name": "Randomness",
       "default": "unseeded",
       "override": "`defineGame({ seed })`",
-      "marker": "—",
+      "marker": "\u2014",
       "kits": "all"
     },
     {
@@ -479,6 +479,14 @@
       "override": "`defineGame({ telemetry: false })`",
       "marker": "TN_TELEMETRY",
       "kits": "all"
+    },
+    {
+      "id": "texture-projection",
+      "name": "Projected atlas",
+      "default": "full-size UASTC, anisotropy 8",
+      "override": "cook `maxSize`; marker `anisotropy`",
+      "marker": "TN_TEXTURE_PROJECTION_ANISOTROPY",
+      "kits": ["adventure", "platformer", "shooter"]
     }
   ]
 }

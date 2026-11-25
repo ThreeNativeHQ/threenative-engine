@@ -433,7 +433,18 @@ export function defineWebRenderer(
     #frameOpen = false;
     /** The draw in flight is renderOverlay's. */
     #overlay = false;
-    #state: string | undefined;
+    #state:
+      | {
+          toneMapping: number;
+          toneMappingExposure: number;
+          outputColorSpace: string;
+          shadowEnabled: boolean;
+          shadowType: number;
+          samples: number;
+          renderScale: number;
+          trackTimestamp: boolean;
+        }
+      | undefined;
     #gpuSamples = 0;
     #holdsSlot = true;
     #timestampFrames: number[] = [];
@@ -898,8 +909,22 @@ export function defineWebRenderer(
         renderScale,
       } = this;
       this.library.apply(toneMapping);
-      const key = `${toneMapping}|${toneMappingExposure}|${outputColorSpace}|${shadowMap.enabled}|${shadowMap.type}|${samples}|${renderScale}|${this.backend.trackTimestamp}`;
-      if (key === this.#state) return;
+      const shadowEnabled = shadowMap.enabled;
+      const shadowType = shadowMap.type;
+      const trackTimestamp = this.backend.trackTimestamp;
+      const prev = this.#state;
+      if (
+        prev !== undefined &&
+        prev.toneMapping === toneMapping &&
+        prev.toneMappingExposure === toneMappingExposure &&
+        prev.outputColorSpace === outputColorSpace &&
+        prev.shadowEnabled === shadowEnabled &&
+        prev.shadowType === shadowType &&
+        prev.samples === samples &&
+        prev.renderScale === renderScale &&
+        prev.trackTimestamp === trackTimestamp
+      )
+        return;
       const space = string(String(outputColorSpace));
       try {
         check(
@@ -907,17 +932,26 @@ export function defineWebRenderer(
             toneMapping,
             toneMappingExposure,
             space,
-            shadowMap.enabled ? 1 : 0,
-            shadowMap.type,
+            shadowEnabled ? 1 : 0,
+            shadowType,
             samples,
             renderScale,
-            this.backend.trackTimestamp ? 1 : 0,
+            trackTimestamp ? 1 : 0,
           ),
         );
       } finally {
         module._free(space);
       }
-      this.#state = key;
+      this.#state = {
+        toneMapping,
+        toneMappingExposure,
+        outputColorSpace,
+        shadowEnabled,
+        shadowType,
+        samples,
+        renderScale,
+        trackTimestamp,
+      };
     }
 
     /**
@@ -934,7 +968,8 @@ export function defineWebRenderer(
       if (this.#adapter === undefined)
         throw new Error("TN_WASM_RENDERER: render() before init() finished.");
       if (this.#lost) return;
-      syncVirtualShadowLods();
+      if ((root as { isQuadMesh?: unknown } | null | undefined)?.isQuadMesh !== true)
+        syncVirtualShadowLods();
       beforeRender({ camera, scene: root, renderer: this, frameId: this.info.frame });
       this.#applyState();
       writeHandle(0, root, "scene");
