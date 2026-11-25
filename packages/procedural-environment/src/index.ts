@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import type { BufferGeometry } from "three";
+import { Box3, type BufferGeometry, type Mesh } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
@@ -10,12 +10,20 @@ import ForestKit, {
 } from "../vendor/forest-kit/index.js";
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
-import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
+import { type IBakeCityOptions, buildCity, cityModules, exportStaticGlb } from "./city.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
+import {
+  type IBakeStationOptions,
+  buildStation,
+  stationAccent,
+  stationModules,
+  stationRoofModules,
+} from "./station.js";
 import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
+export type { IBakeStationOptions } from "./station.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -578,8 +586,8 @@ async function bakeForestKit(
   return baked;
 }
 
-/** What an element is: a tree, ground cover, floor debris, a rock form or an Apex city module. */
-export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city";
+/** A vegetation preset, rock form, city module or station module. */
+export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city" | "station";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -588,7 +596,7 @@ export interface IEnvironmentElement {
   readonly kind: EnvironmentKind;
   /** Biome ids from `environmentBiomes()` this element belongs in. */
   readonly biomes: readonly string[];
-  /** A city module's Apex category: Roads, Buildings, Street Props, Vehicles, Race Kit ... */
+  /** The module's category within its kit. */
   readonly category?: string;
   /** The call that bakes it, ready to paste; a rock's names the filter's biome, else its first. */
   readonly bake: string;
@@ -602,7 +610,7 @@ export interface IEnvironmentFilter {
   readonly search?: string;
 }
 
-const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city"];
+const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city", "station"];
 
 /**
  * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
@@ -681,7 +689,15 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeCity({ module: "${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city].filter((element) => {
+  const station = stationModules.map(({ id, name, category }) => ({
+    id: `station-${id}`,
+    name,
+    kind: "station" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeStation({ module: "station-${id}", out: "assets/environment" })`,
+  }));
+  return [...plants, ...rocks, ...city, ...station].filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
@@ -1013,4 +1029,46 @@ export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentB
   const file = path.join(options.out, city.file);
   await writeAtomic(file, await webpImages(city.glb));
   return [{ bounds: city.bounds, lod: 0, path: file, triangles: city.triangles }];
+}
+
+/**
+ * Bake modular science-fiction station corridors, architecture or props to a standard PBR GLB.
+ * @situation build a modular sci-fi spaceship or research station interior with snap-together corridor junctions, bulkheads and doors
+ * @situation generate a science-fiction control terminal, cargo case or glowing power cell for a shooter or puzzle game
+ * @constraint corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin
+ * @constraint roof applies only to corridors and the assembled maintenance junction
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeStation({ module: "station-elbow", accent: "#ee9955", roof: true, out: "assets/station" });
+ */
+export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> {
+  const { module, out, seed = 1, accent = stationAccent, roof = false } = options;
+  const entry = stationModules.find(({ id }) => module === `station-${id}`);
+  if (!entry) {
+    const ids = stationModules.map(({ id }) => `station-${id}`);
+    throw new Error(
+      `bakeStation: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
+    );
+  }
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
+    throw new Error("bakeStation: seed must be an unsigned 32-bit integer");
+  if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))
+    throw new Error("bakeStation: accent must be a six-digit hex color, such as #25b9c8");
+  if (typeof roof !== "boolean" || (roof && !stationRoofModules.includes(module)))
+    throw new Error("bakeStation: roof is a boolean for corridors and the layout");
+  const paint = accent.toLowerCase();
+  const group = buildStation(entry.id, { seed, accent: paint, roof });
+  const box = new Box3().setFromObject(group);
+  let triangles = 0;
+  group.traverse((node) => {
+    const mesh = node as Mesh;
+    if (mesh.isMesh) triangles += mesh.geometry.getAttribute("position").count / 3;
+  });
+  const suffix = (paint === stationAccent ? "" : `-${paint.slice(1)}`) + (roof ? "-roof" : "");
+  const file = path.join(out, `${module}-${seed}${suffix}.glb`);
+  const bytes = await exportStaticGlb(group);
+  await mkdir(out, { recursive: true });
+  await writeAtomic(file, bytes);
+  return [
+    { bounds: { max: box.max.toArray(), min: box.min.toArray() }, lod: 0, path: file, triangles },
+  ];
 }

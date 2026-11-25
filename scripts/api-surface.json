@@ -516,6 +516,7 @@
         "@threenative/procedural-environment/stylized#toyboxPush": "export function toyboxPush(index: number, x: number, y: number, z: number, radius: number): void { … }",
         "@threenative/procedural-environment#bakeCity": "export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#bakeStation": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#environmentBiomes": "export function environmentBiomes(): IEnvironmentBiome[] { … }",
         "@threenative/procedural-environment#environmentElements": "export function environmentElements(filter: IEnvironmentFilter = { … }",

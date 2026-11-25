@@ -43,6 +43,30 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Station Kit
+
+Open **Station Kit** for 12 stylized science-fiction interiors and props. The kit covers deck,
+wall, bulkhead and ceiling pieces, straight, elbow, T and four-way corridors, a cargo case,
+control terminal, power cell and an assembled maintenance junction. Use **Accent paint** to
+recolor the kit and **Ceiling** to enclose a corridor or show its interior from above.
+
+```ts
+import { bakeStation, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "station" });
+await bakeStation({
+  module: "station-elbow",
+  accent: "#ee9955",
+  roof: true,
+  out: "assets/station",
+});
+```
+
+Corridors snap on a 4 m grid. North is −Z and the deck surface is 0.25 m above the origin.
+Rotate in quarter turns to match the open sides. Corridor GLBs record their local openings
+in `extras.sockets`. Place standalone props on the deck at y = 0.25 m, and place the separate
+ceiling at y = 3.2 m. Paint and ceiling changes produce distinct filenames.
+
 ### Stylized Biome Kit
 
 Open **Stylized Biome Kit** in the same sidebar for the alpine forest, snow peaks, and desert

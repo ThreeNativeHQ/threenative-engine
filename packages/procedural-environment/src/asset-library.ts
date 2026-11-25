@@ -8,6 +8,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
+import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 
 type Package = typeof import("./index.js");
@@ -16,7 +17,7 @@ type Package = typeof import("./index.js");
 interface IControl {
   key: string;
   label: string;
-  type: "range" | "select" | "toggle" | "text";
+  type: "range" | "select" | "toggle" | "text" | "color";
   group?: string;
   min?: number;
   max?: number;
@@ -84,6 +85,10 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     tree: [TEXTURES],
     cover: [TEXTURES],
     debris: [TEXTURES],
+    station: [
+      { key: "accent", label: "Accent paint", type: "color", default: stationAccent },
+      { key: "roof", label: "Ceiling", type: "toggle", default: false, only: stationRoofModules },
+    ],
     rock: [
       { key: "biome", label: "Biome", type: "select", options: biomes, default: "hills" },
       { key: "detail", label: "Detail", type: "range", min: 0, max: 1, step: 0.05, default: 0.3 },
@@ -219,13 +224,14 @@ function rockBake(
   });
 }
 
+function toggle(q: URLSearchParams, key: string): boolean | undefined {
+  const value = q.get(key);
+  if (value === null) return undefined;
+  if (value !== "true" && value !== "false") throw new Error(`Invalid toggle: ${key}`);
+  return value === "true";
+}
+
 function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: string }) {
-  const toggle = (key: string) => {
-    const value = q.get(key);
-    if (value === null) return undefined;
-    if (value !== "true" && value !== "false") throw new Error(`Invalid toggle: ${key}`);
-    return value === "true";
-  };
   return pkg.bakeCity({
     module: q.get("id") ?? "",
     ...base,
@@ -233,16 +239,16 @@ function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: s
     ...opt("wet", num(q, "wet")),
     ...opt("floors", num(q, "floors")),
     ...opt("text", q.get("text") ?? undefined),
-    ...opt("dressing", toggle("dressing")),
+    ...opt("dressing", toggle(q, "dressing")),
     ...opt("roadWidth", num(q, "roadWidth")),
     ...opt("roadLength", num(q, "roadLength")),
     ...opt("bendAngle", num(q, "bendAngle")),
     ...opt("bendRadius", num(q, "bendRadius")),
     ...opt("bendSide", q.get("bendSide") ?? undefined),
     ...opt("roadSurface", q.get("roadSurface") ?? undefined),
-    ...opt("sidewalk", toggle("sidewalk")),
-    ...opt("curb", toggle("curb")),
-    ...opt("markings", toggle("markings")),
+    ...opt("sidewalk", toggle(q, "sidewalk")),
+    ...opt("curb", toggle(q, "curb")),
+    ...opt("markings", toggle(q, "markings")),
   });
 }
 
@@ -254,6 +260,14 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
   const out = path.join(cache, kind);
   if (kind === "rock") return rockBake(pkg, q, { seed, lods, out });
   if (kind === "city") return cityBake(pkg, q, { seed, out });
+  if (kind === "station")
+    return pkg.bakeStation({
+      module: q.get("id") ?? "",
+      seed,
+      out,
+      ...opt("accent", q.get("accent") ?? undefined),
+      ...opt("roof", toggle(q, "roof")),
+    });
   if (kind === "tree" || kind === "cover" || kind === "debris")
     return pkg.bakeVegetation({
       preset: q.get("id") ?? "",
@@ -279,6 +293,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  station: { name: "Station Kit" },
   stylized: { runtime: true, name: "Stylized Biome Kit", pack: "Biome Kit" },
   dungeon: { runtime: true, pack: "Dungeon Kit" },
   village: { runtime: true, pack: "Village Kit" },
@@ -388,7 +403,10 @@ export function proceduralEnvironmentSource(
         biomes,
         styles: { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" },
         elements: [
-          ...pkg.environmentElements().map((entry) => ({ ...entry, styleTags: ["realistic"] })),
+          ...pkg.environmentElements().map((entry) => ({
+            ...entry,
+            styleTags: [entry.kind === "station" ? "stylized" : "realistic"],
+          })),
           ...stylizedAssets().map((entry) => ({
             ...entry,
             styleTags: [entry.kind === "toybox" ? "hybrid" : "stylized"],

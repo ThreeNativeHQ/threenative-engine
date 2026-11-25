@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Station Kit bakes 12 modular sci-fi interior pieces, props and an assembled
+  junction as PBR GLBs. Set accent paint and optional ceilings in the viewer or with `bakeStation`.
+
 - `@threenative/terrain` exports `paintCanopyCover` and `skyVisibility`, the bake-time canopy and
   sky-occlusion grids a streamed starter world reads.
 - `@threenative/core/render/environment` is the one home of the environment measure-and-sample

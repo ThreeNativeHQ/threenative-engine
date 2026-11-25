@@ -8638,6 +8638,27 @@
       "symbol": "bakeRock"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin",
+        "roof applies only to corridors and the assembled maintenance junction"
+      ],
+      "example": "await bakeStation({ module: \"station-elbow\", accent: \"#ee9955\", roof: true, out: \"assets/station\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "build a modular sci-fi spaceship or research station interior with snap-together corridor junctions, bulkheads and doors",
+        "generate a science-fiction control terminal, cargo case or glowing power cell for a shooter or puzzle game"
+      ],
+      "summary": "Bake modular science-fiction station corridors, architecture or props to a standard PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeStation"
+    },
+    {
       "aliases": [
         "trees",
         "palm trees",
