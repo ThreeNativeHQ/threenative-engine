@@ -48,7 +48,7 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 Open **Workshop Kit** for workshop, bedroom, lounge, dining, kitchen, bathroom and office furniture.
 Use **Width** to resize work surfaces, the wall shelf, dining bench, vanity or bathtub. Pick two or three
 **Seats** for the sofa or lounge, or four or six for the dining set. **Open** previews the top
-drawer, cabinet doors, or toilet lid. **Scale**, **Seed** and **Accent color** make size
+drawer, cabinet and wardrobe doors, or the toilet and trunk lids. **Scale**, **Seed** and **Accent color** make size
 and finish variants.
 
 | Asset | Named nodes and placement |
@@ -68,6 +68,8 @@ and finish variants.
 | Toilet | Rotate `toilet-seat` or `toilet-lid` upward around local −X. `toilet-sit` follows the seat and `toilet-flush` marks the button. |
 | Office desk and workstation | Use `desk-monitor`, `desk-keyboard` and `desk-cable` to place equipment. The workstation includes the desk, swivel chair and monitor. **Width** changes the desk size and **Seat height** adjusts the chair independently. |
 | Swivel chair and monitor | Turn `chair-swivel` around local Y. `chair-seat` follows its cushion. Rotate `monitor-panel` around local X to tilt it. Attach a 16:9 UI at `monitor-display`, facing local +Z. The screen corner nodes mark its 0.48 × 0.27 m area before scaling. |
+| Bookcase | Set **Width** independently of **Shelf levels** (3–5). Use `bookcase-shelf-1` upward for item placement, starting at the bottom shelf. `bookcase-wall` faces the wall (local −Z of the bookcase). |
+| Wardrobe and trunk | Set **Width** to fit the alcove or room. Rotate `wardrobe-door-left` around local −Y, `wardrobe-door-right` around +Y and `trunk-lid` around −X. Place props at `wardrobe-floor`, `wardrobe-shelf`, `wardrobe-hanger-rail` or `trunk-content`. `trunk-latch` marks the stationary front clasp. |
 
 The assembled kitchen run includes prep, sink and cooktop cabinets. Changing **Width** resizes
 the prep section while the sink and cooktop remain 0.6 m wide.

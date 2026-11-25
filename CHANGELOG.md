@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Workshop Kit adds a bookcase with configurable shelves, a double-door
+  wardrobe, and a hinged storage trunk with item placement nodes.
+
 - The Asset Library's Workshop Kit adds an adjustable office desk and swivel chair, a
   tilting monitor with 16:9 UI placement nodes, and an assembled office workstation.
 

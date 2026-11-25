@@ -30,14 +30,16 @@ export interface IBakeWorkshopOptions {
   readonly accent?: string;
   /** Uniform scale from 0.5 to 2. Use the same scale across an arrangement. */
   readonly scale?: number;
-  /** Width in metres before scale for work surfaces, wall shelf and dining bench. */
+  /** Width in metres before scale for selected work surfaces and furniture. */
   readonly width?: number;
   /** Swivel chair seat height in metres for the chair or office workstation. */
   readonly height?: number;
-  /** Bake the drawer, cabinet doors or toilet lid in their open pose. */
+  /** Bake the supported drawers, doors or lids in their open pose. */
   readonly open?: boolean;
   /** Sofa or lounge seats (2 or 3), or dining set chairs (4 or 6). */
   readonly seats?: number;
+  /** Usable bookcase shelf levels, including the bottom shelf (3–5). */
+  readonly shelves?: number;
 }
 
 export const workshopAccent = "#4d7779";
@@ -69,6 +71,9 @@ export const workshopModules = [
   { id: "office-chair", name: "Rolling swivel chair", category: "Office" },
   { id: "office-monitor", name: "Desktop monitor", category: "Office" },
   { id: "office-set", name: "Assembled office workstation", category: "Arrangements" },
+  { id: "bookcase", name: "Open timber bookcase", category: "Storage" },
+  { id: "wardrobe", name: "Double-door wardrobe", category: "Storage" },
+  { id: "trunk", name: "Hinged storage trunk", category: "Storage" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
@@ -98,6 +103,9 @@ export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
   "bath-tub": { min: 1.4, max: 1.9, default: 1.65 },
   "office-desk": officeWidth,
   "office-set": officeWidth,
+  bookcase: { min: 0.7, max: 1.38, default: 1.04 },
+  wardrobe: { min: 0.9, max: 1.6, default: 1.18 },
+  trunk: { min: 0.66, max: 1.35, default: 0.98 },
 };
 export const workshopHeights: Partial<Record<Module, typeof chairHeight>> = {
   "office-chair": chairHeight,
@@ -112,7 +120,10 @@ export const workshopOpeningModules = [
   "kitchen-cooktop",
   "kitchen-run",
   "bath-toilet",
+  "wardrobe",
+  "trunk",
 ];
+export const workshopShelfCount = { min: 3, max: 5, default: 4 };
 const loungeSeats = { min: 2, max: 3, default: 3 };
 const diningSeats = { min: 4, max: 6, default: 4 };
 export const workshopSeatCounts: Partial<Record<Module, typeof loungeSeats>> = {
@@ -1030,10 +1041,146 @@ function officeSet(palette: Palette, width: number, height: number): Group {
   return new Group().add(officeDesk(palette, width), monitor, chair);
 }
 
+function bookcase(palette: Palette, width: number, shelves: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const height = 1.81;
+  const bottom = 0.13;
+  const interior = width - 0.064;
+  const pitch = (height - 0.054 - bottom) / shelves;
+  mesh.block("insert", [width - 0.074, 0.108, 0.303], [0, 0.054, -0.009], 0.011);
+  mesh.block("accent", [interior, height - 0.097, 0.023], [0, 0.904, -0.16], 0.007);
+  for (const x of [-width / 2 + 0.017, width / 2 - 0.017]) {
+    timber(mesh, [0.034, height - 0.042, 0.337], [x, 0.884, 0], 0.008, "vertical");
+  }
+  timber(mesh, [width, 0.044, 0.344], [0, height - 0.022, 0], 0.015);
+  for (let level = 0; level < shelves; level++) {
+    const y = bottom + level * pitch;
+    timber(mesh, [interior, 0.031, 0.313], [0, y - 0.0155, 0.003], 0.008);
+  }
+  const group = mesh.finish("bookcase", palette);
+  for (let level = 0; level < shelves; level++) {
+    anchor(group, `bookcase-shelf-${level + 1}`, [0, bottom + level * pitch, 0.008]);
+  }
+  anchor(group, "bookcase-wall", [0, 1.73, -0.172], Math.PI);
+  return group;
+}
+
+function wardrobe(palette: Palette, width: number, open: boolean): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const interior = width - 0.078;
+  const floorY = 0.143;
+  const shelfY = 1.677;
+  const railY = 1.516;
+  const doorY = 0.14;
+  const hingeX = width / 2 - 0.009;
+  const hingeZ = 0.294;
+  const hingeHeights = [0.235, 1.49];
+  mesh.block("insert", [width - 0.047, 0.12, 0.49], [0, 0.06, 0], 0.016);
+  timber(mesh, [width, 0.048, 0.568], [0, 1.928, 0], 0.015);
+  mesh.block("accent", [interior, 1.785, 0.027], [0, 1.013, -0.253], 0.008);
+  for (const side of [-1, 1]) {
+    timber(mesh, [0.04, 1.817, 0.54], [side * (width / 2 - 0.02), 1.0, 0], 0.01, "vertical");
+    for (const height of hingeHeights) {
+      const y = doorY + height;
+      mesh.block("dark", [0.035, 0.046, 0.043], [side * (hingeX - 0.009), y, hingeZ - 0.017]);
+      mesh.add(
+        "steel",
+        new CylinderGeometry(0.013, 0.013, 0.064, 12).translate(side * hingeX, y, hingeZ),
+      );
+    }
+  }
+  for (const y of [floorY, shelfY]) {
+    timber(mesh, [interior, 0.034, 0.495], [0, y - 0.017, 0.0075], 0.008);
+  }
+  mesh.add(
+    "steel",
+    new CylinderGeometry(0.014, 0.014, interior, 16)
+      .rotateZ(Math.PI / 2)
+      .translate(0, railY, 0.042),
+  );
+  const group = mesh.finish("wardrobe", palette);
+  anchor(group, "wardrobe-floor", [0, floorY, 0.035]);
+  anchor(group, "wardrobe-shelf", [0, shelfY, 0.035]);
+  anchor(group, "wardrobe-hanger-rail", [0, railY + 0.014, 0.042]);
+
+  for (const side of [-1, 1]) {
+    const panel = new StaticKitMesh<Finish>();
+    const span = width / 2 - 0.012;
+    const center = (-side * span) / 2;
+    const rail = 0.063;
+    const height = 1.755;
+    panel.block("insert", [span - 0.108, height - 0.11, 0.021], [center, height / 2, 0], 0.008);
+    for (const x of [(-side * rail) / 2, -side * (span - rail / 2)]) {
+      timber(panel, [rail, height, 0.038], [x, height / 2, 0], 0.009, "vertical");
+    }
+    for (const y of [rail / 2, height - rail / 2]) {
+      timber(panel, [span - 2 * rail + 0.002, rail, 0.037], [center, y, 0], 0.008);
+    }
+    for (const y of hingeHeights) {
+      panel.block("steel", [0.049, 0.033, 0.02], [-side * 0.02, y, -0.012], 0.006);
+    }
+    const handleX = -side * (span - 0.031);
+    for (const y of [0.915, 1.015]) {
+      panel.block("dark", [0.027, 0.022, 0.038], [handleX, y, 0.034], 0.006);
+    }
+    panel.block("dark", [0.015, 0.127, 0.018], [handleX, 0.965, 0.054], 0.007);
+    const door = panel.finish(side < 0 ? "wardrobe-door-left" : "wardrobe-door-right", palette);
+    door.position.set(side * hingeX, doorY, hingeZ);
+    door.rotation.y = open ? side * Math.PI * 0.59 : 0;
+    group.add(door);
+  }
+  return group;
+}
+
+function trunk(palette: Palette, width: number, open: boolean): Group {
+  const body = new StaticKitMesh<Finish>();
+  const half = width / 2;
+  const rim = 0.442;
+  const floorY = 0.092;
+  body.block("dark", [width - 0.037, 0.067, 0.477], [0, 0.0335, 0], 0.012);
+  timber(body, [width - 0.052, 0.036, 0.461], [0, floorY - 0.018, 0], 0.008);
+  for (const z of [-0.237, 0.237]) {
+    timber(body, [width - 0.052, 0.371, 0.038], [0, rim - 0.1855, z], 0.008);
+  }
+  for (const side of [-1, 1]) {
+    const x = side * (half - 0.024);
+    timber(body, [0.042, 0.371, 0.499], [x, rim - 0.1855, 0], 0.009);
+    for (const z of [-0.238, 0.238]) {
+      body.block("insert", [0.064, 0.371, 0.055], [x, rim - 0.1855, z], 0.008);
+    }
+    for (const z of [-0.056, 0.056]) {
+      body.block("dark", [0.029, 0.062, 0.033], [side * (half - 0.011), 0.29, z], 0.007);
+    }
+    body.block("steel", [0.022, 0.019, 0.128], [side * (half + 0.005), 0.29, 0], 0.008);
+  }
+  body.block("dark", [0.086, 0.083, 0.033], [0, 0.385, 0.259], 0.01);
+  body.block("steel", [0.034, 0.038, 0.015], [0, 0.382, 0.279], 0.005);
+  const group = body.finish("trunk", palette);
+  anchor(group, "trunk-content", [0, floorY, 0]);
+  anchor(group, "trunk-latch", [0, 0.382, 0.287]);
+
+  const cover = new StaticKitMesh<Finish>();
+  timber(cover, [width + 0.017, 0.051, 0.521], [0, 0.0255, 0.2535], 0.016);
+  for (const x of [-(half - 0.101), half - 0.101]) {
+    cover.block("insert", [0.074, 0.014, 0.489], [x, 0.052, 0.2535], 0.004);
+    cover.block("insert", [0.074, 0.044, 0.017], [x, 0.028, 0.512], 0.004);
+    cover.add(
+      "dark",
+      new CylinderGeometry(0.014, 0.014, 0.083, 16).rotateZ(Math.PI / 2).translate(x, 0, -0.004),
+    );
+  }
+  cover.block("dark", [0.075, 0.036, 0.018], [0, 0.013, 0.52], 0.007);
+  const lid = cover.finish("trunk-lid", palette);
+  lid.position.set(0, rim + 0.003, -0.253);
+  lid.rotation.x = open ? -Math.PI * 0.56 : 0;
+  group.add(lid);
+  return group;
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
-    Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats">,
+    Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats" | "shelves">,
   veneer?: IVeneer,
 ): Group {
   const palette = materials(options.seed, options.accent, veneer);
@@ -1080,6 +1227,9 @@ export function buildWorkshop(
     "office-chair": () => officeChair(palette, height),
     "office-monitor": () => officeMonitor(palette),
     "office-set": () => officeSet(palette, width, height),
+    bookcase: () => bookcase(palette, width, options.shelves ?? workshopShelfCount.default),
+    wardrobe: () => wardrobe(palette, width, options.open ?? false),
+    trunk: () => trunk(palette, width, options.open ?? false),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;

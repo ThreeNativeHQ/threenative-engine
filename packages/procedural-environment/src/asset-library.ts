@@ -21,6 +21,7 @@ import {
   workshopHeights,
   workshopOpeningModules,
   workshopSeatCounts,
+  workshopShelfCount,
   workshopWidths,
 } from "./workshop.js";
 
@@ -150,6 +151,14 @@ function controls(biomes: string[]): Record<string, IControl[]> {
           only: [`workshop-${id}`],
         }),
       ),
+      {
+        key: "shelves",
+        label: "Shelf levels",
+        type: "range",
+        ...workshopShelfCount,
+        step: 1,
+        only: ["workshop-bookcase"],
+      },
     ],
     logistics: [
       {
@@ -433,6 +442,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("height", num(q, "height")),
         ...opt("open", toggle(q, "open")),
         ...opt("seats", num(q, "seats")),
+        ...opt("shelves", num(q, "shelves")),
       });
     case "logistics":
       return pkg.bakeLogistics({

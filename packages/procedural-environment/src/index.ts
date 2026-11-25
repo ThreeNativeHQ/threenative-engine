@@ -58,6 +58,7 @@ import {
   workshopModules,
   workshopOpeningModules,
   workshopSeatCounts,
+  workshopShelfCount,
   workshopWidths,
 } from "./workshop.js";
 
@@ -1361,8 +1362,9 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @situation bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors
  * @situation furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid
  * @situation bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI
+ * @situation furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
- * @constraint open previews the drawer, cabinet doors or toilet lid; moving groups remain available for animation
+ * @constraint open previews supported drawers, doors or lids; moving groups remain available for animation
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
  */
@@ -1377,13 +1379,25 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
   const widthSuffix = workshopDimension("width", options.width, workshopWidths[kit.id], kit.id);
   const heightSuffix = workshopDimension("height", options.height, workshopHeights[kit.id], kit.id);
   const seatRange = workshopSeatCounts[kit.id];
-  const { open, seats = seatRange?.default } = options;
+  const { open, seats = seatRange?.default, shelves } = options;
+  const shelfCount = workshopShelfCount;
+  if (
+    shelves !== undefined &&
+    (kit.id !== "bookcase" ||
+      !Number.isInteger(shelves) ||
+      shelves < shelfCount.min ||
+      shelves > shelfCount.max)
+  ) {
+    throw new Error(
+      `bakeWorkshop: shelves must be an integer from ${shelfCount.min} to ${shelfCount.max} for the bookcase`,
+    );
+  }
   if (
     open !== undefined &&
     (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
   ) {
     throw new Error(
-      "bakeWorkshop: open is a boolean for the drawer cabinet, locker, media console, kitchen modules or toilet",
+      `bakeWorkshop: open must be a boolean on a supported module (workshop-${kit.id})`,
     );
   }
   if (![undefined, seatRange?.min, seatRange?.max].includes(seats)) {
@@ -1394,9 +1408,11 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     );
   }
   const seatSuffix = seats === seatRange?.default ? "" : `-${seats}-seats`;
+  const shelfSuffix =
+    shelves === undefined || shelves === shelfCount.default ? "" : `-${shelves}-shelves`;
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${widthSuffix}${heightSuffix}${seatSuffix}${open ? "-open" : ""}.glb`,
+    `${widthSuffix}${heightSuffix}${seatSuffix}${shelfSuffix}${open ? "-open" : ""}.glb`,
   );
   const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
   return writeStaticKit(group, options.out, filename, true);

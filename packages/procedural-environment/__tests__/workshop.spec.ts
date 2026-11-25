@@ -51,6 +51,15 @@ const anchors = {
     "monitor-screen-bottom-right",
   ],
   "office-set": ["desk-surface", "chair-seat", "monitor-display"],
+  bookcase: ["bookcase-shelf-1", "bookcase-shelf-4", "bookcase-wall"],
+  wardrobe: [
+    "wardrobe-door-left",
+    "wardrobe-door-right",
+    "wardrobe-floor",
+    "wardrobe-shelf",
+    "wardrobe-hanger-rail",
+  ],
+  trunk: ["trunk-lid", "trunk-content", "trunk-latch"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -456,6 +465,64 @@ describe("Workshop furniture", () => {
     expect(knees.intersectObject(desk)).toHaveLength(0);
   });
 
+  it.each([3, 4, 5])("has %s usable bookcase shelves at both width limits", (shelves) => {
+    for (const width of [0.7, 1.38]) {
+      const bookcase = buildWorkshop("bookcase", { ...options, width, shelves });
+      bookcase.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(bookcase, true).getSize(new Vector3()).x).toBeCloseTo(width);
+      for (let level = 1; level <= shelves; level++) {
+        const surface = bookcase.getObjectByName(`bookcase-shelf-${level}`);
+        if (!surface) throw new Error("Missing bookcase shelf");
+        const point = surface.getWorldPosition(new Vector3());
+        const items = new Raycaster(point.clone().add(new Vector3(0, 0.23, 0)), down);
+        expect(items.intersectObject(bookcase)[0]?.point.y).toBeCloseTo(point.y);
+      }
+      expect(bookcase.getObjectByName(`bookcase-shelf-${shelves + 1}`)).toBeUndefined();
+    }
+  });
+
+  it.each([0.9, 1.6])("opens both wardrobe doors clear of the %s m opening", (width) => {
+    const wardrobe = buildWorkshop("wardrobe", { ...options, width, open: true });
+    wardrobe.updateMatrixWorld(true);
+    const left = wardrobe.getObjectByName("wardrobe-door-left");
+    const right = wardrobe.getObjectByName("wardrobe-door-right");
+    expect(left?.rotation.y).toBeLessThan(-Math.PI / 2);
+    expect(right?.rotation.y).toBeGreaterThan(Math.PI / 2);
+    const inside = new Raycaster(new Vector3(0, 1.05, 1), new Vector3(0, 0, -1), 0, 1.19);
+    expect(inside.intersectObject(wardrobe)).toHaveLength(0);
+    const carcass = wardrobe.children.filter((child) => child instanceof Mesh);
+    for (const door of [left, right]) {
+      if (!door) throw new Error("Missing wardrobe door");
+      const joint = new Vector3(door.position.x, 0.46, door.position.z - 0.016);
+      const hinge = new Raycaster(joint, down, 0, 0.11);
+      expect(hinge.intersectObjects(carcass, false)[0]?.point.y).toBeCloseTo(0.398);
+    }
+    const rail = wardrobe.getObjectByName("wardrobe-hanger-rail");
+    if (!rail) throw new Error("Missing wardrobe hanger rail");
+    const point = rail.getWorldPosition(new Vector3());
+    const railRay = new Raycaster(point.clone().add(new Vector3(0, 0.06, 0)), down);
+    expect(railRay.intersectObject(wardrobe)[0]?.point.y).toBeCloseTo(point.y);
+  });
+
+  it.each([0.66, 1.35])(
+    "keeps the %s m trunk closed over its cavity and open for placement",
+    (width) => {
+      for (const open of [false, true]) {
+        const trunk = buildWorkshop("trunk", { ...options, width, open });
+        trunk.updateMatrixWorld(true);
+        const lid = trunk.getObjectByName("trunk-lid");
+        const content = trunk.getObjectByName("trunk-content");
+        if (!lid || !content) throw new Error("Missing trunk anchors");
+        expect(lid.rotation.x).toBeCloseTo(open ? -Math.PI * 0.56 : 0);
+        const point = content.getWorldPosition(new Vector3());
+        const ray = new Raycaster(point.clone().setY(1), down);
+        const hit = ray.intersectObject(trunk)[0]?.point.y;
+        if (open) expect(hit).toBeCloseTo(point.y);
+        else expect(hit).toBeGreaterThan(0.45);
+      }
+    },
+  );
+
   it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
     const out = await makeTempDir("tn-workshop-controls-");
     const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
@@ -490,6 +557,19 @@ describe("Workshop furniture", () => {
     ).rejects.toThrow(/height/u);
     await expect(bakeWorkshop({ module: "workshop-stool", out, height: 0.54 })).rejects.toThrow(
       /height/u,
+    );
+    const [bookcase] = await bakeWorkshop({
+      module: "workshop-bookcase",
+      out,
+      width: 1.38,
+      shelves: 5,
+    });
+    expect(bookcase?.path).toMatch(/-w1\.38-5-shelves\.glb$/u);
+    await expect(bakeWorkshop({ module: "workshop-bookcase", out, shelves: 3.5 })).rejects.toThrow(
+      /shelves/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-wardrobe", out, shelves: 3 })).rejects.toThrow(
+      /shelves/u,
     );
     if (!wideDining) throw new Error("Missing six-seat dining GLB");
     const bytes = await readFile(wideDining.path);
