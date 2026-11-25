@@ -144,6 +144,7 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | Package | Purpose |
 | --- | --- |
 | `@threenative/assets` | Build-time asset compile step: `assets/` in, hashed outputs and a manifest out |
+| `@threenative/backend` | Cloud saves and shared documents for published games: a local-first client, the Cloudflare handler and its D1 schema |
 | `@threenative/core` | Bootstrap, scenes, lifecycle, input, and renderer integration |
 | `create-threenative` | Scaffold a readable game project from eight templates |
 | `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
