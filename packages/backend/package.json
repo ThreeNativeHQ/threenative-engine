@@ -55,6 +55,7 @@
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:",
+    "ws": "8.21.0"
   }
 }

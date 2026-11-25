@@ -10,6 +10,7 @@ import { type IBackend, createBackend } from "../src/client.js";
 import { type IBackendRoomsNamespace, deleteGameData, handleBackend } from "../src/cloudflare.js";
 import { ROOM_FRAME_MAX, ROOM_RATE_MAX } from "../src/protocol.js";
 import type { Room } from "../src/rooms.js";
+import "./support.js";
 import { workerModules } from "./worker.js";
 
 const GAME = "project-1";
