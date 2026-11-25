@@ -81,12 +81,14 @@ describe("formatModelSizes", () => {
           gpuBytesAfter: 100,
           gpuBytesBefore: 100,
           resized: 0,
+          projected: { atlas: 4096 },
           skippedCompression: { decal: "block-size", tiny: "not-smaller" },
         },
       },
     ]);
     expect(lines).toContain("embedded texture prop.glb#decal: compression skipped: block-size");
     expect(lines).toContain("embedded texture prop.glb#tiny: compression skipped: not-smaller");
+    expect(lines).toContain("embedded texture prop.glb#atlas: textureProjection atlas 4096 px");
   });
 
   it("should report fewer bytes and the geometry count after the model pass", () => {

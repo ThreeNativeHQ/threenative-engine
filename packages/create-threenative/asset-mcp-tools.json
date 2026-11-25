@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.18.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.18.0 serves all 57 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.18.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.19.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.19.0 serves all 60 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.19.0",
   "profile": null,
   "recommended": [
     "ambientcg_list_files",
@@ -77,6 +77,9 @@
     "smithsonian_get_asset",
     "smithsonian_list_files",
     "smithsonian_search_assets",
+    "texture_project_inspect",
+    "texture_project_paint",
+    "texture_project_quote",
     "unity_list_packages"
   ],
   "inputSchemas": {
@@ -2129,6 +2132,228 @@
       },
       "required": ["provider", "url", "fileName", "acceptLicense"]
     },
+    "texture_project_quote": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "levelPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Gray blockout level or environment GLB, project-relative; it must carry TEXCOORD_0 (unwrapped)."
+        },
+        "views": {
+          "description": "Maximum number of camera views to plan (default 36).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 96
+        },
+        "aerial": {
+          "description": "Aerial ring cameras around the level (default 0).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "roofs": {
+          "description": "Close roof passes painted with the roof prompt (default 0).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "holes": {
+          "description": "Extra views over the largest unpainted texels players can see, painted until visible coverage reaches 95% (default 12).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "model": {
+          "default": "or-klein",
+          "description": "Image model alias: \"or-klein\" (default), \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "atlas": {
+          "default": "auto",
+          "description": "Atlas size in pixels, or \"auto\" (default) for the smallest power of two that matches what the planned views resolve.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 8192
+            },
+            {
+              "type": "string",
+              "const": "auto"
+            }
+          ]
+        },
+        "verify": {
+          "description": "Opt-in vision check: one OpenRouter chat call per painted view, priced separately here (default false, so the quote prices images only).",
+          "type": "boolean"
+        },
+        "verifyModel": {
+          "description": "OpenRouter chat model id with image input for the opt-in vision check (default google/gemini-2.5-flash-lite).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      },
+      "required": ["levelPath"],
+      "additionalProperties": false
+    },
+    "texture_project_paint": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "levelPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Gray blockout level or environment GLB, project-relative; it must carry TEXCOORD_0 (unwrapped)."
+        },
+        "outputPath": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096,
+          "description": "Painted GLB to write, project-relative and under the project's assets/ directory (atomically replaced)."
+        },
+        "model": {
+          "default": "or-klein",
+          "description": "Image model alias: \"or-klein\" (default), \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fillModel": {
+          "description": "Model alias for fill and hole views (defaults to model); the first views always use model.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "fill": {
+          "description": "What the exported atlas writes in a texel no accepted view painted: \"detail\" (default) continues the material around the gap; \"debug\" writes it hot pink (#FF69B4) so a capture can count the bake gaps. Use \"debug\" for verification, never ship it.",
+          "type": "string",
+          "enum": ["detail", "debug"]
+        },
+        "atlas": {
+          "default": "auto",
+          "description": "Atlas size in pixels, or \"auto\" (default) for the smallest power of two that matches what the planned views resolve.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 256,
+              "maximum": 8192
+            },
+            {
+              "type": "string",
+              "const": "auto"
+            }
+          ]
+        },
+        "viewSize": {
+          "default": 1024,
+          "description": "Pixels per view image sent to the model (default 1024).",
+          "type": "integer",
+          "minimum": 128,
+          "maximum": 2048
+        },
+        "lighting": {
+          "default": "overcast",
+          "description": "Light the clay render is painted under; \"overcast\" (default) keeps albedo free of baked sun.",
+          "type": "string",
+          "enum": ["outdoor", "overcast", "indoor"]
+        },
+        "style": {
+          "description": "Material style for the level, e.g. its architecture and wear.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 2000
+        },
+        "styleImagePath": {
+          "description": "Reference image whose materials and palette ride along, project-relative.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "views": {
+          "description": "Maximum number of camera views to plan (default 36).",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 96
+        },
+        "aerial": {
+          "description": "Aerial ring cameras around the level (default 0).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "roofs": {
+          "description": "Close roof passes painted with the roof prompt (default 0).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "holes": {
+          "description": "Extra views over the largest unpainted texels players can see, painted until visible coverage reaches 95% (default 12).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 24
+        },
+        "verify": {
+          "description": "Opt-in vision check: one OpenRouter chat call per painted view, priced separately in the quote (default false). A rejected view is repainted once, then left to the fill pass. You review inspect's contact sheet instead.",
+          "type": "boolean"
+        },
+        "verifyModel": {
+          "description": "OpenRouter chat model id with image input for the opt-in vision check (default google/gemini-2.5-flash-lite).",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "promptTestView": {
+          "description": "Paint only this planned view, for one image: a prompt test that leaves the run incomplete.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 95
+        },
+        "resumeRunId": {
+          "description": "Continue a stored run: its paid views are replayed and only the missing ones are requested.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "rejectViews": {
+          "description": "Views you judged wrong in inspect's contact sheet: each is stored as rejected by the caller, projected nowhere, and buys no image. Requires resumeRunId and indices the run stores.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 95
+          }
+        }
+      },
+      "required": ["levelPath", "outputPath"],
+      "additionalProperties": false
+    },
+    "texture_project_inspect": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "runId": {
+          "description": "Stored run under the project's .threenative/texture-projection.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "glbPath": {
+          "description": "A projected GLB, project-relative; its extras marker names the run when one exists.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
     "creature_compile": {
       "type": "object",
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2275,6 +2500,9 @@
     "asset_list_sources": "List agent-ready sources by default: every result has an MCP download path requiring no manual browser, login, checkout, or paywall. Set agentReadyOnly=false to inspect the broader research directory, including package-manager, Git, authenticated, and provider-page sources.",
     "asset_search_sources": "Search agent-ready asset sources by category, license, access mode, or text query. Manual/provider-page sources are excluded unless agentReadyOnly=false.",
     "asset_download_file": "Download a file URL returned by Poly Haven, ambientCG, or Smithsonian MCP tools, or a curated Game-icons.net/Kenney direct ZIP, into guarded local storage after license acknowledgement. Provider hosts and URL shapes are allowlisted, redirects are revalidated, files are streamed with a byte cap, and existing files are never overwritten.",
+    "texture_project_quote": "Plan the camera views that would paint a gray blockout level or environment (greybox/untextured scene), and report what texturing it costs before anything is bought: planned views, model and price, the atlas size the bake would choose by measuring the plan, the UV stretch of the level's mapping and how much of that atlas the views would leave blurred. Uses OpenRouter image models with the user's own key at paint time; this quote makes no network call and needs no key. Fails closed with TEXTURE_PROJECT_MISSING_UV when the GLB has no UVs.",
+    "texture_project_paint": "SPENDS PROVIDER CREDITS. Texture a gray blockout level or environment: plan camera views, ask an OpenRouter image model (FLUX 3 Klein by default) to paint each view from the clay render, project the images into the level's UV atlas, and write the baked GLB atomically under the project's assets/. Every prompt keeps the clay image's edges, openings and silhouette and forbids invented doors, windows, arches and volumes; a view that invents geometry, or whose surface is almost all grazing, is rejected and left to the fill pass. You judge the views yourself: inspect returns the contact sheet, and any view that invents an arch, doorway, passage, opening, slab, coping or decorative floor is rejected with {\"resumeRunId\": ..., \"rejectViews\": [..]}, which buys no image and re-bakes from the stored ones. An embedded vision check is an opt-in (verify: true) that costs one chat request per view; it is off by default. Fails closed and stops spending: TEXTURE_PROJECT_STRUCTURE_REJECTED once the first three painted views all invent geometry, TEXTURE_PROJECT_NO_COVERAGE when no view reaches the atlas. Requires OPENROUTER_API_KEY when an image actually has to be bought; a resume that only reuses stored images needs none. Reusing resumeRunId re-judges every stored generation and requests only views that have none, so a view is never paid for twice; viewsPainted counts what reached the atlas, bought or reused. promptTestView buys exactly one image. fill: \"debug\" paints never-painted texels hot pink (#FF69B4) so a capture can count bake gaps; use it for verification, never ship it. The atlas stays opaque RGB with the fill's own colour, so it keeps its UASTC cook; \"a view painted this texel\" ships as its own file, <name>.painted.png beside the GLB: an 8-bit grayscale PNG at a quarter of the atlas' side, 255 where an accepted view painted, 0 where the fill made the colour up, feathered and bled into the UV gutters, named by the GLB's extras.threenative.textureProjection.paintedMask and returned as paintedMask. A game samples it as a linear data texture at the atlas' uv and swaps the atlas for the paint's swatch exactly where no view painted. It also cuts true-scale, tileable material swatches from the stored paint — one wall and one floor patch, rectified onto their own planes and written beside the GLB as <name>.swatch_wall.png, <name>.swatch_floor.png and <name>.swatches.json — because the atlas is macro variation and at arm's length its texels read as blotches: a game tiles these in world space for close-range detail.",
+    "texture_project_inspect": "Review the texturing of a gray blockout level or environment: return a contact sheet image (clay render, model image and projected composite per view, rejected views labelled) plus coverage, atlas size, measured blurred-texel share and rejected views by reason, and audit threenative.config.ts cook settings: flags a maxSize below the atlas or an ETC1S (or missing UASTC) base-colour codec that would blur the bake. Read this sheet yourself: no image model is called by default, so a view that invents an arch, doorway, passage, opening, slab, coping or decorative floor is yours to catch with texture_project_paint {\"resumeRunId\": ..., \"rejectViews\": [..]}, which buys no image and re-bakes from the stored ones. Read-only review of the run's own data; it buys no images and writes only the contact sheet beside the run.",
     "creature_compile": "Compile a bounded project-relative anyCreature JSON spec with the fixed packaged 1.3.1 compiler, validate its GLB, and publish it atomically with hash-bound evidence.",
     "creature_preview": "Render fresh, bounded silhouettes or a hero image for a project-relative creature GLB and return image artifacts with backend and camera identity; visual approval remains independent.",
     "creature_check": "Inspect actual GLB mesh, rig, materials and animation bindings, or run validated claims through the fixed anyCreature judge; visual review remains independent."
