@@ -62,6 +62,26 @@ const zoom = ctx.input.axis("zoom");
 Wheel and pinch report the change since the last tick. Apply cooldowns, stamina and pause rules
 in your gameplay code.
 
+## Let a player rebind, and rumble
+
+`ctx.input.setBinding(action, binding)` replaces one declared action's binding, and
+`ctx.input.bindings()` returns a JSON-safe copy to save and feed back. The action must already be
+declared in `defineGame({ input })`: replacing an undeclared one throws `TN_BINDING_UNKNOWN`.
+
+```ts
+onRebind: (action, binding) => map.setBinding(action, binding)
+```
+
+Two haptics calls, both returning whether the platform took the request. A phone with no motor, or
+a pad with no actuator, reports `TN_HAPTICS_UNSUPPORTED` once and returns `false`, so a game that
+vibrates on every hit does not fill the console. A negative or non-finite duration throws
+`TN_HAPTICS_INVALID`.
+
+```ts
+if (ctx.input.vibrateHandheld(80)) hud.flashHit();
+ctx.input.startJoyVibration(0.4, 0.8, 250);
+```
+
 ## Mouse look and touch
 
 With `pointerRelative: true`, a click on the game requests pointer capture. If you want capture

@@ -1,7 +1,8 @@
 # Fix common problems
 
 Find your symptom and follow the steps. Start with doctor, which reports what would break a build
-without changing your files.
+without changing your game's source. `doctor --fix` is the one form that writes: it regenerates
+`AGENTS.md`, `CLAUDE.md`, the skills, the hooks and the MCP configs.
 
 ## First checks
 

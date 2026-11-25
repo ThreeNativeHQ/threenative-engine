@@ -2,8 +2,10 @@
 
 ## What it is
 
-`@threenative/ui` provides React bindings for a ThreeNative game: `GameCanvas` mounts the game
-surface, `useGameState` reads its throttled state store, and `DebugOverlay` exposes development
+`@threenative/ui` provides React bindings for a ThreeNative game: `UiLayer` renders a game's UI so
+the same source runs on web and on every native target, `useUiState` reads the game's published
+state and `useUiIntent` sends a named request back to the game. `GameCanvas` mounts a game surface
+directly, `useGameState` reads its throttled store, and `DebugOverlay` exposes development
 snapshots. It is not a scene-graph or visual-design layer; React renders HUDs, menus, and overlays,
 while the game owns gameplay and the Three.js scene.
 
@@ -17,27 +19,38 @@ pnpm add @threenative/ui @threenative/core react react-dom three
 
 ## Example
 
-In a generated `starter` project, `src/ui/App.tsx` mounts the real game and its HUD:
+A generated `starter` project renders one `<GameUi />` on both targets. `src/ui/GameUi.tsx` wraps
+the HUD and menu in `UiLayer`, and two entries mount it: `src/main.ts` beside the canvas on the web,
+and `src/ui/main.tsx` for the native web view. Mark every control the player touches with
+`data-tn-interactive`, or the native web view will not forward its input.
 
 ```tsx
-import type { IGame } from "@threenative/core";
-import type { IPhysicsContext } from "@threenative/physics";
-import { DebugOverlay, GameCanvas } from "@threenative/ui";
-import type { GameState } from "../state.js";
+import { UiLayer } from "@threenative/ui";
 import { Hud } from "./Hud.js";
 import { Menu } from "./Menu.js";
 
-export function App({ game }: { game: IGame<GameState, IPhysicsContext> }) {
+export function GameUi() {
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-ink">
-      <GameCanvas className="absolute inset-0" game={game} />
-      <Hud game={game} />
-      <Menu game={game} />
-      <DebugOverlay />
-    </main>
+    <UiLayer>
+      <Hud />
+      <Menu />
+    </UiLayer>
   );
 }
 ```
+
+`useUiState` reads the state the game publishes once per rendered frame, and is `undefined` until
+the game publishes its first snapshot. `useUiIntent()` returns a `send` function for a named request
+the game handles:
+
+```tsx
+const score = useUiState<GameState, number>((state) => state.score);
+const send = useUiIntent();
+send("restart");
+```
+
+`useUiStateDuringStartup` takes a required `reason` and is reported once as
+`TN_UI_STARTUP_OVERRIDE`; every other HUD uses `useUiState`.
 
 ## Styling the debug overlay
 

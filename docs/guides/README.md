@@ -14,6 +14,8 @@ so a change here is a change to the published docs.
 
 - [Scenes and the game loop](core-concepts.md)
 - [Rendering](rendering.md)
+- [Particles, fluids and fields](particles-and-fields.md)
+- [Spells](spells.md)
 - [Input](input.md)
 - [Physics](physics.md)
 - [Assets](assets.md)
@@ -23,10 +25,12 @@ so a change here is a change to the published docs.
 - [UI and state](ui-state.md)
 - [Audio](audio.md)
 - [World streaming](world-streaming.md)
+- [Networking](networking.md)
 
 ## Ship
 
 - [Playtesting](playtesting.md)
+- [Publish a playable link](publish.md)
 - [Native runtime](native-runtime.md)
 - [native-css support](native-css-support.md)
 - [Configuration](configuration.md)
