@@ -31,6 +31,7 @@ import {
   pickupAccent,
   pickupModules,
 } from "./pickups.js";
+import { type IBakeRailOptions, buildRail, railAccent, railModules } from "./rail.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
 import {
   type IBakeStationOptions,
@@ -46,6 +47,7 @@ export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
 export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
+export type { IBakeRailOptions } from "./rail.js";
 export type { IBakeStationOptions } from "./station.js";
 
 export interface IVegetationPreset {
@@ -619,7 +621,8 @@ export type EnvironmentKind =
   | "station"
   | "frontier"
   | "pickup"
-  | "mechanism";
+  | "mechanism"
+  | "rail";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -652,6 +655,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "frontier",
   "pickup",
   "mechanism",
+  "rail",
 ];
 
 /**
@@ -763,26 +767,42 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeMechanism({ module: "mechanism-${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city, ...station, ...frontier, ...pickups, ...mechanisms].filter(
-    (element) => {
-      if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
-      if (filter.kind !== undefined && element.kind !== filter.kind) return false;
-      const text = [
-        element.id,
-        element.name,
-        "latin" in element ? element.latin : "",
-        "category" in element ? element.category : "",
-        element.kind,
-        ...element.biomes.flatMap((id) => [
-          id,
-          ...(BIOMES.find((row) => row.id === id)?.words ?? []),
-        ]),
-      ]
-        .join(" ")
-        .toLowerCase();
-      return words.every((word) => text.includes(word));
-    },
-  );
+  const rails = railModules.map(({ id, name, category }) => ({
+    id: `rail-${id}`,
+    name,
+    kind: "rail" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeRail({ module: "rail-${id}", out: "assets/environment" })`,
+  }));
+  const elements = [
+    ...plants,
+    ...rocks,
+    ...city,
+    ...station,
+    ...frontier,
+    ...pickups,
+    ...mechanisms,
+    ...rails,
+  ];
+  return elements.filter((element) => {
+    if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
+    if (filter.kind !== undefined && element.kind !== filter.kind) return false;
+    const text = [
+      element.id,
+      element.name,
+      "latin" in element ? element.latin : "",
+      "category" in element ? element.category : "",
+      element.kind,
+      ...element.biomes.flatMap((id) => [
+        id,
+        ...(BIOMES.find((row) => row.id === id)?.words ?? []),
+      ]),
+    ]
+      .join(" ")
+      .toLowerCase();
+    return words.every((word) => text.includes(word));
+  });
 }
 
 export interface IBakeRockOptions {
@@ -1191,6 +1211,20 @@ export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEn
     );
   const filename = active ? kit.filename.replace(/\.glb$/u, "-active.glb") : kit.filename;
   return writeStaticKit(buildMechanism(kit.id, { ...kit, active }), options.out, filename);
+}
+
+/**
+ * Bake modular narrow-gauge railway GLBs with track endpoints and a matching minecart.
+ * @situation bake snap-together railroad or minecart track with a turn, ramp, trestle bridge and buffer stop
+ * @situation bake a minecart model with separate axle groups and a cargo attachment point
+ * @constraint all pieces sit at y = 0; track sockets sit on the running surface and face along travel
+ * @constraint use one scale across connected pieces and place the cart origin at rail height
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeRail({ module: "rail-curve", out: "assets/rail" });
+ */
+export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakeRail", "rail", railModules, railAccent);
+  return writeStaticKit(buildRail(kit.id, kit), options.out, kit.filename);
 }
 
 function resolvePaintedKit<Id extends string>(

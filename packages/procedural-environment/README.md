@@ -43,6 +43,28 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Rail Kit
+
+Open **Rail Kit** for straight and quarter-turn track, a raised approach, a trestle bridge,
+a buffer stop and an open minecart. **Scale** applies to the whole piece, including its
+attachment points. Keep the same scale across the route. **Accent color** recolors
+the ramp, bridge, stop and cart. **Seed** varies the timber and iron finishes.
+
+Snap `track-out` to the next piece's `track-in` by matching their world positions and rotations.
+The sockets are at rail height and local +Z points along travel. The curve turns toward +X
+with a 4 m centerline radius. Straight sections run 4 m. The ramp rises 1 m to the bridge's
+rail height. The buffer stop has one track socket.
+
+Place the cart origin at rail height and point its local +Z along the track. Rotate the
+`cart-front-axle` and `cart-rear-axle` groups around their local X axes. The `cart-load` node is
+at the center of the hopper floor. The game supplies the route, motion and collision.
+
+```ts
+import { bakeRail } from "@threenative/procedural-environment";
+
+await bakeRail({ module: "rail-cart", accent: "#447c8a", out: "assets/rail" });
+```
+
 ### Mechanism Kit
 
 Open **Mechanism Kit** for a signal emitter, receiver and reflector, a modular conveyor,

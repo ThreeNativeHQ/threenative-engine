@@ -8672,6 +8672,27 @@
       "symbol": "bakePickup"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "all pieces sit at y = 0; track sockets sit on the running surface and face along travel",
+        "use one scale across connected pieces and place the cart origin at rail height"
+      ],
+      "example": "await bakeRail({ module: \"rail-curve\", out: \"assets/rail\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake snap-together railroad or minecart track with a turn, ramp, trestle bridge and buffer stop",
+        "bake a minecart model with separate axle groups and a cargo attachment point"
+      ],
+      "summary": "Bake modular narrow-gauge railway GLBs with track endpoints and a matching minecart.",
+      "supersedes": [],
+      "symbol": "bakeRail"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",

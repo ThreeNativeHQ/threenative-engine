@@ -518,6 +518,7 @@
         "@threenative/procedural-environment#bakeFrontier": "export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeMechanism": "export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakePickup": "export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> { … }",
+        "@threenative/procedural-environment#bakeRail": "export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeRock": "export async function bakeRock(options: IBakeRockOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeStation": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
         "@threenative/procedural-environment#bakeVegetation": "export async function bakeVegetation(options: IBakeVegetationOptions): Promise<IEnvironmentBake[]> { … }",

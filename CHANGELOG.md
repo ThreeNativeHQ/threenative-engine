@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The Asset Library's Rail Kit bakes six modular railway GLBs, including a matching minecart
+  with separately rotatable axle groups and a cargo attachment point.
+
 - The Asset Library's Mechanism Kit adds six modular puzzle and transport GLBs with
   named signal, conveyor, deck and power cell attachment points.
 

@@ -11,6 +11,7 @@ import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
 import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
 import { flatPickupModules, pickupAccent } from "./pickups.js";
+import { railAccent, railModules } from "./rail.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 
@@ -102,6 +103,18 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         default: false,
         only: litMechanismModules.map((id) => `mechanism-${id}`),
       },
+    ],
+    rail: [
+      {
+        key: "accent",
+        label: "Accent color",
+        type: "color",
+        default: railAccent,
+        only: railModules
+          .filter(({ id }) => ["ramp", "bridge", "stop", "cart"].includes(id))
+          .map(({ id }) => `rail-${id}`),
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
     ],
     pickup: [
       { key: "accent", label: "Accent color", type: "color", default: pickupAccent },
@@ -312,6 +325,14 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("active", toggle(q, "active")),
       });
+    case "rail":
+      return pkg.bakeRail({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+      });
     case "frontier":
     case "pickup":
       return (kind === "frontier" ? pkg.bakeFrontier : pkg.bakePickup)({
@@ -359,6 +380,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  rail: { name: "Rail Kit" },
   mechanism: { name: "Mechanism Kit" },
   pickup: { name: "Pickups" },
   frontier: { name: "Frontier Kit" },
@@ -475,7 +497,7 @@ export function proceduralEnvironmentSource(
           ...pkg.environmentElements().map((entry) => ({
             ...entry,
             styleTags: [
-              ["station", "frontier", "pickup", "mechanism"].includes(entry.kind)
+              ["station", "frontier", "pickup", "mechanism", "rail"].includes(entry.kind)
                 ? "stylized"
                 : "realistic",
             ],
