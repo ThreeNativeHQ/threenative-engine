@@ -8783,8 +8783,9 @@
     {
       "aliases": [],
       "constraints": [
-        "Width changes the length along local X; tabletop and counter heights and depths stay fixed before scale",
-        "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height"
+        "Width changes furniture length along local X or vessel diameter; body height stays fixed",
+        "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height",
+        "Set open on tavern-barrel to place its removable lid beside it"
       ],
       "example": "await bakeTavern({ module: \"tavern-dining-set\", width: 2.2, out: \"assets/tavern\" });",
       "importPath": "@threenative/procedural-environment",
@@ -8795,9 +8796,10 @@
       "signature": "export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> { … }",
       "situations": [
         "furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter",
-        "assemble a tavern dining table with two matching benches and four seat anchors"
+        "assemble a tavern dining table with two matching benches and four seat anchors",
+        "bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard"
       ],
-      "summary": "Bake realistic medieval tavern furniture using shared compressed Poly Haven wood maps.",
+      "summary": "Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.",
       "supersedes": [],
       "symbol": "bakeTavern"
     },

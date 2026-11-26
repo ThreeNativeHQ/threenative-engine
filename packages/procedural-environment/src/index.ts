@@ -1369,11 +1369,13 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
 }
 
 /**
- * Bake realistic medieval tavern furniture using shared compressed Poly Haven wood maps.
+ * Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.
  * @situation furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter
  * @situation assemble a tavern dining table with two matching benches and four seat anchors
- * @constraint Width changes the length along local X; tabletop and counter heights and depths stay fixed before scale
+ * @situation bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard
+ * @constraint Width changes furniture length along local X or vessel diameter; body height stays fixed
  * @constraint Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height
+ * @constraint Set open on tavern-barrel to place its removable lid beside it
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
  */
@@ -1389,8 +1391,12 @@ export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironm
   );
   const width = options.width ?? range?.default;
   if (width === undefined) throw new Error(`bakeTavern: no width for ${options.module}`);
-  const filename = kit.filename.replace(/\.glb$/u, `${widthSuffix}.glb`);
-  const group = buildTavern(kit.id, { ...kit, width }, await loadWorkshopVeneer());
+  const { open = false } = options;
+  if (options.open !== undefined && (typeof open !== "boolean" || kit.id !== "barrel")) {
+    throw new Error("bakeTavern: open is a boolean for tavern-barrel");
+  }
+  const filename = kit.filename.replace(/\.glb$/u, `${widthSuffix}${open ? "-open" : ""}.glb`);
+  const group = buildTavern(kit.id, { ...kit, width, open }, await loadWorkshopVeneer());
   return writeStaticKit(group, options.out, filename, true);
 }
 

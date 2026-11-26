@@ -122,15 +122,16 @@ function controls(biomes: string[]): Record<string, IControl[]> {
       { key: "accent", label: "Wood tint", type: "color", default: tavernAccent },
       { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
       ...tavernModules.map(
-        ({ width, id }): IControl => ({
+        (entry): IControl => ({
           key: "width",
-          label: "Width",
+          label: "widthLabel" in entry ? entry.widthLabel : "Width",
           type: "range",
-          step: 0.01,
-          ...width,
-          only: [`tavern-${id}`],
+          step: "widthStep" in entry ? entry.widthStep : 0.01,
+          ...entry.width,
+          only: [`tavern-${entry.id}`],
         }),
       ),
+      { key: "open", label: "Remove lid", type: "toggle", default: false, only: ["tavern-barrel"] },
     ],
     workshop: [
       { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
@@ -472,6 +473,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("accent", q.get("accent") ?? undefined),
         ...opt("scale", num(q, "scale")),
         ...opt("width", num(q, "width")),
+        ...opt("open", toggle(q, "open")),
       });
     case "workshop":
       return pkg.bakeWorkshop({

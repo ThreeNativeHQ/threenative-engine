@@ -46,11 +46,14 @@ under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 ### Tavern Kit
 
 Filter by **Realistic** and **Medieval** for the trestle table, plank bench, serving counter,
-and dining set. Change **Width** independently of the height and depth. **Wood tint**, **Seed**
-and **Scale** vary the finish and size using the shared compressed wood maps.
+dining set, storage barrel, wooden bucket, and tankard. Furniture uses **Width** along local X.
+Vessels use the same `width` option for **Body diameter** on the barrel and **Rim diameter** on
+the bucket and tankard. These controls preserve body height. **Wood tint**, **Seed** and **Scale**
+vary the finish and size using the shared compressed wood maps.
 
 ```ts
 await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
+await bakeTavern({ module: "tavern-barrel", width: 0.78, open: true, out: "assets/tavern" });
 ```
 
 Use `tavern-tabletop` for dishes or props. The standalone bench exposes `bench-seat-left`
@@ -59,6 +62,11 @@ and `south-`, with the seats facing the table. The counter has `counter-surface`
 `counter-shelf` on the usable surfaces. Its customer side faces +Z. Join counters of the
 same scale by aligning `counter-join-left` and `counter-join-right` with their local +Z axes
 pointing toward each other.
+
+The `barrel-mouth`, `bucket-mouth` and `tankard-mouth` nodes mark the rim center with +Y pointing
+out of the vessel. **Remove lid** places the separate `barrel-lid` beside the barrel. Its grip
+travels with the lid. The `bucket-handle` rotates around its local X axis, carrying
+`bucket-grip` with it. The `tankard-grip` faces outward along +X in the tankard's frame.
 
 ### Workshop Kit
 

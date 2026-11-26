@@ -9,6 +9,7 @@ import {
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import { buildCooperage, cooperageModules } from "./cooperage.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
 export interface IBakeTavernOptions {
@@ -20,8 +21,10 @@ export interface IBakeTavernOptions {
   readonly accent?: string;
   /** Uniform scale from 0.5 to 2. Use the same scale across a counter run. */
   readonly scale?: number;
-  /** Overall width (metres) before scale. Heights and depths stay fixed. */
+  /** Width or wooden vessel diameter in metres before scale. Body height stays fixed. */
   readonly width?: number;
+  /** Set the storage barrel's removable lid beside it for inspection. */
+  readonly open?: boolean;
 }
 
 export const tavernAccent = "#756957";
@@ -41,6 +44,7 @@ export const tavernModules = [
     width: { min: 1.2, max: 2.4, default: 1.78 },
   },
   { id: "dining-set", name: "Tavern dining set", category: "Arrangements", width: tableWidth },
+  ...cooperageModules,
 ] as const;
 
 type Module = (typeof tavernModules)[number]["id"];
@@ -180,7 +184,8 @@ function counter(palette: Palette, width: number, seed: number): Group {
 
 export function buildTavern(
   id: Module,
-  options: Required<Pick<IBakeTavernOptions, "seed" | "accent" | "scale" | "width">>,
+  options: Required<Pick<IBakeTavernOptions, "seed" | "accent" | "scale" | "width">> &
+    Pick<IBakeTavernOptions, "open">,
   scan?: { color: Texture; normal: Texture },
 ): Group {
   const { accent, seed, scale, width } = options;
@@ -213,6 +218,9 @@ export function buildTavern(
       south.rotation.y = Math.PI;
       return new Group().add(table(palette, width, seed), north, south);
     },
+    barrel: () => buildCooperage("barrel", width, new RNG(seed), palette, options.open === true),
+    bucket: () => buildCooperage("bucket", width, new RNG(seed), palette, false),
+    tankard: () => buildCooperage("tankard", width, new RNG(seed), palette, false),
   };
   const group = builders[id]();
   group.name = `tavern-${id}`;
