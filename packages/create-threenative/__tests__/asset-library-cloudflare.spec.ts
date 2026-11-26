@@ -1,9 +1,9 @@
-import { mkdtemp, readFile, rm } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { type Server as HttpServer, createServer as createHttpServer } from "node:http";
-import { tmpdir } from "node:os";
 import path from "node:path";
 import { type ViteDevServer, createServer } from "vite";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { createAssetLibraryPlugin } from "../src/asset-library/plugin.js";
 
 const WEB_ENGINE_ID = "\0stand-in-web-engine";
@@ -147,7 +147,7 @@ describe("asset library cloudflare source", () => {
   let base = "";
 
   beforeAll(async () => {
-    root = await mkdtemp(path.join(tmpdir(), "tn-cf-lib-"));
+    root = await makeTempDir("tn-cf-lib-");
     cf = await startMockCloudflare();
     const started = await startAssetLibrary(root, cf.origin);
     viteServer = started.server;
@@ -157,7 +157,6 @@ describe("asset library cloudflare source", () => {
   afterAll(async () => {
     await viteServer?.close();
     await cf?.close();
-    if (root) await rm(root, { recursive: true, force: true });
   });
 
   it("loads catalog.json lazily without downloading any GLB up front", async () => {
@@ -220,7 +219,7 @@ describe("asset library cloudflare source", () => {
   });
 
   it("fails open to an empty Cloudflare list when the catalog origin is unreachable", async () => {
-    const offlineRoot = await mkdtemp(path.join(tmpdir(), "tn-cf-offline-"));
+    const offlineRoot = await makeTempDir("tn-cf-offline-");
     const deadCf = await startMockCloudflare();
     deadCf.failCatalog = true;
     const { server, base: offlineBase } = await startAssetLibrary(offlineRoot, deadCf.origin);
@@ -236,7 +235,6 @@ describe("asset library cloudflare source", () => {
     } finally {
       await server.close();
       await deadCf.close();
-      await rm(offlineRoot, { recursive: true, force: true });
     }
   }, 30_000);
 });

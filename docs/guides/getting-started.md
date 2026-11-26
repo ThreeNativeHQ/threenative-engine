@@ -24,7 +24,7 @@ pnpm dev
 ```
 
 Open the local URL that Vite prints. The default template is `starter`, a game with a React HUD.
-This guide uses `minimal`, which draws its HUD in the scene. Sixteen templates ship, and
+This guide uses `minimal`, which draws its HUD in the scene. Nineteen templates ship, and
 `pnpm create threenative --help` lists each one with its blurb. Name one with `--template`, or
 name a genre with `--genre`:
 

@@ -76,6 +76,10 @@ const allowedProductionCreators = new Map<string, string>([
     "scripts/check-publish-state.ts",
     "The tarball gate packs into a scratch directory removed in finally.",
   ],
+  [
+    "scripts/seed-cf-asset-library.ts",
+    "A seed bake stages one scratch directory per run and the generator removes it in finally, whether its consumer finishes or fails.",
+  ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   [
     "scripts/capability-search-ab.ts",
