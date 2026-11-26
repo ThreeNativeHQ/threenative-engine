@@ -226,7 +226,7 @@ six MCP servers into Claude Code, Codex, Cursor, Gemini CLI, VS Code, opencode a
 | MCP server | What your agent can do | What it unlocks |
 | --- | --- | --- |
 | 🔍 **Engine** (`threenative-engine-mcp`) | Search every shipped API with its signature, example and constraints. Look up mechanic references from real games, and watch a contact sheet of real gameplay footage | The agent reuses the engine instead of reinventing it, and builds a double jump or a power-slide that feels like the genre |
-| 🕹️ **Game references** ([`threenative-reverse-engineer-mcp`](https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp), served by the engine MCP) | Look up how 56 classic 3D games (Super Mario 64, Mario Kart 64, GoldenEye 007, Halo, Resident Evil 4, Grand Theft Auto III and more) tune a mechanic: jump arcs, drift, camera, aim assist. Each card pins the exact source line it came from | Your agent combines the best feel of the major titles into your original game. It borrows numbers and algorithms only, never code, levels, names or art |
+| 🕹️ **Game references** ([reference library](https://github.com/ThreeNativeHQ/threenative-reverse-engineer-mcp), served by the engine MCP) | Look up how 56 classic 3D games (Super Mario 64, Mario Kart 64, GoldenEye 007, Halo, Resident Evil 4, Grand Theft Auto III and more) tune a mechanic: jump arcs, drift, camera, aim assist. Each card pins the exact source line it came from | Your agent combines the best feel of the major titles into your original game. It borrows numbers and algorithms only, never code, levels, names or art |
 | 🎒 **Assets** (`threenative-asset-mcp`) | Search Poly Haven, ambientCG, Sketchfab, Fab, Smithsonian and more. Convert owned Unreal and Unity packs to GLB, decimate heavy meshes behind a visual check, auto-rig and retarget characters, find or generate sound, AI-paint a gray blockout | Real art and audio in minutes, not placeholder cubes |
 | 🏔️ **Terrain** (`@threenative/terrain`) | Generate a world from a starter biome (forest, coastal, alpine, desert, tundra), patch it, or define a new biome, live in the browser editor | Open worlds with streaming and colliders, without a level editor |
 | 🗿 **Sculpt** (`threenative-sculpt-mcp`) | Plan a model from reference art, then pass a spec gate and an 8-pass visual gate, with rig gates for animated characters | Custom models and characters that match your reference, checked by image rather than by guesswork |
@@ -364,14 +364,27 @@ Full terms: [threenative.com/privacy](https://threenative.com/privacy/) · Code:
   [`LICENSE`](LICENSE). The software is provided "as is", without warranty of any kind.
 - **Our brand.** The ThreeNative name and logo, and the game screenshots in `docs/media/`, are not
   covered by the MIT license. See [`TRADEMARKS.md`](TRADEMARKS.md).
+- **Three.js.** ThreeNative is an independent project built on [three.js](https://threejs.org/).
+  It is not affiliated with or endorsed by three.js or its authors. three.js is MIT licensed, and
+  its copyright belongs to its authors.
 - **Other brands.** Unreal, Unreal Engine and Fab are trademarks of Epic Games, Inc. Unity and the
-  Unity Asset Store are trademarks of Unity Technologies. Three.js, Rapier, Godot, React, Tailwind
+  Unity Asset Store are trademarks of Unity Technologies. Rapier, Godot, React, Tailwind, Claude,
+  Codex, Cursor, Gemini
   and every other product or provider named here belong to their owners. ThreeNative is not
   affiliated with, sponsored by or endorsed by any of them. Their names appear only to describe
   compatibility and comparisons.
+- **Game titles.** Game titles named in the game references library are trademarks of their
+  owners. They appear only to identify the source of a mechanic. No code, art, levels, characters
+  or names from these games are used or distributed, and ThreeNative has no association with
+  their publishers.
 - **Assets.** An asset that you find, download or convert with ThreeNative tools stays under its
   own license. You are responsible for holding the rights to every asset you use or ship. The asset
-  MCP converts only packs that you own or license. It does not buy, unlock or decrypt content.
+  MCP converts only packs that you own or license. It does not buy, unlock or decrypt content. Your use of Fab, Sketchfab,
+  the Unity Asset Store and every other provider follows that provider's own terms of service.
+- **Third-party code.** Dependencies such as Rapier, React and Tailwind keep their own licenses.
+  See the license file of each package.
+- **AI output.** Code, models, textures and sound that an AI agent makes or changes with these
+  tools are your responsibility. Review them before you ship.
 - **Benchmarks.** Every comparison names its hardware, versions and date, and links its data.
   Results on other machines can differ.
 - **Privacy.** See [Privacy](#privacy) and the full terms at
