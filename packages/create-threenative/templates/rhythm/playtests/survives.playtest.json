@@ -13,14 +13,14 @@
       "kind": "input",
       "label": "sway",
       "press": "ArrowRight",
-      "holdTicks": 60,
-      "release": true
+      "holdTicks": 90,
+      "release": false
     },
     {
       "kind": "wait",
       "label": "settle",
-      "waitTicks": 20,
-      "release": true
+      "waitTicks": 10,
+      "release": false
     }
   ],
   "assert": {
