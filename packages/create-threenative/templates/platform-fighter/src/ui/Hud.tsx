@@ -68,17 +68,17 @@ export function Hud() {
         <Plate fighter={p1} id="p1-plate" name="you" tone="border-cyan" />
         <Plate fighter={cpu} id="cpu-plate" name="cpu" tone="border-red" />
       </div>
-      <div className="pointer-events-none absolute left-6 top-5 text-[10px] uppercase tracking-[0.2em] text-dim">
+      <div className="pointer-events-none absolute left-6 top-5 rounded bg-black/70 px-3 py-1 text-[10px] uppercase tracking-[0.2em] text-dim">
         {time.toFixed(0)} s
       </div>
-      <div className="pointer-events-none absolute right-6 top-5 text-right text-[10px] uppercase leading-5 tracking-[0.2em] text-dim">
+      <div className="pointer-events-none absolute right-6 top-5 rounded bg-black/70 px-3 py-1 text-right text-[10px] uppercase leading-5 tracking-[0.2em] text-dim">
         A D move · W jump · S fall · J attack
         <br />K strong (hold) · L shield · Shift roll · R restart
       </div>
       {message !== "" && result === "playing" && (
         <div
           id="fight-message"
-          className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 text-3xl uppercase tracking-[0.4em] text-amber"
+          className="pointer-events-none absolute left-1/2 top-24 -translate-x-1/2 rounded bg-black/70 px-5 py-1 text-3xl uppercase tracking-[0.4em] text-amber"
         >
           {message}
         </div>
