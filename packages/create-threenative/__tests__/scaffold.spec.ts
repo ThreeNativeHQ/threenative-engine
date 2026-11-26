@@ -117,7 +117,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
     shared: "5a270fdd53c85bdd08703b7d12e4a87645de2a689c2325c41a4e7757821abd35",
-    kit: "bfdbbbfb5d7f2b4f3a9436a399accc60d495ee681104fb3a3d66e09e3aa36332",
+    kit: "ef5bab729dd2f117add3273021f8a208f00c7e8b8630ac8244ad34d993eaeb2a",
   },
   adventure: {
     shared: "10e6353cf589913deaf9058c6f44adfba3612f6e07c7d2ae6887bfeb38acfd15",

@@ -100,6 +100,7 @@
     "@gltf-transform/core": "catalog:",
     "@tailwindcss/vite": "catalog:",
     "@threenative/assets": "workspace:*",
+    "@threenative/backend": "workspace:*",
     "@threenative/core": "workspace:*",
     "@threenative/physics": "workspace:*",
     "@types/node": "20.19.43",

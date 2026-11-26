@@ -122,6 +122,8 @@ async function linkScaffoldDependencies(target: string): Promise<void> {
   };
   await linkDependency(target, "@threenative/core", path.resolve("packages/core"));
   await linkDependency(target, "@threenative/physics", path.resolve("packages/physics"));
+  // The action-rpg kit saves through the backend, so its client must resolve like the engine does.
+  await linkDependency(target, "@threenative/backend", path.resolve("packages/backend"));
   // `threenative()` in every template's vite.config.ts imports watchAssets from here (a peer).
   await linkDependency(target, "@threenative/assets", path.resolve("packages/assets"));
   await linkDependency(target, "@threenative/playtest", path.resolve("packages/playtest"));
