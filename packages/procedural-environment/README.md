@@ -72,15 +72,17 @@ await bakeTavern({
 });
 ```
 
-The `materials` map accepts color, roughness, metalness, normal strength, and encoded color,
-OpenGL normal, roughness, or metalness maps. Pass `null` for a map to clear it. Maps accept PNG,
-JPEG, or WebP up to 16 MiB and 4096² pixels. Bakes resize them to at most 1024 px per side and
-embed compressed WebP. Roughness uses the green channel and metalness uses the blue channel.
-The numeric factors multiply their respective maps.
+The `materials` map accepts color, roughness, metalness, emissive color and intensity, normal
+strength, and encoded color, OpenGL normal, roughness, or metalness maps. Pass `null` for a map
+to clear it. Maps accept PNG, JPEG, or WebP up to 16 MiB and 4096² pixels. Bakes resize them to at
+most 1024 px per side and embed compressed WebP. Roughness uses the green channel and metalness
+uses the blue channel. The numeric factors multiply their respective maps.
 
 Tavern slots are `wood` and `iron`. Workshop slots are `wood`, `accent`, `dark` (structural
 steel), `linen`, `steel` (hardware), `insert`, `ceramic`, `screen`, `shade`, and `diffuser`.
-Each model accepts its own slots. An invalid slot lists the slots available on that model.
+The same options work on Station, Frontier, Pickup, Mechanism, Rail, Sports and Logistics models.
+Check **Material slots** in the asset's **Docs** tab or `materialSlots` on the bake result for the
+keys used by that model. An invalid slot lists the keys available on that model.
 
 ### Tavern Kit
 

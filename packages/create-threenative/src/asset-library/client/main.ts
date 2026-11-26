@@ -427,6 +427,9 @@ function renderDocs(element: IAssetElement, baked: IAssetReport, model: three.Ob
       ? [["Setting", settingNames(element).join(", ")] as [string, string]]
       : []),
     ...(element.category ? [["Category", element.category] as [string, string]] : []),
+    ...(baked.materialSlots?.length
+      ? [["Material slots", baked.materialSlots.join(", ")] as [string, string]]
+      : []),
     ["Biomes", element.biomes?.join(", ") || "none listed"],
     ...(file ? [["File", file] as [string, string]] : []),
   ]);

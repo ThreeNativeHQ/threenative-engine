@@ -119,6 +119,7 @@ export interface IAssetReport {
   readonly call?: string;
   readonly lod?: number;
   readonly path?: string;
+  readonly materialSlots?: readonly string[];
 }
 
 /** A server bake: the report plus the GLB url and any extra rows the source attaches. */

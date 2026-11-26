@@ -15,16 +15,14 @@ import {
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
-import {
-  type IFurnitureWoodMaps,
-  type IProceduralMaterialOverride,
-  type MaterialParams,
-  type WoodFinish,
-  applyMaterialOverrides,
-} from "./furniture-materials.js";
+import type {
+  IFurnitureWoodMaps,
+  IStaticKitMaterialOptions,
+  WoodFinish,
+} from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeWorkshopOptions {
+export interface IBakeWorkshopOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for paint and wood tone. */
@@ -48,7 +46,6 @@ export interface IBakeWorkshopOptions {
   /** Make a lamp's diffuser emissive. */
   readonly lit?: boolean;
   readonly woodFinish?: WoodFinish;
-  readonly materials?: Readonly<Partial<Record<Finish, IProceduralMaterialOverride>>>;
 }
 
 export const workshopAccent = "#4d7779";
@@ -1335,7 +1332,6 @@ export function buildWorkshop(
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
     Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats" | "shelves" | "tilt" | "lit">,
   veneer?: IFurnitureWoodMaps,
-  overrides?: MaterialParams,
 ): Group {
   const palette = materials(options.seed, options.accent, veneer, options.lit);
   const width = options.width ?? workshopWidths[id]?.default ?? workbenchWidth.default;
@@ -1391,6 +1387,5 @@ export function buildWorkshop(
   const group = builders[id]();
   group.name = `workshop-${id}`;
   group.scale.setScalar(options.scale);
-  applyMaterialOverrides(group, palette, overrides);
   return group;
 }

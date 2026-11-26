@@ -4,6 +4,24 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 
 export type XYZ = [number, number, number];
 
+const kitMaterialSlots = new WeakMap<MeshStandardMaterial, string>();
+
+/** Cloned kit parts retain their material identity and therefore their slot. */
+export function staticKitMaterials(group: Group): Map<string, Set<MeshStandardMaterial>> {
+  const slots = new Map<string, Set<MeshStandardMaterial>>();
+  group.traverse((node) => {
+    const mesh = node as Mesh;
+    if (!mesh.isMesh || Array.isArray(mesh.material)) return;
+    const material = mesh.material as MeshStandardMaterial;
+    const slot = kitMaterialSlots.get(material);
+    if (!slot) return;
+    const known = slots.get(slot);
+    if (known) known.add(material);
+    else slots.set(slot, new Set([material]));
+  });
+  return slots;
+}
+
 export class StaticKitMesh<Finish extends string> {
   private readonly parts = new Map<Finish, BufferGeometry[]>();
 
@@ -30,7 +48,9 @@ export class StaticKitMesh<Finish extends string> {
       const geometry = mergeGeometries(shapes);
       for (const shape of shapes) shape.dispose();
       if (!geometry) throw new Error(`Could not merge ${name} ${finish}`);
-      const mesh = new Mesh(geometry, materials[finish]);
+      const material = materials[finish];
+      kitMaterialSlots.set(material, finish);
+      const mesh = new Mesh(geometry, material);
       mesh.name = materials[finish].name;
       mesh.castShadow = true;
       mesh.receiveShadow = true;

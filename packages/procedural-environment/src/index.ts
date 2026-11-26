@@ -17,7 +17,6 @@ import {
   frontierAccent,
   frontierModules,
 } from "./frontier.js";
-import { prepareMaterialOverrides, resolveWoodFinish } from "./furniture-materials.js";
 import {
   type IBakeLogisticsOptions,
   buildLogistics,
@@ -42,6 +41,12 @@ import {
 import { type IBakeRailOptions, buildRail, railAccent, railModules } from "./rail.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
 import { type IBakeSportsOptions, buildSports, sportsDimensions, sportsModules } from "./sports.js";
+import {
+  applyMaterialOverrides,
+  prepareMaterialOverrides,
+  resolveWoodFinish,
+} from "./static-kit-materials.js";
+import { staticKitMaterials } from "./static-kit-mesh.js";
 import {
   type IBakeStationOptions,
   buildStation,
@@ -69,13 +74,17 @@ import {
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
-export type { IProceduralMaterialOverride, WoodFinish } from "./furniture-materials.js";
 export type { IBakeLogisticsOptions } from "./logistics.js";
 export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeRailOptions } from "./rail.js";
 export type { IBakeSportsOptions } from "./sports.js";
 export type { IBakeStationOptions } from "./station.js";
+export type {
+  IProceduralMaterialOverride,
+  IStaticKitMaterialOptions,
+  WoodFinish,
+} from "./static-kit-materials.js";
 export type { IBakeTavernOptions } from "./tavern.js";
 export type { IBakeWorkshopOptions } from "./workshop.js";
 
@@ -146,6 +155,8 @@ export interface IEnvironmentBake {
   readonly lod: number;
   readonly path: string;
   readonly triangles: number;
+  /** Material override keys used by a static kit module. */
+  readonly materialSlots?: readonly string[];
   /** The Poly Haven scan the bark or wood wears, absent when the texture is generated. */
   readonly scan?: string;
   /**
@@ -1219,7 +1230,7 @@ export async function bakeStation(options: IBakeStationOptions): Promise<IEnviro
   const paint = accent.toLowerCase();
   const group = buildStation(entry.id, { seed, accent: paint, roof });
   const suffix = (paint === stationAccent ? "" : `-${paint.slice(1)}`) + (roof ? "-roof" : "");
-  return writeStaticKit(group, out, `${module}-${seed}${suffix}.glb`);
+  return writeStaticKit(group, out, `${module}-${seed}${suffix}.glb`, options.materials);
 }
 
 /**
@@ -1238,7 +1249,7 @@ export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvi
     frontierModules,
     frontierAccent,
   );
-  return writeStaticKit(buildFrontier(kit.id, kit), options.out, kit.filename);
+  return writeStaticKit(buildFrontier(kit.id, kit), options.out, kit.filename, options.materials);
 }
 
 /**
@@ -1257,7 +1268,12 @@ export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironm
       "bakePickup: pose must be upright, or flat for a keycard, shield, vault key or wrench",
     );
   const file = pose === "flat" ? kit.filename.replace(/\.glb$/u, "-flat.glb") : kit.filename;
-  return writeStaticKit(buildPickup(kit.id, { ...kit, pose }), options.out, file);
+  return writeStaticKit(
+    buildPickup(kit.id, { ...kit, pose }),
+    options.out,
+    file,
+    options.materials,
+  );
 }
 
 /**
@@ -1283,7 +1299,12 @@ export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEn
       "bakeMechanism: active is a boolean for an emitter, receiver or power cell socket",
     );
   const filename = active ? kit.filename.replace(/\.glb$/u, "-active.glb") : kit.filename;
-  return writeStaticKit(buildMechanism(kit.id, { ...kit, active }), options.out, filename);
+  return writeStaticKit(
+    buildMechanism(kit.id, { ...kit, active }),
+    options.out,
+    filename,
+    options.materials,
+  );
 }
 
 /**
@@ -1297,7 +1318,7 @@ export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEn
  */
 export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> {
   const kit = resolvePaintedKit(options, "bakeRail", "rail", railModules, railAccent);
-  return writeStaticKit(buildRail(kit.id, kit), options.out, kit.filename);
+  return writeStaticKit(buildRail(kit.id, kit), options.out, kit.filename, options.materials);
 }
 
 /**
@@ -1330,7 +1351,12 @@ export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironm
     if (value !== rule.default) suffix += `-${key}${value}`;
   }
   const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
-  return writeStaticKit(buildSports(kit.id, { ...options, ...kit }), options.out, filename);
+  return writeStaticKit(
+    buildSports(kit.id, { ...options, ...kit }),
+    options.out,
+    filename,
+    options.materials,
+  );
 }
 
 /**
@@ -1367,7 +1393,12 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
       ? `-${shelves}-shelves`
       : "";
   const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
-  return writeStaticKit(buildLogistics(kit.id, { ...options, ...kit }), options.out, filename);
+  return writeStaticKit(
+    buildLogistics(kit.id, { ...options, ...kit }),
+    options.out,
+    filename,
+    options.materials,
+  );
 }
 
 /**
@@ -1399,16 +1430,13 @@ export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironm
   if (options.open !== undefined && (typeof open !== "boolean" || kit.id !== "barrel")) {
     throw new Error("bakeTavern: open is a boolean for tavern-barrel");
   }
-  const [finish, overrides] = await Promise.all([
-    resolveWoodFinish(options.woodFinish),
-    prepareMaterialOverrides(options.materials),
-  ]);
+  const finish = await resolveWoodFinish(options.woodFinish);
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${widthSuffix}${open ? "-open" : ""}${finish.suffix}${overrides.suffix}.glb`,
+    `${widthSuffix}${open ? "-open" : ""}${finish.suffix}.glb`,
   );
-  const group = buildTavern(kit.id, { ...kit, width, open }, finish.maps, overrides.slots);
-  return writeStaticKit(group, options.out, filename, true);
+  const group = buildTavern(kit.id, { ...kit, width, open }, finish.maps);
+  return writeStaticKit(group, options.out, filename, options.materials, true);
 }
 
 /**
@@ -1489,16 +1517,15 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
   if (woodless && options.woodFinish !== undefined) {
     throw new Error(`bakeWorkshop: woodFinish does not apply to ${options.module}`);
   }
-  const [finish, overrides] = await Promise.all([
-    woodless ? { maps: undefined, suffix: "" } : resolveWoodFinish(options.woodFinish),
-    prepareMaterialOverrides(options.materials),
-  ]);
+  const finish = woodless
+    ? { maps: undefined, suffix: "" }
+    : await resolveWoodFinish(options.woodFinish);
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}${finish.suffix}${overrides.suffix}.glb`,
+    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}${finish.suffix}.glb`,
   );
-  const group = buildWorkshop(kit.id, { ...options, ...kit }, finish.maps, overrides.slots);
-  return writeStaticKit(group, options.out, filename, true);
+  const group = buildWorkshop(kit.id, { ...options, ...kit }, finish.maps);
+  return writeStaticKit(group, options.out, filename, options.materials, true);
 }
 
 function workshopState(
@@ -1569,8 +1596,12 @@ async function writeStaticKit(
   group: Group,
   out: string,
   filename: string,
+  materials?: object,
   compressTextures = false,
 ): Promise<IEnvironmentBake[]> {
+  const surfaces = staticKitMaterials(group);
+  const overrides = await prepareMaterialOverrides(materials);
+  applyMaterialOverrides(group.name, surfaces, overrides.slots);
   const box = new Box3().setFromObject(group);
   let triangles = 0;
   group.traverse((node) => {
@@ -1578,11 +1609,20 @@ async function writeStaticKit(
     if (mesh.isMesh)
       triangles += (mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position").count) / 3;
   });
-  const file = path.join(out, filename);
+  const file = path.join(out, filename.replace(/\.glb$/u, `${overrides.suffix}.glb`));
   const bytes = await exportStaticGlb(group);
   await mkdir(out, { recursive: true });
-  await writeAtomic(file, compressTextures ? await webpImages(bytes) : bytes);
+  await writeAtomic(
+    file,
+    compressTextures || overrides.slots.size ? await webpImages(bytes) : bytes,
+  );
   return [
-    { bounds: { max: box.max.toArray(), min: box.min.toArray() }, lod: 0, path: file, triangles },
+    {
+      bounds: { max: box.max.toArray(), min: box.min.toArray() },
+      lod: 0,
+      path: file,
+      triangles,
+      materialSlots: [...surfaces.keys()].sort(),
+    },
   ];
 }

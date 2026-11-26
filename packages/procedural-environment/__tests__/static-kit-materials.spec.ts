@@ -2,7 +2,7 @@ import { readFile } from "node:fs/promises";
 import sharp from "sharp";
 import { describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { bakeTavern, bakeWorkshop } from "../src/index.js";
+import { bakeRail, bakeStation, bakeTavern, bakeWorkshop } from "../src/index.js";
 
 async function glb(file: string) {
   const bytes = await readFile(file);
@@ -12,6 +12,7 @@ async function glb(file: string) {
     nodes: { name: string; translation?: number[] }[];
     materials: {
       name: string;
+      emissiveFactor?: number[];
       normalTexture?: { scale?: number };
       pbrMetallicRoughness: {
         baseColorFactor?: number[];
@@ -29,7 +30,7 @@ const png = (background: string) =>
     .png()
     .toBuffer();
 
-describe("Procedural furniture materials", () => {
+describe("Procedural static kit materials", () => {
   it.each([
     [bakeTavern, "tavern-table", "tavern-tabletop"],
     [bakeWorkshop, "workshop-workbench", "worktop"],
@@ -116,5 +117,50 @@ describe("Procedural furniture materials", () => {
     await expect(
       bakeTavern({ module: "tavern-table", out, materials: { wood: { roughness: 1.1 } } }),
     ).rejects.toThrow(/roughness/u);
+  });
+
+  it("restyles every repeated station part and retains the corridor sockets", async () => {
+    const out = await makeTempDir("tn-station-finish-");
+    const options = { module: "station-elbow", out, roof: true } as const;
+    const [stock] = await bakeStation(options);
+    const [variant] = await bakeStation({
+      ...options,
+      materials: {
+        hull: { color: "#8a3b19", map: await png("#b98e65") },
+        light: { emissive: "#ff0000", emissiveIntensity: 2 },
+      },
+    });
+    if (!stock || !variant) throw new Error("Missing station variation");
+    expect(variant.path).not.toBe(stock.path);
+    expect(variant.bounds).toEqual(stock.bounds);
+    expect(stock.materialSlots).toEqual(expect.arrayContaining(["hull", "light"]));
+    const [plain, styled] = await Promise.all([glb(stock.path), glb(variant.path)]);
+    expect(styled.nodes).toEqual(plain.nodes);
+    expect(styled.images?.map(({ mimeType }) => mimeType)).toEqual(["image/webp"]);
+    expect(styled.materials.filter(({ name }) => name === "Station structural alloy")).toEqual([
+      expect.objectContaining({
+        pbrMetallicRoughness: expect.objectContaining({ baseColorTexture: expect.any(Object) }),
+      }),
+    ]);
+    expect(
+      styled.materials.find(({ name }) => name === "Station light strips")?.emissiveFactor,
+    ).toEqual([1, 0, 0]);
+  });
+
+  it("reports the running surface slot without changing track placement", async () => {
+    const out = await makeTempDir("tn-rail-finish-");
+    const options = { module: "rail-curve", out } as const;
+    const [stock] = await bakeRail(options);
+    const map = await png("#674e40");
+    const [variant] = await bakeRail({
+      ...options,
+      materials: { running: { color: "#8dcedd" }, wood: { map }, lightWood: { map } },
+    });
+    if (!stock || !variant) throw new Error("Missing rail variation");
+    expect(variant.materialSlots).toContain("running");
+    expect(variant.path).not.toBe(stock.path);
+    const styled = await glb(variant.path);
+    expect(styled.nodes).toEqual((await glb(stock.path)).nodes);
+    expect(styled.images?.map(({ mimeType }) => mimeType)).toEqual(["image/webp"]);
   });
 });

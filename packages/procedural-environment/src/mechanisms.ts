@@ -8,9 +8,10 @@ import {
   TorusGeometry,
 } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeMechanismOptions {
+export interface IBakeMechanismOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for finish variation. Default 1. */

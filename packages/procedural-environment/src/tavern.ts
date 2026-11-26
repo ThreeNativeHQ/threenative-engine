@@ -9,16 +9,14 @@ import {
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
 import { buildCooperage, cooperageModules } from "./cooperage.js";
-import {
-  type IFurnitureWoodMaps,
-  type IProceduralMaterialOverride,
-  type MaterialParams,
-  type WoodFinish,
-  applyMaterialOverrides,
-} from "./furniture-materials.js";
+import type {
+  IFurnitureWoodMaps,
+  IStaticKitMaterialOptions,
+  WoodFinish,
+} from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeTavernOptions {
+export interface IBakeTavernOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for board tones, grain offsets and worn edges. */
@@ -32,7 +30,6 @@ export interface IBakeTavernOptions {
   /** Set the storage barrel's removable lid beside it for inspection. */
   readonly open?: boolean;
   readonly woodFinish?: WoodFinish;
-  readonly materials?: Readonly<Partial<Record<Finish, IProceduralMaterialOverride>>>;
 }
 
 export const tavernAccent = "#756957";
@@ -197,7 +194,6 @@ export function buildTavern(
   options: Required<Pick<IBakeTavernOptions, "seed" | "accent" | "scale" | "width">> &
     Pick<IBakeTavernOptions, "open">,
   scan?: IFurnitureWoodMaps,
-  overrides?: MaterialParams,
 ): Group {
   const { accent, seed, scale, width } = options;
   const palette: Palette = {
@@ -236,6 +232,5 @@ export function buildTavern(
   const group = builders[id]();
   group.name = `tavern-${id}`;
   group.scale.setScalar(scale);
-  applyMaterialOverrides(group, palette, overrides);
   return group;
 }

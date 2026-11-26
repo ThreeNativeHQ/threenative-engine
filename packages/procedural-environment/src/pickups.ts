@@ -11,9 +11,10 @@ import {
   Vector2,
 } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh } from "./static-kit-mesh.js";
 
-export interface IBakePickupOptions {
+export interface IBakePickupOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for finish variation. Default 1. */

@@ -9,9 +9,10 @@ import {
   Object3D,
 } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeRailOptions {
+export interface IBakeRailOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for timber and chassis finish variation. Default 1. */

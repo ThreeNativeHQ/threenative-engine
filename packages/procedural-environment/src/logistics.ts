@@ -1,8 +1,9 @@
 import { Color, CylinderGeometry, type Group, MeshStandardMaterial, Object3D } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeLogisticsOptions {
+export interface IBakeLogisticsOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   /** Unsigned 32-bit seed for the paint and wood finishes. */

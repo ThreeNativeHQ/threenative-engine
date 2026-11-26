@@ -17,7 +17,7 @@ new kit's style and settings in `CATALOG_TAGS` in the procedural source, and put
 a useful category. Give individual assets setting overrides when they fit different settings
 from their kit. Verify the expected style, setting and category together in the browser.
 
-Treat dimensions, states and material finishes as independent controls. Use the furniture kits'
-shared wood finishes and named material-slot overrides as the reference for restyling. Keep
-common choices in the Controls panel, let bake callers supply custom PBR map bytes, and verify
-that changing a finish preserves the exported geometry, anchors and default appearance.
+Treat dimensions, states and material finishes as independent controls. Reuse the shared wood finishes where they fit. Use named material-slot overrides on static kits,
+keep common choices in Controls, and list the slots for the selected model in Docs. Let bake
+callers supply custom PBR map bytes. Verify that changing a finish preserves the exported
+geometry, anchors and default appearance.

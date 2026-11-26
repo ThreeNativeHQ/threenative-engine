@@ -3,8 +3,6 @@ import { readFile } from "node:fs/promises";
 import { loadImage } from "@napi-rs/canvas";
 import sharp from "sharp";
 import {
-  type Group,
-  type Mesh,
   type MeshStandardMaterial,
   type MeshStandardMaterialParameters,
   RepeatWrapping,
@@ -23,6 +21,8 @@ export const defaultWoodFinish: WoodFinish = "cherry-veneer";
 
 export interface IProceduralMaterialOverride {
   readonly color?: string;
+  readonly emissive?: string;
+  readonly emissiveIntensity?: number;
   readonly roughness?: number;
   readonly metalness?: number;
   readonly normalStrength?: number;
@@ -34,6 +34,11 @@ export interface IProceduralMaterialOverride {
   readonly roughnessMap?: Uint8Array | null;
   /** Metalness is read from the blue channel. */
   readonly metalnessMap?: Uint8Array | null;
+}
+
+export interface IStaticKitMaterialOptions<Slot extends string> {
+  /** Override the named material slots present in the exported model. */
+  readonly materials?: Readonly<Partial<Record<Slot, IProceduralMaterialOverride>>>;
 }
 
 export interface IFurnitureWoodMaps {
@@ -71,8 +76,9 @@ export async function resolveWoodFinish(finish = defaultWoodFinish): Promise<{
   return { maps: { color, normal }, suffix };
 }
 
-export type MaterialParams = ReadonlyMap<string, MeshStandardMaterialParameters>;
+type MaterialParams = ReadonlyMap<string, MeshStandardMaterialParameters>;
 type MapKey = "map" | "normalMap" | "roughnessMap" | "metalnessMap";
+type TextureCache = Map<string, Promise<Texture>>;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   if (value === null || typeof value !== "object") return false;
@@ -80,11 +86,7 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return proto === null || proto === Object.prototype;
 }
 
-async function customTexture(value: unknown, key: MapKey, label: string) {
-  if (!(value instanceof Uint8Array) || value.length === 0 || value.length > 16 * 1024 * 1024) {
-    throw new Error(`${label} requires an encoded image up to 16 MiB or null`);
-  }
-  const bytes = Buffer.from(value);
+async function decodeOverrideMap(bytes: Buffer, color: boolean, label: string): Promise<Texture> {
   try {
     const image = sharp(bytes, { limitInputPixels: 4096 * 4096 });
     const { format, pages = 1 } = await image.metadata();
@@ -95,13 +97,26 @@ async function customTexture(value: unknown, key: MapKey, label: string) {
       .resize(1024, 1024, { fit: "inside", withoutEnlargement: true })
       .png()
       .toBuffer();
-    return {
-      map: await texture(prepared, key === "map", label),
-      digest: createHash("sha256").update(bytes).digest("hex"),
-    };
+    return await texture(prepared, color, label);
   } catch (error) {
     throw new Error(`${label} is not a supported PNG, JPEG or WebP texture`, { cause: error });
   }
+}
+
+async function customTexture(value: unknown, key: MapKey, label: string, cache: TextureCache) {
+  if (!(value instanceof Uint8Array) || value.length === 0 || value.length > 16 * 1024 * 1024) {
+    throw new Error(`${label} requires an encoded image up to 16 MiB or null`);
+  }
+  const bytes = Buffer.from(value);
+  const digest = createHash("sha256").update(bytes).digest("hex");
+  const color = key === "map";
+  const id = `${color ? "color" : "data"}:${digest}`;
+  let pending = cache.get(id);
+  if (!pending) {
+    pending = decodeOverrideMap(bytes, color, label);
+    cache.set(id, pending);
+  }
+  return { map: await pending, digest };
 }
 
 function materialFactor(value: unknown, max: number, label: string): number {
@@ -111,7 +126,7 @@ function materialFactor(value: unknown, max: number, label: string): number {
   return value;
 }
 
-async function prepareSlot(slot: string, value: unknown) {
+async function prepareSlot(slot: string, value: unknown, cache: TextureCache) {
   if (!isRecord(value)) throw new Error(`materials.${slot} must be an object`);
   const params: MeshStandardMaterialParameters = {};
   const identity: Record<string, string | number | null> = {};
@@ -121,14 +136,18 @@ async function prepareSlot(slot: string, value: unknown) {
     if (prop === undefined) continue;
     switch (key) {
       case "color":
+      case "emissive":
         if (typeof prop !== "string" || !/^#[\da-f]{6}$/iu.test(prop)) {
           throw new Error(`${label} must be a six-digit hex color`);
         }
-        params.color = identity.color = prop.toLowerCase();
+        params[key] = identity[key] = prop.toLowerCase();
         break;
       case "roughness":
       case "metalness":
         params[key] = identity[key] = materialFactor(prop, 1, label);
+        break;
+      case "emissiveIntensity":
+        params[key] = identity[key] = materialFactor(prop, 16, label);
         break;
       case "normalStrength": {
         const strength = materialFactor(prop, 2, label);
@@ -140,7 +159,7 @@ async function prepareSlot(slot: string, value: unknown) {
       case "normalMap":
       case "roughnessMap":
       case "metalnessMap": {
-        const result = prop === null ? null : await customTexture(prop, key, label);
+        const result = prop === null ? null : await customTexture(prop, key, label, cache);
         params[key] = result?.map ?? null;
         identity[key] = result?.digest ?? null;
         break;
@@ -160,10 +179,11 @@ export async function prepareMaterialOverrides(overrides?: object): Promise<{
   if (overrides === undefined) return { slots, suffix: "" };
   if (!isRecord(overrides)) throw new Error("materials must be a map of material slots");
   const identity: [string, object][] = [];
+  const textures: TextureCache = new Map();
   for (const slot of Object.keys(overrides).sort()) {
     const spec = overrides[slot];
     if (spec === undefined) continue;
-    const prepared = await prepareSlot(slot, spec);
+    const prepared = await prepareSlot(slot, spec, textures);
     if (Object.keys(prepared.identity).length === 0) continue;
     slots.set(slot, prepared.params);
     identity.push([slot, prepared.identity]);
@@ -173,24 +193,17 @@ export async function prepareMaterialOverrides(overrides?: object): Promise<{
 }
 
 export function applyMaterialOverrides(
-  group: Group,
-  palette: Record<string, MeshStandardMaterial>,
-  overrides?: MaterialParams,
+  name: string,
+  materials: ReadonlyMap<string, ReadonlySet<MeshStandardMaterial>>,
+  overrides: MaterialParams,
 ): void {
-  if (!overrides?.size) return;
-  const used = new Set<unknown>();
-  group.traverse((node) => {
-    const mesh = node as Mesh;
-    if (mesh.isMesh) used.add(mesh.material);
-  });
   for (const [slot, props] of overrides) {
-    const surface = Object.hasOwn(palette, slot) ? palette[slot] : undefined;
-    if (!surface || !used.has(surface)) {
-      const supported = Object.keys(palette).filter((key) => used.has(palette[key]));
+    const surfaces = materials.get(slot);
+    if (!surfaces) {
       throw new Error(
-        `${group.name} has no material slot "${slot}". Choose ${supported.join(", ")}.`,
+        `${name} has no material slot "${slot}". Choose ${[...materials.keys()].sort().join(", ")}.`,
       );
     }
-    surface.setValues(props);
+    for (const surface of surfaces) surface.setValues(props);
   }
 }

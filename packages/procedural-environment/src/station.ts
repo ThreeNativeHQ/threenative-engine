@@ -1,8 +1,9 @@
 import { Color, Group, MeshStandardMaterial } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh } from "./static-kit-mesh.js";
 
-export interface IBakeStationOptions {
+export interface IBakeStationOptions extends IStaticKitMaterialOptions<Finish> {
   /** Module id from environmentElements({ kind: "station" }). */
   readonly module: string;
   /** Directory to write the GLB to. */

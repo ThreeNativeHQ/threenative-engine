@@ -16,9 +16,10 @@ import {
   Vector3,
 } from "three";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import type { IStaticKitMaterialOptions } from "./static-kit-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
-export interface IBakeSportsOptions {
+export interface IBakeSportsOptions extends IStaticKitMaterialOptions<Finish> {
   readonly module: string;
   readonly out: string;
   readonly seed?: number;
