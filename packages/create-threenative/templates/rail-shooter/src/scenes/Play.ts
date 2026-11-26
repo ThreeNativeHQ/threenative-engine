@@ -14,7 +14,7 @@ import type { Enemy, IShipView } from "../entities/Enemy.js";
 import { Ship } from "../entities/Ship.js";
 import type { ITarget } from "../entities/Target.js";
 import { Weapons } from "../entities/Weapons.js";
-import { ARENA_BACK, KILLS_TOTAL, PICKUPS, RAIL_POINTS, START_S, WAVES } from "../level.js";
+import { ARENA_BACK, PICKUPS, RAIL_POINTS, START_S, WAVES } from "../level.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { Rail, createFrame } from "../rail.js";
 import { createRailCamera } from "../render/camera.js";
@@ -33,7 +33,8 @@ import {
 import { createScenery } from "../render/scenery.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import type { GamePhase, GameState } from "../state.js";
-import { BOSS, CAMERA, ENEMY, SHIELD, SHIP } from "../tuning.js";
+import { BOSS, CAMERA, ENEMY, SHIELD } from "../tuning.js";
+import { INITIAL_STATE } from "./initialState.js";
 import { createStations } from "./stations.js";
 import { createWave } from "./waves.js";
 
@@ -52,46 +53,7 @@ const DEATH_TIME = 2.2;
 const round = (value: number, scale = 100): number => Math.round(value * scale) / scale;
 
 export class Play extends Scene<GameState> {
-  static override readonly initialState: GameState = {
-    paused: false,
-    uiReady: false,
-    phase: "playing",
-    shield: SHIELD.max,
-    shieldMax: SHIELD.max,
-    gauge: 0,
-    gaugeMax: SHIP.gaugeMax,
-    gaugeLocked: 0,
-    mode: "cruise",
-    speed: SHIP.cruise,
-    railS: START_S,
-    railLength: 0,
-    offsetX: 0,
-    offsetY: 0,
-    bank: 0,
-    rolling: 0,
-    rolls: 0,
-    deflected: 0,
-    aimX: 0,
-    aimY: 0,
-    shots: 0,
-    hits: 0,
-    charge: 0,
-    locked: "",
-    homingShots: 0,
-    lockedKills: 0,
-    wave: 0,
-    enemiesLive: 0,
-    kills: 0,
-    killsTotal: KILLS_TOTAL,
-    enemyShots: 0,
-    score: 0,
-    pickups: 0,
-    bossPhase: 0,
-    bossPods: 2,
-    bossHp: 1,
-    message: "",
-    missionTime: 0,
-  };
+  static override readonly initialState: GameState = INITIAL_STATE;
 
   #post: ReturnType<typeof setupPost> | undefined;
   #environmentSample: IEnvironmentSample | undefined;

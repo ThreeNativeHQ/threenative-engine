@@ -5,9 +5,9 @@
   },
   "assert": {
     "performance": {
-      "maxDrawCalls": 140,
-      "maxTriangles": 185000,
-      "minFps": 30
+      "maxDrawCalls": 80,
+      "maxTriangles": 20000,
+      "minFps": 60
     },
     "renderChain": {
       "tier": "high",
@@ -36,13 +36,49 @@
   "steps": [
     {
       "kind": "input",
+      "label": "wave-station",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
       "press": "ArrowRight",
       "holdTicks": 60,
       "release": true
     },
     {
       "kind": "wait",
-      "waitTicks": 600,
+      "waitTicks": 360,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "arena-station",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 240,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 240,
       "release": true
     }
   ],
