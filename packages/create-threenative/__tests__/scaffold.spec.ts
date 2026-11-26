@@ -187,6 +187,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "3e2e4805cbdfcda967361c26d9a12972acc53214a5e93d19a455c5acc1ae9df3",
     kit: "6eb11b36b616e4eae3d3c4beab006c44f6e8beed88c48b19cef5cab58222301e",
   },
+  "tomb-explorer": {
+    shared: "8fd216f19b0ea3062bbb2d4de3e29d6d37762c9769375dccad6fdbd2208cb200",
+    kit: "d83473d08f4b2f6cb42dc87676c84942f74debdd82dd1676ba12ebebaaa3338a",
+  },
   "tower-defense": {
     shared: "72769b2d5a5821763bbedec224a4ce404e759e2f42d626defaec0c4aee75107f",
     kit: "35a83b5e0258a2e8fa4cbb186f45e710734076ba4b2f737e78cf6e7d54ee4eac",
