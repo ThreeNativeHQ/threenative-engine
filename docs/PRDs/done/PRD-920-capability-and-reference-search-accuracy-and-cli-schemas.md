@@ -120,7 +120,7 @@ All implementation phases are verified against concrete before/after evidence be
 - Benchmark pure BM25F vs BM25F + Model2Vec static subword embeddings fused with Reciprocal Rank Fusion (RRF), measuring held-out `recall@1`, `recall@5`, MRR, cold-start load time, query latency, and asset bytes; keep static vectors only if held-out `recall@1` improves by `>= +0.05` within `<50 ms` cold start and `<10 MB`.
 - Lock updated held-out floor (`recall@1 >= 0.65`, `recall@5 >= 0.80`) in `search-gold.spec.ts` and record A/B results in `## Decisions`.
 **Verification:** Run `pnpm exec vitest run packages/engine-mcp/__tests__/search-gold.spec.ts` and the pinned A/B commands in the verification plan, verify distinct base/head index SHA-256 hashes and untouched `heldoutSha256`, and log measured `recall@1`, `recall@5`, cold-start ms, p95 ms, and byte footprint in `## Decisions`.
-- [x] Frozen gold floor and measured A/B decision — evidence in AC-3 and Decisions. BM25F passed 8/8 capability trace rows against 0/8 for the pinned baseline. The ninth trace regression is exercised in reference search and through the CLI.
+- [x] Frozen gold floor and measured A/B decision. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search-gold.spec.ts` and the pinned A/B in the Verification Plan. BM25F passed 8/8 capability trace rows against 0/8 for the pinned baseline. The ninth trace regression is exercised in reference search and through the CLI.
 
 #### Phase 3: Self-describing `call.mjs` schemas, error hints, and bundled server rebuild
 **Status:** DONE
@@ -130,7 +130,7 @@ All implementation phases are verified against concrete before/after evidence be
 - Update `handleToolCall` in `packages/engine-mcp/src/index.ts` to emit actionable error hints (`query`→`situation`, `kind` options, near-miss symbol suggestions like `ctx.beforeRender` for `beforeRender`).
 - Rebuild `packages/core/mcp/engine-server.mjs`, run `pnpm capabilities:check`, and run the full `engine-mcp` test suite.
 **Verification:** Run `pnpm --filter @threenative/core build`, exercise `node packages/core/mcp/call.mjs` (tool listing hints, `--schema`, invalid-arg exit code `1` hints, and Nov 25 trace query replay), then run `pnpm capabilities:check && pnpm caps:recall && pnpm typecheck && pnpm lint && pnpm exec vitest run packages/engine-mcp`.
-- [x] Self-describing `call.mjs`, error hints, bundle rebuild and repository gates cover AC-4 and AC-5. Core build, capability sync check, public recall, workspace typecheck and lint passed. Public recall was 142/148 with zero unresolved results. The Engine MCP and Core CLI suites passed 240 tests with one optional live reference test skipped.
+- [x] Self-describing `call.mjs`, error hints, bundle rebuild and repository gates cover AC-4 and AC-5. proof: `pnpm --filter @threenative/core build && pnpm capabilities:check && pnpm caps:recall && pnpm typecheck && pnpm lint && pnpm exec vitest run packages/engine-mcp packages/core/__tests__/mcp-call.spec.ts`. Core build, capability sync check, public recall, workspace typecheck and lint passed. Public recall was 142/148 with zero unresolved results. The Engine MCP and Core CLI suites passed 240 tests with one optional live reference test skipped.
 
 | Bundled MCP file | SHA-256 |
 |---|---|
