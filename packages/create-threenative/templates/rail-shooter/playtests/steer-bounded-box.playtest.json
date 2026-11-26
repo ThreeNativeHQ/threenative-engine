@@ -1,0 +1,172 @@
+{
+  "name": "steer-inside-the-corridor",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "steering-right",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "label": "steering-right:aimX",
+      "waitForResource": {
+        "id": "state",
+        "path": "aimX",
+        "gte": 3
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "steering-right:offsetX",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetX",
+        "gte": 4
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "wait",
+      "label": "settle-right",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hard-right",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hard-up",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "at-the-wall",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "label": "at-the-wall:offsetX",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetX",
+        "gte": 10.9
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "at-the-wall:offsetY",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetY",
+        "gte": 5.9
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "at-the-wall:railS",
+      "waitForResource": {
+        "id": "state",
+        "path": "railS",
+        "gte": 80
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "shoulder",
+      "press": "KeyQ",
+      "holdTicks": 40,
+      "release": false
+    },
+    {
+      "label": "shoulder:bank",
+      "waitForResource": {
+        "id": "state",
+        "path": "bank",
+        "gte": 60
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "wait",
+      "label": "shoulder-released",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "bank",
+        "atSteps": [
+          {
+            "label": "steering-right",
+            "lte": -8
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "offsetX",
+        "atSteps": [
+          {
+            "label": "at-the-wall",
+            "lte": 11.0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "offsetY",
+        "atSteps": [
+          {
+            "label": "hard-right",
+            "lte": 0.1
+          },
+          {
+            "label": "at-the-wall",
+            "lte": 6.0
+          }
+        ]
+      }
+    ]
+  }
+}

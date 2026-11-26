@@ -1,0 +1,323 @@
+{
+  "name": "weeds-and-rocks-block-tiles",
+  "warmupFrames": 10,
+  "drawEvery": 6,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "weed-tile",
+      "press": "Numpad4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hoe-blocked-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hoe-blocked-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hoe-blocked",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cut-slot",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cut-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "cut",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rock-tile",
+      "press": "Numpad5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rock-blocked-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rock-blocked-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rock-blocked",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cracked-slot",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cracked-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "cracked",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "broken-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "broken",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-rock-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-rock-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled-rock",
+      "waitTicks": 48,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "tilled",
+        "atSteps": [
+          {
+            "label": "weed-tile",
+            "equals": 0
+          },
+          {
+            "label": "hoe-blocked",
+            "equals": 0
+          },
+          {
+            "label": "cut",
+            "equals": 0
+          },
+          {
+            "label": "tilled",
+            "equals": 1
+          },
+          {
+            "label": "rock-blocked",
+            "equals": 1
+          },
+          {
+            "label": "broken",
+            "equals": 1
+          },
+          {
+            "label": "tilled-rock",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "weeds",
+        "atSteps": [
+          {
+            "label": "weed-tile",
+            "equals": 5
+          },
+          {
+            "label": "hoe-blocked",
+            "equals": 5
+          },
+          {
+            "label": "cut",
+            "equals": 4
+          },
+          {
+            "label": "tilled",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "rocks",
+        "atSteps": [
+          {
+            "label": "rock-tile",
+            "equals": 2
+          },
+          {
+            "label": "rock-blocked",
+            "equals": 2
+          },
+          {
+            "label": "cracked",
+            "equals": 2
+          },
+          {
+            "label": "broken",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "message",
+        "atSteps": [
+          {
+            "label": "hoe-blocked",
+            "textIncludes": "weed"
+          },
+          {
+            "label": "rock-blocked",
+            "textIncludes": "rock"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stamina",
+        "atSteps": [
+          {
+            "label": "hoe-blocked",
+            "equals": 250
+          },
+          {
+            "label": "cut",
+            "equals": 247
+          },
+          {
+            "label": "tilled",
+            "equals": 241
+          },
+          {
+            "label": "rock-blocked",
+            "equals": 241
+          },
+          {
+            "label": "cracked",
+            "equals": 235
+          },
+          {
+            "label": "broken",
+            "equals": 229
+          },
+          {
+            "label": "tilled-rock",
+            "equals": 223
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "cut-weed",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "cracked-rock",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "broke-rock",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

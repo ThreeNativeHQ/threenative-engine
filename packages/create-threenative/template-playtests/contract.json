@@ -108,6 +108,44 @@
       }
     }
   },
+  "board-party": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "label": "ready",
+        "waitForResource": { "id": "state", "path": "time", "gte": 0.5 },
+        "release": false,
+        "timeoutMs": 5000
+      }
+    ],
+    "explore": {
+      "actions": ["Space", "KeyY", "KeyN"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "turn", "equals": 1 },
+        { "id": "state", "path": "die", "equals": 0 },
+        { "id": "state", "path": "players.0.stars", "equals": 0 },
+        { "id": "state", "path": "players.0.coins", "equals": 10 },
+        { "id": "state", "path": "time", "lte": 1 }
+      ]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Interact",
+        "ticks": 48
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a turn is a die roll and a walk between spaces, and a minigame ends on a finish line or a bar sweep",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "collectathon": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
@@ -163,6 +201,27 @@
         },
         "windows": 1
       }
+    }
+  },
+  "farming": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyE", "KeyQ", "KeyR"]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Sword_Attack",
+        "ticks": 42,
+        "contactTicks": 21,
+        "effect": { "signal": "tilled" }
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "restart-resets": "a farm has no failure to retry: the day loop saves nothing between runs and a new run is a page reload",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "kart": {
@@ -589,6 +648,31 @@
         },
         "windows": 1
       }
+    }
+  },
+  "rail-shooter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft", "KeyX", "KeyQ", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "shield", "equals": 255 },
+        { "id": "state", "path": "score", "equals": 0 },
+        { "id": "state", "path": "kills", "equals": 0 },
+        { "id": "state", "path": "wave", "equals": 0 },
+        { "id": "state", "path": "gauge", "lte": 10 },
+        { "id": "state", "path": "railS", "lte": 40 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the ship has no feet: it flies a spline rail and the pilot is not drawn",
+      "action-clip-completes": "no key plays an animation clip: the ship is procedural geometry and a barrel roll is a transform, proven by the barrel-roll-deflects scenario",
+      "effect-follows-contact": "no melee or timed contact window: lasers fly and hit, proven by the laser-hit-count scenario",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "rts": {

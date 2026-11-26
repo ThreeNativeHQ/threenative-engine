@@ -1,0 +1,85 @@
+{
+  "name": "match-ends-at-the-turn-limit",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "set-up",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "over",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "won"
+      },
+      "release": false,
+      "timeoutMs": 60000
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "release": true,
+      "label": "after"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "over",
+            "equals": "won"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "ranking.0",
+        "atSteps": [
+          {
+            "label": "over",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "turn",
+        "atSteps": [
+          {
+            "label": "over",
+            "equals": 10
+          }
+        ]
+      }
+    ]
+  }
+}
