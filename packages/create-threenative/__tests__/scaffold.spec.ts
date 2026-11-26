@@ -152,8 +152,8 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "168211b706b260813b33c53536c74fd5a70985747d180074f7d696ebe3641e4e",
   },
   "rail-shooter": {
-    shared: "2e4de40f1112a37a56380087186354c8650c6b97e99b0c5951801afa63aa0199",
-    kit: "f70b226afcda552b5765c5809bf32dcf24516b5cf0e6da1fedbce7126556969d",
+    shared: "48bdbf002daf8b5c746999832a744a3fc72f31d52e5b0df0e426b29d8a675610",
+    kit: "fe5e9f44513d79f1f4cfd864c61c16a341e6869f8e442465d62f6f92f70f45f2",
   },
   rain: {
     shared: "c9ec383cbdd4af40d9adba87daed302853a5792c28a1c92e7bad4facca803595",
