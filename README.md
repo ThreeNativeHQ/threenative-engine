@@ -37,7 +37,7 @@ pnpm create threenative my-game
 | **Physics** | Pick a library, write the bridge | Rapier (Rust, compiled to WebAssembly) built in, with Godot-style `RigidBody3D`, `CharacterBody3D`, `Area3D` and navigation |
 | **Engine** | JavaScript issues every draw call | An owned C++ engine behind the same Three.js API: WebAssembly in the browser (multithreaded on cross-origin-isolated pages), native code on desktop |
 | **Draw calls** | One per mesh, unless you batch by hand | Batched for you: up to **11.6× faster** than plain Three.js on a many-object scene; 512 skinned characters go from **1,026 to 4 draws** (47.05 → 24.45 ms) — [data](docs/verification/runtime-perf-state.md) |
-| **Default look** | Tune tonemapping, exposure and lights by hand | Unreal Engine 5.8.3 defaults out of the box: filmic tone curve and metered auto exposure, calibrated against Unreal renders of the same scene — [see below](#unreals-look-running-in-a-browser-tab) |
+| **Default look** | Tune tonemapping, exposure and lights by hand | Unreal-class out of the box: a filmic tone curve and metered auto exposure, calibrated against Unreal renders of the same scene — without the Unreal install. [See it](#unreal-class-visuals-without-the-unreal-install) |
 | **Ships to** | The browser | Web, Windows, macOS, Linux and Android from one source, with no WebView |
 | **HUD and menus** | Hand-rolled DOM | React 19 and Tailwind, bound to game state |
 | **Assets** | Copy files and fix paths | Hashed asset pipeline, 200+ procedural assets, and an asset MCP that searches 10+ libraries |
@@ -45,15 +45,20 @@ pnpm create threenative my-game
 | **Against Godot 4.7.1** | — | **1.8× faster** at 4,096 cubes on native desktop, **3.9× faster** at 16,384 instanced cubes on the web — [data](docs/verification/runtime-perf-state.md) |
 | **Lock-in** | — | None. Materials, lights and post are plain code in your `src/render/`, and `engine: "threejs"` runs stock Three.js |
 
-### Unreal's look, running in a browser tab
+### Unreal-class visuals, without the Unreal install
 
 <img src="docs/media/readme/vs-unreal.webp" alt="Four calibration scenes side by side: ThreeNative in the browser on the left, stock Unreal Engine 5.8.3 on the right — an exterior with sky and clouds, chrome and matte spheres, a palm with grass shadows, and a sunlit room" width="100%">
 
-Same calibration scenes, same sun. Left: ThreeNative in the browser. Right:
-a stock Unreal Engine 5.8.3 render. A fresh visual judge rated the sky, foliage and shadow work an
-improvement toward Unreal ([#541](https://github.com/ThreeNativeHQ/threenative-engine/pull/541)),
-and rated every global-illumination pose CLOSE to Unreal
-([#634](https://github.com/ThreeNativeHQ/threenative-engine/pull/634)).
+Unreal makes great frames, but you pay for them with an editor install of tens of gigabytes. ThreeNative
+takes only the parts worth having — the sky, global illumination, shadows, foliage, exposure and
+the frame-cost tricks — and runs them in a light engine that loads in a browser tab.
+
+Same calibration scenes, same sun. Left: ThreeNative in the browser. Right: a stock Unreal Engine
+5.8.3 render. A fresh visual judge rated the sky, foliage and shadow work an improvement toward
+Unreal ([#541](https://github.com/ThreeNativeHQ/threenative-engine/pull/541)), and every
+global-illumination pose CLOSE to Unreal
+([#634](https://github.com/ThreeNativeHQ/threenative-engine/pull/634)). What is in, what is next and
+what we leave out: the [feature map (work in progress)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md).
 
 ## Why ThreeNative
 
