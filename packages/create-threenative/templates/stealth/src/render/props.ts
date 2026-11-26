@@ -1,10 +1,14 @@
 // Generated for you. Every prop in the compound is a few boxes on the grid materials: no asset.
 import {
   BoxGeometry,
+  BufferAttribute,
+  BufferGeometry,
   CircleGeometry,
   CylinderGeometry,
   DoubleSide,
   Group,
+  Line,
+  LineBasicMaterial,
   Mesh,
   MeshBasicMaterial,
   MeshStandardMaterial,
@@ -190,4 +194,36 @@ export function dress(rig: Object3D, material: MeshStandardMaterial): void {
     const mesh = object as { isSkinnedMesh?: boolean; material?: unknown };
     if (mesh.isSkinnedMesh === true) mesh.material = material;
   });
+}
+
+export interface ITracer {
+  readonly line: Line;
+  /** Stretch the tracer from the muzzle to where the round went, world space. */
+  readonly aim: (
+    fromX: number,
+    fromY: number,
+    fromZ: number,
+    toX: number,
+    toY: number,
+    toZ: number,
+  ) => void;
+}
+
+/** A rifle round's streak: one bright segment the guard shows for a few frames per shot. */
+export function createTracer(): ITracer {
+  const positions = new Float32Array(6);
+  const geometry = new BufferGeometry();
+  const attribute = new BufferAttribute(positions, 3);
+  geometry.setAttribute("position", attribute);
+  const line = new Line(geometry, new LineBasicMaterial({ color: 0xffd27a }));
+  line.name = "tracer";
+  line.frustumCulled = false;
+  line.visible = false;
+  return {
+    aim: (fromX, fromY, fromZ, toX, toY, toZ) => {
+      positions.set([fromX, fromY, fromZ, toX, toY, toZ]);
+      attribute.needsUpdate = true;
+    },
+    line,
+  };
 }

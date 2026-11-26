@@ -29,6 +29,7 @@ export class SecurityCamera {
   #yaw: number;
   #direction = 1;
   #pause = 0;
+  readonly #view = { eye: this.eye, halfAngle: HALF_ANGLE, range: RANGE, yaw: 0 };
   readonly #pivot;
   readonly #cone;
 
@@ -73,16 +74,10 @@ export class SecurityCamera {
       }
     }
     // The camera looks down from the wall: its eye is high, so a crouched player behind a low
-    // crate is still covered, and one in the open is not.
-    this.sight = sightStrength(
-      { eye: this.eye, halfAngle: HALF_ANGLE, range: RANGE, yaw: this.#yaw },
-      {
-        ...player,
-        stance: player.stance === "crouch" ? "crouch" : "stand",
-        running: player.running,
-      },
-      clear,
-    );
+    // crate is still covered, and one in the open is not. It has no close sense: standing right
+    // under it is outside its cone.
+    this.#view.yaw = this.#yaw;
+    this.sight = sightStrength(this.#view, player, clear);
     const before = this.suspicion;
     this.suspicion =
       this.sight > 0

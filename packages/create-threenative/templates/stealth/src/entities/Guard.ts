@@ -2,11 +2,13 @@ import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { MathUtils, type Mesh, type Object3D, Vector3 } from "three";
 import type { AlertDirector } from "../ai/phase.js";
 import {
+  CLOSE_SENSE,
   type ClearLine,
   EYE_HEIGHT,
   GUARD_HALF_ANGLE,
   GUARD_RANGE,
   type ITarget,
+  type IViewer,
   type NoiseBus,
   SUSPICION_DECAY,
   SUSPICION_RISE,
@@ -14,11 +16,12 @@ import {
   angleBetween,
   sightStrength,
 } from "../ai/perception.js";
-import type { Patrol } from "../level.js";
+import { COMPOUND, type Patrol } from "../level.js";
 import {
   RIFLE_HOLD,
   createMoodMarker,
   createRifle,
+  createTracer,
   createViewCone,
   dress,
   guardMaterial,
@@ -66,7 +69,8 @@ const STARE_TIME = 1.2;
 const LOOK_TIME = 3;
 /** Alert fire: one burst every this many seconds while it has a line of sight within reach. */
 const FIRE_INTERVAL = 0.75;
-const FIRE_RANGE = 12;
+/** Guards fire inside this reach and close in from farther out; within the 10 m sight range. */
+const FIRE_RANGE = 9;
 const SHOT_DAMAGE = 9;
 /** Hit chance at point blank and at `FIRE_RANGE`; a moving target halves it. */
 const HIT_NEAR = 0.7;
@@ -82,6 +86,14 @@ export const PUMPS_TO_KNOCK_OUT = 5;
 export const KNOCKOUT_TIME = 40;
 /** How far a search point may fall from the last known position, metres. */
 const SEARCH_RADIUS = 5;
+/** Walking that covers less than this share of its intended distance counts as blocked. */
+const STUCK_PROGRESS = 0.25;
+/** Seconds of blocked walking before the guard gives up on the point and treats it as reached. */
+const STUCK_TIME = 1.5;
+/** Within this angle of the player the guard fires; wider, it turns first. */
+const AIM_TOLERANCE = 0.25;
+/** Seconds a shot's tracer stays on screen. */
+const TRACER_TIME = 0.07;
 
 export interface IGuardHooks {
   readonly clear: ClearLine;
@@ -112,6 +124,11 @@ export class Guard extends Fighter {
   readonly #interest = new Vector3();
   readonly #eye = new Vector3();
   readonly #toward = new Vector3();
+  readonly #lastPosition = new Vector3();
+  #lastStep = 0;
+  #stuck = 0;
+  readonly #tracer = createTracer();
+  #tracerTimer = 0;
   readonly #marker = createMoodMarker();
   #rifle: Object3D;
   #downTimer = 0;
@@ -137,11 +154,13 @@ export class Guard extends Fighter {
     this.#face(this.#routeIndex);
     this.cone = createViewCone(GUARD_RANGE, GUARD_HALF_ANGLE);
     this.figure.add(this.cone);
-    this.cone.position.y = -this.figure.position.y + 0.03;
+    // The cone lies on the floor: cancel both the body's height and the figure's own drop.
+    this.cone.position.y = 0.03 - (HALF_HEIGHT + RADIUS) - this.figure.position.y;
     this.#marker.root.position.y = 2.15;
     this.mesh.add(this.#marker.root);
     this.#ctx = ctx;
     this.#body = this.#createBody();
+    ctx.add(this.#tracer.line);
   }
 
   #ctx: GameCtx;
@@ -176,6 +195,20 @@ export class Guard extends Fighter {
     return this.#caution ? GUARD_HALF_ANGLE * CAUTION_ANGLE : GUARD_HALF_ANGLE;
   }
 
+  readonly #view = {
+    closeSense: CLOSE_SENSE,
+    eye: this.#eye,
+    halfAngle: 0,
+    range: GUARD_RANGE,
+    yaw: 0,
+  };
+
+  #viewer(): IViewer {
+    this.#view.halfAngle = this.halfAngle;
+    this.#view.yaw = this.yaw;
+    return this.#view;
+  }
+
   get conscious(): boolean {
     return this.state !== "down" && this.state !== "held";
   }
@@ -207,16 +240,20 @@ export class Guard extends Fighter {
 
     this.#eye.copy(this.mesh.position);
     this.#eye.y = EYE_HEIGHT;
-    this.sight = sightStrength(
-      { eye: this.#eye, halfAngle: this.halfAngle, range: GUARD_RANGE, yaw: this.yaw },
-      player,
-      this.#hooks.clear,
-    );
+    this.sight = sightStrength(this.#viewer(), player, this.#hooks.clear);
 
     // React to the base-wide phase first: an alert pulls every conscious guard in.
     if (phase === "alert" && this.state !== "alert" && this.state !== "checkBody") {
       this.state = "alert";
-    } else if (phase === "evasion" && this.state === "alert") {
+    } else if (
+      phase === "evasion" &&
+      (this.state === "alert" ||
+        this.state === "patrol" ||
+        this.state === "suspicious" ||
+        this.state === "investigate")
+    ) {
+      // Evasion is base-wide: every guard on its feet searches the last known spot, including a
+      // body that was just kicked awake.
       this.#startSearch(director);
     } else if (
       (phase === "caution" || phase === "infiltration") &&
@@ -269,6 +306,7 @@ export class Guard extends Fighter {
       case "investigate":
         speed = this.#walkTo(this.#interest, PATROL_SPEED, dt, 0.8);
         if (speed === 0) {
+          if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
           this.#lookAround(dt, this.#timer);
           if (this.#timer >= LOOK_TIME) this.#returnToRoute();
@@ -277,6 +315,7 @@ export class Guard extends Fighter {
       case "search":
         speed = this.#walkTo(this.#interest, CAUTION_SPEED, dt, 0.8);
         if (speed === 0) {
+          if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
           this.#lookAround(dt, this.#timer);
           if (this.#timer >= 2) this.#pickSearchPoint(director);
@@ -333,6 +372,8 @@ export class Guard extends Fighter {
   }
 
   #present(dt: number, speed: number): void {
+    this.#tracerTimer = Math.max(0, this.#tracerTimer - dt);
+    this.#tracer.line.visible = this.#tracerTimer > 0;
     const mood =
       this.state === "alert"
         ? "alert"
@@ -391,10 +432,19 @@ export class Guard extends Fighter {
 
   /** Walk toward a point; returns the speed moved, 0 once within `arrive` metres. */
   #walkTo(target: Vector3, speed: number, dt: number, arrive: number): number {
+    // Blocked by a wall or a crate the straight line runs into: after `STUCK_TIME` the point
+    // counts as reached, so a lured or searching guard looks around and moves on instead of
+    // walking into the wall forever. A navmesh would route around it; this kit keeps it simple.
+    const moved = this.mesh.position.distanceTo(this.#lastPosition);
+    this.#stuck =
+      this.#lastStep > 0 && moved < this.#lastStep * STUCK_PROGRESS ? this.#stuck + dt : 0;
+    this.#lastPosition.copy(this.mesh.position);
+    this.#lastStep = 0;
     const dx = target.x - this.mesh.position.x;
     const dz = target.z - this.mesh.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance <= arrive) {
+    if (distance <= arrive || this.#stuck >= STUCK_TIME) {
+      this.#stuck = 0;
       this.body.velocity.set(0, 0, 0);
       this.body.moveAndSlide(dt);
       return 0;
@@ -410,6 +460,7 @@ export class Guard extends Fighter {
     }
     this.body.velocity.set((dx / distance) * speed, 0, (dz / distance) * speed);
     this.body.moveAndSlide(dt);
+    this.#lastStep = speed * dt;
     return speed;
   }
 
@@ -419,23 +470,39 @@ export class Guard extends Fighter {
     const dz = player.position.z - this.mesh.position.z;
     const distance = Math.hypot(dx, dz);
     if (this.sight > 0 && distance <= FIRE_RANGE) {
-      this.#turnTo(Math.atan2(dx, dz), dt);
+      const heading = Math.atan2(dx, dz);
+      this.#turnTo(heading, dt);
       this.body.velocity.set(0, 0, 0);
       this.body.moveAndSlide(dt);
-      if (this.#fireTimer <= 0 && ctx.startup.compileSettled) {
+      const aimed = Math.abs(angleBetween(heading, this.yaw)) <= AIM_TOLERANCE;
+      if (aimed && this.#fireTimer <= 0 && ctx.startup.compileSettled) {
         this.#fireTimer = FIRE_INTERVAL;
         this.shots += 1;
         this.play("shoot", { fade: 0.05, hold: 0.35 });
         const chance =
           MathUtils.lerp(HIT_NEAR, HIT_FAR, Math.min(1, distance / FIRE_RANGE)) *
           (player.running ? 0.5 : 1);
-        if (this.#hooks.random() < chance) {
+        const hit = this.#hooks.random() < chance;
+        // A miss still shows: the round passes a little to the side of the player.
+        const spread = hit ? 0 : this.#hooks.random() < 0.5 ? -0.6 : 0.6;
+        this.#tracer.aim(
+          this.mesh.position.x + Math.sin(this.yaw) * 0.6,
+          1.3,
+          this.mesh.position.z + Math.cos(this.yaw) * 0.6,
+          player.position.x + Math.cos(heading) * spread,
+          1.1,
+          player.position.z - Math.sin(heading) * spread,
+        );
+        this.#tracerTimer = TRACER_TIME;
+        if (hit) {
           this.hits += 1;
           this.#hooks.hitPlayer(SHOT_DAMAGE);
         }
       }
       return 0;
     }
+    // Out of sight: the next sighting needs a beat to aim, so rounding a corner is not instant death.
+    this.#fireTimer = Math.max(this.#fireTimer, FIRE_INTERVAL * 0.6);
     // No shot: close on the last place anyone saw the player.
     return this.#walkTo(
       this.#toward.set(director.lastKnown.x, 0, director.lastKnown.z),
@@ -463,10 +530,12 @@ export class Guard extends Fighter {
   #pickSearchPoint(director: AlertDirector): void {
     const angle = this.#hooks.random() * Math.PI * 2;
     const reach = this.#hooks.random() * SEARCH_RADIUS;
+    const insideX = COMPOUND.halfWidth - 1;
+    const insideZ = COMPOUND.halfDepth - 1;
     this.#interest.set(
-      director.lastKnown.x + Math.sin(angle) * reach,
+      MathUtils.clamp(director.lastKnown.x + Math.sin(angle) * reach, -insideX, insideX),
       0,
-      director.lastKnown.z + Math.cos(angle) * reach,
+      MathUtils.clamp(director.lastKnown.z + Math.cos(angle) * reach, -insideZ, insideZ),
     );
     this.#timer = 0;
   }
@@ -548,7 +617,6 @@ export class Guard extends Fighter {
     const difference = angleBetween(heading, this.yaw);
     const step = Math.sign(difference) * Math.min(Math.abs(difference), TURN_RATE * dt);
     this.figure.rotation.y += step;
-    this.#lookBase = this.state === "patrol" ? this.#lookBase : this.yaw;
   }
 
   #face(index: number): void {

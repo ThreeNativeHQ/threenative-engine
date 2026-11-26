@@ -1,10 +1,21 @@
 import { useUiState } from "@threenative/ui";
+import { type Box, COMPOUND, CRATES, WALLS } from "../level.js";
 import type { GameState, RadarContact } from "../state.js";
 
 /** The radar shows this many metres from its centre to its edge. Keep it equal to RADAR_RANGE in Play.ts. */
 const RANGE = 18;
 const SIZE = 168;
 const SCALE = SIZE / 2 / RANGE;
+
+/** What the radar draws as structure: the perimeter, the inner walls and the tall crates. */
+const STRUCTURE: readonly Box[] = [
+  [0, -COMPOUND.halfDepth, COMPOUND.halfWidth * 2, 0, 0.4],
+  [0, COMPOUND.halfDepth, COMPOUND.halfWidth * 2, 0, 0.4],
+  [-COMPOUND.halfWidth, 0, 0.4, 0, COMPOUND.halfDepth * 2],
+  [COMPOUND.halfWidth, 0, 0.4, 0, COMPOUND.halfDepth * 2],
+  ...WALLS,
+  ...CRATES.filter((crate) => crate[3] >= 1.5),
+];
 
 /** A view cone as an SVG wedge: centre (x, y) in radar pixels, facing `yaw`. */
 function wedge(contact: RadarContact, x: number, y: number): string {
@@ -30,6 +41,9 @@ export function Radar() {
   const noise = useUiState<GameState, number>((state) => state.noise) ?? 0;
   // The static scrolls at ten steps a second: select the step, not the clock.
   const tick = useUiState<GameState, number>((state) => Math.floor(state.missionTime * 10)) ?? 0;
+  const playerX = useUiState<GameState, number>((state) => state.playerX) ?? 0;
+  const playerZ = useUiState<GameState, number>((state) => state.playerZ) ?? 0;
+  const playerYaw = useUiState<GameState, number>((state) => state.playerYaw) ?? 0;
   if (radar === undefined) return null;
   const centre = SIZE / 2;
   return (
@@ -58,6 +72,16 @@ export function Radar() {
           </>
         ) : (
           <>
+            {STRUCTURE.map(([x, z, width, , depth], index) => (
+              <rect
+                key={index}
+                x={centre + (x - width / 2 - playerX) * SCALE}
+                y={centre + (z - depth / 2 - playerZ) * SCALE}
+                width={Math.max(1.5, width * SCALE)}
+                height={Math.max(1.5, depth * SCALE)}
+                fill="#4f7a5e"
+              />
+            ))}
             <circle cx={centre} cy={centre} r={centre - 2} fill="none" stroke="#2c4a36" />
             <circle cx={centre} cy={centre} r={(centre - 2) / 2} fill="none" stroke="#2c4a36" />
             {radar.map((contact, index) => {
@@ -82,7 +106,11 @@ export function Radar() {
                 </g>
               );
             })}
-            <circle cx={centre} cy={centre} r={3.5} fill="#2a6cf0" />
+            <path
+              d={`M0,-6 L4,4 L-4,4 Z`}
+              transform={`translate(${centre} ${centre}) rotate(${180 - (playerYaw * 180) / Math.PI})`}
+              fill="#2a6cf0"
+            />
             {noise > 0 && (
               <circle
                 cx={centre}

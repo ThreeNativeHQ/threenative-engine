@@ -15,7 +15,7 @@ export interface IMannequin {
 export interface IFighterOptions {
   /** The capsule's half-extent, in metres. The figure's soles land one centimetre below it. */
   readonly halfExtent: number;
-  /** Multiplies the whole figure, the capsule and the collider together — this is the boss read. */
+  /** Multiplies the whole figure, the capsule and the collider together — one knob for a bigger or smaller body. */
   readonly scale?: number;
   /** A small mesh the right hand holds. Omitted for a bare-handed fighter. */
   readonly weapon?: Object3D;

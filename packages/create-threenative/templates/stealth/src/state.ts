@@ -60,6 +60,8 @@ export type GameState = {
   message: string;
   playerX: number;
   playerZ: number;
+  /** Facing yaw, three.js convention (0 faces +z): the radar's arrow. */
+  playerYaw: number;
   /** Seconds since the mission began. */
   missionTime: number;
 };

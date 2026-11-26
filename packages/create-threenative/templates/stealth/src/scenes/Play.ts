@@ -15,7 +15,7 @@ import {
 } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { AlertDirector } from "../ai/phase.js";
-import { type ClearLine, NoiseBus } from "../ai/perception.js";
+import { type ClearLine, type ITarget, NoiseBus } from "../ai/perception.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import { GUARD_LAYER, Guard, PLAYER_LAYER, WORLD_LAYER } from "../entities/Guard.js";
 import { PICKUP_REACH, Player } from "../entities/Player.js";
@@ -42,6 +42,8 @@ import type { GameState, RadarContact } from "../state.js";
 const RADAR_RANGE = 18;
 /** The radar refreshes ten times a second, not every tick: it is a HUD, not a simulation. */
 const RADAR_INTERVAL = 0.1;
+/** How fast the radar's noise ring shrinks after a footstep or a knock, metres per second. */
+const NOISE_FADE = 14;
 /** How long a HUD message stays up, seconds. */
 const MESSAGE_TIME = 2.5;
 const DOOR_REACH = 2;
@@ -66,6 +68,7 @@ const STATIONS: Readonly<Record<string, Station>> = {
   // In the open by the records doorway, inside the west camera's sweep.
   station6: () => ({ x: -10, z: 1, yaw: 0 }),
 };
+const STATION_NAMES = Object.keys(STATIONS);
 
 function relativeTo(
   guard: Guard | undefined,
@@ -111,6 +114,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     message: "",
     playerX: SPAWN.x,
     playerZ: SPAWN.z,
+    playerYaw: 0,
     missionTime: 0,
   };
 
@@ -220,7 +224,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const guard = new Guard(ctx, mannequin, patrol, {
         clear,
         hitPlayer: (damage) => {
-          player.takeDamage(damage);
+          player.takeDamage(damage, director);
           emitPlaytestEvent({ amount: damage, entity: "player", name: "shot" });
         },
         random: ctx.random,
@@ -231,6 +235,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     }
     const cameras = CAMERAS.map((spec) => ctx.entities.add(spec.id, new SecurityCamera(ctx, spec)));
 
+    // What the guards and the camera look at: one object, refreshed each tick.
+    const target: { -readonly [K in keyof ITarget]: ITarget[K] } = {
+      position: player.mesh.position,
+      running: false,
+      stance: "stand",
+    };
+    let noiseShown = 0;
     cameraRig.snap(player.mesh.position);
     const peek = { x: 0, z: 0 };
     afterPhysics(ctx, (dt) => {
@@ -303,7 +314,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const state = frameCtx.state.getState();
       const playing = state.phase === "playing";
 
-      for (const name of Object.keys(STATIONS)) {
+      for (const name of STATION_NAMES) {
         if (!frameCtx.input.justPressed(name)) continue;
         const station = STATIONS[name]?.(guardById);
         if (station === undefined) continue;
@@ -313,13 +324,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         emitPlaytestEvent({ entity: "player", name });
       }
 
-      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
-      if (playing) {
-        missionTime += dt;
-        player.update(frameCtx, dt, guards, director, noises, touch);
-      } else player.update(frameCtx, dt, [], director, noises);
-
-      // Interact: the keycard, then the door it opens.
+      // Interact: the keycard, then the door it opens. Measured before the player moves, so the
+      // key opens the door rather than grabbing a body someone left beside it.
       const atKeycard =
         !hasKeycard &&
         Math.hypot(player.mesh.position.x - KEYCARD.x, player.mesh.position.z - KEYCARD.z) <=
@@ -327,6 +333,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const atDoor =
         !doorOpen &&
         Math.hypot(player.mesh.position.x - DOOR.x, player.mesh.position.z - DOOR.z) <= DOOR_REACH;
+      player.objectiveNear = atKeycard || (atDoor && hasKeycard);
+
+      const touch = touchControls?.update(frameCtx.input.raw.pointers, frameCtx.viewport.size);
+      if (playing) {
+        missionTime += dt;
+        player.update(frameCtx, dt, guards, director, noises, touch);
+      } else player.freeze(dt);
       if (playing && frameCtx.input.justPressed("interact") && player.dragging === undefined) {
         if (atKeycard) {
           hasKeycard = true;
@@ -350,11 +363,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       // The guards and the camera see and hear; the director turns what they report into a phase.
       if (playing && frameCtx.startup.compileSettled) {
-        const target = {
-          position: player.mesh.position,
-          running: player.running,
-          stance: player.stance,
-        };
+        target.running = player.running;
+        target.stance = player.stance;
         for (const guard of guards)
           guard.update(frameCtx, dt, target, director, director.phase, noises, guards);
         for (const securityCamera of cameras) {
@@ -429,6 +439,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         bodiesFound += guard.bodiesFound;
         if (guard.state === "suspicious" || guard.state === "investigate") investigating += 1;
       }
+      for (const securityCamera of cameras)
+        suspicion = Math.max(suspicion, securityCamera.suspicion);
+      // A footstep or a knock lasts one tick in the world; on the radar its ring fades out.
+      noiseShown = Math.max(player.noise, noiseShown - dt * NOISE_FADE);
       frame.investigating = investigating;
       frame.prompt = !playing
         ? "R  RESTART"
@@ -453,7 +467,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frame.health = player.health;
       frame.stance = player.stance;
       frame.running = player.running ? 1 : 0;
-      frame.noise = player.noise;
+      frame.noise = round(noiseShown);
       frame.knocks = player.knocks;
       frame.suspicion = round(suspicion);
       frame.takedowns = player.takedowns;
@@ -466,6 +480,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frame.message = message;
       frame.playerX = round(player.mesh.position.x);
       frame.playerZ = round(player.mesh.position.z);
+      frame.playerYaw = round(player.figure.rotation.y);
       frame.missionTime = round(missionTime, 10);
       frame.cameraAlarms = cameraAlarms;
       frameCtx.state.set(frame);

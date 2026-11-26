@@ -12,7 +12,7 @@ import {
 import { palette } from "./palette.js";
 
 /* BEGIN THREENATIVE LOADING APPEARANCE */
-/** Edit these source constants for the action RPG's loading look. */
+/** Edit these source constants for the stealth kit's loading look. */
 export const loading = {
   backgroundColor: palette.horizon,
   backgroundImage: undefined as string | undefined,

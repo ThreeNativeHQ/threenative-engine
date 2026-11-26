@@ -46,6 +46,8 @@ const STEP_INTERVAL = 0.32;
 const WALL_PRESS_DELAY = 0.1;
 /** How far ahead of the capsule a wall still counts as "against" it, metres. */
 const WALL_REACH = 0.3;
+/** How far past the body the wall-end probe looks: when it finds no wall there, this is a corner. */
+const EDGE_PROBE = 0.45;
 /** Grab reach and the arc behind a guard it works from (more than 110 degrees off its facing). */
 export const GRAB_REACH = 1.3;
 const BEHIND_ANGLE = (110 * Math.PI) / 180;
@@ -63,8 +65,17 @@ export class Player extends Fighter {
   running = false;
   /** The wall the back is pressed to: its outward normal on the floor plane. */
   readonly wallNormal = new Vector2();
-  /** -1, 0 or 1: which way along the wall the player last slid, for the camera's corner peek. */
+  /**
+   * -1, 0 or 1: the wall end the player stands at and leans out of, for the camera's corner peek.
+   * 0 anywhere along the middle of a wall.
+   */
   peek = 0;
+  /**
+   * Set by the scene each tick: an objective (keycard, door) is in reach, so the interact key
+   * means that and not "grab the body lying here".
+   */
+  objectiveNear = false;
+  #slide = 0;
   /** The guard in the choke hold, and the pumps given so far. */
   held: Guard | undefined;
   pumps = 0;
@@ -128,7 +139,8 @@ export class Player extends Fighter {
 
     // Drag: hold interact beside a body. Release to drop it.
     if (ctx.input.pressed("interact")) {
-      if (this.dragging === undefined) this.dragging = this.#bodyWithin(guards, PICKUP_REACH + 0.2);
+      if (this.dragging === undefined && !this.objectiveNear)
+        this.dragging = this.#bodyWithin(guards, PICKUP_REACH + 0.2);
     } else this.dragging = undefined;
     if (this.dragging !== undefined && this.dragging.state !== "down") this.dragging = undefined;
 
@@ -146,8 +158,12 @@ export class Player extends Fighter {
       // Slide along the wall: keep only the part of the stick that runs along it.
       const tangentX = -this.wallNormal.y;
       const tangentZ = this.wallNormal.x;
-      const along = move.x * tangentX + -move.y * tangentZ;
-      this.peek = Math.abs(along) > 0.2 ? Math.sign(along) : this.peek;
+      let along = move.x * tangentX + -move.y * tangentZ;
+      if (Math.abs(along) > 0.2) this.#slide = Math.sign(along);
+      // At a wall end the player stops and leans out: the camera peeks round the corner.
+      const atEnd = this.#slide !== 0 && !this.#wallBehind(ctx, this.#slide * EDGE_PROBE);
+      this.peek = atEnd ? this.#slide : 0;
+      if (atEnd && Math.sign(along) === this.#slide) along = 0;
       this.body.velocity.set(
         tangentX * along * WALL_SLIDE_SPEED,
         0,
@@ -156,6 +172,7 @@ export class Player extends Fighter {
       if (ctx.input.justPressed("knock")) this.#knock(noises);
     } else {
       this.peek = 0;
+      this.#slide = 0;
       this.body.velocity.set(move.x * speed, 0, -move.y * speed);
     }
     this.body.moveAndSlide(dt);
@@ -202,10 +219,14 @@ export class Player extends Fighter {
     }
   }
 
-  takeDamage(amount: number): void {
+  takeDamage(amount: number, director: AlertDirector): void {
     if (this.dead) return;
     this.health = Math.max(0, this.health - amount);
-    if (this.held !== undefined) this.#release();
+    // A hit breaks the hold: the guard is free, and it knows exactly where the player is.
+    if (this.held !== undefined) {
+      this.held.breakFree(director, this.mesh.position.x, this.mesh.position.z);
+      this.#release();
+    }
     if (this.health > 0) {
       if (!this.busy) this.play("hit", { fade: 0.04, hold: 0.25 });
       return;
@@ -312,7 +333,14 @@ export class Player extends Fighter {
   #updateWallPress(ctx: GameCtx, dt: number, move: Vector2): void {
     if (this.stance === "wall") {
       const away = move.x * this.wallNormal.x + -move.y * this.wallNormal.y;
-      if (away > 0.4 || this.#crouched || this.running || this.dragging !== undefined) {
+      // Off the wall when the stick pulls away, or when the wall is no longer there.
+      if (
+        away > 0.4 ||
+        this.#crouched ||
+        this.running ||
+        this.dragging !== undefined ||
+        !this.#wallBehind(ctx, 0)
+      ) {
         this.stance = this.#crouched ? "crouch" : "stand";
       }
       return;
@@ -344,6 +372,44 @@ export class Player extends Fighter {
     this.#pressTimer = 0;
     this.stance = "wall";
     this.wallNormal.set(hit.normal.x, hit.normal.z).normalize();
+  }
+
+  /**
+   * True when a wall stands right behind the player's back, `offset` metres along the wall from
+   * the body (0 = directly behind; ±EDGE_PROBE = just past the shoulder, to find the wall end).
+   */
+  #wallBehind(ctx: GameCtx, offset: number): boolean {
+    const tangentX = -this.wallNormal.y;
+    const tangentZ = this.wallNormal.x;
+    this.#from.set(
+      this.mesh.position.x + tangentX * offset,
+      1.2,
+      this.mesh.position.z + tangentZ * offset,
+    );
+    this.#to.set(
+      this.#from.x - this.wallNormal.x * (RADIUS + WALL_REACH),
+      1.2,
+      this.#from.z - this.wallNormal.y * (RADIUS + WALL_REACH),
+    );
+    const hit = ctx.physics.directSpaceState.intersectRay({
+      collisionMask: WORLD_LAYER,
+      from: this.#from,
+      to: this.#to,
+    });
+    return hit !== undefined && Math.abs(hit.normal.y) <= 0.3;
+  }
+
+  /** The mission is over: stand still (or stay down) while the result shows. */
+  freeze(dt: number): void {
+    this.noise = 0;
+    this.running = false;
+    if (this.dead) {
+      this.animateStill(dt);
+      return;
+    }
+    this.body.velocity.set(0, 0, 0);
+    this.body.moveAndSlide(dt);
+    this.animateRig(dt, undefined, 0);
   }
 
   /** A knuckle on the wall: a noise the nearest guards walk over to check. */

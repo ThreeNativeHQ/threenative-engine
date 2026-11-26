@@ -50,6 +50,11 @@ export interface IViewer {
   readonly yaw: number;
   readonly halfAngle: number;
   readonly range: number;
+  /**
+   * Metres inside which a standing target is sensed whatever the facing — a guard feels someone
+   * bump into it. 0 or absent for a camera, which only sees what is in its cone.
+   */
+  readonly closeSense?: number;
 }
 
 export interface ITarget {
@@ -92,7 +97,7 @@ export function sightStrength(viewer: IViewer, target: ITarget, clear: ClearLine
   // A darker, lower target is seen from less far away, not only more slowly.
   const reach = viewer.range * Math.min(1, 0.45 + 0.55 * visibility);
   if (flat > reach) return 0;
-  const closeSense = flat <= CLOSE_SENSE && target.stance !== "crouch";
+  const closeSense = flat <= (viewer.closeSense ?? 0) && target.stance !== "crouch";
   if (!closeSense) {
     const bearing = Math.atan2(_toTarget.x, _toTarget.z);
     if (Math.abs(angleBetween(bearing, viewer.yaw)) > viewer.halfAngle) return 0;
