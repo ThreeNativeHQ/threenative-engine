@@ -11,7 +11,7 @@ import {
 import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { type Mesh, type PerspectiveCamera, type Texture, Vector2, Vector3 } from "three";
+import { type Mesh, type PerspectiveCamera, Vector2, Vector3 } from "three";
 import type { IMannequin } from "../entities/Humanoid.js";
 import { CAR_LAYER, type GameCtx, WORLD_LAYER } from "../entities/layers.js";
 import { CityCamera } from "../render/camera.js";
@@ -22,7 +22,7 @@ import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
-import { SKY_OPTIONS, SUN_DIRECTION, setupSky } from "../render/sky.js";
+import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
 import { STATIONS, World } from "../systems/World.js";
@@ -41,7 +41,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = INITIAL_STATE;
 
   #model: IMannequin | undefined;
-  #sky: Texture | undefined;
   #environmentSample: IEnvironmentSample | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
@@ -49,12 +48,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override async load(ctx: GameCtx): Promise<void> {
     // One rig for the whole city: Quaternius' Universal Animation Library combat mannequin (CC0) is
     // the player, every pedestrian and every officer, told apart by a material swap.
-    [this.#model, this.#sky] = await Promise.all([
-      ctx.assets.model<IMannequin>("mannequin-combat.glb"),
-      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
-    ]);
+    this.#model = await ctx.assets.model<IMannequin>("mannequin-combat.glb");
     primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
-    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -70,7 +66,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       throw new Error("Play.enter ran before load() loaded mannequin-combat.glb.");
     ctx.state.set({ ...INITIAL_STATE });
     const showTouchControls = isMobile() && isTouchscreenAvailable();
-    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

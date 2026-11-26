@@ -136,8 +136,8 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "86bb32afc45a874aa0ae1aff7a1510da816f3a72d9851199624ad68c03c80b87",
   },
   "open-world": {
-    shared: "0f67d962827c3df6b2ae37e4044f8377efebc3a5ee1a35cfc4f554e7c8e424b0",
-    kit: "651aa974f97ebbe7c015b9445e2126fa7a7ce0991766d5ae03fd3545cbe822f6",
+    shared: "b95ec25c070c1df8a5c1e871946ad8319026e591eeec16412f2fbc0e28d0c344",
+    kit: "ece2528b6db47206f6d95d3ae450f979bdfa8ca592a881464a0fe53efc648441",
   },
   platformer: {
     shared: "eba695fb07242da10915e56d312c116ffd7822a69e67352d1faaa0683b35f6f1",
@@ -180,8 +180,8 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     kit: "028e3b859efab30f51ce255d087d94a3a355028829a64b4df084277f1296a54d",
   },
   stealth: {
-    shared: "2a2021287bd1c5fb7201340740df17e34f0ec390e2592b525b00033d6e42a214",
-    kit: "61664f1648c679426a860b53abdf3bbc49cceb50881913214c2b032b85d3af61",
+    shared: "30436dd15473418c05ba8300b7a8a8616c6cd23d08488b336400f0a0a6d026f4",
+    kit: "83cc7cb75895dad78e28be84bba1b8997c2603e8f4bb161648f5f0e7c3510c19",
   },
   "survival-horror": {
     shared: "5ac882f3b2139851e674f694c8dccc5636162797b31b99d0333f8044f288a8ca",

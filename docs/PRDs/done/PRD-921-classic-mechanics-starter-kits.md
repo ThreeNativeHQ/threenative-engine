@@ -75,7 +75,7 @@ code, names, levels or art.
 
 - [x] At least three starter kits focused on classic mechanics, with minimal assets only (the
       mannequin GLB and the grey grid material) — evidence: `survival-horror`, `open-world`, `stealth`
-      in `packages/create-threenative/templates/`; template structure check clean; fresh judge PASS.
+      in `packages/create-threenative/templates/`; each scaffolded project's `assets/` holds only `mannequin-combat.glb` (the optional photo sky and its `sky.jpg` were removed from stealth and open-world); the grey grid is a procedural texture in `render/materials.ts`; fresh judge PASS.
 - [x] Each kit reviewed by Gemini 4 Neon High until it authorizes — evidence: AUTHORIZE for stealth
       (round 4), survival-horror (round 2), open-world (round 6); transcripts in
       `~/Downloads/prd-921-kits/<kit>/reviews/`.

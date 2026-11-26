@@ -14,7 +14,7 @@ import {
   RigidBody3D,
   buildStaticColliders,
 } from "@threenative/physics";
-import { type PerspectiveCamera, type Texture, Vector3 } from "three";
+import { type PerspectiveCamera, Vector3 } from "three";
 import { type ClearLine, GUARD_RANGE, type ITarget, NoiseBus } from "../ai/perception.js";
 import { AlertDirector } from "../ai/phase.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
@@ -41,7 +41,7 @@ import {
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { SKY_OPTIONS, setupSky } from "../render/sky.js";
+import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState, RadarContact } from "../state.js";
 
@@ -132,7 +132,6 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   };
 
   #mannequin: IMannequin | undefined;
-  #sky: Texture | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
   #environmentSample: IEnvironmentSample | undefined;
   #materialLighting: ReturnType<typeof createMaterialLighting> | undefined;
@@ -140,12 +139,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override async load(ctx: GameCtx): Promise<void> {
     // One rig for everyone: the infiltrator and every guard are the combat mannequin (Quaternius'
     // Universal Animation Library, CC0), dressed apart by a material swap.
-    [this.#mannequin, this.#sky] = await Promise.all([
-      ctx.assets.model<IMannequin>("mannequin-combat.glb"),
-      SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
-    ]);
+    this.#mannequin = await ctx.assets.model<IMannequin>("mannequin-combat.glb");
     primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
-    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -160,7 +156,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     if (mannequin === undefined)
       throw new Error("Play.enter ran before load() loaded mannequin-combat.glb.");
     const camera = ctx.camera as PerspectiveCamera;
-    setupSky(ctx.scene, this.#sky, ctx.renderer.softwareAdapter !== undefined);
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],

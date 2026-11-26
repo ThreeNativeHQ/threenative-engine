@@ -11,7 +11,7 @@ import {
   sunLightTransmittance,
   temperatureColour,
 } from "./atmosphere.js";
-import { SKY_OPTIONS, SUN_DIRECTION } from "./sky.js";
+import { SUN_DIRECTION } from "./sky.js";
 
 /** The sun as Unreal's default level has it: 6 lux at 6500 K, tinted by the air it crosses. */
 function atmosphereSun(): DirectionalLight {
@@ -38,8 +38,7 @@ export function setupLighting(
   renderer.shadowMap.enabled = true;
   renderer.shadowMap.type = PCFSoftShadowMap;
 
-  // The photo sky keeps the warm white matched by eye to its photographed midday sun.
-  const key = SKY_OPTIONS.sky === "photo" ? new DirectionalLight(0xfff1e0, 4.5) : atmosphereSun();
+  const key = atmosphereSun();
   key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
   // One map, 80 m across, that `scenes/Play.ts` re-centres on the player every tick: the street
