@@ -31,7 +31,7 @@ pnpm create threenative my-game
 
 **[Website](https://threenative.com) · [Studio](https://studio.threenative.com/) · [Games store](https://store.threenative.com) · [Discord](https://discord.gg/mWxTQByxFR)**
 
-[vs Three.js](#threenative-vs-plain-threejs) · [Quickstart](#quickstart) · [Gallery](#built-with-threenative) · [Starter kits](#starter-kits) · [Built for AI agents](#built-for-ai-agents) · [Platforms](#platforms) · [Ecosystem](#the-ecosystem) · [Docs](#docs)
+[vs Three.js](#threenative-vs-plain-threejs) · [Gallery](#built-with-threenative) · [Ecosystem](#the-ecosystem) · [Quickstart](#quickstart) · [Starter kits](#starter-kits) · [Built for AI agents](#built-for-ai-agents) · [Platforms](#platforms) · [Docs](#docs)
 
 </div>
 
@@ -76,6 +76,40 @@ global-illumination pose CLOSE to Unreal
 ([#634](https://github.com/ThreeNativeHQ/threenative-engine/pull/634)). What is in, what is next and
 what we leave out: the [feature map (work in progress)](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md).
 
+## Built with ThreeNative
+
+> **Why it matters:** With Midway above, these are full games, not tech demos: a shooter, exploration, platforming, open terrain. The engine carries the whole game, not only a pretty scene.
+
+<table>
+  <tr>
+    <td width="33%"><a href="docs/media/readme/snow.webp"><img src="docs/media/readme/snow.webp" alt="A character walks through snowfall leaving footprints, with a weather control panel"></a><br><sub><b>Snow kit</b>: deformable snow that keeps every footprint</sub></td>
+    <td width="33%"><a href="docs/media/readme/vesper-hall.webp"><img src="docs/media/readme/vesper-hall.webp" alt="A candlelit gothic nave with light from the rose window"></a><br><sub><b>Vesper Hall</b>: real-time GI, reflections, god rays</sub></td>
+    <td width="33%"><a href="docs/media/readme/wildwood.webp"><img src="docs/media/readme/wildwood.webp" alt="A pine trunk beside a lake in a dense fern forest"></a><br><sub><b>Wildwood</b>: scanned fern and pine forest</sub></td>
+  </tr>
+  <tr>
+    <td><a href="docs/media/readme/strata-coastal.webp"><img src="docs/media/readme/strata-coastal.webp" alt="A Strata coastal biome: a calm lake, a sandy shore with reeds and boulders, and forested hills"></a><br><sub><b>Strata</b>: procedural terrain across five biomes</sub></td>
+    <td><a href="docs/media/readme/bayview.webp"><img src="docs/media/readme/bayview.webp" alt="A first-person shooter street with minimap and ammo HUD"></a><br><sub><b>Bayview</b>: FPS with native Android HUD</sub></td>
+    <td><a href="docs/media/readme/fox-platformer.webp"><img src="docs/media/readme/fox-platformer.webp" alt="A fox on floating islands with coins and a castle"></a><br><sub><b>Fox platformer</b>: 60 fps sustained on a Pixel 8</sub></td>
+  </tr>
+</table>
+
+Every image is a real engine or device capture. No mockups.
+
+## The ecosystem
+
+> **Why it matters:** Start however you like and never get stuck: build in the browser or in your editor, play and publish in the store, and ask the team on Discord.
+
+Start in your browser with Studio or work locally with the CLI. Both produce the exact same plain Three.js and TypeScript project with zero lock-in.
+
+| | |
+| --- | --- |
+| 🧰 **This repo** | The engine, the `create-threenative` CLI, six MCP servers, and the native runtime. MIT, free forever. |
+| ✨ **[ThreeNative Studio](https://studio.threenative.com/)** | Prompt, preview, and play in your browser with nothing to install. Export the full TypeScript repo anytime. |
+| 🕹️ **[Games store](https://store.threenative.com)** | Play free 3D web games built with ThreeNative, and publish your own. |
+| 📚 **[threenative.com](https://threenative.com)** | Docs, API reference, examples, and desktop downloads. |
+| ✈️ **[Midway](https://midway.threenative.com/)** | Flagship demo: carrier strikes over the open Pacific, live in your browser. |
+| 💬 **[Discord](https://discord.gg/mWxTQByxFR)** | Chat with the team and other ThreeNative developers. |
+
 ## Why ThreeNative
 
 Three.js draws the frame. A real game still needs a fixed-timestep loop, input, physics, a HUD, assets, tests, and a path off the browser. In our [audit](docs/architecture/CHARTER.md) of a vanilla Three.js game, **42% of the code** (~170 of ~400 lines) was generic plumbing. ThreeNative handles that layer and stays out of your way.
@@ -112,25 +146,6 @@ const game = defineGame<GameState, IPhysicsContext>({
 ```
 
 `ctx.input.vector("move")` works across keyboard, gamepad, and touch. Physics uses Godot vocabulary: `RigidBody3D`, `CharacterBody3D`, and `Area3D`.
-
-## Built with ThreeNative
-
-> **Why it matters:** With Midway above, these are full games, not tech demos: a shooter, exploration, platforming, open terrain. The engine carries the whole game, not only a pretty scene.
-
-<table>
-  <tr>
-    <td width="33%"><a href="docs/media/readme/snow.webp"><img src="docs/media/readme/snow.webp" alt="A character walks through snowfall leaving footprints, with a weather control panel"></a><br><sub><b>Snow kit</b>: deformable snow that keeps every footprint</sub></td>
-    <td width="33%"><a href="docs/media/readme/vesper-hall.webp"><img src="docs/media/readme/vesper-hall.webp" alt="A candlelit gothic nave with light from the rose window"></a><br><sub><b>Vesper Hall</b>: real-time GI, reflections, god rays</sub></td>
-    <td width="33%"><a href="docs/media/readme/wildwood.webp"><img src="docs/media/readme/wildwood.webp" alt="A pine trunk beside a lake in a dense fern forest"></a><br><sub><b>Wildwood</b>: scanned fern and pine forest</sub></td>
-  </tr>
-  <tr>
-    <td><a href="docs/media/readme/strata-coastal.webp"><img src="docs/media/readme/strata-coastal.webp" alt="A Strata coastal biome: a calm lake, a sandy shore with reeds and boulders, and forested hills"></a><br><sub><b>Strata</b>: procedural terrain across five biomes</sub></td>
-    <td><a href="docs/media/readme/bayview.webp"><img src="docs/media/readme/bayview.webp" alt="A first-person shooter street with minimap and ammo HUD"></a><br><sub><b>Bayview</b>: FPS with native Android HUD</sub></td>
-    <td><a href="docs/media/readme/fox-platformer.webp"><img src="docs/media/readme/fox-platformer.webp" alt="A fox on floating islands with coins and a castle"></a><br><sub><b>Fox platformer</b>: 60 fps sustained on a Pixel 8</sub></td>
-  </tr>
-</table>
-
-Every image is a real engine or device capture. No mockups.
 
 ## Starter kits
 
@@ -234,20 +249,7 @@ Measured results, each with its source:
 
 ThreeNative is **alpha** (`0.x`). Every claim links to a real run: [current numbers](docs/verification/runtime-perf-state.md) · [what is not good yet](docs/CURRENT-CHALLENGES.md). You sign your own desktop and Android releases. See [`docs/RELEASE-SIGNING.md`](docs/RELEASE-SIGNING.md).
 
-## The ecosystem
-
-> **Why it matters:** Start however you like and never get stuck: build in the browser or in your editor, play and publish in the store, and ask the team on Discord.
-
-Start in your browser with Studio or work locally with the CLI. Both produce the exact same plain Three.js and TypeScript project with zero lock-in.
-
-| | |
-| --- | --- |
-| 🧰 **This repo** | The engine, the `create-threenative` CLI, six MCP servers, and the native runtime. MIT, free forever. |
-| ✨ **[ThreeNative Studio](https://studio.threenative.com/)** | Prompt, preview, and play in your browser with nothing to install. Export the full TypeScript repo anytime. |
-| 🕹️ **[Games store](https://store.threenative.com)** | Play free 3D web games built with ThreeNative, and publish your own. |
-| 📚 **[threenative.com](https://threenative.com)** | Docs, API reference, examples, and desktop downloads. |
-| ✈️ **[Midway](https://midway.threenative.com/)** | Flagship demo: carrier strikes over the open Pacific, live in your browser. |
-| 💬 **[Discord](https://discord.gg/mWxTQByxFR)** | Chat with the team and other ThreeNative developers. |
+## Packages
 
 <details>
 <summary><b>All packages</b></summary>
