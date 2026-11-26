@@ -41,7 +41,7 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
   },
   // 5. The player's shield is nearly spent.
   ({ match }) => {
-    match.fighters.p1.shield = 1;
+    match.fighters.p1.shield = 2;
   },
   // 6. The bag stands on the right edge at 180 percent, with the player beside it.
   ({ match, cpu }) => {

@@ -75,18 +75,12 @@
     "resources": [
       {
         "id": "state",
-        "path": "p1.shieldBreaks",
-        "atSteps": [
-          {
-            "label": "broken",
-            "equals": 1
-          }
-        ]
-      },
-      {
-        "id": "state",
         "path": "p1.mode",
         "atSteps": [
+          {
+            "label": "raise",
+            "equals": "shield"
+          },
           {
             "label": "broken",
             "equals": "stun"
@@ -102,8 +96,40 @@
         "path": "p1.shield",
         "atSteps": [
           {
+            "label": "raise",
+            "lte": 3
+          },
+          {
             "label": "broken",
-            "equals": 30
+            "lte": 32
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.shieldBreaks",
+        "atSteps": [
+          {
+            "label": "raise",
+            "equals": 0
+          },
+          {
+            "label": "broken",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.percent",
+        "atSteps": [
+          {
+            "label": "broken",
+            "equals": 0
+          },
+          {
+            "label": "hit-while-broken",
+            "equals": 3
           }
         ]
       },
@@ -114,16 +140,6 @@
           {
             "label": "helpless",
             "equals": 1
-          }
-        ]
-      },
-      {
-        "id": "state",
-        "path": "p1.percent",
-        "atSteps": [
-          {
-            "label": "hit-while-broken",
-            "equals": 3
           }
         ]
       }
