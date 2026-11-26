@@ -1,16 +1,15 @@
-import {
-  type ICtx,
-  Scene,
-  type SceneFrame,
-  getPlatform,
-  isMobile,
-} from "@threenative/core";
+import { type ICtx, Scene, type SceneFrame, getPlatform, isMobile } from "@threenative/core";
 import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { type ICraft, type IMannequin, createBeltCraft, createGliderCraft } from "../render/aircraft.js";
+import {
+  type ICraft,
+  type IMannequin,
+  createBeltCraft,
+  createGliderCraft,
+} from "../render/aircraft.js";
 import { createChaseCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
@@ -18,21 +17,35 @@ import { createLoadingScreen } from "../render/loading.js";
 import { createRings, createThermals, createWindSocks } from "../render/markers.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { type QualityTier, isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { createWorld } from "../render/terrain.js";
 import { Attempt } from "../sim/attempt.js";
 import { GLIDER_RINGS, LAUNCH, PAD, type Vehicle, windAt } from "../sim/world.js";
-import { stationFor } from "./stations.js";
 import type { GameState } from "../state.js";
+import { stationFor } from "./stations.js";
 
 type GameCtx = ICtx<GameState, IPhysicsContext>;
 
 /** How long a HUD message stays up, seconds. */
 const MESSAGE_TIME = 2.2;
 /** Test stations answer only when a playtest runner launched the page (it sets this global first). */
-const UNDER_PLAYTEST = (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
-const STATION_NAMES = ["station1", "station2", "station3", "station4", "station5", "station6", "station7", "station8"];
+const UNDER_PLAYTEST =
+  (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
+const STATION_NAMES = [
+  "station1",
+  "station2",
+  "station3",
+  "station4",
+  "station5",
+  "station6",
+  "station7",
+  "station8",
+];
 /** A key is a bar pushed slowly, not a switch: a tap is a nudge and a hold builds up. Per second. */
 const STICK_BUILD = 1.8;
 const STICK_RETURN = 3.2;
@@ -146,7 +159,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const rings = createRings(course);
     const thermals = createThermals();
     const socks = createWindSocks(LAUNCH);
-    const craft: ICraft = vehicle === "glider" ? createGliderCraft(mannequin) : createBeltCraft(mannequin);
+    const craft: ICraft =
+      vehicle === "glider" ? createGliderCraft(mannequin) : createBeltCraft(mannequin);
     ctx.add(world);
     ctx.add(rings.root);
     ctx.add(thermals.root);
@@ -157,11 +171,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     thermals.root.children.forEach((thermal, index) => {
       ctx.entities.add(`thermal-${index + 1}`, { mesh: thermal });
     });
-    rings.root.children
-      .filter((child) => child.name.startsWith("ring-") && child.name !== "ring-beacon")
-      .forEach((ring) => {
+    for (const ring of rings.root.children) {
+      if (ring.name.startsWith("ring-") && ring.name !== "ring-beacon")
         ctx.entities.add(ring.name, { mesh: ring });
-      });
+    }
 
     this.#materialLighting = ctx.entities.add(
       "material-lighting",
@@ -172,7 +185,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     if (this.#environmentSample !== undefined) {
       const sample = this.#environmentSample;
-      this.#materialLighting.setEnvironmentMeasurement(sample.measurement, sample.source, sample.intensity, sample);
+      this.#materialLighting.setEnvironmentMeasurement(
+        sample.measurement,
+        sample.source,
+        sample.intensity,
+        sample,
+      );
     }
 
     const focus = new Vector3();
@@ -193,7 +211,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     let shownPitch = 0;
     let announced = 0;
     let announcedPhase = "flying";
-    const frame: Partial<GameState> = { ringMarks: attempt.rings.marks.slice(), ringsTotal: course.length, vehicle };
+    const frame: Partial<GameState> = {
+      ringMarks: attempt.rings.marks.slice(),
+      ringsTotal: course.length,
+      vehicle,
+    };
     rings.paint(attempt.rings.marks, attempt.rings.active);
 
     return (frameCtx, dt) => {
@@ -255,7 +277,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       for (const event of attempt.rings.events) {
         rings.paint(attempt.rings.marks, attempt.rings.active);
         frame.ringMarks = attempt.rings.marks.slice();
-        emitPlaytestEvent({ entity: `ring-${event.index + 1}`, index: event.index + 1, name: `ring-${event.mark}` });
+        emitPlaytestEvent({
+          entity: `ring-${event.index + 1}`,
+          index: event.index + 1,
+          name: `ring-${event.mark}`,
+        });
         say(event.mark === "passed" ? `Ring ${event.index + 1}` : `Ring ${event.index + 1} missed`);
       }
       attempt.rings.events.length = 0;
@@ -306,7 +332,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frame.crashReason = landing?.reason ?? "";
       frame.onPad = landing?.onPad === true ? 1 : 0;
       frame.ringPoints = attempt.rings.passed * 100 + attempt.rings.bonus;
-      frame.timeBonus = landing !== undefined && !landing.crashed && landing.onPad ? Math.max(0, Math.round(attempt.limits.parTime - attempt.time)) : 0;
+      frame.timeBonus =
+        landing !== undefined && !landing.crashed && landing.onPad
+          ? Math.max(0, Math.round(attempt.limits.parTime - attempt.time))
+          : 0;
       frame.total = attempt.total;
       frame.message = message;
       frame.playerX = round(pos.x);

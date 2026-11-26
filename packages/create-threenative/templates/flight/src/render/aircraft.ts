@@ -38,7 +38,11 @@ function dress(rig: Object3D, material: MeshStandardMaterial): void {
   });
 }
 
-function tube(a: readonly [number, number, number], b: readonly [number, number, number], radius = 0.05): Mesh {
+function tube(
+  a: readonly [number, number, number],
+  b: readonly [number, number, number],
+  radius = 0.05,
+): Mesh {
   const from = new Vector3(...a);
   const to = new Vector3(...b);
   const length = from.distanceTo(to);
@@ -75,7 +79,11 @@ export interface IPilot {
 
 /** The mannequin on a looping clip, scaled to a 1.8 m person. */
 export function createPilot(model: IMannequin, clip: string): IPilot {
-  const character = new SkeletalMesh3D({ clips: model.animations, requiredClips: [clip], source: model.scene });
+  const character = new SkeletalMesh3D({
+    clips: model.animations,
+    requiredClips: [clip],
+    source: model.scene,
+  });
   preparePilot(character.root);
   dress(character.root, suit);
   character.root.traverse((object) => {
@@ -100,9 +108,17 @@ export function createGliderCraft(model: IMannequin): ICraft {
   const root = new Group();
   root.name = "glider";
   root.add(createSail());
-  root.add(tube([0, 0.3, 2.9], [0, 0, -0.5]), tube([0, 0.3, 2.9], [-5.4, -0.1, -1.6]), tube([0, 0.3, 2.9], [5.4, -0.1, -1.6]));
+  root.add(
+    tube([0, 0.3, 2.9], [0, 0, -0.5]),
+    tube([0, 0.3, 2.9], [-5.4, -0.1, -1.6]),
+    tube([0, 0.3, 2.9], [5.4, -0.1, -1.6]),
+  );
   // The A-frame: two down tubes from the keel to the base bar, and a king post up to the sail.
-  root.add(tube([0, 0, 0.4], [-0.8, -1.55, 0.5]), tube([0, 0, 0.4], [0.8, -1.55, 0.5]), tube([-0.8, -1.55, 0.5], [0.8, -1.55, 0.5]));
+  root.add(
+    tube([0, 0, 0.4], [-0.8, -1.55, 0.5]),
+    tube([0, 0, 0.4], [0.8, -1.55, 0.5]),
+    tube([-0.8, -1.55, 0.5], [0.8, -1.55, 0.5]),
+  );
   root.add(tube([0, 0, 0.4], [0, 0.9, 0.3]));
   root.add(tube([0, 0.9, 0.3], [-3, 0, -1], 0.02), tube([0, 0.9, 0.3], [3, 0, -1], 0.02));
   const pilot = createPilot(model, "Idle_Loop");

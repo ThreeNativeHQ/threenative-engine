@@ -72,7 +72,11 @@ export function setupLighting(
   // shadow map, so `setupPost` needs the light itself.
   return {
     follow: (x, y, z) => {
-      target.position.set(Math.round(x / SNAP) * SNAP, Math.round(y / SNAP) * SNAP, Math.round(z / SNAP) * SNAP);
+      target.position.set(
+        Math.round(x / SNAP) * SNAP,
+        Math.round(y / SNAP) * SNAP,
+        Math.round(z / SNAP) * SNAP,
+      );
       key.position.copy(SUN_DIRECTION).multiplyScalar(250).add(target.position);
     },
     key,

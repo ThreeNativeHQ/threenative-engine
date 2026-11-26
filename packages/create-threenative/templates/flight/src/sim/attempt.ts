@@ -59,9 +59,21 @@ export class Attempt {
     this.limits = vehicle === "glider" ? GLIDER_LIMITS : BELT_LIMITS;
     if (vehicle === "glider") {
       const y = groundHeight(LAUNCH.x, LAUNCH.z) + GLIDER_DROP + LAUNCH_HEIGHT;
-      this.glider = new Glider(LAUNCH.x, y, LAUNCH.z, LAUNCH.heading, TRIM_SPEED, airAt(LAUNCH.x, y, LAUNCH.z, 0));
+      this.glider = new Glider(
+        LAUNCH.x,
+        y,
+        LAUNCH.z,
+        LAUNCH.heading,
+        TRIM_SPEED,
+        airAt(LAUNCH.x, y, LAUNCH.z, 0),
+      );
     } else {
-      this.belt = new RocketBelt(BELT_START.x, groundHeight(BELT_START.x, BELT_START.z), BELT_START.z, BELT_START.heading);
+      this.belt = new RocketBelt(
+        BELT_START.x,
+        groundHeight(BELT_START.x, BELT_START.z),
+        BELT_START.z,
+        BELT_START.heading,
+      );
     }
   }
 
@@ -131,10 +143,19 @@ export class Attempt {
     if (this.air.y > 0.5) this.thermalTime += dt;
     if (this.glider !== undefined) {
       const wasStalled = this.glider.stalled;
-      this.glider.step(dt, { pitch: -controls.pitch, roll: controls.roll }, this.air, this.clearance);
+      this.glider.step(
+        dt,
+        { pitch: -controls.pitch, roll: controls.roll },
+        this.air,
+        this.clearance,
+      );
       if (this.glider.stalled && !wasStalled) this.stalls += 1;
     } else if (this.belt !== undefined) {
-      const input: IBeltInput = { climb: controls.climb, lean: controls.pitch, turn: controls.roll };
+      const input: IBeltInput = {
+        climb: controls.climb,
+        lean: controls.pitch,
+        turn: controls.roll,
+      };
       this.belt.step(dt, input, this.air, groundHeight(pos.x, pos.z));
     }
     this.rings.step(before, pos);

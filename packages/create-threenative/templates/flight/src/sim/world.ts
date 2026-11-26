@@ -21,8 +21,14 @@ export function smoothstep(from: number, to: number, value: number): number {
   return t * t * (3 - 2 * t);
 }
 
-const bump = (x: number, z: number, cx: number, cz: number, sigma: number, height: number): number =>
-  height * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (2 * sigma * sigma));
+const bump = (
+  x: number,
+  z: number,
+  cx: number,
+  cz: number,
+  sigma: number,
+  height: number,
+): number => height * Math.exp(-((x - cx) ** 2 + (z - cz) ** 2) / (2 * sigma * sigma));
 
 /** The landing pad: a flat disc on the south-east shore. */
 export const PAD = { x: 170, z: 130, radius: 18, height: 3 } as const;
@@ -67,8 +73,8 @@ export interface IThermal {
 }
 
 export const THERMALS: readonly IThermal[] = [
-  { x: -45, z: -40, radius: 62, peak: 6, top: 230 },
-  { x: 95, z: -150, radius: 55, peak: 5.5, top: 200 },
+  { x: -45, z: -40, radius: 62, peak: 7, top: 230 },
+  { x: 95, z: -150, radius: 55, peak: 6.5, top: 200 },
 ];
 
 /** Vertical air speed of one thermal at a point, metres per second. */
@@ -83,7 +89,13 @@ export function thermalLift(thermal: IThermal, x: number, y: number, z: number):
 }
 
 /** The air's own velocity at a point: the wind plus every thermal's lift. */
-export function airAt(x: number, y: number, z: number, t: number, out: IVec3 = { x: 0, y: 0, z: 0 }): IVec3 {
+export function airAt(
+  x: number,
+  y: number,
+  z: number,
+  t: number,
+  out: IVec3 = { x: 0, y: 0, z: 0 },
+): IVec3 {
   windAt(t, out);
   for (const thermal of THERMALS) out.y += thermalLift(thermal, x, y, z);
   return out;
@@ -99,7 +111,13 @@ export interface IRing {
   readonly yaw: number;
 }
 
-const ring = (x: number, y: number, z: number, radius: number, toward: { x: number; z: number }): IRing => ({
+const ring = (
+  x: number,
+  y: number,
+  z: number,
+  radius: number,
+  toward: { x: number; z: number },
+): IRing => ({
   radius,
   x,
   y,
@@ -124,4 +142,7 @@ export const BELT_RINGS: readonly IRing[] = [
 ];
 
 export type Vehicle = "glider" | "belt";
-export const COURSES: Readonly<Record<Vehicle, readonly IRing[]>> = { belt: BELT_RINGS, glider: GLIDER_RINGS };
+export const COURSES: Readonly<Record<Vehicle, readonly IRing[]>> = {
+  belt: BELT_RINGS,
+  glider: GLIDER_RINGS,
+};

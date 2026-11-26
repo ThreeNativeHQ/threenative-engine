@@ -5,7 +5,7 @@
 //     face to the front face; the chain is ordered (`rings.c:252`).
 //   `landing-gate`: a touchdown scores only when the craft is slow and low over the pad
 //     (`pads.c:134`, `hang_glider2.c:408`: 1.5 speed, 0.2 clearance).
-import { PAD, type IRing, type IVec3, SEA_LEVEL } from "./world.js";
+import { type IRing, type IVec3, PAD, SEA_LEVEL } from "./world.js";
 
 export type RingMark = "pending" | "passed" | "missed";
 
@@ -62,7 +62,9 @@ export function judgeTouchdown(
         : "";
   if (reason !== "") return { crashed: true, distance, onPad, points: 0, reason, sink };
   const near = Math.round(50 * (1 - Math.min(1, distance / PAD.radius)));
-  const soft = Math.round(50 * (1 - Math.min(1, Math.max(0, (sink - SOFT_SINK) / (limits.sink - SOFT_SINK)))));
+  const soft = Math.round(
+    50 * (1 - Math.min(1, Math.max(0, (sink - SOFT_SINK) / (limits.sink - SOFT_SINK)))),
+  );
   return { crashed: false, distance, onPad, points: onPad ? near + soft : 0, reason, sink };
 }
 

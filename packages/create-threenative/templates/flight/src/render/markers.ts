@@ -21,8 +21,18 @@ const ringPaint: Readonly<Record<RingMark | "active", MeshStandardMaterial>> = {
     emissiveIntensity: 0.9,
     roughness: 0.4,
   }),
-  missed: new MeshStandardMaterial({ color: palette.missed, emissive: palette.missed, emissiveIntensity: 0.4, roughness: 0.5 }),
-  passed: new MeshStandardMaterial({ color: palette.passed, emissive: palette.passed, emissiveIntensity: 0.4, roughness: 0.5 }),
+  missed: new MeshStandardMaterial({
+    color: palette.missed,
+    emissive: palette.missed,
+    emissiveIntensity: 0.4,
+    roughness: 0.5,
+  }),
+  passed: new MeshStandardMaterial({
+    color: palette.passed,
+    emissive: palette.passed,
+    emissiveIntensity: 0.4,
+    roughness: 0.5,
+  }),
   pending: new MeshStandardMaterial({ color: 0xe8e6e1, roughness: 0.5 }),
 };
 
@@ -37,7 +47,10 @@ export function createRings(rings: readonly IRing[]): IRingSet {
   const root = new Group();
   root.name = "rings";
   const meshes = rings.map((ring, index) => {
-    const mesh = new Mesh(new TorusGeometry(ring.radius, Math.max(0.5, ring.radius * 0.07), 10, 48), ringPaint.pending);
+    const mesh = new Mesh(
+      new TorusGeometry(ring.radius, Math.max(0.5, ring.radius * 0.07), 10, 48),
+      ringPaint.pending,
+    );
     mesh.name = `ring-${index + 1}`;
     mesh.position.set(ring.x, ring.y, ring.z);
     mesh.rotation.y = ring.yaw;
@@ -48,7 +61,13 @@ export function createRings(rings: readonly IRing[]): IRingSet {
   // A pale shaft over the open ring, so it can be found against the sky from across the island.
   const shaft = new Mesh(
     new CylinderGeometry(0.5, 0.5, 90, 8, 1, true),
-    new MeshBasicMaterial({ color: palette.accent, depthWrite: false, opacity: 0.35, side: DoubleSide, transparent: true }),
+    new MeshBasicMaterial({
+      color: palette.accent,
+      depthWrite: false,
+      opacity: 0.35,
+      side: DoubleSide,
+      transparent: true,
+    }),
   );
   shaft.name = "ring-beacon";
   root.add(shaft);
@@ -78,8 +97,19 @@ export interface IThermalSet {
 export function createThermals(thermals: readonly IThermal[] = THERMALS): IThermalSet {
   const root = new Group();
   root.name = "thermals";
-  const column = new MeshBasicMaterial({ color: 0xffd6a0, depthWrite: false, opacity: 0.1, side: DoubleSide, transparent: true });
-  const puff = new MeshBasicMaterial({ color: 0xfff1d6, depthWrite: false, opacity: 0.45, transparent: true });
+  const column = new MeshBasicMaterial({
+    color: 0xffd6a0,
+    depthWrite: false,
+    opacity: 0.1,
+    side: DoubleSide,
+    transparent: true,
+  });
+  const puff = new MeshBasicMaterial({
+    color: 0xfff1d6,
+    depthWrite: false,
+    opacity: 0.45,
+    transparent: true,
+  });
   const climbing: Array<{ mesh: Mesh; ground: number; height: number; phase: number }> = [];
   thermals.forEach((thermal, index) => {
     const ground = groundHeight(thermal.x, thermal.z);
@@ -158,5 +188,8 @@ export function createWindSock(x: number, z: number, height = 9): IWindSock {
 
 /** The two socks of the course: one where the glider launches, one by the pad. */
 export function createWindSocks(launch: { x: number; z: number }): readonly IWindSock[] {
-  return [createWindSock(launch.x + 9, launch.z - 4), createWindSock(PAD.x + PAD.radius + 5, PAD.z + 4)];
+  return [
+    createWindSock(launch.x + 9, launch.z - 4),
+    createWindSock(PAD.x + PAD.radius + 5, PAD.z + 4),
+  ];
 }

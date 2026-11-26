@@ -43,8 +43,8 @@ const DRAG_DIVISOR_CAP = 2;
 const GLIDE_RATIO = 9;
 /** Extra drag per m/s the glider flies faster than its trim speed: a dive settles instead of ringing. */
 const SPEED_DAMPING = 0.5;
-const CEILING_START = 260;
-const CEILING_BAND = 40;
+const CEILING_START = 400;
+const CEILING_BAND = 50;
 
 /** Angle of attack in degrees to the share of peak lift. Rises, holds through the middle, then collapses. */
 const LIFT_TABLE: ReadonlyArray<readonly [number, number]> = [
@@ -77,7 +77,8 @@ export function liftCoefficient(alpha: number): number {
   return last[1];
 }
 
-const clamp = (value: number, low: number, high: number): number => Math.min(high, Math.max(low, value));
+const clamp = (value: number, low: number, high: number): number =>
+  Math.min(high, Math.max(low, value));
 
 export interface IGliderInput {
   /** +1 pulls the nose up (more angle of attack), -1 pushes it down. */
@@ -103,7 +104,14 @@ export class Glider {
   liftShare = 1;
 
   /** A glider in trim at `speed` through the air: its sink rate is the glide's, so it starts without a bounce. */
-  constructor(x: number, y: number, z: number, heading: number, speed: number, air: IVec3 = { x: 0, y: 0, z: 0 }) {
+  constructor(
+    x: number,
+    y: number,
+    z: number,
+    heading: number,
+    speed: number,
+    air: IVec3 = { x: 0, y: 0, z: 0 },
+  ) {
     this.pos = { x, y, z };
     this.heading = heading;
     this.vel.x = Math.sin(heading) * speed + air.x;
@@ -156,7 +164,9 @@ export class Glider {
     const form = Math.max(0, Math.abs(this.alpha) - 0.45);
     const divisor = clamp(speed / DRAG_REFERENCE, 1, DRAG_DIVISOR_CAP);
     let drag =
-      (speed * speed * (DRAG_PARASITE + DRAG_INDUCED * coefficient * coefficient + DRAG_FORM * form * form)) /
+      (speed *
+        speed *
+        (DRAG_PARASITE + DRAG_INDUCED * coefficient * coefficient + DRAG_FORM * form * form)) /
       divisor;
     // Trim speed at this angle: where one g of lift balances. Faster than that is paid for in drag.
     if (coefficient > 0.2 && !this.stalled) {

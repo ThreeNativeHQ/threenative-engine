@@ -79,13 +79,18 @@ export function Hud() {
               <span className={lowFuel === 1 ? "text-red" : ""}>{lowFuel === 1 ? "low" : ""}</span>
             </div>
             <div className="mt-1 h-2 w-full bg-panel">
-              <div className={`h-2 ${lowFuel === 1 ? "bg-red" : "bg-cyan"}`} style={{ width: `${Math.round(fuel * 100)}%` }} />
+              <div
+                className={`h-2 ${lowFuel === 1 ? "bg-red" : "bg-cyan"}`}
+                style={{ width: `${Math.round(fuel * 100)}%` }}
+              />
             </div>
           </div>
         )}
       </section>
       <section className="pointer-events-none absolute right-6 top-5 rounded bg-black/70 p-3 text-[10px] uppercase tracking-[0.16em]">
-        <div className="text-dim">rings {ringsPassed} / {marks.length}</div>
+        <div className="text-dim">
+          rings {ringsPassed} / {marks.length}
+        </div>
         <div id="ring-marks" className="mt-1 flex gap-1">
           {marks.map((mark, index) => (
             <span key={`ring-${index + 1}`} className={`h-2 w-6 ${MARK_STYLE[mark]}`} />
@@ -119,13 +124,22 @@ export function Hud() {
           id="score-card"
           className={`pointer-events-none absolute left-1/2 top-1/2 w-[22rem] -translate-x-1/2 -translate-y-1/2 border bg-black/85 px-8 py-5 text-xs uppercase tracking-[0.2em] ${phase === "landed" ? "border-amber" : "border-red"}`}
         >
-          <div className={`text-center text-xl tracking-[0.4em] ${phase === "landed" ? "text-amber" : "text-red"}`}>
+          <div
+            className={`text-center text-xl tracking-[0.4em] ${phase === "landed" ? "text-amber" : "text-red"}`}
+          >
             {phase === "landed" ? "landed" : `crash: ${REASON[reason] ?? reason}`}
           </div>
           <div className="mt-4 space-y-1">
             <Gauge label="time" value={`${time.toFixed(1)} s`} />
             <Gauge label="rings" value={`${ringsPassed} / ${marks.length}  (${ringPoints})`} />
-            <Gauge label="landing" value={phase === "landed" ? `${landPoints}  (${onPad === 1 ? `${landDistance.toFixed(0)} m, ${landSink.toFixed(1)} m/s` : "off the pad"})` : "0"} />
+            <Gauge
+              label="landing"
+              value={
+                phase === "landed"
+                  ? `${landPoints}  (${onPad === 1 ? `${landDistance.toFixed(0)} m, ${landSink.toFixed(1)} m/s` : "off the pad"})`
+                  : "0"
+              }
+            />
             <Gauge label="time bonus" value={`${bonus}`} />
             <div className="mt-2 border-t border-line pt-2 text-base text-amber">
               <Gauge label="total" value={`${total}`} />

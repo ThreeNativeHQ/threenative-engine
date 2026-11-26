@@ -39,10 +39,7 @@
     {
       "kind": "input",
       "label": "circle",
-      "press": [
-        "ArrowRight",
-        "ArrowDown"
-      ],
+      "press": ["ArrowRight", "ArrowDown"],
       "holdTicks": 30,
       "release": false
     },

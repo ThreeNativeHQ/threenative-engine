@@ -64,11 +64,15 @@ export function createChaseCamera(camera: PerspectiveCamera): ICameraRig {
   };
   return {
     follow: (target, craftHeading, dt) => {
-      const turn = MathUtils.euclideanModulo(craftHeading - heading + Math.PI, Math.PI * 2) - Math.PI;
+      const turn =
+        MathUtils.euclideanModulo(craftHeading - heading + Math.PI, Math.PI * 2) - Math.PI;
       heading += turn * MathUtils.damp(0, 1, HEADING_RATE, dt);
       place(target);
       camera.position.lerp(_desired, MathUtils.damp(0, 1, FOLLOW_RATE, dt));
-      camera.position.y = Math.max(camera.position.y, groundHeight(camera.position.x, camera.position.z) + GROUND_CLEARANCE);
+      camera.position.y = Math.max(
+        camera.position.y,
+        groundHeight(camera.position.x, camera.position.z) + GROUND_CLEARANCE,
+      );
       aim(target);
     },
     snap: (target, craftHeading) => {

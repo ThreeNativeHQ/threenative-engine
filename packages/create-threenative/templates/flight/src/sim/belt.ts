@@ -21,7 +21,7 @@ const LEAN_RATE = 1.6;
 const YAW_RATE = 1.5;
 const LEVER_RATE = 3;
 /** A closed lever still burns a little and sinks at about 3 m/s. */
-const LEVER_DOWN = 0.55;
+const LEVER_DOWN = 0.52;
 /** The hover holds height: it adds thrust for every m/s of sink and removes it for every m/s of climb. */
 const HOVER_GAIN = 3;
 /** Full-lever burn, tank fractions per second: a full tank lasts 20 s at full thrust. */
@@ -36,7 +36,8 @@ export const LOW_FUEL = 0.15;
 const CEILING_START = 150;
 const CEILING_BAND = 30;
 
-const clamp = (value: number, low: number, high: number): number => Math.min(high, Math.max(low, value));
+const clamp = (value: number, low: number, high: number): number =>
+  Math.min(high, Math.max(low, value));
 
 /** Tank fraction burned per second at a lever setting. */
 export function burnRate(lever: number): number {
@@ -44,7 +45,9 @@ export function burnRate(lever: number): number {
     const upper = BURN_CURVE[index];
     const lower = BURN_CURVE[index - 1];
     if (upper === undefined || lower === undefined || lever > upper[0]) continue;
-    return (BURN_FULL * (lower[1] + ((upper[1] - lower[1]) * (lever - lower[0])) / (upper[0] - lower[0])));
+    return (
+      BURN_FULL * (lower[1] + ((upper[1] - lower[1]) * (lever - lower[0])) / (upper[0] - lower[0]))
+    );
   }
   return BURN_FULL;
 }
@@ -89,7 +92,15 @@ export class RocketBelt {
     // Held neutral the lever sits at the hover: thrust that cancels gravity at the current lean.
     const hover = clamp((GRAVITY - HOVER_GAIN * this.vel.y) / (THRUST * Math.cos(this.lean)), 0, 1);
     const wanted =
-      this.fuel <= 0 ? 0 : input.climb > 0 ? 1 : input.climb < 0 ? LEVER_DOWN : this.grounded ? 0 : hover;
+      this.fuel <= 0
+        ? 0
+        : input.climb > 0
+          ? 1
+          : input.climb < 0
+            ? LEVER_DOWN
+            : this.grounded
+              ? 0
+              : hover;
     this.lever += clamp(wanted - this.lever, -LEVER_RATE * dt, LEVER_RATE * dt);
     this.burning = this.lever > 0.01 && this.fuel > 0;
     if (this.burning) this.fuel = Math.max(0, this.fuel - burnRate(this.lever) * dt);
@@ -109,7 +120,8 @@ export class RocketBelt {
     const rz = this.vel.z - air.z;
     const forward = thrust * Math.sin(this.lean);
     this.vel.x += (forward * Math.sin(this.yaw) - (DRAG * Math.abs(rx) + DRAG_LINEAR) * rx) * dt;
-    this.vel.y += (thrust * Math.cos(this.lean) - GRAVITY - (DRAG * Math.abs(ry) + DRAG_LINEAR) * ry) * dt;
+    this.vel.y +=
+      (thrust * Math.cos(this.lean) - GRAVITY - (DRAG * Math.abs(ry) + DRAG_LINEAR) * ry) * dt;
     this.vel.z += (forward * Math.cos(this.yaw) - (DRAG * Math.abs(rz) + DRAG_LINEAR) * rz) * dt;
     this.pos.x += this.vel.x * dt;
     this.pos.y += this.vel.y * dt;

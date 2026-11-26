@@ -12,8 +12,14 @@ import {
   PlaneGeometry,
   RingGeometry,
 } from "three";
-import { PAD, SEA_LEVEL, LAUNCH, groundHeight } from "../sim/world.js";
-import { floorMaterial, propMaterial, seaMaterial, structureMaterial, worldGridUVs } from "./materials.js";
+import { LAUNCH, PAD, SEA_LEVEL, groundHeight } from "../sim/world.js";
+import {
+  floorMaterial,
+  propMaterial,
+  seaMaterial,
+  structureMaterial,
+  worldGridUVs,
+} from "./materials.js";
 
 /** Metres across the island mesh and per cell. The grid on the ground is one tile per ten metres. */
 const SIZE = 1000;
@@ -119,7 +125,12 @@ function lighthouse(x: number, z: number): Group {
 function mast(x: number, z: number): Group {
   const group = new Group();
   group.name = "mast";
-  for (const [dx, dz] of [[-1.2, -1.2], [1.2, -1.2], [-1.2, 1.2], [1.2, 1.2]] as const)
+  for (const [dx, dz] of [
+    [-1.2, -1.2],
+    [1.2, -1.2],
+    [-1.2, 1.2],
+    [1.2, 1.2],
+  ] as const)
     group.add(block(structureMaterial, [0.3, 40, 0.3], [dx, 20, dz]));
   for (const y of [8, 18, 28, 38]) {
     group.add(block(structureMaterial, [2.8, 0.25, 0.25], [0, y, -1.2]));
@@ -161,6 +172,14 @@ function ramp(): Group {
 export function createWorld(): Group {
   const world = new Group();
   world.name = "world";
-  world.add(land(), sea(), pad(), ramp(), lighthouse(-60, 262), mast(40, -222), colonnade(-150, 150));
+  world.add(
+    land(),
+    sea(),
+    pad(),
+    ramp(),
+    lighthouse(-60, 262),
+    mast(40, -222),
+    colonnade(-150, 150),
+  );
   return world;
 }
