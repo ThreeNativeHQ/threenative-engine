@@ -4,7 +4,7 @@
 
 # ThreeNative
 
-**Build 3D games in plain Three.js and TypeScript. Verified by playtests, compiled native to desktop and Android, never in a WebView.**
+**Build 3D games in plain Three.js and TypeScript. Verified by playtests, with the 3D scene rendered natively on desktop and Android, never inside a WebView.**
 
 [![npm](https://img.shields.io/npm/v/@threenative/core?label=%40threenative%2Fcore&color=cb3837)](https://www.npmjs.com/package/@threenative/core)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -51,10 +51,11 @@ pnpm create threenative my-game
 | **Physics** | ⚠️ Pick a library, write the bridge | ✅ Rapier (Rust, compiled to WebAssembly) built in, with Godot-style `RigidBody3D`, `CharacterBody3D`, `Area3D` and navigation. [RigidBody3D](packages/physics/src/RigidBody3D.ts) · [CharacterBody3D](packages/physics/src/CharacterBody3D.ts) · [navigation](packages/physics/src/navigation) |
 | **Engine** | ⚠️ JavaScript issues every draw call | ✅ An owned C++ engine behind the same Three.js API: WebAssembly in the browser (multithreaded on cross-origin-isolated pages), native code on desktop. [Engine source](packages/runtime-native/src/engine) · [`wasm-threads` preset](packages/runtime-native/CMakePresets.json) · [decision](docs/architecture/NATIVE-ENGINE-DECISION.md) |
 | **Draw calls** | ⚠️ One per mesh, unless you batch by hand | ✅ Fewer draws, more frames, on the same workload-equal stress scene: **57 draws vs 1,109**, **96.7 vs 75.3 fps** uncapped on an RTX 2080 (2026-11-11, both arms in ABBA order in one clean browser). [Data](docs/stress-loop/ledger.json) · [method](scripts/stress-fair.mjs) |
+| **Gets faster over time** | ⚠️ Profile and optimize on your own | ✅ A continuous performance loop measures the engine on fixed stress scenes and keeps only proven wins. You get each speedup by updating a package. [413 stress-loop runs](docs/stress-loop/ledger.json) · [every lever tried, kept or rejected](PERFORMANCE-LEARNINGS.md) · [the loop](.claude/skills/perf-loop/SKILL.md) |
 | **Default look** | ⚠️ Tune tonemapping, exposure and lights by hand | ✅ Unreal-class out of the box: a filmic tone curve and Unreal's metered auto exposure by default, and sky, GI, shadows and foliage calibrated against Unreal renders of the same scene, without the Unreal install. [Look defaults](packages/core/src/look/world-environment.ts) · [quality tiers](packages/core/src/look/quality.ts) · [filmic curve](packages/core/src/look/filmic-tone-mapping.ts) · [see it](#unreal-class-visuals-without-the-66-gb-unreal-install) |
-| **Ships to** | ❌ The browser | ✅ Web, Windows, macOS, Linux and Android from one source, with no WebView. [Native runtime](packages/runtime-native) |
-| **HUD and menus** | ⚠️ Hand-rolled DOM | ✅ React 19 and Tailwind, bound to game state. [`@threenative/ui`](packages/ui) |
-| **Assets** | ⚠️ Copy files and fix paths | ✅ Hashed asset pipeline, 200+ procedural assets, and an asset MCP that searches 10+ libraries. [Pipeline](packages/assets) · [procedural library](packages/procedural-environment) |
+| **Ships to** | ❌ The browser | ✅ Web, Windows, macOS, Linux and Android from one source. The 3D scene always renders natively, never inside a WebView. [Native runtime](packages/runtime-native) |
+| **HUD and menus** | ⚠️ Hand-rolled DOM | ✅ React 19 and Tailwind, bound to game state, with three renderers to pick from per game: `web` (the default: real DOM, drawn by the platform's own system web view over the natively rendered scene), `native-css` (the same JSX and Tailwind laid out by a pure-Rust CSS engine, no web view; desktop preview) and `native` (engine-drawn quads, zero extra processes). [`@threenative/ui`](packages/ui) · [Rust CSS engine](packages/runtime-native/native/css-ui) · [renderer guide](docs/architecture/CHARTER.md#6b-ui--react--tailwind-never-the-scene-graph) |
+| **Assets** | ⚠️ Copy files and fix paths | ✅ Hashed asset pipeline, 200+ procedural assets, and an asset MCP that reaches 33 sources, from Fab and Poly Haven to your own Unreal and Unity packs. [Pipeline](packages/assets) · [procedural library](packages/procedural-environment) |
 | **Playtests: the AI plays your game** | ❌ None. The agent says "done" from memory, and you find the bugs | ✅ The agent plays the real build: playtests press keys, then assert game state, HUD, screenshots and frame budgets. They fail closed, so the AI proves its own work before it reports done. [`@threenative/playtest`](packages/playtest) |
 | **Against Godot 4.7.1** | ❌ No numbers to compare | ✅ **1.8× faster** at 4,096 cubes on native desktop, **3.9× faster** at 16,384 instanced cubes on the web. [Data](docs/verification/runtime-perf-state.md) · [desktop bench](docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md) · [web bench](docs/PRDs/done/PRD-117-engine-load-test-godot.md) |
 | **Lock-in** | ✅ None | ✅ None either. Materials, lights and post are plain code in your `src/render/`, and `engine: "threejs"` runs stock Three.js. [Generated look code](packages/create-threenative/templates/starter/src/render) · [override](docs/architecture/NATIVE-ENGINE-DECISION.md) |
@@ -151,7 +152,7 @@ no setup. Source: [`threenative-asset-mcp`](https://github.com/ThreeNativeHQ/thr
 Three.js draws the frame. A real game still needs a fixed-timestep loop, input, physics, a HUD, assets, tests, and a path off the browser. In our [audit](docs/architecture/CHARTER.md) of a vanilla Three.js game, **42% of the code** (~170 of ~400 lines) was generic plumbing. ThreeNative handles that layer and stays out of your way.
 
 - 🧊 **Zero lock-in: it is still Three.js.** `ctx.scene` is a real `THREE.Scene` and `ctx.renderer` is a real `WebGPURenderer`. No serialized scene format, no editor-owned state; drop down to raw Three.js anytime.
-- 📦 **One codebase, native screens.** The same TypeScript runs on WebGPU in the browser and renders in an owned C++ host on Windows, macOS, Linux, and Android, never in a WebView.
+- 📦 **One codebase, native screens.** The same TypeScript runs on WebGPU in the browser and renders in an owned C++ host on Windows, macOS, Linux, and Android. The scene never runs inside a WebView.
 - 🎨 **You own the look.** New scenes start with a filmic, auto-exposed default look. Materials, lights, post-processing, and camera live as plain code in your repo under `src/render/`.
 - 🎮 **Playable in one command.** Start from 19 starter kits (kart racer, 3D platformer, FPS, open-world crime, stealth, survival horror and more), each wired with real mechanics, Rapier physics, a React HUD, and passing playtests.
 - 🤖 **Built for coding agents.** Six MCP servers come wired for Claude Code, Codex, Cursor, Gemini CLI, VS Code, opencode, and Zed.
@@ -269,13 +270,13 @@ Run `pnpm asset-library` to browse and customize **200+ bake-ready procedural 3D
 
 ## Platforms
 
-> **Why it matters:** Your game reaches players where they are: a web link, a desktop download or an Android build, from one codebase, with no rewrite and no WebView.
+> **Why it matters:** Your game reaches players where they are: a web link, a desktop download or an Android build, from one codebase, with no rewrite.
 
 | Platform | Renderer | Status |
 | --- | --- | --- |
 | Web | Owned C++ engine (WebAssembly), WebGPU | ✅ Verified every CI run |
-| Linux, macOS, Windows | Owned C++ engine, native player (no WebView) | ✅ Verified: 300 native frames and a non-blank capture |
-| Android | Native host (no WebView) | ✅ Emulator lane runs · 60 fps sustained on a Pixel 8 (fox platformer) |
+| Linux, macOS, Windows | Owned C++ engine, native player | ✅ Verified: 300 native frames and a non-blank capture |
+| Android | Native host | ✅ Emulator lane runs · 60 fps sustained on a Pixel 8 (fox platformer) |
 
 Measured results, each with its source:
 - **Same stress scene, ThreeNative vs plain Three.js (2026-11-11, RTX 2080, uncapped):** 96.7 vs 75.3 fps, 57 vs 1,109 draws. On an Intel Gen12 laptop GPU (2026-11-07): 64.3 vs 53.5 fps. [Ledger](docs/stress-loop/ledger.json) · [method](scripts/stress-fair.mjs)
