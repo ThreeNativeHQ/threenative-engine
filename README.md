@@ -140,6 +140,11 @@ Start in your browser with Studio or work locally with the CLI. Both produce the
 | [Smithsonian 3D](https://3d.si.edu/) | | [Fab](https://www.fab.com/) animation | [Freesound](https://freesound.org/), [Pixabay](https://pixabay.com/sound-effects/), [OpenGameArt](https://opengameart.org/) | [Google Fonts](https://fonts.google.com/) |
 | [Kenney](https://kenney.nl/assets), [Polyfork](https://polyfork.dev/) | | | | |
 
+> **Tip:** for textures and HDRIs, start with Poly Haven: CC0, no account, and it works on the
+> first call. Fab search and free downloads need no login either, but Fab can ask for a browser
+> check, and importing packs you own needs a one-time FabCLI sign-in. Setup:
+> [Unreal and Fab import guide](https://github.com/ThreeNativeHQ/threenative-asset-mcp/blob/main/docs/unreal-import.md).
+
 <sub>Provider names are shown only to describe compatibility. ThreeNative is not affiliated with or endorsed by any of them. See [Legal](#legal).</sub>
 
 In total it knows **33 sources** of models, textures, HDRIs, animation, VFX, icons, fonts, sound
