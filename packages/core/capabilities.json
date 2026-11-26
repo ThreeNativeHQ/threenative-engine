@@ -1591,6 +1591,24 @@
     {
       "aliases": [],
       "constraints": [
+        "add each object with ctx.add for GPU dispatch; use replay for bursts and dispose when finished"
+      ],
+      "example": "const effect = createVfxPreset(\"fire\", { scale: 1.5 }); for (const layer of effect.objects) ctx.add(layer);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["scale, intensity and tint match the catalog controls"],
+      "package": "@threenative/core",
+      "signature": "export function createVfxPreset(id: string, overrides: IVfxPresetOverrides = { … }",
+      "situations": [
+        "apply a shared engine VFX preset from its catalog ID and tune its size, speed or tint"
+      ],
+      "summary": "Build the renderable layers of a catalog preset.",
+      "supersedes": [],
+      "symbol": "createVfxPreset"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "every value is required; there is no default sun, sky, haze or exposure",
         "`skySize` must keep the sky box's corners inside the camera's far plane",
         "shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing"

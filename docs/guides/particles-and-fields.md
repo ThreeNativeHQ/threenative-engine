@@ -24,6 +24,26 @@ dispatch and release follow the scene.
 | `ScatterField3D` | Instanced copies of any baked mesh, thinned by distance | CPU |
 | `WindField3D` | One world wind velocity that cloth, hair and grass read | CPU |
 
+## Use a gallery preset
+
+Import a named factory from `@threenative/core/vfx` when a game needs one stock effect.
+For a picker, read `VFX_PRESETS` from `@threenative/core` and pass the selected ID to
+`createVfxPreset`. The factory returns the layers to add to the scene, including both layers
+of Portal Vortex.
+
+```ts
+import { createVfxPreset } from "@threenative/core";
+
+const effect = createVfxPreset("impact-sparks", { scale: 1.5, tint: "#ff8844" });
+for (const layer of effect.objects) {
+  layer.position.copy(impactPoint);
+  ctx.add(layer);
+}
+```
+
+Call `effect.replay()` to retrigger a burst and `effect.dispose()` when the game removes the effect.
+An `intensity` of zero holds the effect at its current starting frame.
+
 ## Compute-driven systems fail closed
 
 The compute-driven systems need a WebGPU renderer. On a backend without compute they throw a named

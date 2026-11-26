@@ -242,7 +242,8 @@ describe("asset library server", () => {
       `../@id/virtual:tn-asset-library/story/${encodeURIComponent("vfx:createFire")}.js`,
     );
     expect(story.body).toMatch(/import \{ createFire \} from "[^"]*core\/dist\/vfx\/index\.js"/u);
-    expect(story.body).toContain('vfxStory("Fire", createFire)');
+    expect(story.body).toMatch(/import \{ GPUParticles3D \} from "[^"]*core\/dist\/index\.js"/u);
+    expect(story.body).toContain('vfxStory("Fire", createFire, GPUParticles3D)');
     expect((await get("story.html?path=vfx:createFire")).status).toBe(200);
     expect((await get("story.html?path=vfx:create..%2Fx")).status).toBe(400);
   });

@@ -1,7 +1,7 @@
 // One `@threenative/core/vfx` effect as a code story (PRD-917): the plugin generates a story module
 // per effect that core's capability manifest lists, so the library shows every stock VFX with its
 // named overrides as controls. `three` and `@threenative/core` stay the game's own imports.
-import { GPUParticles3D } from "@threenative/core";
+import type { GPUParticles3D } from "@threenative/core";
 import { Group, type Object3D } from "three";
 import type { IAssetControl, IAssetStory } from "./types.js";
 
@@ -44,7 +44,11 @@ const CONTROLS: readonly IAssetControl[] = [
 ];
 
 /** The story for one effect: every control is the factory's override of the same name. */
-export function vfxStory(title: string, factory: VfxFactory): IAssetStory<IVfxProps> {
+export function vfxStory(
+  title: string,
+  factory: VfxFactory,
+  Particles: typeof GPUParticles3D,
+): IAssetStory<IVfxProps> {
   return {
     title,
     category: "VFX",
@@ -59,10 +63,9 @@ export function vfxStory(title: string, factory: VfxFactory): IAssetStory<IVfxPr
       });
       const group = new Group();
       group.name = title;
-      const portal = "ring" in made ? made : undefined;
-      for (const layer of portal ? [portal.ring] : (made as readonly Layer[]))
-        group.add(new GPUParticles3D(layer));
-      if (portal) group.add(portal.ribbons);
+      const layers = "ring" in made ? [made.ring] : made;
+      for (const layer of layers) group.add(new Particles(layer));
+      if ("ribbons" in made) group.add(made.ribbons);
       return group;
     },
   };
