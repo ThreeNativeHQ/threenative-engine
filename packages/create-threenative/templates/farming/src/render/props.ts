@@ -125,9 +125,9 @@ export function createHighlight(size: number): {
   readonly set: (ok: boolean) => void;
 } {
   const material = new MeshBasicMaterial({
-    color: 0xffffff,
+    color: 0x7a6a24,
     depthWrite: false,
-    opacity: 0.32,
+    opacity: 0.4,
     side: DoubleSide,
     transparent: true,
   });
@@ -138,7 +138,8 @@ export function createHighlight(size: number): {
   return {
     mesh,
     set: (ok) => {
-      material.color.setHex(ok ? 0xfff3b0 : 0xff9a7a);
+      // Dim colours: the auto exposure lifts an unlit material, and a bright one hid the soil.
+      material.color.setHex(ok ? 0x7a6a24 : 0x7a3420);
     },
   };
 }
