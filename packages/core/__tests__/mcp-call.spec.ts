@@ -6,6 +6,11 @@ import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 
 const mcpDir = path.resolve(fileURLToPath(import.meta.url), "..", "..", "mcp");
+const echoSchema = {
+  properties: { loud: { type: "boolean" }, word: { type: "string" } },
+  required: ["word"],
+  type: "object",
+};
 
 // A stdio server that answers initialize, lists one tool and echoes the call with its cwd and env.
 const FAKE_SERVER = `
@@ -14,7 +19,7 @@ const reply = (id, result) => process.stdout.write(JSON.stringify({ jsonrpc: "2.
 createInterface({ input: process.stdin }).on("line", (line) => {
   const { id, method, params } = JSON.parse(line);
   if (method === "initialize") reply(id, { protocolVersion: "2025-06-18", capabilities: { tools: {} }, serverInfo: { name: "fake", version: "1" } });
-  if (method === "tools/list") reply(id, { tools: [{ name: "echo", description: "Echoes.\\nSecond line." }] });
+  if (method === "tools/list") reply(id, { tools: [{ name: "echo", description: "Echoes.\\nSecond line.", inputSchema: ${JSON.stringify(echoSchema)} }] });
   if (method === "tools/call") reply(id, { content: [{ type: "text", text: JSON.stringify({ args: params.arguments, cwd: process.cwd(), dir: process.env.FAKE_DIR }) }] });
 });
 `;
@@ -48,7 +53,10 @@ describe("mcp/call.mjs", () => {
   it("lists the servers, a server's tools and calls one the way a host starts it", () => {
     const { call, root } = game({ "threenative-fake": fake });
     expect(run(call).stdout).toBe("threenative-fake\n");
-    expect(run(call, "threenative-fake").stdout).toBe("echo: Echoes.\n");
+    expect(run(call, "threenative-fake").stdout).toBe("echo(word, loud?): Echoes.\n");
+    expect(JSON.parse(run(call, "threenative-fake", "echo", "--schema").stdout)).toEqual(
+      echoSchema,
+    );
     const called = run(call, "threenative-fake", "echo", '{"word":"jump"}');
     expect(called.status).toBe(0);
     expect(JSON.parse(called.stdout)).toEqual({
@@ -70,8 +78,8 @@ describe("mcp/call.mjs", () => {
     const engine = { args: [path.join(mcpDir, "engine.mjs")], command: "node" };
     const { call } = game({ "threenative-engine": engine });
     const tools = run(call, "threenative-engine").stdout;
-    expect(tools).toContain("engine_search_capabilities:");
-    expect(tools).toContain("engine_search_references:");
+    expect(tools).toContain("engine_search_capabilities(situation, scope?):");
+    expect(tools).toContain("engine_search_references(situation):");
     const hits = run(
       call,
       "threenative-engine",
@@ -80,5 +88,20 @@ describe("mcp/call.mjs", () => {
     );
     expect(hits.status).toBe(0);
     expect(JSON.parse(hits.stdout).results.length).toBeGreaterThan(0);
+  });
+
+  it("exits promptly when the server closes before schema discovery", () => {
+    const { call } = game({
+      engine: {
+        args: ["-e", 'process.stdin.once("data", () => process.exit(9))'],
+        command: process.execPath,
+      },
+    });
+    const result = spawnSync(process.execPath, [call, "engine", "echo", "--schema"], {
+      encoding: "utf8",
+      timeout: 2_000,
+    });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toMatch(/TN_MCP_CALL_EXIT.*\(9\)/u);
   });
 });

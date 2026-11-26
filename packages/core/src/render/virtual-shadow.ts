@@ -247,6 +247,8 @@ interface ICommandSlot {
  * @situation crisp shadows close to the player across a large outdoor level
  * @situation shadow map too coarse over a big terrain
  * @situation one directional light shadow for a whole open world
+ * @situation cache static casters in the shadow map and update moving casters separately
+ * @situation cast shadows from streamed instanced trees onto nearby terrain as the player moves
  * @situation shadows shimmer when the camera moves
  * @situation shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero
  * @constraint the light must be a DirectionalLight with `castShadow` and a target in the scene

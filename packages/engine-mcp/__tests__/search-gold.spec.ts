@@ -5,7 +5,10 @@ import {
   GOLD_RELATIVE_PATH,
   SEARCH_GOLD_EXACT_SYMBOL_COUNT,
   SEARCH_GOLD_HELDOUT_COUNT,
+  SEARCH_GOLD_HELDOUT_SHA256,
   SEARCH_GOLD_QUERY_COUNT,
+  SEARCH_GOLD_RECALL_1,
+  SEARCH_GOLD_RECALL_5,
   loadGoldSet,
   reportArm,
 } from "../../../scripts/capability-search-ab.js";
@@ -16,14 +19,6 @@ const goldFile = path.resolve(GOLD_RELATIVE_PATH);
 const prdFile = path.resolve(
   "docs/PRDs/done/PRD-865-capability-search-finds-by-name-and-answers-in-one-call.md",
 );
-
-/**
- * The floor the candidate measured when PRD-865 landed (0.620 recall@1, 0.780 recall@5). A later
- * change that drops the held-out half below it fails here instead of shipping the regression; the
- * base arm measures 0.400 recall@1 and 0.580 recall@5 at ecd2a1a56 and fails both lines.
- */
-const LOCKED_HELDOUT_RECALL_1 = 0.6;
-const LOCKED_HELDOUT_RECALL_5 = 0.76;
 
 const arm = { capabilityDetails, searchCapabilities };
 
@@ -47,6 +42,7 @@ describe("capability search gold set", () => {
    */
   it("freezes the held-out labels by the sha256 recorded in PRD-865", async () => {
     const gold = await loadGoldSet(workspaceManifest, goldFile);
+    expect(gold.heldoutSha256).toBe(SEARCH_GOLD_HELDOUT_SHA256);
     expect(await readFile(prdFile, "utf8")).toContain(gold.heldoutSha256);
   });
 
@@ -72,7 +68,7 @@ describe("capability search gold set", () => {
     const gold = await loadGoldSet(workspaceManifest, goldFile);
     const report = reportArm(arm, gold, workspaceManifest, "heldout");
 
-    expect(report.recall1).toBeGreaterThanOrEqual(LOCKED_HELDOUT_RECALL_1);
-    expect(report.recall5).toBeGreaterThanOrEqual(LOCKED_HELDOUT_RECALL_5);
+    expect(report.recall1).toBeGreaterThanOrEqual(SEARCH_GOLD_RECALL_1);
+    expect(report.recall5).toBeGreaterThanOrEqual(SEARCH_GOLD_RECALL_5);
   });
 });

@@ -383,13 +383,17 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @situation a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders
  * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
  * @alias trees
+ * @alias swaying trees
  * @alias palm trees
  * @alias street trees along a road
+ * @alias bushes
+ * @alias shrubs
  * @alias bushes and shrubs
  * @alias grass, flowers and ferns as ground cover
  * @alias dead trees, fallen logs and stumps
  * @alias low poly tree with level of detail
  * @alias realistic textured tree model
+ * @alias foliage
  * @alias foliage and vegetation models
  * @alias pine, oak or spruce forest trees
  * @alias grass tufts and clumps
@@ -638,6 +642,7 @@ function biomeOf(caller: string, word: string): IEnvironmentBiome {
  * @situation find a tree or plant by name or latin name, such as pine, palm, cactus or fern
  * @alias nature props for a level
  * @alias jungle and tropical plants
+ * @alias tropical island vegetation
  * @alias desert cactus
  * @alias vegetation for a biome
  * @constraint fails closed: an unknown biome or kind throws naming the nearest ids

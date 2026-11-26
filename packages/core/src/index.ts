@@ -57,6 +57,7 @@ export type {
 /**
  * Compose game-authored locomotion and masked actions on one Three.js mixer.
  * @situation synchronize walk/run/strafe clips with different durations
+ * @situation blend walking and running clips smoothly on a rigged character skeleton
  * @situation reload with the upper body while locomotion continues
  * @situation apply an additive recoil clip with an explicit reference pose
  * @situation route root motion through collision-aware character movement
@@ -143,6 +144,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation keep downloaded web assets on disk between visits
+ * @situation load and cache a PNG image or texture and assign it to a material map or UI marker
  * @situation download the next scene before the player gets there
  * @situation free the disk cache from a settings menu
  * @situation prefetch assets into the Cache Storage disk cache of a large web game
@@ -210,6 +212,8 @@ export type {
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
+ * @situation fade background music volume while a pause menu is open
+ * @situation play a different looping music track when the scene or quest changes
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
  * @situation hold a loud mix below clipping with a compressor on the bus
  * @situation play cannon, wave, and ship sound effects
@@ -1635,6 +1639,7 @@ export type {
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles
+ * @situation emit floating fireflies or drifting dust motes
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
@@ -1731,6 +1736,7 @@ export type { IRippleFieldFlow, IRippleFieldOptions } from "./ripple-field.js";
  * Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
  * @situation float a boat on waves
  * @situation make water move
+ * @situation animate open ocean waves with analytic displacement and use domain warp to break repeating patterns
  * @situation find the water surface height at a point
  * @constraint supply every wave amplitude, wavelength, direction, speed and warp value
  * @constraint call setTime for the default graph clock when the game advances its own time
@@ -1967,6 +1973,7 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * @situation add a playable level or menu scene
  * @situation move scene setup and per-frame gameplay out of the entry point
  * @situation run scene work once per actual world draw, after the frame's last fixed update and before the projection packs
+ * @situation interpolate transforms in Scene.render using ctx.alpha after the fixed update
  * @constraint scene code must stay portable across web and native
  * @example class Play extends Scene { update(ctx, dt) {} }
  * @example ctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics

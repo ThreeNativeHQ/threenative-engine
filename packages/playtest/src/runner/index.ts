@@ -171,6 +171,7 @@ export * from "./deviceTransport.js";
 /**
  * Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.
  * @situation write a custom browser capture without owning Xvfb or Chromium cleanup
+ * @situation capture a headed WebGPU screenshot from a settled camera pose
  * @constraint browser only; requires a scenario and runtime.startup; does not execute scenario steps or assertions
  * @constraint cancellation is checked between resource acquisitions; lock waiting retains its own bounded queue policy
  * @constraint use session.screenshot for nonblank PNGs; private-display captures are not FPS evidence

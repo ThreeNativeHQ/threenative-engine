@@ -977,6 +977,14 @@ describe("threenative-engine-mcp", () => {
     },
   );
 
+  it("finds an exported class when the request names one of its methods", () => {
+    const results = searchResults(
+      "track transforms in Scene.render using ctx.alpha for smooth between-step motion",
+      workspaceManifest,
+    );
+    expect(results[0]?.symbol).toBe("Scene");
+  });
+
   it("finds the joint and pointer capabilities a physics-puzzle request names outright", () => {
     const results = searchResults(
       "a physics puzzle room where the player drags crates with the mouse, swings a hinged pendulum weight on a joint to knock a ball loose, and wins when the ball rolls into a goal zone on the floor",

@@ -183,6 +183,7 @@ const GRASS_THIN = 62;
  * Every placement, for one world, from one seed: the game's own rule set, in its own draw order.
  * @requires npm i -D @threenative/terrain
  * @situation bake a biome that says `"stream": "ordered"`
+ * @situation place procedural foliage by altitude, terrain slope, water and clearings
  * @constraint `data.rules` is the biome's rows, and `data.field` the ground they were graded on
  * @example const { placements, counts } = scatterProps(data, focus, clearings);
  */

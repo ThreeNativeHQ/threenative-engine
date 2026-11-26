@@ -563,6 +563,7 @@ function lexicalIndex<T>(
 const BM25_B = 0.45;
 const BM25_K1 = 1.2;
 const DISTINCTIVE_FLOOR = Math.log1p(1 / 0.02);
+const CAPABILITY_IDF_LIMIT = 4;
 
 function hasTokenSubsequence(haystack: readonly string[], needle: readonly string[]): boolean {
   return (
@@ -575,8 +576,14 @@ function hasTokenSubsequence(haystack: readonly string[], needle: readonly strin
   );
 }
 
-function lexicalQuery(words: readonly string[], idf: ReadonlyMap<string, number>) {
-  const weights = new Map([...new Set(words)].map((word) => [word, idf.get(word) ?? 2]));
+function lexicalQuery(
+  words: readonly string[],
+  idf: ReadonlyMap<string, number>,
+  maxWeight = Number.POSITIVE_INFINITY,
+) {
+  const weights = new Map(
+    [...new Set(words)].map((word) => [word, Math.min(idf.get(word) ?? 2, maxWeight)]),
+  );
   const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
   return { total, weights, words };
 }
@@ -663,7 +670,9 @@ function bm25f(
     }
     if (count > 1) coverage = Math.max(coverage, 0.55 * (clauseMatched / clause.total));
   }
-  return (score / matched) * Math.sqrt(coverage);
+  // Reward corroborating terms with diminishing returns so one rare scene detail cannot lead.
+  const evidence = 1 - 0.25 * Math.exp(-matched / 5);
+  return (score / matched) * coverage ** 0.65 * evidence;
 }
 
 function weakMatch(score: number): number {
@@ -701,32 +710,43 @@ function capabilityQuery(
   scope: "mechanic" | "request",
 ) {
   const clauses = scope === "request" ? situation.split(/[,;:\n]|[.!?]+(?=\s|$)/u) : [situation];
+  const identifiers = situation.match(/[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*/gu) ?? [];
+  const verbatim = new Set(identifiers);
+  // A method spelling also names its exported class, such as `Scene.render`.
+  for (const identifier of identifiers) {
+    const qualified = /^([A-Z][\w$]*)\./u.exec(identifier)?.[1];
+    if (qualified !== undefined) verbatim.add(qualified);
+  }
+  // Rare props and scene details should leave room for the mechanic a request asks for.
   return {
-    ...lexicalQuery(tokens(situation), idf),
+    ...lexicalQuery(tokens(situation), idf, CAPABILITY_IDF_LIMIT),
     clauses,
     clauseQueries:
       clauses.length < 2
         ? []
         : clauses
-            .map((clause) => lexicalQuery(tokens(clause), idf))
+            .map((clause) => lexicalQuery(tokens(clause), idf, CAPABILITY_IDF_LIMIT))
             .filter((clause) => clause.weights.size > 1),
     names: spelledNames(situation),
     nameWords: nameWords(situation),
     normalised: normaliseName(situation),
-    verbatim: new Set(situation.match(/[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*/gu)),
+    verbatim,
   };
 }
 
 type ICapabilityQuery = ReturnType<typeof capabilityQuery>;
 
+interface IIndexedSymbol {
+  readonly name: string;
+  readonly specificity: number;
+  readonly words: readonly string[];
+}
+
 function scoreSymbolName(
   entry: ICapabilityEntry,
-  words: readonly string[],
+  { name, specificity, words }: IIndexedSymbol,
   query: ICapabilityQuery,
-  idf: ReadonlyMap<string, number>,
 ) {
-  const name = normaliseName(entry.symbol);
-  const specificity = words.reduce((sum, word) => sum + (idf.get(stem(word)) ?? 0), 0);
   if (query.normalised === name) return { score: 5, specificity };
   if (query.verbatim.has(entry.symbol) && /[A-Z0-9.]/u.test(entry.symbol)) {
     return { score: 4, specificity };
@@ -774,18 +794,17 @@ interface ICapabilityScore {
 function capabilityScore(
   query: ICapabilityQuery,
   entry: ICapabilityEntry,
-  words: readonly string[],
+  nameInfo: IIndexedSymbol,
   fields: readonly (readonly IIndexedPhrase[])[],
-  idf: ReadonlyMap<string, number>,
   scope: "mechanic" | "request",
 ): ICapabilityScore {
-  const symbol = scoreSymbolName(entry, words, query, idf);
+  const symbol = scoreSymbolName(entry, nameInfo, query);
   const intent = LIFECYCLE_INTENT.get(entry.symbol);
   const explicit =
     intent === undefined ||
     (scope === "mechanic" && entry.symbol !== "ctx.quit") ||
     query.verbatim.has(entry.symbol) ||
-    query.normalised === normaliseName(entry.symbol) ||
+    query.normalised === nameInfo.name ||
     query.clauses.some((clause) => intent.test(clause));
   if (symbol !== undefined && explicit && symbol.score >= 1.8) {
     return { ...symbol, matchedSituation: entry.symbol };
@@ -977,13 +996,27 @@ function withReferenceTools(situation: string, response: ICapabilitySearchRespon
 }
 
 function indexCapabilities(entries: readonly ICapabilityEntry[]) {
+  const { documents, idf } = lexicalIndex(
+    entries,
+    (entry) => [
+      [entry.symbol],
+      entry.aliases,
+      entry.situations,
+      entry.summary.split(/(?<=[.!?])\s+/u),
+    ],
+    [2.8, 2.1, 1.25, 0.4],
+  );
   return {
-    ...lexicalIndex(
-      entries,
-      (entry) => [[entry.symbol], entry.aliases, entry.situations, [entry.summary]],
-      [2.8, 2.1, 1.25, 0.4],
-    ),
-    names: entries.map((entry) => nameWords(entry.symbol)),
+    entries: entries.map((entry, index) => {
+      const words = nameWords(entry.symbol);
+      const specificity = words.reduce((sum, word) => sum + (idf.get(stem(word)) ?? 0), 0);
+      return {
+        entry,
+        fields: documents[index] ?? [],
+        symbol: { name: normaliseName(entry.symbol), specificity, words },
+      };
+    }),
+    idf,
   };
 }
 
@@ -1009,7 +1042,7 @@ function searchMechanics(
   suggest = true,
 ): ICapabilitySearchResponse {
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
-  const { documents, idf, names } = capabilityIndex(manifest.entries);
+  const { entries, idf } = capabilityIndex(manifest.entries);
   const query = capabilityQuery(situation, idf, scope);
   const notOwned = notOwnedMatch(manifest, query.words);
   const specific =
@@ -1027,22 +1060,11 @@ function searchMechanics(
   }
   // A specific not-owned match already ties the request to the optional package.
   const floor = optionalPackage === undefined ? RELEVANCE_FLOOR : Number.MIN_VALUE;
-  const scored = manifest.entries
-    .flatMap((entry, index) =>
+  const seen = new Set<string>();
+  const scored = entries
+    .flatMap(({ entry, fields, symbol }) =>
       includesEntry(entry)
-        ? [
-            {
-              entry,
-              ...capabilityScore(
-                query,
-                entry,
-                names[index] ?? [],
-                documents[index] ?? [],
-                idf,
-                scope,
-              ),
-            },
-          ]
+        ? [{ entry, ...capabilityScore(query, entry, symbol, fields, scope) }]
         : [],
     )
     .filter(({ matchedSituation }) => matchedSituation.length > 0)
@@ -1054,12 +1076,12 @@ function searchMechanics(
           `${right.entry.importPath}:${right.entry.symbol}`,
         ),
     )
-    .filter(
-      (candidate, index, all) =>
-        all.findIndex(
-          (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry),
-        ) === index,
-    );
+    .filter(({ entry }) => {
+      const key = capabilitySearchKey(entry);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   const results = scored
     .filter(({ score }) => score >= floor)
     .slice(0, limit)
@@ -1101,10 +1123,47 @@ function searchMechanics(
   };
 }
 
+function editDistance(a: string, b: string): number {
+  let costs = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const next = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      next.push(
+        Math.min(
+          (next[j] ?? 0) + 1,
+          (costs[j + 1] ?? 0) + 1,
+          (costs[j] ?? 0) + (a[i] === b[j] ? 0 : 1),
+        ),
+      );
+    }
+    costs = next;
+  }
+  return costs[b.length] ?? a.length;
+}
+
+function nearbySymbols(symbol: string, entries: readonly ICapabilityEntry[]): string {
+  const sought = normaliseName(symbol);
+  if (sought.length < 3 || sought.length > 80) return "";
+  const names = [...new Set(entries.map((entry) => entry.symbol))];
+  const best = names
+    .map((name) => {
+      const full = normaliseName(name);
+      const member = normaliseName(name.split(".").at(-1) ?? name);
+      const distance = [full, member]
+        .filter((part) => Math.abs(part.length - sought.length) <= 2)
+        .reduce((lowest, part) => Math.min(lowest, editDistance(part, sought)), 3);
+      return { distance, name };
+    })
+    .filter(({ distance }) => distance <= (sought.length >= 7 ? 2 : 1))
+    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
+    .slice(0, 3);
+  return best.length ? ` Did you mean ${best.map(({ name }) => `'${name}'`).join(" or ")}?` : "";
+}
+
 /**
  * Every manifest entry named `symbol` (optionally in one `importPath`); throws when there is none.
  * Two packages can export one name (`createThreeObject` from raw-unreal and ueformat), so a lookup
- * by name alone must return both — answering with the first hides the second from detail.
+ * by name alone must return both.
  */
 export function capabilityDetails(
   symbol: string,
@@ -1113,14 +1172,13 @@ export function capabilityDetails(
 ): readonly ICapabilityDetail[] {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const matches = loadCapabilityManifest(manifestFile).entries.filter(
-    (candidate) =>
-      candidate.symbol === symbol &&
-      (importPath === undefined || candidate.importPath === importPath),
+  const entries = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) => importPath === undefined || candidate.importPath === importPath,
   );
+  const matches = entries.filter((candidate) => candidate.symbol === symbol);
   if (matches.length === 0)
     throw new Error(
-      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
+      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.${nearbySymbols(symbol, entries)}`,
     );
   return matches;
 }
@@ -1433,6 +1491,13 @@ function referenceSuggestions(
     }));
 }
 
+function searchSituation(tool: string, argumentsValue: Record<string, unknown>): string {
+  const { situation, query } = argumentsValue;
+  if (typeof situation === "string" && situation.trim().length > 0) return situation;
+  const hint = query === undefined ? "" : " Pass 'situation' instead of 'query'.";
+  throw new Error(`${tool} requires a string 'situation' argument with text.${hint}`);
+}
+
 async function handleToolCall(
   params: Record<string, unknown>,
   manifestFile: string,
@@ -1443,23 +1508,22 @@ async function handleToolCall(
   // must come back as a tool error the authoring agent can read, not a vacuous empty search
   // that looks like the engine having no such capability.
   if (name === "engine_search_capabilities") {
-    if (typeof argumentsValue.situation !== "string")
-      throw new Error("engine_search_capabilities requires a string 'situation' argument.");
+    const situation = searchSituation(name, argumentsValue);
     const scope = argumentsValue.scope === undefined ? "mechanic" : argumentsValue.scope;
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
-    const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
+    const response = searchCapabilities(situation, manifestFile, scope);
     logToolCall({
       results: response.results.map((result) => result.symbol),
       scope,
-      situation: argumentsValue.situation,
+      situation,
       tool: name,
       verdict: response.verdict,
     });
     // Up to three reference stubs on every search; an offline host still gets its capability hits.
     return toolText({
       ...response,
-      references: await searchReferences(argumentsValue.situation, 3).catch((error: unknown) => ({
+      references: await searchReferences(situation, 3).catch((error: unknown) => ({
         results: [],
         guidance: `references unavailable: ${String(error)}`,
       })),
@@ -1492,12 +1556,11 @@ async function handleToolCall(
     return toolText(detail);
   }
   if (name === "engine_search_references") {
-    if (typeof argumentsValue.situation !== "string" || !argumentsValue.situation.trim())
-      throw new Error("engine_search_references requires a non-empty string 'situation'.");
-    const response = await searchReferences(argumentsValue.situation);
+    const situation = searchSituation(name, argumentsValue);
+    const response = await searchReferences(situation);
     logToolCall({
       tool: name,
-      situation: argumentsValue.situation,
+      situation,
       results: response.results.map((entry) => entry.id),
     });
     return toolText(response);
@@ -1508,7 +1571,9 @@ async function handleToolCall(
       typeof argumentsValue.id !== "string" ||
       (argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
     )
-      throw new Error("engine_reference_detail requires game, id and kind (node or card).");
+      throw new Error(
+        'engine_reference_detail requires "game" and "id" strings and "kind":"node" or "kind":"card".',
+      );
     let game = await loadReferenceGame(argumentsValue.game);
     const { id, kind } = argumentsValue;
     let entry =

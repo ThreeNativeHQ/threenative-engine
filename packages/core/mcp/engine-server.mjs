@@ -702,6 +702,7 @@ function undouble(stem2) {
   return stem2.length > 3 && last !== void 0 && last === stem2.at(-2) && !"aeiou".includes(last) ? stem2.slice(0, -1) : stem2;
 }
 function stem(token) {
+  if (token === "leaves") return "leaf";
   const stripped = suffixStripped(token);
   return stripped.length > 3 && stripped.endsWith("e") ? stripped.slice(0, -1) : stripped;
 }
@@ -730,192 +731,219 @@ function tokens(value) {
   }
   return cached;
 }
-function tokenWeights(entries) {
+function lexicalIndex(rows, fieldsOf, boosts) {
+  const fields = rows.map(
+    (row) => fieldsOf(row).map((phrases) => phrases.map((text2) => ({ text: text2, words: tokens(text2) })))
+  );
+  const lengths = boosts.map((_, field) => {
+    const phrases = fields.flatMap((row) => row[field] ?? []).filter(({ words }) => words.length);
+    return phrases.reduce((sum, { words }) => sum + words.length, 0) / (phrases.length || 1);
+  });
   const frequency = /* @__PURE__ */ new Map();
-  let situations = 0;
-  for (const entry of entries) {
-    for (const situation of [...entry.situations, ...entry.aliases]) {
-      situations += 1;
-      for (const token of new Set(tokens(situation)))
-        frequency.set(token, (frequency.get(token) ?? 0) + 1);
-    }
+  const documents = fields.map((row) => {
+    const seen = /* @__PURE__ */ new Set();
+    const indexed = row.map(
+      (phrases, field) => phrases.map(({ text: text2, words }) => {
+        const terms = /* @__PURE__ */ new Map();
+        for (const word of words) {
+          seen.add(word);
+          terms.set(word, (terms.get(word) ?? 0) + 1);
+        }
+        const average = lengths[field] || 1;
+        const norm = 1 - BM25_B + BM25_B * (words.length / average);
+        return { boost: (boosts[field] ?? 0) / norm, terms, text: text2, words };
+      })
+    );
+    for (const word of seen) frequency.set(word, (frequency.get(word) ?? 0) + 1);
+    return indexed;
+  });
+  const idf = /* @__PURE__ */ new Map();
+  for (const [word, df] of frequency) {
+    idf.set(word, Math.log1p((rows.length - df + 0.5) / (df + 0.5)));
   }
-  const weights = /* @__PURE__ */ new Map();
-  for (const [token, count] of frequency) weights.set(token, Math.log(1 + situations / count));
-  return weights;
+  return { documents, idf };
 }
-function weightOf(weights, token) {
-  return weights.get(token) ?? 0;
-}
-function nameWords(value) {
-  return tokens(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2")).filter((token) => !/\d/u.test(token));
-}
-function normaliseName(value) {
-  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "");
-}
-function spelledWords(value) {
-  return value.toLocaleLowerCase().split(/[^a-z0-9]+/u).filter((word) => word.length > 0);
-}
-function spellsName(situation, symbol) {
-  const words = spelledWords(situation);
-  const whole = normaliseName(symbol);
-  for (let start = 0; start < words.length; start += 1) {
-    let piece = "";
-    for (let end = start; end < words.length && end < start + 4; end += 1) {
-      piece += normaliseName(words[end] ?? "");
-      if (piece === whole) return true;
-      if (piece.length >= whole.length) break;
-    }
-  }
-  return false;
-}
-function nameTokenWeights(entries) {
-  return tokenWeights(
-    entries.map((entry) => ({
-      aliases: [nameWords(entry.symbol).join(" ")],
-      situations: [entry.summary]
-    }))
+var BM25_B = 0.45;
+var BM25_K1 = 1.2;
+var DISTINCTIVE_FLOOR = Math.log1p(1 / 0.02);
+var CAPABILITY_IDF_LIMIT = 4;
+function hasTokenSubsequence(haystack, needle) {
+  return needle.length > 0 && needle.length <= haystack.length && haystack.some(
+    (word, start) => word === needle[0] && needle.every((part, offset) => haystack[start + offset] === part)
   );
 }
-var DISTINCTIVE_SITUATION_SHARE = 0.02;
-var DISTINCTIVE_FLOOR = Math.log(1 + 1 / DISTINCTIVE_SITUATION_SHARE);
-var AGREEMENT_WEIGHT = 0.4;
-var LONE_WORD_COVERAGE = 0.22;
-function agreement(situation, query) {
-  const matched = situation.filter((token) => query.has(token)).length;
-  return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
+function lexicalQuery(words, idf, maxWeight = Number.POSITIVE_INFINITY) {
+  const weights = new Map(
+    [...new Set(words)].map((word) => [word, Math.min(idf.get(word) ?? 2, maxWeight)])
+  );
+  const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  return { total, weights, words };
 }
-function scorePhrase(value, queryTokens, queryText, weights) {
-  const phrase = tokens(value);
-  const unique2 = [...new Set(phrase)];
-  const total = unique2.reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const matched = unique2.filter((token) => queryTokens.has(token)).reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-  if (total === 0 || matched === 0 && phraseBonus === 0) return void 0;
-  const coverage = matched / total;
-  const agreed = agreement(unique2, queryTokens);
-  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
-}
-function isDistinctivePhrase(candidate) {
-  if (candidate.phraseBonus > 0) return true;
-  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
-  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
-}
-function scoreReadableSituations(situations, queryTokens, queryText, weights) {
-  if (queryTokens.size === 0)
-    return {
-      best: 0,
-      bestReadableScore: 0,
-      bestReadableSituation: situations[0] ?? "",
-      matchedSituation: ""
-    };
-  let best = 0;
-  let matchedSituation = "";
-  let bestReadableScore = 0;
-  let bestReadableSituation = situations[0] ?? "";
-  for (const situation of situations) {
-    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
-    if (candidate === void 0) continue;
-    if (candidate.score > bestReadableScore) {
-      bestReadableScore = candidate.score;
-      bestReadableSituation = situation;
-    }
-    if (isDistinctivePhrase(candidate) && candidate.score > best) {
-      best = candidate.score;
-      matchedSituation = situation;
-    }
+function scoreField(phrase, query) {
+  let matched = 0;
+  let count = 0;
+  let score = 0;
+  for (const [word, tf] of phrase.terms) {
+    const weight = query.weights.get(word);
+    if (weight === void 0) continue;
+    matched += weight;
+    count += 1;
+    score += weight * saturate(tf * phrase.boost);
   }
-  return { best, bestReadableScore, bestReadableSituation, matchedSituation };
+  if (count === 0) return void 0;
+  const exact = hasTokenSubsequence(query.words, phrase.words) || hasTokenSubsequence(phrase.words, query.words);
+  const bonus = exact ? 1.6 : 1;
+  const distinctive = exact && (count > 1 || query.weights.size === 1 || matched >= DISTINCTIVE_FLOOR) || matched >= DISTINCTIVE_FLOOR && (count > 1 || phrase.words.length <= 3);
+  return { boost: phrase.boost * bonus, count, distinctive, exact, phrase, score: score * bonus };
 }
-function scoreAliases(aliases, queryTokens, queryText, weights) {
-  if (queryTokens.size === 0) return 0;
-  let best = 0;
-  for (const alias of aliases) {
-    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
-    if (candidate !== void 0) best = Math.max(best, candidate.score);
+function bestField(phrases, query, isAlias = false) {
+  let best;
+  for (const phrase of phrases ?? []) {
+    const match = scoreField(phrase, query);
+    if (match === void 0 || isAlias && match.count === 1 && phrase.words.length > 1) continue;
+    if (best === void 0 || match.score > best.score) best = match;
   }
   return best;
 }
-function answeredSituation(readable, aliasScore) {
-  const best = Math.max(readable.best, aliasScore);
-  const matchedSituation = readable.matchedSituation.length > 0 ? readable.matchedSituation : best >= RELEVANCE_FLOOR ? readable.bestReadableSituation : "";
-  return matchedSituation.length > 0 ? { matchedSituation, score: best } : { matchedSituation: "", score: 0 };
+function saturate(tf) {
+  return (BM25_K1 + 1) * tf / (BM25_K1 + tf);
 }
-function situationScore(query, situations, aliases, weights) {
-  if (query.length === 0) return { matchedSituation: "", score: 0 };
-  const queryTokens = new Set(query);
-  const queryText = query.join(" ");
-  return answeredSituation(
-    scoreReadableSituations(situations, queryTokens, queryText, weights),
-    scoreAliases(aliases, queryTokens, queryText, weights)
-  );
-}
-var EXACT_SYMBOL_LEAD = 4;
-var NAME_BASE_LEAD = 2;
-var NAME_SHARE_LEAD = 1.4;
-var SYMBOL_WEIGHT_FLOOR = 4.2;
-var SINGLE_WORD_SHARE_FLOOR = 0.3;
-function scoreSymbolName(symbol, situation, queryTokens, weights) {
-  const name = [...new Set(nameWords(symbol))];
-  if (name.length === 0) return void 0;
-  const nameWeights = name.map((token) => weightOf(weights, token));
-  const specificity = nameWeights.reduce((sum, weight) => sum + weight, 0);
-  const requestTotal = [...queryTokens].reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const share = requestTotal === 0 ? 0 : specificity / requestTotal;
-  const nameScore = NAME_BASE_LEAD + NAME_SHARE_LEAD * Math.min(1, share);
-  if (spellsName(situation, symbol)) {
-    if (normaliseName(situation) === normaliseName(symbol)) {
-      return { score: EXACT_SYMBOL_LEAD, specificity };
+function bm25f(query, fields, clauses = []) {
+  if (fields.every((field) => field === void 0)) return 0;
+  let matched = 0;
+  let score = 0;
+  for (const [word, weight] of query.weights) {
+    let tf = 0;
+    for (const field of fields) {
+      if (field !== void 0) tf += field.boost * (field.phrase.terms.get(word) ?? 0);
     }
-    if (name.length === 1) {
-      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return void 0;
-      if (share < SINGLE_WORD_SHARE_FLOOR) return void 0;
-      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
-    }
-    return { score: nameScore, specificity };
+    if (tf === 0) continue;
+    matched += weight;
+    score += weight * saturate(tf);
   }
-  if (name.length < 2) return void 0;
-  const queryWords = new Set(nameWords(situation));
-  if (!name.every((token) => queryWords.has(token))) return void 0;
-  if (Math.max(...nameWeights) < SYMBOL_WEIGHT_FLOOR) return void 0;
-  return { score: nameScore, specificity };
+  if (matched === 0) return 0;
+  let coverage = matched / query.total;
+  for (const clause of clauses) {
+    let clauseMatched = 0;
+    let count = 0;
+    for (const [word, weight] of clause.weights) {
+      if (!fields.some((field) => field?.phrase.terms.has(word))) continue;
+      clauseMatched += weight;
+      count += 1;
+    }
+    if (count > 1) coverage = Math.max(coverage, 0.55 * (clauseMatched / clause.total));
+  }
+  const evidence = 1 - 0.25 * Math.exp(-matched / 5);
+  return score / matched * coverage ** 0.65 * evidence;
 }
-var SUMMARY_WEIGHT = 0.4;
-function summaryScore(summary, queryTokens, queryText, weights) {
-  const candidate = scorePhrase(summary, queryTokens, queryText, weights);
-  return candidate === void 0 ? 0 : candidate.score * SUMMARY_WEIGHT;
+function weakMatch(score) {
+  return RELEVANCE_FLOOR * score / (1 + score);
 }
-function capabilityScore(query, entry, weights, nameWeights, situation) {
-  const situations = {
-    ...situationScore(query, entry.situations, entry.aliases, weights),
-    specificity: 0
-  };
-  if (query.length === 0) return situations;
-  const queryTokens = new Set(query);
-  const symbol = scoreSymbolName(entry.symbol, situation, queryTokens, nameWeights);
-  const summary = summaryScore(entry.summary, queryTokens, query.join(" "), nameWeights);
-  const symbolScore = symbol?.score ?? 0;
-  const best = Math.max(situations.score, symbolScore, summary);
-  if (best <= situations.score) return situations;
-  if (symbol !== void 0 && symbolScore >= best) {
-    return { matchedSituation: entry.symbol, score: symbolScore, specificity: symbol.specificity };
+function nameWords(value) {
+  return splitSymbolCase(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2")).toLowerCase().split(/[^a-z]+/u).filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+}
+function normaliseName(value) {
+  return value.toLowerCase().replace(/[^a-z0-9]+/gu, "");
+}
+function spelledNames(value) {
+  const words = value.toLowerCase().match(/[a-z0-9]+/gu) ?? [];
+  const names = /* @__PURE__ */ new Set();
+  for (let start = 0; start < words.length; start += 1) {
+    let name = "";
+    for (const word of words.slice(start, start + 4)) {
+      name += word;
+      names.add(name);
+    }
+  }
+  return names;
+}
+function capabilityQuery(situation, idf, scope) {
+  const clauses = scope === "request" ? situation.split(/[,;:\n]|[.!?]+(?=\s|$)/u) : [situation];
+  const identifiers = situation.match(/[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*/gu) ?? [];
+  const verbatim = new Set(identifiers);
+  for (const identifier of identifiers) {
+    const qualified = /^([A-Z][\w$]*)\./u.exec(identifier)?.[1];
+    if (qualified !== void 0) verbatim.add(qualified);
   }
   return {
-    matchedSituation: situations.matchedSituation || entry.situations[0] || entry.summary,
-    score: best,
+    ...lexicalQuery(tokens(situation), idf, CAPABILITY_IDF_LIMIT),
+    clauses,
+    clauseQueries: clauses.length < 2 ? [] : clauses.map((clause) => lexicalQuery(tokens(clause), idf, CAPABILITY_IDF_LIMIT)).filter((clause) => clause.weights.size > 1),
+    names: spelledNames(situation),
+    nameWords: nameWords(situation),
+    normalised: normaliseName(situation),
+    verbatim
+  };
+}
+function scoreSymbolName(entry, { name, specificity, words }, query) {
+  if (query.normalised === name) return { score: 5, specificity };
+  if (query.verbatim.has(entry.symbol) && /[A-Z0-9.]/u.test(entry.symbol)) {
+    return { score: 4, specificity };
+  }
+  const share = Math.min(1, specificity / query.total);
+  if (query.names.has(name)) {
+    if (words.length > 1) return { score: 2 + share, specificity };
+    if (specificity >= 2.5 && share >= 0.3) return { score: 3.4 * share, specificity };
+  }
+  if (words.length > 1 && hasTokenSubsequence(query.nameWords, words)) {
+    return { score: 1.8 + share, specificity };
+  }
+  if (words.length > 1 && specificity >= DISTINCTIVE_FLOOR && words.every((word) => query.nameWords.includes(word))) {
+    return { score: 0.55 + share * 0.6, specificity };
+  }
+  return void 0;
+}
+var LIFECYCLE_INTENT = /* @__PURE__ */ new Map([
+  [
+    "ctx.quit",
+    /\bquit\b|\b(?:close|exit)\s+(?:the\s+)?(?:app(?:lication)?|game|window)\b|\b(?:app(?:lication)?|game|window)\s+(?:is\s+)?(?:closed|closes)\b/iu
+  ],
+  [
+    "leaveScene",
+    /\b(?:leave|leaving|exit|exiting|unload)\s+(?:(?:the|a|current)\s+)*(?:scene|level)\b/iu
+  ],
+  [
+    "onLaunchFailure",
+    /\b(?:launch|startup|boot)\s+(?:fails?|failed|failure|error|crash)\b|\b(?:fail(?:s|ed)?|error|crash)\s+(?:to\s+|during\s+)?(?:launch|start|boot)\b/iu
+  ]
+]);
+function capabilityScore(query, entry, nameInfo, fields, scope) {
+  const symbol = scoreSymbolName(entry, nameInfo, query);
+  const intent = LIFECYCLE_INTENT.get(entry.symbol);
+  const explicit = intent === void 0 || scope === "mechanic" && entry.symbol !== "ctx.quit" || query.verbatim.has(entry.symbol) || query.normalised === nameInfo.name || query.clauses.some((clause) => intent.test(clause));
+  if (symbol !== void 0 && explicit && symbol.score >= 1.8) {
+    return { ...symbol, matchedSituation: entry.symbol };
+  }
+  const name = bestField(fields[0], query);
+  const alias = bestField(fields[1], query, true);
+  const situation = bestField(fields[2], query);
+  const summary = bestField(fields[3], query);
+  const anchoredName = name !== void 0 && (name.count > 1 || name.phrase.words[0] === query.words[0] && (situation?.count ?? 0) > 1);
+  const lexical = bm25f(
+    query,
+    [anchoredName ? name : void 0, alias, situation, summary],
+    query.clauseQueries
+  );
+  const distinctive = alias?.distinctive && entry.situations.length > 0 || situation?.distinctive || summary?.distinctive;
+  const score = distinctive && explicit ? lexical : weakMatch(lexical);
+  if (symbol !== void 0 && explicit && symbol.score > score) {
+    return { ...symbol, matchedSituation: entry.symbol };
+  }
+  return {
+    matchedSituation: lexical === 0 ? "" : situation?.phrase.text ?? entry.situations[0] ?? entry.summary,
+    score,
     specificity: 0
   };
 }
 function notOwnedSituationScore(query, situations) {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
-  const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
   for (const situation of situations) {
     const phrase = tokens(situation);
     const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
     const score = overlap / Math.max(query.length, phrase.length);
-    const phraseBonus = phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+    const phraseBonus = hasTokenSubsequence(query, phrase) || hasTokenSubsequence(phrase, query) ? 1 : 0;
     if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
     const candidate = score + phraseBonus;
     if (candidate > best) {
@@ -1005,38 +1033,64 @@ function withReferenceTools(situation, response) {
     guidance: `Reverse engineer the game with engine_search_references, then engine_reference_detail for its pinned cards. ${response.guidance}`
   };
 }
-var weightCache = /* @__PURE__ */ new WeakMap();
-function manifestWeights(entries) {
-  let cached = weightCache.get(entries);
-  if (cached === void 0) {
-    cached = { weights: tokenWeights(entries), nameWeights: nameTokenWeights(entries) };
-    weightCache.set(entries, cached);
+function indexCapabilities(entries) {
+  const { documents, idf } = lexicalIndex(
+    entries,
+    (entry) => [
+      [entry.symbol],
+      entry.aliases,
+      entry.situations,
+      entry.summary.split(/(?<=[.!?])\s+/u)
+    ],
+    [2.8, 2.1, 1.25, 0.4]
+  );
+  return {
+    entries: entries.map((entry, index) => {
+      const words = nameWords(entry.symbol);
+      const specificity = words.reduce((sum, word) => sum + (idf.get(stem(word)) ?? 0), 0);
+      return {
+        entry,
+        fields: documents[index] ?? [],
+        symbol: { name: normaliseName(entry.symbol), specificity, words }
+      };
+    }),
+    idf
+  };
+}
+var capabilityIndexes = /* @__PURE__ */ new WeakMap();
+function capabilityIndex(entries) {
+  let index = capabilityIndexes.get(entries);
+  if (index === void 0) {
+    index = indexCapabilities(entries);
+    capabilityIndexes.set(entries, index);
   }
-  return cached;
+  return index;
 }
 function searchMechanics(situation, manifest, scope, suggest = true) {
-  const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
-  const { weights, nameWeights } = manifestWeights(manifest.entries);
-  const notOwned = notOwnedMatch(manifest, query);
-  const specific = notOwned !== void 0 && isSpecificNotOwnedMatch(query, notOwned.matchedSituation);
+  const { entries, idf } = capabilityIndex(manifest.entries);
+  const query = capabilityQuery(situation, idf, scope);
+  const notOwned = notOwnedMatch(manifest, query.words);
+  const specific = notOwned !== void 0 && isSpecificNotOwnedMatch(query.words, notOwned.matchedSituation);
   const optionalPackage = specific ? `@threenative/${notOwned.entry.id}` : void 0;
-  const candidates = optionalPackage === void 0 ? manifest.entries : manifest.entries.filter(
-    (entry) => entry.importPath === optionalPackage || entry.importPath.startsWith(`${optionalPackage}/`)
-  );
-  if (specific && candidates.length === 0) {
+  const includesEntry = (entry) => optionalPackage === void 0 || entry.importPath === optionalPackage || entry.importPath.startsWith(`${optionalPackage}/`);
+  if (specific && !manifest.entries.some(includesEntry)) {
     return { guidance: notOwned.entry.guidance, results: [], verdict: "none" };
   }
   const floor = optionalPackage === void 0 ? RELEVANCE_FLOOR : Number.MIN_VALUE;
-  const scored = candidates.map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) })).filter(({ matchedSituation }) => matchedSituation.length > 0).sort(
+  const seen = /* @__PURE__ */ new Set();
+  const scored = entries.flatMap(
+    ({ entry, fields, symbol }) => includesEntry(entry) ? [{ entry, ...capabilityScore(query, entry, symbol, fields, scope) }] : []
+  ).filter(({ matchedSituation }) => matchedSituation.length > 0).sort(
     (left, right) => right.score - left.score || right.specificity - left.specificity || `${left.entry.importPath}:${left.entry.symbol}`.localeCompare(
       `${right.entry.importPath}:${right.entry.symbol}`
     )
-  ).filter(
-    (candidate, index, all) => all.findIndex(
-      (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry)
-    ) === index
-  );
+  ).filter(({ entry }) => {
+    const key = capabilitySearchKey(entry);
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
   const results = scored.filter(({ score }) => score >= floor).slice(0, limit).map(({ entry, matchedSituation, score }) => ({
     constraints: entry.constraints,
     ...entry.deprecated === void 0 ? {} : { deprecated: entry.deprecated },
@@ -1066,15 +1120,45 @@ function searchMechanics(situation, manifest, scope, suggest = true) {
     ...nearMatches.length > 0 ? { nearMatches } : {}
   };
 }
+function editDistance(a, b) {
+  let costs = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const next = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      next.push(
+        Math.min(
+          (next[j] ?? 0) + 1,
+          (costs[j + 1] ?? 0) + 1,
+          (costs[j] ?? 0) + (a[i] === b[j] ? 0 : 1)
+        )
+      );
+    }
+    costs = next;
+  }
+  return costs[b.length] ?? a.length;
+}
+function nearbySymbols(symbol, entries) {
+  const sought = normaliseName(symbol);
+  if (sought.length < 3 || sought.length > 80) return "";
+  const names = [...new Set(entries.map((entry) => entry.symbol))];
+  const best = names.map((name) => {
+    const full = normaliseName(name);
+    const member = normaliseName(name.split(".").at(-1) ?? name);
+    const distance = [full, member].filter((part) => Math.abs(part.length - sought.length) <= 2).reduce((lowest, part) => Math.min(lowest, editDistance(part, sought)), 3);
+    return { distance, name };
+  }).filter(({ distance }) => distance <= (sought.length >= 7 ? 2 : 1)).sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name)).slice(0, 3);
+  return best.length ? ` Did you mean ${best.map(({ name }) => `'${name}'`).join(" or ")}?` : "";
+}
 function capabilityDetails(symbol, manifestFile = defaultManifestPath(), importPath) {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const matches = loadCapabilityManifest(manifestFile).entries.filter(
-    (candidate) => candidate.symbol === symbol && (importPath === void 0 || candidate.importPath === importPath)
+  const entries = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) => importPath === void 0 || candidate.importPath === importPath
   );
+  const matches = entries.filter((candidate) => candidate.symbol === symbol);
   if (matches.length === 0)
     throw new Error(
-      `Unknown engine capability '${symbol}'${importPath === void 0 ? "" : ` in '${importPath}'`}.`
+      `Unknown engine capability '${symbol}'${importPath === void 0 ? "" : ` in '${importPath}'`}.${nearbySymbols(symbol, entries)}`
     );
   return matches;
 }
@@ -1271,22 +1355,29 @@ async function searchReferences(situation, limit = 5) {
       guidance: "Explore this repository, then call engine_save_reference."
     }))
   ];
-  const phrases = candidates.map((stub) => ({
-    situations: [stub.name, stub.summary, ...stub.tags],
-    aliases: [stub.title]
-  }));
-  const weights = tokenWeights(phrases);
-  const query = tokens(situation);
-  const querySet = new Set(query);
-  const queryText = query.join(" ");
+  const { documents, idf } = lexicalIndex(
+    candidates,
+    (stub) => [[stub.name], [stub.title], stub.tags, [stub.summary]],
+    [2.4, 1.6, 1.2, 0.7]
+  );
+  const query = lexicalQuery(tokens(situation), idf);
   const scored = candidates.map((stub, index) => {
-    const situations = phrases[index]?.situations ?? [];
-    const readable = scoreReadableSituations(situations, querySet, queryText, weights);
-    const content = answeredSituation(readable, 0);
-    const title = scoreAliases(phrases[index]?.aliases ?? [], querySet, queryText, weights);
+    const matches = documents[index]?.map((field) => bestField(field, query)) ?? [];
+    const [name, title, tag, summary] = matches;
+    const score = bm25f(query, matches);
+    const content = [name, tag, summary].reduce(
+      (best, match) => match !== void 0 && (best === void 0 || match.score > best.score) ? match : best,
+      void 0
+    );
+    const matched = content ?? title;
+    const relevant = matches.some((match) => match?.distinctive);
     return {
-      near: { score: readable.bestReadableScore, situation: readable.bestReadableSituation },
-      stub: { ...stub, ...content, score: content.score + title }
+      near: { score, situation: matched?.phrase.text ?? "" },
+      stub: {
+        ...stub,
+        matchedSituation: relevant ? matched?.phrase.text ?? "" : "",
+        score: relevant ? score : 0
+      }
     };
   });
   const results = scored.filter(({ stub }) => stub.score >= RELEVANCE_FLOOR).sort((a, b) => b.stub.score - a.stub.score || a.stub.id.localeCompare(b.stub.id)).slice(0, limit).map(({ stub }) => stub);
@@ -1316,26 +1407,31 @@ function referenceSuggestions(scored) {
     title: stub.title
   }));
 }
+function searchSituation(tool, argumentsValue) {
+  const { situation, query } = argumentsValue;
+  if (typeof situation === "string" && situation.trim().length > 0) return situation;
+  const hint = query === void 0 ? "" : " Pass 'situation' instead of 'query'.";
+  throw new Error(`${tool} requires a string 'situation' argument with text.${hint}`);
+}
 async function handleToolCall(params, manifestFile) {
   const name = params.name;
   const argumentsValue = isRecord(params.arguments) ? params.arguments : {};
   if (name === "engine_search_capabilities") {
-    if (typeof argumentsValue.situation !== "string")
-      throw new Error("engine_search_capabilities requires a string 'situation' argument.");
+    const situation = searchSituation(name, argumentsValue);
     const scope = argumentsValue.scope === void 0 ? "mechanic" : argumentsValue.scope;
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
-    const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
+    const response = searchCapabilities(situation, manifestFile, scope);
     logToolCall({
       results: response.results.map((result) => result.symbol),
       scope,
-      situation: argumentsValue.situation,
+      situation,
       tool: name,
       verdict: response.verdict
     });
     return toolText({
       ...response,
-      references: await searchReferences(argumentsValue.situation, 3).catch((error) => ({
+      references: await searchReferences(situation, 3).catch((error) => ({
         results: [],
         guidance: `references unavailable: ${String(error)}`
       }))
@@ -1363,19 +1459,20 @@ async function handleToolCall(params, manifestFile) {
     return toolText(detail);
   }
   if (name === "engine_search_references") {
-    if (typeof argumentsValue.situation !== "string" || !argumentsValue.situation.trim())
-      throw new Error("engine_search_references requires a non-empty string 'situation'.");
-    const response = await searchReferences(argumentsValue.situation);
+    const situation = searchSituation(name, argumentsValue);
+    const response = await searchReferences(situation);
     logToolCall({
       tool: name,
-      situation: argumentsValue.situation,
+      situation,
       results: response.results.map((entry) => entry.id)
     });
     return toolText(response);
   }
   if (name === "engine_reference_detail") {
     if (typeof argumentsValue.game !== "string" || typeof argumentsValue.id !== "string" || argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
-      throw new Error("engine_reference_detail requires game, id and kind (node or card).");
+      throw new Error(
+        'engine_reference_detail requires "game" and "id" strings and "kind":"node" or "kind":"card".'
+      );
     let game = await loadReferenceGame(argumentsValue.game);
     const { id: id2, kind } = argumentsValue;
     let entry = kind === "node" ? game.nodes.find((node) => node.id === id2) : game.cards.find((card) => card.id === id2);
