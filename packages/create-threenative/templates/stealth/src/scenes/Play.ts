@@ -457,19 +457,21 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ? "R  RESTART"
         : player.held !== undefined
           ? `F  CHOKE  ${player.pumps}/${PUMPS_TO_KNOCK_OUT}`
-          : player.grabTarget(guards) !== undefined
-            ? "F  GRAB"
-            : atKeycard
-              ? "E  TAKE KEYCARD"
-              : atDoor && hasKeycard
-                ? "E  OPEN DOOR"
-                : player.canDrag(guards)
-                  ? "HOLD E  DRAG BODY"
-                  : atDoor
-                    ? "LOCKED  KEYCARD"
-                    : player.stance === "wall"
-                      ? "Q  KNOCK"
-                      : "";
+          : player.dragging !== undefined
+            ? "RELEASE E  DROP BODY"
+            : player.grabTarget(guards) !== undefined
+              ? "F  GRAB"
+              : atKeycard
+                ? "E  TAKE KEYCARD"
+                : atDoor && hasKeycard
+                  ? "E  OPEN DOOR"
+                  : player.canDrag(guards)
+                    ? "HOLD E  DRAG BODY"
+                    : atDoor
+                      ? "LOCKED  KEYCARD"
+                      : player.stance === "wall"
+                        ? "Q  KNOCK"
+                        : "";
       frame.alertPhase = director.phase;
       frame.phaseTimer = round(director.timer, 10);
       frame.alerts = director.alerts;

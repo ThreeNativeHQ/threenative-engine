@@ -6,7 +6,7 @@ export type GamePhase = "playing" | "won" | "lost";
 /** Player stance, as the HUD and the guards read it. */
 export type Stance = "stand" | "crouch" | "wall";
 
-/** One radar contact: a guard or a camera, in metres relative to the player, with its view. */
+/** One radar contact: a guard or a camera, its world position and its view. */
 export type RadarContact = {
   readonly kind: "guard" | "camera";
   /**

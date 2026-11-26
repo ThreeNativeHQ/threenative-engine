@@ -55,6 +55,8 @@ export interface IViewer {
    * bump into it. 0 or absent for a camera, which only sees what is in its cone.
    */
   readonly closeSense?: number;
+  /** Metres inside which the viewer cannot see at all: the blind spot under a wall camera. */
+  readonly minRange?: number;
 }
 
 export interface ITarget {
@@ -96,7 +98,7 @@ export function sightStrength(viewer: IViewer, target: ITarget, clear: ClearLine
   const visibility = visibilityFactor(target);
   // A darker, lower target is seen from less far away, not only more slowly.
   const reach = viewer.range * Math.min(1, 0.45 + 0.55 * visibility);
-  if (flat > reach) return 0;
+  if (flat > reach || flat < (viewer.minRange ?? 0)) return 0;
   const closeSense = flat <= (viewer.closeSense ?? 0) && target.stance !== "crouch";
   if (!closeSense) {
     const bearing = Math.atan2(_toTarget.x, _toTarget.z);

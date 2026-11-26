@@ -12,6 +12,8 @@ const RANGE = 9;
 /** A camera does not wonder: it fills fast, and at 1 the base goes to Alert. */
 const RISE = 3.2;
 const DECAY = 0.8;
+/** The floor right under the camera, metres from the wall: it looks out, not down. */
+const BLIND_SPOT = 1.2;
 
 /**
  * A wall camera: it sweeps between two yaws, pauses at each end, and calls the alert itself. It
@@ -29,7 +31,13 @@ export class SecurityCamera {
   #yaw: number;
   #direction = 1;
   #pause = 0;
-  readonly #view = { eye: this.eye, halfAngle: HALF_ANGLE, range: RANGE, yaw: 0 };
+  readonly #view = {
+    eye: this.eye,
+    halfAngle: HALF_ANGLE,
+    minRange: BLIND_SPOT,
+    range: RANGE,
+    yaw: 0,
+  };
   readonly #pivot;
   readonly #cone;
 
@@ -74,8 +82,8 @@ export class SecurityCamera {
       }
     }
     // The camera looks down from the wall: its eye is high, so a crouched player behind a low
-    // crate is still covered, and one in the open is not. It has no close sense: standing right
-    // under it is outside its cone.
+    // crate is still covered, and one in the open is not. It has no close sense, and the floor
+    // within `BLIND_SPOT` of its wall is out of its view.
     this.#view.yaw = this.#yaw;
     this.sight = sightStrength(this.#view, player, clear);
     const before = this.suspicion;

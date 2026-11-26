@@ -255,7 +255,8 @@ export class Player extends Fighter {
       if (Math.hypot(dx, dz) > GRAB_REACH) continue;
       if (Math.abs(angleBetween(Math.atan2(dx, dz), guard.yaw)) < BEHIND_ANGLE) continue;
       // Not through a wall: a thin wall puts a guard on its far side inside the reach.
-      if (this.#worldHit(guard.mesh.position.x, guard.mesh.position.z, 1.2) !== undefined) continue;
+      // Low: a 1.1 m crate between the two blocks the grab as well as a wall.
+      if (this.#worldHit(guard.mesh.position.x, guard.mesh.position.z, 0.4) !== undefined) continue;
       return guard;
     }
     return undefined;
@@ -264,7 +265,9 @@ export class Player extends Fighter {
   #bodyWithin(guards: readonly Guard[], reach: number): Guard | undefined {
     for (const guard of guards) {
       if (guard.state !== "down") continue;
-      if (this.mesh.position.distanceTo(guard.mesh.position) <= reach) return guard;
+      if (this.mesh.position.distanceTo(guard.mesh.position) > reach) continue;
+      if (this.#worldHit(guard.mesh.position.x, guard.mesh.position.z, 0.4) !== undefined) continue;
+      return guard;
     }
     return undefined;
   }
@@ -281,6 +284,13 @@ export class Player extends Fighter {
     if (target === undefined) return;
     this.held = target;
     this.dragging = undefined;
+    // The hold is a standing stance: nothing from the approach (run, crouch, wall) carries in.
+    this.running = false;
+    this.peek = 0;
+    this.#slide = 0;
+    this.idleAction = "idle";
+    this.walkAction = "walk";
+    this.body.velocity.set(0, 0, 0);
     this.pumps = 0;
     this.#holdTimer = HOLD_TIME;
     this.#crouched = false;

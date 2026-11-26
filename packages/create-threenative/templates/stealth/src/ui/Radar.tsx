@@ -51,6 +51,12 @@ export function Radar() {
   const py = (z: number): number => SIZE / 2 + (z - playerZ) * SCALE;
   // The mission's next step, as a marker: the keycard, then the door, then the pad.
   const objective = keycard === 0 ? KEYCARD : doorOpen === 0 ? DOOR : EXTRACTION;
+  // Beyond the radar's reach the marker sits on the rim, pointing the way.
+  const towardX = (objective.x - playerX) * SCALE;
+  const towardZ = (objective.z - playerZ) * SCALE;
+  const rim = (SIZE / 2 - 8) / Math.max(SIZE / 2 - 8, Math.hypot(towardX, towardZ));
+  const markX = SIZE / 2 + towardX * rim;
+  const markY = SIZE / 2 + towardZ * rim;
   if (radar === undefined) return null;
   const centre = SIZE / 2;
   return (
@@ -90,8 +96,8 @@ export function Radar() {
               />
             ))}
             <rect
-              x={px(objective.x) - 3.5}
-              y={py(objective.z) - 3.5}
+              x={markX - 3.5}
+              y={markY - 3.5}
               width={7}
               height={7}
               fill="none"

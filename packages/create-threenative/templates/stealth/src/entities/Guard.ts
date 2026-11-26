@@ -140,6 +140,8 @@ export class Guard extends Fighter {
   #caution = false;
   /** How many downed guards this one has found. */
   bodiesFound = 0;
+  /** True once this downed guard has been found and called in; cleared when it wakes. */
+  reported = false;
 
   constructor(ctx: GameCtx, model: IMannequin, patrol: Patrol, hooks: IGuardHooks) {
     const rifle = createRifle();
@@ -277,14 +279,15 @@ export class Guard extends Fighter {
       this.#becomeSuspicious(this.#interest);
     }
 
-    if (this.state !== "alert") {
+    // A guard already walking to a body ignores noises until it has dealt with it.
+    if (this.state !== "alert" && this.state !== "checkBody") {
       for (const noise of noises.noises) {
         const distance = Math.hypot(noise.x - this.mesh.position.x, noise.z - this.mesh.position.z);
         if (distance > noise.radius) continue;
         this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT);
         this.#becomeSuspicious(this.#toward.set(noise.x, 0, noise.z));
       }
-      if (this.state !== "checkBody") this.#lookForBodies(others);
+      this.#lookForBodies(others);
     }
 
     let speed = 0;
@@ -304,6 +307,8 @@ export class Guard extends Fighter {
         speed = this.#walkTo(this.#interest, PATROL_SPEED, dt, 0.8);
         // Cannot get there: look from here instead of walking into the wall again.
         if (this.#blocked) this.#interest.copy(this.mesh.position);
+        // Still walking (a new glimpse moved the spot): the full look-around waits for arrival.
+        if (speed > 0) this.#timer = 0;
         if (speed === 0) {
           if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
@@ -396,9 +401,11 @@ export class Guard extends Fighter {
     this.#marker.set(mood);
     this.cone.visible = this.conscious;
     // Caution widens the eyes (`halfAngle`); stretch the drawn fan so its edges match exactly.
-    this.cone.scale.x = this.#caution
-      ? Math.tan(GUARD_HALF_ANGLE * CAUTION_ANGLE) / Math.tan(GUARD_HALF_ANGLE)
-      : 1;
+    // Scaling x and z by the sine and cosine ratios puts each edge at the wider angle and the
+    // same 10 m reach.
+    const wide = GUARD_HALF_ANGLE * CAUTION_ANGLE;
+    this.cone.scale.x = this.#caution ? Math.sin(wide) / Math.sin(GUARD_HALF_ANGLE) : 1;
+    this.cone.scale.z = this.#caution ? Math.cos(wide) / Math.cos(GUARD_HALF_ANGLE) : 1;
     tintViewCone(this.cone, mood === "none" ? "patrol" : mood);
     if (this.state === "down" || this.state === "held") this.animateStill(dt);
     else
@@ -577,7 +584,7 @@ export class Guard extends Fighter {
 
   #lookForBodies(others: readonly Guard[]): void {
     for (const other of others) {
-      if (other === this || other.state !== "down") continue;
+      if (other === this || other.state !== "down" || other.reported) continue;
       const dx = other.mesh.position.x - this.mesh.position.x;
       const dz = other.mesh.position.z - this.mesh.position.z;
       const distance = Math.hypot(dx, dz);
@@ -603,6 +610,7 @@ export class Guard extends Fighter {
     if (this.#blocked) {
       // The body lies behind cover this guard cannot walk round: radio it in and search.
       director.disturbance(body.mesh.position.x, body.mesh.position.z);
+      body.reported = true;
       this.bodiesFound += 1;
       this.#bodyTarget = undefined;
       this.#startSearch(director);
@@ -611,6 +619,7 @@ export class Guard extends Fighter {
     if (this.#timer === 0) {
       this.play("check", { fade: 0.1, hold: 1.5 });
       director.disturbance(body.mesh.position.x, body.mesh.position.z);
+      body.reported = true;
       this.bodiesFound += 1;
     }
     this.#timer += dt;
@@ -625,6 +634,7 @@ export class Guard extends Fighter {
 
   #wake(): void {
     this.state = "patrol";
+    this.reported = false;
     this.#downTimer = 0;
     this.play("idle", { fade: 0.6 });
     this.#returnToRoute();
