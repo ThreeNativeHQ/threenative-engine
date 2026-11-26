@@ -94,13 +94,16 @@ export function gradeFor(cells: number): Exclude<Grade, "miss"> | undefined {
  * Grades one answer part against its notes. A press pairs with the nearest open note of the same
  * button inside the widest window (both the cell and the button must agree, `paired-hit-weight`).
  * A press that pairs with nothing is a stray press; in the top rating a stray press that lands on
- * an off-beat eighth with no note near it is freestyle instead.
+ * an off-beat eighth with no note near it is freestyle instead, once the line has a matched note
+ * and once per eighth.
  */
 export class LineJudge {
   readonly #notes: INoteState[];
   #presses = 0;
   #pairs = 0;
   #freestyle = 0;
+  /** Off-beat eighths already paid as freestyle: one bonus per slot, however many buttons hit it. */
+  readonly #freestyleSlots = new Set<number>();
 
   constructor(notes: readonly INote[]) {
     this.#notes = notes.map((note) => ({ note, result: undefined }));
@@ -137,21 +140,35 @@ export class LineJudge {
     const eighth = Math.round(beat * 2) / 2;
     const offBeat = (eighth * 2) % 2 !== 0;
     const cells = (beat - eighth) * CELLS_PER_BEAT;
+    // A miss is early or late against the nearest note of the same button, so a press far outside
+    // the windows still says which way it went wrong. With no such note it uses the eighth.
+    let missCells = cells;
+    let nearest = Number.POSITIVE_INFINITY;
+    for (const { note } of this.#notes) {
+      const away = (beat - note.beat) * CELLS_PER_BEAT;
+      if (note.button === button && Math.abs(away) < nearest) {
+        nearest = Math.abs(away);
+        missCells = away;
+      }
+    }
     const noteNear = this.#notes.some(
       ({ note }) => Math.abs(beat - note.beat) * CELLS_PER_BEAT <= BAD.early,
     );
     if (
       freestyleOpen &&
+      this.#pairs > 0 &&
       offBeat &&
+      !this.#freestyleSlots.has(eighth) &&
       !noteNear &&
       Math.abs(cells) <= COOL.early &&
       this.#freestyle < FREESTYLE_CAP
     ) {
       this.#freestyle += 1;
+      this.#freestyleSlots.add(eighth);
       return { beat, cells, freestyle: true, grade: "cool", timing: sign(cells) };
     }
     this.#presses += 1;
-    return { beat, cells, freestyle: false, grade: "miss", timing: sign(cells) };
+    return { beat, cells: missCells, freestyle: false, grade: "miss", timing: sign(missCells) };
   }
 
   /** Settles every note whose latest window has passed and returns the beats of the new misses. */

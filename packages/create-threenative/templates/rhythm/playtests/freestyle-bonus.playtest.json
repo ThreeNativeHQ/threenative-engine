@@ -180,6 +180,13 @@
       "release": true
     },
     {
+      "kind": "input",
+      "label": "l3-x0-dup",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
       "label": "l3-n1-ready",
       "waitForResource": {
         "id": "state",
@@ -323,10 +330,9 @@
         "atSteps": [
           {
             "label": "line-3-judged",
-            "equals": 0
+            "equals": 1
           }
-        ],
-        "allowTrivial": "Improvised presses are not strays; a miss here would mean the judge charged them."
+        ]
       },
       {
         "id": "state",
@@ -334,7 +340,7 @@
         "atSteps": [
           {
             "label": "line-3-judged",
-            "equals": 10
+            "equals": 9
           }
         ]
       },

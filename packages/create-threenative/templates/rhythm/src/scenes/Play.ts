@@ -227,7 +227,9 @@ export class Play extends Scene<GameState, undefined> {
       frame.songBeat = Math.floor(beat * 1000) / 1000;
       frame.beatCount = Math.floor(beat);
       frame.pulse = round(pulse, 100);
-      frame.lineIndex = Math.min(session.line, LINES.length - 1);
+      // `session.line` moves on when a line is judged, so a finished stage still shows its last line.
+      const shown = session.outcome === "playing" ? session.line : session.line - 1;
+      frame.lineIndex = Math.max(0, Math.min(shown, LINES.length - 1));
       frame.lineBeat = round(session.lineBeat);
       frame.called = session.called;
       frame.matched = session.matched;

@@ -91,7 +91,7 @@ export function BeatBar() {
         ))}
         {marks.map((mark) => (
           <span
-            key={`${mark.beat}-${mark.grade}-${mark.freestyle ? "f" : "n"}`}
+            key={mark.id}
             className={`absolute bottom-0 h-3 w-3 -translate-x-1/2 ${mark.freestyle ? "bg-text" : MARK_COLOUR[mark.grade]}`}
             style={{ left: at(Math.max(0, mark.beat)) }}
           />

@@ -10,6 +10,8 @@ export type Outcome = "playing" | "cleared" | "failed";
 
 /** One answer on the response bar: where it landed in the part and how it was graded. */
 export interface IMark {
+  /** Position in the line's mark list: a stable key for the response bar. */
+  readonly id: number;
   readonly beat: number;
   readonly grade: Grade;
   readonly timing: Timing;
@@ -130,6 +132,7 @@ export class Session {
     }
     this.marks.push({
       beat: result.beat,
+      id: this.marks.length,
       freestyle: result.freestyle,
       grade: result.grade,
       timing: result.timing,
@@ -140,7 +143,13 @@ export class Session {
 
   #miss(beat: number, events: SessionEvent[]): void {
     this.counts.miss += 1;
-    this.marks.push({ beat, freestyle: false, grade: "miss", timing: "late" });
+    this.marks.push({
+      beat,
+      freestyle: false,
+      grade: "miss",
+      id: this.marks.length,
+      timing: "late",
+    });
     this.listsDirty = true;
     events.push({ beat, kind: "miss" });
   }
