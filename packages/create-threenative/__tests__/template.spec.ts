@@ -1413,4 +1413,47 @@ describe("template contracts", () => {
       }
     }
   });
+
+  it("should document the asset MCP lean default and detailed AI projection modes", async () => {
+    const assetsSkill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    const capabilitiesSkill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const projectionRef = await readFile(
+      path.resolve("packages/create-threenative/agent-docs/references/texture-projection.md"),
+      "utf8",
+    );
+    for (const [label, doc] of [
+      ["threenative-assets/SKILL.md", assetsSkill],
+      ["threenative-capabilities/SKILL.md", capabilitiesSkill],
+      ["texture-projection.md", projectionRef],
+    ] as const) {
+      expect(doc, `${label} lean default`).toMatch(/default.*\blean\b|\blean\b.*default/iu);
+      expect(doc, `${label} detailed mode`).toMatch(/\bdetailed\b/u);
+    }
+    for (const [label, doc] of [
+      ["threenative-assets/SKILL.md", assetsSkill],
+      ["texture-projection.md", projectionRef],
+    ] as const) {
+      expect(doc, `${label} CLI flag`).toContain("--mode lean");
+      expect(doc, `${label} env var`).toContain("THREENATIVE_TEXTURE_MODE");
+    }
+    for (const template of await templateNames()) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, `${template} AGENTS.md lean default`).toMatch(
+        /default to `threenative-assets` `lean` mode/u,
+      );
+      expect(agents, `${template} AGENTS.md dual modes`).toMatch(
+        /`lean` default vs `detailed` AI mode/u,
+      );
+    }
+  });
 });
