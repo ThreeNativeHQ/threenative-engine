@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { ITEMS, Inventory } from "../templates/action-rpg/src/items/Inventory.js";
 import { rollDrops } from "../templates/action-rpg/src/loot/drops.js";
 import { launchTangent } from "../templates/action-rpg/src/render/vfx.js";
@@ -66,5 +66,90 @@ describe("action-RPG particle launch cone", () => {
       // A zero cross product is the NaN bitangent that loses the GPU device.
       expect(Math.hypot(...cross), JSON.stringify(direction)).toBeGreaterThan(0.1);
     }
+  });
+});
+
+describe("action-RPG cloud save", () => {
+  const SAVE_KEY = "threenative.action-rpg.progress";
+  const CACHED_KEY = `tn-backend:kv:${SAVE_KEY}`;
+  const INITIAL = { health: 100, room: 1, saveCount: 0 };
+
+  /** The page's localStorage, as much of it as the backend uses. */
+  function memoryStorage(seed: Record<string, string> = {}): Storage {
+    const items = new Map(Object.entries(seed));
+    return {
+      get length() {
+        return items.size;
+      },
+      clear: () => items.clear(),
+      getItem: (key: string) => items.get(key) ?? null,
+      key: (index: number) => [...items.keys()][index] ?? null,
+      removeItem: (key: string) => void items.delete(key),
+      setItem: (key: string, value: string) => void items.set(key, value),
+    } as Storage;
+  }
+
+  /** A share host that answers the probe and every value read with `value`. */
+  function hostFetch(value: unknown): typeof fetch {
+    return (async (input: RequestInfo | URL) => {
+      const headers = { "x-threenative-backend": "1" };
+      return String(input).endsWith("/v1/db")
+        ? new Response("{}", { headers })
+        : new Response(JSON.stringify({ value, version: 2 }), { headers });
+    }) as typeof fetch;
+  }
+
+  /** The module is imported per test because it builds one backend for the page at import time. */
+  async function freshProgress() {
+    vi.resetModules();
+    return import("../templates/action-rpg/src/progress.js");
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.resetModules();
+  });
+
+  it("keeps a save written before the backend owned the local layer", async () => {
+    const storage = memoryStorage({ [SAVE_KEY]: JSON.stringify({ room: 3, saveCount: 7 }) });
+    vi.stubGlobal("localStorage", storage);
+    vi.stubGlobal("fetch", undefined);
+    const progress = await freshProgress();
+
+    await expect(progress.hydrateProgress(INITIAL)).resolves.toMatchObject({
+      health: 100,
+      room: 3,
+      saveCount: 7,
+    });
+    expect(storage.getItem(CACHED_KEY), "written through to the backend's cache").toContain(
+      '"room":3',
+    );
+    expect(storage.getItem(SAVE_KEY), "the only copy when the write cannot land").not.toBeNull();
+    expect(progress.loadProgress(INITIAL)).toMatchObject({ room: 3, saveCount: 7 });
+  });
+
+  it("restores hosted progress after localStorage is cleared and the cookie is kept", async () => {
+    vi.stubGlobal("localStorage", memoryStorage());
+    vi.stubGlobal("fetch", hostFetch({ health: 40, room: 2, saveCount: 11 }));
+    const progress = await freshProgress();
+
+    await expect(progress.hydrateProgress(INITIAL)).resolves.toMatchObject({
+      health: 40,
+      room: 2,
+      saveCount: 11,
+    });
+  });
+
+  it("runs with no host and no storage, and never throws a save away", async () => {
+    vi.stubGlobal("localStorage", undefined);
+    vi.stubGlobal("fetch", undefined);
+    const progress = await freshProgress();
+
+    await expect(progress.hydrateProgress(INITIAL)).resolves.toEqual(INITIAL);
+    expect(() =>
+      progress.saveProgress({ getState: () => ({ room: 3, saveCount: 9 }) }),
+    ).not.toThrow();
+    await Promise.resolve();
+    expect(progress.loadProgress(INITIAL)).toMatchObject({ room: 3, saveCount: 9 });
   });
 });

@@ -55,6 +55,7 @@ export const chromium = {
 export function assertCaptureNotBlank(): void {
   if (state.blank) throw new Error("TN_CAPTURE_BLANK");
 }
+export async function assertBrowserCaptureNotBlank(): Promise<void> { assertCaptureNotBlank(); }
 export async function loadPlaytestScenario() {
   return { target: state.target, viewport: { width: 640, height: 480 }, warmupFrames: 0, steps: [{ waitTicks: 1 }] };
 }

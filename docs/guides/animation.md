@@ -48,7 +48,34 @@ The map form, such as `{ walk: "Walk_Cycle" }`, checks the values. It does not r
 and holds the last frame.
 
 Clips need a skeleton that matches the model's bone hierarchy. Renaming a clip only changes its
-label. To use animations from another rig, retarget them in your asset tools first.
+label. To use animations from another rig, retarget them onto your skeleton with the asset MCP's
+`asset_retarget_animations` before they enter `assets/`: it fetches the donor releases, fits their
+clips to a prepared target skeleton and writes each one back into a GLB. Inspect with
+`asset_inspect_rig` first, and preview the result with `asset_preview_animation`.
+
+## Compose locomotion and actions
+
+`SkeletalMesh3D` plays one clip at a time. `AnimationComposer` layers several on one mixer:
+
+```ts
+import { AnimationComposer, BlendSpace1D } from "@threenative/core";
+
+const animation = new AnimationComposer({ root: rig, clips, samples: ["walk", "run"] });
+const blend = new BlendSpace1D([0, 2]);
+animation.setWeights(blend.sample(speed));
+animation.update(dt);
+```
+
+| Class | Does |
+| --- | --- |
+| `AnimationComposer` | One base phase, one masked override (reload the upper body while locomotion continues), at most two additive layers and eight actions. Source clips stay immutable. |
+| `BlendSpace1D`, `BlendSpace2D` | Select finite, normalized weights from sorted thresholds or a fixed triangulation — speed for 1D, forward and strafe intent for 2D. Duplicate samples and collinear triangles throw at initialization. |
+| `SpringBoneChain3D` | Unreal's `AnimNode_SpringBone`: a ponytail, tail or ears that swing. CPU, fixed step, at most 32 bones per chain; call `step(dt)` once per fixed step. |
+| `attachToBone` | Put a game-owned object in a named bone: `attachToBone(character, "RightHand", rifle)`. |
+
+Root motion needs its own rig below the body: advance the rig, call `CharacterBody3D.move`, finish
+with the observed accepted motion after physics, then run existing IK. It excludes velocity-driven
+stride sync, and an unsupported parent transform throws.
 
 Check a new character in the game:
 

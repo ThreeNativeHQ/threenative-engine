@@ -2,7 +2,6 @@ import type { ChildProcess } from "node:child_process";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { chromium, type Browser, type BrowserContext, type Page } from "playwright";
-import { assertCaptureNotBlank } from "../capture.js";
 import { loadPlaytestScenario, PLAYTEST_STARTUP_READY_TIMEOUT_MS, type IPlaytestCaptureProvenance } from "../index.js";
 import type { IPlaytestBridgeClient } from "./bridgeClient.js";
 import { resolveBrowserArguments, softwareAdapterName, WEBGPU_BROWSER_ARGS } from "./browser.js";
@@ -16,7 +15,7 @@ import { readCaptureProvenance } from "./observationSampling.js";
 import { acquireRunnerCaptureLock, provideRunDisplay } from "./runner-support.js";
 import { assertManagedUrlAvailable, findFreePort, startManagedServer, stopManagedServer, waitForUrl, withPort } from "./server.js";
 import { waitForStartupReady } from "./startupReady.js";
-import { waitFrames } from "./steps.js";
+import { assertBrowserCaptureNotBlank, waitFrames } from "./steps.js";
 
 export interface IBrowserCaptureSession {
   readonly bridge: IPlaytestBridgeClient;
@@ -216,7 +215,7 @@ export async function withBrowserCapture<T>(
           // A failed recapture must not leave a previous run's PNG looking like new evidence.
           await rm(destination, { force: true });
           const bytes = await activePage.screenshot({ timeout: active.timeoutMs });
-          assertCaptureNotBlank(bytes, `${label}.png`);
+          await assertBrowserCaptureNotBlank(activePage, bytes, `${label}.png`);
           await writeFile(destination, bytes);
           return destination;
         });

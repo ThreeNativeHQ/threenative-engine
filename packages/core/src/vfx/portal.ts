@@ -1,4 +1,3 @@
-import type { IComputeDriven } from "@threenative/core";
 import { InstancedMesh, PlaneGeometry } from "three";
 import {
   Fn,
@@ -17,24 +16,39 @@ import {
   vec3,
   vec4,
 } from "three/tsl";
-import { type ComputeNode, MeshBasicNodeMaterial, type StorageBufferNode } from "three/webgpu";
-import * as THREE from "three/webgpu";
-import { type ArchiveLayer, godotPortalVortexLayers } from "./archivePresets.js";
-import { type IParticleOptions, createDonorParticle } from "./fireSmokeWeather.js";
+import {
+  type ComputeNode,
+  MeshBasicNodeMaterial,
+  type Node,
+  type StorageBufferNode,
+} from "three/webgpu";
+import * as three from "three/webgpu";
+import type { IComputeDriven } from "../compute-driven.js";
+import {
+  type IParticleOptions,
+  type IVfxOverrides,
+  createDonorParticle,
+  layerAmount,
+  overrideLayer,
+  presetClock,
+} from "./particles.js";
+import { type ArchiveLayer, godotPortalVortexLayers } from "./presets.js";
 
 type ComputeRenderer = Parameters<IComputeDriven["process"]>[0];
 
-function ribbonAmount(layer: ArchiveLayer): number {
-  return Math.max(24, Math.min(96, Math.round(Math.sqrt(layer.capacity) * 2.5)));
-}
-
-function layerPhase(layer: ArchiveLayer, seed: number) {
+function layerPhase(layer: ArchiveLayer, seed: number, age: Node<"float">) {
   const lifetime = float(layer.lifetime[0]).add(
     hash(instanceIndex.add(seed + 53)).mul(layer.lifetime[1] - layer.lifetime[0]),
   );
-  return fract(time.div(lifetime).add(hash(instanceIndex.add(seed + 59))));
+  return fract(age.div(lifetime).add(hash(instanceIndex.add(seed + 59))));
 }
 
+/**
+ * The GPU ribbon field that spirals into a portal vortex; `createPortalVortex` builds it.
+ * @situation the spiral ribbons of a portal or a warp gate
+ * @constraint build it with `createPortalVortex`, then add it with ctx.add; it is compute-driven
+ * @example ctx.add(createPortalVortex().ribbons);
+ */
 export class RibbonField extends InstancedMesh implements IComputeDriven {
   readonly warmupNodes: readonly ComputeNode[];
   readonly capacity: number;
@@ -45,17 +59,16 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
   #released = false;
   #dispatches = 0;
 
-  constructor(layer: ArchiveLayer, seed: number) {
-    const capacity = ribbonAmount(layer);
+  constructor(layer: ArchiveLayer, seed: number, capacity: number, age: Node<"float"> = time) {
     const positions = instancedArray(capacity, "vec3");
     const color = layer.color;
     const material = new MeshBasicNodeMaterial({
-      blending: THREE.AdditiveBlending,
+      blending: three.AdditiveBlending,
       depthWrite: false,
       toneMapped: false,
       transparent: true,
     });
-    const phase = layerPhase(layer, seed);
+    const phase = layerPhase(layer, seed, age);
     const radius = layer.shape.type === "sphereSurface" ? layer.shape.radius : 0.38;
     const swirl = hash(instanceIndex.add(seed + 3)).mul(Math.PI * 2);
     material.positionNode = positionLocal.add(positions.element(instanceIndex));
@@ -71,9 +84,9 @@ export class RibbonField extends InstancedMesh implements IComputeDriven {
         .assign(vec3(cos(swirl).mul(radius), sin(swirl).mul(radius), sin(swirl.mul(2)).mul(0.08)));
     })().compute(capacity);
     const process = Fn(() => {
-      const currentPhase = layerPhase(layer, seed);
+      const currentPhase = layerPhase(layer, seed, age);
       const angle = swirl
-        .add(time.mul(layer.vortex?.strength ?? 1))
+        .add(age.mul(layer.vortex?.strength ?? 1))
         .add(currentPhase.mul(layer.vortex?.strength ?? 1));
       const currentRadius = float(radius).add(
         currentPhase.mul(layer.velocity.speed[1]).mul(layer.lifetime[1]),
@@ -151,15 +164,26 @@ export interface IPortalVortex {
   readonly gpuCapacity: number;
 }
 
-export function createPortalVortex(seed = 229): IPortalVortex {
+export function createPortalVortex(overrides: IVfxOverrides = {}): IPortalVortex {
+  const seed = overrides.seed ?? 229;
   const layers = godotPortalVortexLayers([0, 0, 0]);
   const ringLayer = layers[0];
   const ribbonLayer = layers[1];
   if (ringLayer === undefined || ribbonLayer === undefined) {
     throw new Error("Donor godot-portal-vortex must contain ring and ribbon layers.");
   }
-  const ring = createDonorParticle(ringLayer, seed);
-  const ribbons = new RibbonField(ribbonLayer, seed + 1);
+  const ring = createDonorParticle(
+    overrideLayer(ringLayer, overrides),
+    seed,
+    layerAmount(ringLayer, overrides.amount),
+    overrides[presetClock],
+  );
+  const ribbons = new RibbonField(
+    overrideLayer(ribbonLayer, overrides),
+    seed + 1,
+    layerAmount(ribbonLayer, overrides.amount),
+    overrides[presetClock]?.age,
+  );
   return {
     ring,
     ribbons,

@@ -1909,6 +1909,7 @@ export type {
  * Raycast the game scene using the framework's picker.
  * @situation select an object under the pointer
  * @situation interact with the first collider or mesh hit
+ * @situation find which target a shot hit, so the struck target can score and react
  * @supersedes new Raycaster(
  * @example const picker = new ScenePicker({ camera: ctx.camera, scene: ctx.scene, pointer: () => ctx.input.raw.pointer, viewport: ctx.viewport });
  */
@@ -2193,3 +2194,12 @@ export { InputMap } from "./input.js";
  * @example canvas.addEventListener("click", () => captureMouse(canvas));
  */
 export { captureMouse } from "./input.js";
+
+export { PARTICLE_KINDS } from "./particle-kinds.js";
+export { VFX_PRESETS, createVfxPreset } from "./vfx/catalog.js";
+export type {
+  IVfxPreset,
+  IVfxPresetEffect,
+  IVfxPresetOverrides,
+  VfxPresetCategory,
+} from "./vfx/catalog.js";

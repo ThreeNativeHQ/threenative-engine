@@ -87,6 +87,10 @@
       "types": "./dist/spells/ultra/index.d.ts",
       "import": "./dist/spells/ultra/index.js"
     },
+    "./vfx": {
+      "types": "./dist/vfx/index.d.ts",
+      "import": "./dist/vfx/index.js"
+    },
     "./package.json": "./package.json"
   },
   "publishConfig": {
@@ -112,6 +116,7 @@
     "@types/react": "catalog:",
     "@types/react-reconciler": "0.32.1",
     "@types/three": "0.187.0",
+    "esbuild": "catalog:",
     "publint": "0.3.22",
     "react": "catalog:",
     "react-reconciler": "0.33.0",

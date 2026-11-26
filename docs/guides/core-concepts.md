@@ -97,6 +97,45 @@ re-entering each scene.
 To show a game object in diagnostics and playtest observations, register it with
 `ctx.entities.add(id, object)`. The object itself can stay a plain TypeScript class.
 
+## Development reload and replays
+
+Editing a file under `src/` in `pnpm dev` rebuilds the module without losing the session.
+`acceptHotUpdate(game, import.meta.hot)` registers that restore in the web development entry. The
+state store is what crosses the boundary, so it must be portable: finite numbers and plain objects
+only. `assertPortableState(state)` enforces it and names the value that cannot cross.
+
+```ts
+import { acceptHotUpdate } from "@threenative/core/hot";
+
+acceptHotUpdate(game, import.meta.hot);
+```
+
+`replay()` is the same idea for a whole session: a plugin that records the input of each tick and
+plays it back, so a bug the player hit is reproducible. Seeded random and a fixed-step simulation
+are what make a replay mean anything. `replay({ portable: true })` lets another host with the same
+simulation contract replay a recording; without it a recording belongs to the host that made it.
+`createReplayDriver(recording, target)` dispatches a recording against a target element when you
+drive a page or a test rather than a plugin.
+
+## Run the game off the page thread
+
+A busy page — a heavy React tree, a large parse — delays the frame. The game can run in a web worker
+instead, with the page left owning only the canvas, input forwarding and the HUD bridge.
+
+```ts
+import { startWorkerGame } from "@threenative/core/worker"; // in the page entry
+import { serveWorkerGame } from "@threenative/core/worker"; // in the worker entry
+```
+
+In the worker entry, call `serveWorkerGame(game)` last, after the game module evaluated: it posts the
+ready message the page waits for before it sends the canvas. In the page entry, call
+`startWorkerGame(worker, container)` **before** the UI mounts — it returns `{ ready, stop }`, and the
+HUD's bridge host globals exist only from that call on. It throws `TN_WORKER_HOST_REQUIRED` when it
+runs outside a page.
+
+A worker has no DOM, so the parts that touch it — a web HUD, a canvas-only effect, a library that
+reads `document` — stay on the page side of the bridge.
+
 ## Plugins
 
 A plugin connects a reusable service to the game lifecycle. It is either a function that takes
@@ -112,4 +151,7 @@ game object.
 - [scene.ts](../../packages/core/src/scene.ts)
 - [game.ts](../../packages/core/src/game.ts)
 - [state.ts](../../packages/core/src/state.ts)
+- [hot.ts](../../packages/core/src/hot.ts)
+- [replay.ts](../../packages/core/src/replay.ts)
+- [worker.ts](../../packages/core/src/worker.ts)
 - [minimal template Play.ts](../../packages/create-threenative/templates/minimal/src/scenes/Play.ts)

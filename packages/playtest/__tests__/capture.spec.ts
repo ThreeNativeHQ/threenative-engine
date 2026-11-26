@@ -121,3 +121,28 @@ test("tone uses Rec.709 luminance and ignores fully transparent pixels", () => {
   expect(stats.tone).toEqual({ mean: (54 + 182 + 18) / 3, p1: 18, p50: 54, p99: 182, clipFraction: 0, blackFraction: 0 });
   expect(inspectFrame(image([[255, 255, 255, 0]])).tone).toBeUndefined();
 });
+
+/** A dark frame: `glow` pixels of bright effect and `label` pixels of white HTML text. */
+function darkScene(glow: number, label: number): Buffer {
+  const png = new PNG({ height: 100, width: 100 });
+  for (let i = 0; i < 10_000; i += 1) {
+    const value = i < glow ? 180 + (i % 70) : i >= 10_000 - label ? 250 : 3 + (i % 9);
+    png.data.set([value, value, value, 255], i * 4);
+  }
+  return PNG.sync.write(png);
+}
+
+test("a dark scene under bright labels passes when its canvas alone has content", async () => {
+  const { assertBrowserCaptureNotBlank } = await import("../src/runner/steps.js");
+  const page = (canvasOnly: Buffer) =>
+    ({ screenshot: async () => canvasOnly }) as unknown as import("playwright").Page;
+  const frame = darkScene(150, 200);
+  expect(() => assertCaptureNotBlank(frame, "gallery.png")).toThrow("bright pixel ratio");
+  await expect(
+    assertBrowserCaptureNotBlank(page(darkScene(150, 0)), frame, "gallery.png"),
+  ).resolves.toMatchObject({ width: 100 });
+  // The same labels over a blank canvas: the canvas alone is uniform.
+  await expect(
+    assertBrowserCaptureNotBlank(page(image([[3, 3, 3, 255]])), frame, "gallery.png"),
+  ).rejects.toThrow("TN_CAPTURE_BLANK: gallery.png (canvas only)");
+});

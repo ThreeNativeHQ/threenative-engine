@@ -12,16 +12,6 @@ export interface INotOwnedCapability {
 export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   {
     guidance:
-      "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
-    id: "save-load",
-    situations: [
-      "persist a player's progress between sessions",
-      "save player progress between sessions",
-      "load a saved game state",
-    ],
-  },
-  {
-    guidance:
       "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
     id: "inventory",
     situations: ["inventory system", "manage inventory contents"],
@@ -34,7 +24,7 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   },
   {
     guidance:
-      "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
+      "The framework runs hosted rooms in @threenative/backend: createBackend().rooms.create(), .join(code) or .quickJoin() open a lobby, room.send() reaches everybody or one peer and room.state is ordered by the room's Durable Object, and a pair of players upgrades those messages to an ordered WebRTC data channel when both can reach each other (the relay is the fallback, and rtc: { iceServers: [] } forces it). The authenticated transport seam stays at @threenative/core/net: import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Not owned: authoritative replication, snapshots, prediction, interpolation and rejoin policy, which stay game rules in your project's src/ on either transport.",
     id: "networked-multiplayer",
     situations: ["authoritative replication", "client prediction"],
   },

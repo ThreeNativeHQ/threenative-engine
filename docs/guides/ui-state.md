@@ -89,11 +89,22 @@ scene update 3D objects and let React update the interface.
 
 | Value | What you get |
 | --- | --- |
-| `"web"` (default) | React DOM, CSS, SVG and fonts on every target, drawn over the game surface by the platform's web renderer |
-| `"native"` | React mapped to `CanvasLayer` quads inside the rendered frame. No web view, no CSS, no extra process. |
+| `"web"` (default) | React DOM, CSS, SVG and fonts, on every target, drawn over the game surface by that platform's own browser-class renderer. What is guaranteed is source parity — one `src/ui/` — not browser-binary parity. |
+| `"native"` | React mapped to `CanvasLayer` quads inside the rendered frame. No web view, no CSS, no second process. Choose it for a UI that is part of the frame; own the appearance difference. |
+| `"native-css"` | The same React tree in the game's own JS realm — no web view, no second process — painted by a native CSS engine, from the same Vite + Tailwind build the web renderer uses. Desktop only, experimental, opt-in. |
 
 The starter template uses `"web"` with a React HUD and menu. The minimal template uses `"native"`,
 draws its HUD in the scene and has no `src/ui/`.
+
+Each non-web value has its own entry, both subpaths of `@threenative/core`:
+
+| Renderer | Imports | React vocabulary |
+| --- | --- | --- |
+| `"native"` | `@threenative/core/react` | `View` and `Text`, borrowed from React Native rather than invented. No DOM, no WebView, no stylesheet. |
+| `"native-css"` | `@threenative/core/react-css` | The HTML you already write: `div`, `section`, `button`, `className`, `style`, `data-*`, `aria-*`. Same component on web and phone. |
+
+Both are subpaths because `react` and `react-reconciler` are optional peers: a game with no React
+overlay pays nothing, and core stays consumable from React Three Fiber.
 
 `DebugOverlay` shows development diagnostics. Press backtick to open it. Generated projects include
 its styles. If you add it to another project, supply CSS that positions it above the canvas.

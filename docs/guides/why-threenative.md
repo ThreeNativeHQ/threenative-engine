@@ -8,8 +8,9 @@ physics, asset builds, a HUD, playtests that fail closed, and a native runtime t
 
 Write the game once in TypeScript. Run it in a browser with WebGPU, as a desktop binary, and on an
 Android phone, where the native runtime renders the same build at roughly twice the frame rate of
-Chrome on that phone. Your agent gets a searchable manifest of every engine API and four MCP servers
-for assets, and a playtest harness checks gameplay instead of screenshots you eyeball.
+Chrome on that phone. Your agent gets a searchable manifest of every engine API and six MCP servers
+for assets, terrain, sculpting, animation, engine capability and browser devtools, and a playtest
+harness checks gameplay instead of screenshots you eyeball.
 
 Everything is MIT-licensed npm packages. You keep plain Three.js meshes, materials, cameras and
 loaders, and your game is ordinary source you review and version like any other code.
@@ -51,7 +52,8 @@ An agent that cannot see what already exists rewrites it. ThreeNative gives it t
 
 - A capability manifest of every public engine API, searchable by the situation you are in. The
   [API reference](../../packages/core) on this site is generated from it.
-- Four MCP servers wired by one install: assets, sculpting, Blender and engine capability search.
+- Six MCP servers wired by one install: assets, terrain, sculpting, animation, engine capability
+  search and browser devtools.
 - A generated `AGENTS.md` in every project that routes each kind of task to the right tool.
 - Playtests the agent can run itself, which fail closed instead of passing on a blank frame.
 
@@ -60,7 +62,7 @@ An agent that cannot see what already exists rewrites it. ThreeNative gives it t
 | Area | What you get | Read |
 | --- | --- | --- |
 | Game structure | `defineGame`, scenes with enter, update and exit, typed state, entities, hot reload | [Scenes and the game loop](core-concepts.md) |
-| Rendering | WebGPU with WebGL2 fallback, render settings as project source, post effects, virtual geometry for dense meshes, automatic draw-call collapse | [Rendering](rendering.md) |
+| Rendering | WebGPU, render settings as project source, post effects, virtual geometry for dense meshes, automatic draw-call collapse | [Rendering](rendering.md) |
 | Input | Named actions over keyboard, mouse, touch, gamepad, scroll and pinch; pointer raycasts | [Input](input.md) |
 | Physics | Rapier with character and rigid bodies, spatial queries, navmesh pathfinding on the web | [Physics](physics.md) |
 | Assets | glTF loading with progress, a build-time compile step, texture atlases, mesh LODs, audio conditioning, Unreal and Fab imports | [Assets](assets.md) |
@@ -76,12 +78,14 @@ An agent that cannot see what already exists rewrites it. ThreeNative gives it t
 
 - **A browser-only demo under about 500 lines.** Vanilla Three.js is less to learn, and the starter
   costs more than it saves at that size.
-- **An App Store release.** iOS runs in the simulator only. No iOS hardware is qualified yet.
+- **An App Store release.** iOS builds and runs in the simulator only, unsigned. No iOS hardware is
+  qualified yet.
 - **An editor, a scene format or visual scripting.** ThreeNative is code-first by design and will
   not add them. Godot, Unity or Unreal fit that workflow better.
 - **Navmesh pathfinding on native.** It is browser-only today.
-- **A native prebuilt for Windows, Android or iOS from a clean install.** The prebuilt runtime is
-  Linux x64. Other hosts build the runtime from source.
+- **A downloadable prebuilt for macOS.** Windows x64, Linux x64 and Android publish one, and so does
+  the iOS simulator. macOS rows are built and verified on every release but not published, because
+  Gatekeeper refuses an unsigned bundle: build the runtime from source there.
 
 See [Compare engines](comparison.md) for Godot, Unity and Unreal side by side, or
 [get started](getting-started.md) with your first scene.

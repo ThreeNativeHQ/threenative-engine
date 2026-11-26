@@ -65,14 +65,8 @@ export interface IDoctorRequest {
  * Release signing is owned by the game, never by the engine, so doctor only reports whether the
  * developer supplied them — it never reads a value, and never prints one.
  *
- * `packages/runtime-native/scripts/package-android.mjs` (PRD-212 phase 3) is the consumer that
- * must read the same four names; this constant is the single place they are spelled.
- *
- * **Nothing reads them yet.** On `main` the Android packager contains no `ORG_GRADLE_PROJECT_`
- * string and only runs `assembleDebug`, so today these are a forecast of PRD-212's contract, not a
- * description of a build that exists. When PRD-212 lands, either it reads exactly these four or
- * this constant changes with it in the same PR — the two drifting apart is how doctor would start
- * predicting a prerequisite no build has.
+ * `packages/runtime-native/scripts/package-android.mjs` is the consumer: it reads exactly these
+ * four, and its own list is the one a test holds equal to this constant, so the two cannot drift.
  */
 export const ANDROID_RELEASE_SIGNING_ENV = [
   "ORG_GRADLE_PROJECT_threenativeKeystore",

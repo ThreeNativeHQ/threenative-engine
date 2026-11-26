@@ -102,10 +102,17 @@ const EMPTY_DOCUMENTATION: IParsedDocumentation = {
 };
 
 /**
- * Exports intentionally excluded from this manifest must be named here with a reason. The list is
- * empty today: every exported class and function is a discoverable engine capability.
+ * Exports intentionally excluded from this manifest must be named here with a reason. Every other
+ * exported class and function is a discoverable engine capability.
  */
-export const CAPABILITY_ALLOWLIST: readonly ICapabilityAllowlistEntry[] = [];
+export const CAPABILITY_ALLOWLIST: readonly ICapabilityAllowlistEntry[] = [
+  {
+    package: "@threenative/backend",
+    symbol: "BackendRoom",
+    reason:
+      "Durable Object class a host binds and lists in its migrations; a game reaches a room through the client, never by importing this.",
+  },
+];
 
 export function validateCapabilityAllowlist(allowlist: readonly ICapabilityAllowlistEntry[]): void {
   const invalid = allowlist.filter(
