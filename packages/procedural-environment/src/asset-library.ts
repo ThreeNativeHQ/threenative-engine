@@ -17,6 +17,7 @@ import { railAccent, railModules } from "./rail.js";
 import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { type IStylizedAsset, stylizedAssets } from "./stylized.js";
+import { tavernAccent, tavernModules } from "./tavern.js";
 import {
   deskLampTilt,
   workshopAccent,
@@ -116,6 +117,20 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         default: false,
         only: litMechanismModules.map((id) => `mechanism-${id}`),
       },
+    ],
+    tavern: [
+      { key: "accent", label: "Wood tint", type: "color", default: tavernAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      ...tavernModules.map(
+        ({ width, id }): IControl => ({
+          key: "width",
+          label: "Width",
+          type: "range",
+          step: 0.01,
+          ...width,
+          only: [`tavern-${id}`],
+        }),
+      ),
     ],
     workshop: [
       { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
@@ -449,6 +464,15 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("active", toggle(q, "active")),
       });
+    case "tavern":
+      return pkg.bakeTavern({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("width", num(q, "width")),
+      });
     case "workshop":
       return pkg.bakeWorkshop({
         module: q.get("id") ?? "",
@@ -539,6 +563,7 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  tavern: { name: "Tavern Kit" },
   workshop: { name: "Workshop Kit" },
   logistics: { name: "Logistics Kit" },
   sports: { name: "Sports Kit" },
@@ -574,6 +599,7 @@ const CATALOG_TAGS: Record<
   debris: { style: "realistic", settings: ["natural"], category: "Forest debris" },
   rock: { style: "realistic", settings: ["natural"], category: "Rock formations" },
   city: { style: "realistic", settings: ["modern"] },
+  tavern: { style: "realistic", settings: ["medieval", "fantasy"] },
   station: { style: "stylized", settings: ["sci-fi"] },
   frontier: { style: "stylized", settings: ["sci-fi", "industrial"] },
   pickup: { style: "stylized", settings: ["modern"] },

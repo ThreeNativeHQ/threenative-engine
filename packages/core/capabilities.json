@@ -8781,6 +8781,27 @@
       "symbol": "bakeStation"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "Width changes the length along local X; tabletop and counter heights and depths stay fixed before scale",
+        "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height"
+      ],
+      "example": "await bakeTavern({ module: \"tavern-dining-set\", width: 2.2, out: \"assets/tavern\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter",
+        "assemble a tavern dining table with two matching benches and four seat anchors"
+      ],
+      "summary": "Bake realistic medieval tavern furniture using shared compressed Poly Haven wood maps.",
+      "supersedes": [],
+      "symbol": "bakeTavern"
+    },
+    {
       "aliases": [
         "trees",
         "palm trees",

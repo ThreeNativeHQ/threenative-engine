@@ -48,6 +48,7 @@ import {
   stationModules,
   stationRoofModules,
 } from "./station.js";
+import { type IBakeTavernOptions, buildTavern, tavernAccent, tavernModules } from "./tavern.js";
 import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 import {
   type IBakeWorkshopOptions,
@@ -73,6 +74,7 @@ export type { IBakePickupOptions } from "./pickups.js";
 export type { IBakeRailOptions } from "./rail.js";
 export type { IBakeSportsOptions } from "./sports.js";
 export type { IBakeStationOptions } from "./station.js";
+export type { IBakeTavernOptions } from "./tavern.js";
 export type { IBakeWorkshopOptions } from "./workshop.js";
 
 export interface IVegetationPreset {
@@ -650,7 +652,8 @@ export type EnvironmentKind =
   | "rail"
   | "sports"
   | "logistics"
-  | "workshop";
+  | "workshop"
+  | "tavern";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -687,6 +690,7 @@ const KINDS: readonly EnvironmentKind[] = [
   "sports",
   "logistics",
   "workshop",
+  "tavern",
 ];
 
 /**
@@ -830,6 +834,14 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeWorkshop({ module: "workshop-${id}", out: "assets/environment" })`,
   }));
+  const tavern = tavernModules.map(({ id, name, category }) => ({
+    id: `tavern-${id}`,
+    name,
+    kind: "tavern" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeTavern({ module: "tavern-${id}", out: "assets/environment" })`,
+  }));
   const elements = [
     ...plants,
     ...rocks,
@@ -842,6 +854,7 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     ...sports,
     ...logistics,
     ...workshop,
+    ...tavern,
   ];
   return elements.filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
@@ -1356,6 +1369,32 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
 }
 
 /**
+ * Bake realistic medieval tavern furniture using shared compressed Poly Haven wood maps.
+ * @situation furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter
+ * @situation assemble a tavern dining table with two matching benches and four seat anchors
+ * @constraint Width changes the length along local X; tabletop and counter heights and depths stay fixed before scale
+ * @constraint Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
+ */
+export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakeTavern", "tavern", tavernModules, tavernAccent);
+  const range = tavernModules.find(({ id }) => id === kit.id)?.width;
+  const widthSuffix = furnitureDimension(
+    "bakeTavern",
+    "width",
+    options.width,
+    range,
+    options.module,
+  );
+  const width = options.width ?? range?.default;
+  if (width === undefined) throw new Error(`bakeTavern: no width for ${options.module}`);
+  const filename = kit.filename.replace(/\.glb$/u, `${widthSuffix}.glb`);
+  const group = buildTavern(kit.id, { ...kit, width }, await loadWorkshopVeneer());
+  return writeStaticKit(group, options.out, filename, true);
+}
+
+/**
  * Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.
  * @situation bake configurable furniture for a workshop, apartment, safehouse or office
  * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
@@ -1380,13 +1419,26 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     workshopModules,
     workshopAccent,
   );
-  const widthSuffix = workshopDimension("width", options.width, workshopWidths[kit.id], kit.id);
-  const heightSuffix = workshopDimension("height", options.height, workshopHeights[kit.id], kit.id);
-  const tiltSuffix = workshopDimension(
+  const widthSuffix = furnitureDimension(
+    "bakeWorkshop",
+    "width",
+    options.width,
+    workshopWidths[kit.id],
+    options.module,
+  );
+  const heightSuffix = furnitureDimension(
+    "bakeWorkshop",
+    "height",
+    options.height,
+    workshopHeights[kit.id],
+    options.module,
+  );
+  const tiltSuffix = furnitureDimension(
+    "bakeWorkshop",
     "tilt",
     options.tilt,
     kit.id === "desk-lamp" ? deskLampTilt : undefined,
-    kit.id,
+    options.module,
   );
   const seatRange = workshopSeatCounts[kit.id];
   const { open, seats = seatRange?.default, shelves, lit } = options;
@@ -1437,16 +1489,17 @@ function workshopState(
   return value ? `-${key}` : "";
 }
 
-function workshopDimension(
+function furnitureDimension(
+  caller: string,
   key: "width" | "height" | "tilt",
   value: number | undefined,
   range: { min: number; max: number; default: number } | undefined,
   module: string,
 ): string {
   if (value === undefined) return "";
-  if (!range) throw new Error(`bakeWorkshop: ${key} does not apply to workshop-${module}`);
+  if (!range) throw new Error(`${caller}: ${key} does not apply to ${module}`);
   if (!Number.isFinite(value) || value < range.min || value > range.max) {
-    throw new Error(`bakeWorkshop: ${key} must be between ${range.min} and ${range.max}`);
+    throw new Error(`${caller}: ${key} must be between ${range.min} and ${range.max}`);
   }
   return value === range.default ? "" : `-${key[0]}${value}`;
 }

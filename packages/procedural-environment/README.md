@@ -43,6 +43,23 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Tavern Kit
+
+Filter by **Realistic** and **Medieval** for the trestle table, plank bench, serving counter,
+and dining set. Change **Width** independently of the height and depth. **Wood tint**, **Seed**
+and **Scale** vary the finish and size using the shared compressed wood maps.
+
+```ts
+await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
+```
+
+Use `tavern-tabletop` for dishes or props. The standalone bench exposes `bench-seat-left`
+and `bench-seat-right`, pointing along local +Z. The dining set prefixes these with `north-`
+and `south-`, with the seats facing the table. The counter has `counter-surface` and
+`counter-shelf` on the usable surfaces. Its customer side faces +Z. Join counters of the
+same scale by aligning `counter-join-left` and `counter-join-right` with their local +Z axes
+pointing toward each other.
+
 ### Workshop Kit
 
 Open **Workshop Kit** for workshop, bedroom, lounge, dining, kitchen, bathroom and office furniture.

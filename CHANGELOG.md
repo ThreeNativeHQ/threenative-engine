@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- The realistic Tavern Kit adds a width-adjustable trestle table, plank bench, serving
+  counter and assembled dining set with named placement and join points.
+
 - The Asset Library filters by setting and category alongside visual style and biome.
   Procedural assets include setting metadata such as Medieval, Modern and Sci-fi.
 
