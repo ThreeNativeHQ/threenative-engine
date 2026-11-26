@@ -382,8 +382,8 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
  * @situation a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders
  * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
+ * @situation bake swaying trees to GLB props for the scene
  * @alias trees
- * @alias swaying trees
  * @alias palm trees
  * @alias street trees along a road
  * @alias bushes
@@ -640,9 +640,9 @@ function biomeOf(caller: string, word: string): IEnvironmentBiome {
  * @situation what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island
  * @situation list the rocks, cliffs and mountains for a biome, or every plant that grows there
  * @situation find a tree or plant by name or latin name, such as pine, palm, cactus or fern
+ * @situation find tropical island vegetation by habitat and species
  * @alias nature props for a level
  * @alias jungle and tropical plants
- * @alias tropical island vegetation
  * @alias desert cactus
  * @alias vegetation for a biome
  * @constraint fails closed: an unknown biome or kind throws naming the nearest ids

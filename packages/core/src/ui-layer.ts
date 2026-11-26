@@ -35,7 +35,6 @@ export {
  * Publish the game's state so a UI in another process can mirror it.
  * @situation show score or health in a UI rendered over the game surface
  * @situation update a health bar after the player takes damage
- * @alias health bar
  * @situation keep a HUD in step with the game without re-rendering on the loop
  * @alias journal objective panel
  * @alias readable HUD

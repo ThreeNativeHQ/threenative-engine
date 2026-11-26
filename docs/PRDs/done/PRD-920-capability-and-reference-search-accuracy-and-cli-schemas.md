@@ -76,7 +76,7 @@ Measured 2026-11-25 across `threenative-live-studio` local loop traces (`gpt-6.2
 
 - 2026-11-25 (architect): Use fielded BM25F and alias hygiene to address the recall loss in the PRD-865 flat BM25 prototype.
 
-- 2026-11-25: Keep BM25F in the runtime. It meets the requested AC-3 floor and misses the original solution's 0.72/0.85 stretch targets. Model2Vec with RRF loses 0.06 at rank 1 and reintroduces the closed-spline exit-hook hit. The benchmark stays offline with 2,497,221 asset bytes and a 95.52 ms hybrid cold start and 8.69 ms p95 on the shared desktop. The asset is `potion-base-2M` revision `389b9f64be5aa4ae7a6bc6fe95ef20ce485ae5da` (SHA-256 `1cd194ad4c1aa1b1ba3931048f1bf36a188ebf0571ea1669f96b283f814d1543`).
+- 2026-11-25: Keep BM25F in the runtime. It meets the requested AC-3 floor and misses the original solution's 0.72/0.85 stretch targets. Model2Vec with RRF loses 0.06 at rank 1 and reintroduces the closed-spline exit-hook hit. The benchmark stays offline with 2,497,221 asset bytes and a 68.49 ms hybrid cold start and 4.60 ms p95 on the shared desktop. The asset is `potion-base-2M` revision `389b9f64be5aa4ae7a6bc6fe95ef20ce485ae5da` (SHA-256 `955ebc1775aa73e45e33db5e5c1414eadffbeaaf1e0a2a1fdce854ae3843b760`).
 
 | Held-out arm | Recall@1 | Recall@5 | MRR |
 |---|---:|---:|---:|
@@ -89,7 +89,7 @@ The A/B artifact is `artifacts/capability-search-ab.json`. The scorer imports is
 | Snapshot | Index SHA-256 | Manifest SHA-256 |
 |---|---|---|
 | Pinned baseline | `22c765ae5c9a1fc0d211d5d93cdc53ae575fc616a3ac56a5db83b64bffcf7e92` | `131bdbe1a47f25611b62c4f9da5c3c6e3187534dc58579fa34c07f7ceeed5101` |
-| Fielded BM25F | `f20527a1075ef7a0753b002e426be62f1239a5d2dc76130e3c2a5c55ed9eceaa` | `3286875afd8ad2e23496337e45401be4bdb6aa1cb15c3a6704d8338b8f5e8ac9` |
+| Fielded BM25F | `f20527a1075ef7a0753b002e426be62f1239a5d2dc76130e3c2a5c55ed9eceaa` | `8d7107f4f48b434446663ae06d417a737c4e60b2247ab8a27c93bc2f2a811397` |
 
 ## Verification Plan
 
@@ -110,7 +110,7 @@ All implementation phases are verified against concrete before/after evidence be
 - Implement fielded BM25F across `symbol`, `aliases`, best `situation`, and `summary` (and `name`/`tags`/`summary`/`title` in `searchReferences`), add verbatim PascalCase/camelCase identifier boost for long queries (`Heightfield`), guard stemmed false positives (`leaves`→`leaveScene`, `closed`→`ctx.quit`), and split clauses / down-weight exit hooks on `scope: "request"`.
 - Add missing `@alias`/`@situation` JSDoc tags, run `pnpm capabilities:sync`, and write red-green regressions for every Nov 25 false positive and miss.
 **Verification:** Confirm Nov 25 regression tests fail red against unmodified `index.ts`, sync metadata via `pnpm capabilities:sync`, and pass `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts`.
-- [x] Word-boundary fielded BM25F plus alias hygiene pass all capability/reference regression cases — proof: `pnpm capabilities:sync && pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — covers AC-1, AC-2. Red control 9/9 failures, green 162 passed and one optional live test skipped. The broader Engine suite caught six existing vegetation discovery failures. Explicit bake and catalog aliases restored all 22 nature tests, and the wind-shader query still returns guidance for game-owned rendering.
+- [x] Word-boundary fielded BM25F plus alias hygiene pass all capability/reference regression cases — proof: `pnpm capabilities:sync && pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — covers AC-1, AC-2. Red control 9/9 failures, green 162 passed and one optional live test skipped. The broader Engine suite caught six existing vegetation discovery failures. Bake and catalog situations and corpus-backed aliases restored all 22 nature tests. The existing alias corpus and wind guidance checks reproduced two CI failures and passed after the metadata update. Proof: `pnpm exec vitest run scripts/__tests__/capability-manifest.spec.ts scripts/__tests__/vegetation-not-owned.spec.ts packages/engine-mcp/__tests__/nature-discovery.spec.ts packages/engine-mcp/__tests__/search-gold.spec.ts` passed 59 tests.
 
 #### Phase 2: Offline hybrid semantic benchmark (Model2Vec + RRF) and A/B gate
 **Status:** DONE

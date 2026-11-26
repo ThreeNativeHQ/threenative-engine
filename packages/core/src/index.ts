@@ -272,7 +272,6 @@ export type { IRandom } from "./random.js";
  * @situation make the player readable with an angled arena camera
  * @alias nearest target crosshair spawns
  * @alias third-person camera
- * @alias chase camera framing
  * @alias restart run without page reload
  * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
@@ -1441,7 +1440,6 @@ export type { IExposureSettings } from "./look/exposure-settings.js";
  * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
  * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
  * @situation set night scene lighting and exposure for a foggy city with emissive signs
- * @alias night lighting
  * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
  * @constraint an unknown option value throws instead of becoming the default
  * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
@@ -1958,7 +1956,6 @@ export type {
  * @situation tween a numeric property with a game-owned curve
  * @situation a countdown timer: end the level when its time limit runs out
  * @situation tick a race start countdown and unlock the controls on GO
- * @alias race start countdown
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

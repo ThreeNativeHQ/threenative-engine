@@ -8,7 +8,6 @@ import "./web.js";
  * @situation trigger a pickup when the player overlaps an item without blocking movement
  * @situation apply damage when an enemy projectile overlaps the player
  * @alias pick up item
- * @alias pickup trigger
  * @constraint add the area to the physics context before stepping the world
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
  * @example const goal = new Area3D({ physics: ctx.physics, shape: CollisionShape3D.sphere(1.2), position: { x: 0, y: 0.5, z: -8 } });
