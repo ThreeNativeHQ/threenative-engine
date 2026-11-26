@@ -770,3 +770,30 @@ it("caps the compressed terrain tarball at 2 MB and requires a build", async () 
     expect.stringMatching(/terrain packed tarball .* must be < 2000000 B/u),
   ]);
 });
+
+it("caps the procedural asset package at 6 MB packed and 10 MB unpacked", async () => {
+  const root = await fixtureRoot();
+  const assets = path.join(root, "packages/procedural-environment");
+  await mkdir(path.join(assets, "dist"), { recursive: true });
+  await writeFile(
+    path.join(assets, "package.json"),
+    JSON.stringify({
+      name: "@threenative/procedural-environment",
+      version: "0.1.0",
+      files: ["dist"],
+    }),
+  );
+  await expect(enforceBudgets(root)).rejects.toThrow(/build @threenative\/procedural-environment/u);
+  await writeFile(path.join(assets, "dist/index.js"), "export {};\n");
+  await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkPackages: 1 });
+
+  const fixture = path.join(assets, "dist/large.bin");
+  await writeFile(fixture, randomBytes(6_000_000));
+  await expect(enforceBudgets(root)).rejects.toThrow(
+    /procedural-environment packed tarball .* must be <= 6000000 B/u,
+  );
+  await writeFile(fixture, Buffer.alloc(10_000_000));
+  await expect(enforceBudgets(root)).rejects.toThrow(
+    /procedural-environment unpacked package .* must be <= 10000000 B/u,
+  );
+});

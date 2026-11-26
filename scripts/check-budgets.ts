@@ -34,6 +34,8 @@ const LIMITS = {
   // shader IR and the TSL accessors the hair-card material reads, for a one-dispatch cape (CPU submission 0.65-0.73
   // to 0.11-0.15 ms) and one-dispatch hair strands (about 5 to 0.4 ms of GPU for 2,000 guides).
   webEngineBytes: 4_456_448,
+  proceduralPackedBytes: 6_000_000,
+  proceduralUnpackedBytes: 10_000_000,
 } as const;
 
 const SALVAGE_PACKAGES = new Set(["playtest", "asset-mcp", "shader-portable"]);
@@ -493,22 +495,53 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
   }
 }
 
-export async function terrainTarballErrors(root: string): Promise<string[]> {
-  const cwd = path.join(root, "packages", "terrain");
-  if (!existsSync(path.join(cwd, "package.json"))) return [];
-  if (!existsSync(path.join(cwd, "dist", "kit.js")))
-    return ["terrain tarball budget: build @threenative/terrain first"];
+async function npmPackSizes(cwd: string): Promise<{ size?: number; unpackedSize?: number }> {
   const { stdout } = await execFileAsync(
     "npm",
     ["pack", "--dry-run", "--json", "--ignore-scripts"],
     { cwd, maxBuffer: 8 * 1024 * 1024 },
   );
-  const packed = JSON.parse(stdout) as { size: number }[];
-  const size = packed[0]?.size;
-  if (!Number.isSafeInteger(size) || size === undefined || size <= 0)
-    return ["terrain tarball budget: npm pack returned no valid size"];
+  const [packed] = JSON.parse(stdout) as { size?: number; unpackedSize?: number }[];
+  return packed ?? {};
+}
+
+function isPositiveSize(value: number | undefined): value is number {
+  return value !== undefined && Number.isSafeInteger(value) && value > 0;
+}
+
+export async function terrainTarballErrors(root: string): Promise<string[]> {
+  const cwd = path.join(root, "packages", "terrain");
+  if (!existsSync(path.join(cwd, "package.json"))) return [];
+  if (!existsSync(path.join(cwd, "dist", "kit.js")))
+    return ["terrain tarball budget: build @threenative/terrain first"];
+  const { size } = await npmPackSizes(cwd);
+  if (!isPositiveSize(size)) return ["terrain tarball budget: npm pack returned no valid size"];
   console.log(`terrain packed tarball: ${size} B (limit < 2000000 B)`);
   return size < 2_000_000 ? [] : [`terrain packed tarball ${size} B must be < 2000000 B`];
+}
+
+async function proceduralTarballErrors(root: string): Promise<string[]> {
+  const cwd = path.join(root, "packages", "procedural-environment");
+  if (!existsSync(path.join(cwd, "package.json"))) return [];
+  if (!existsSync(path.join(cwd, "dist", "index.js")))
+    return [
+      "procedural-environment tarball budget: build @threenative/procedural-environment first",
+    ];
+  const { size, unpackedSize } = await npmPackSizes(cwd);
+  if (!isPositiveSize(size) || !isPositiveSize(unpackedSize))
+    return ["procedural-environment tarball budget: npm pack returned no valid sizes"];
+  const limits = [
+    ["packed tarball", size, LIMITS.proceduralPackedBytes],
+    ["unpacked package", unpackedSize, LIMITS.proceduralUnpackedBytes],
+  ] as const;
+  const errors: string[] = [];
+  for (const [label, bytes, limit] of limits) {
+    console.log(`procedural-environment ${label}: ${bytes} B (limit <= ${limit} B)`);
+    if (bytes > limit) {
+      errors.push(`procedural-environment ${label} ${bytes} B must be <= ${limit} B`);
+    }
+  }
+  return errors;
 }
 
 export async function enforceBudgets(root: string): Promise<BudgetReport> {
@@ -522,6 +555,7 @@ export async function enforceBudgets(root: string): Promise<BudgetReport> {
   const errors = [
     ...budgetErrors(report),
     ...(await terrainTarballErrors(root)),
+    ...(await proceduralTarballErrors(root)),
     ...(await buildMatrixErrors(root)),
     ...(await capabilityManifestErrors(root)),
     ...(await nativeCensusErrors(root)),
