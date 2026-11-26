@@ -127,6 +127,8 @@ export class Guard extends Fighter {
   readonly #lastPosition = new Vector3();
   #lastStep = 0;
   #stuck = 0;
+  /** True on the tick `#walkTo` gave up on an unreachable point. */
+  #blocked = false;
   readonly #tracer = createTracer();
   #tracerTimer = 0;
   readonly #marker = createMoodMarker();
@@ -243,23 +245,18 @@ export class Guard extends Fighter {
     this.sight = sightStrength(this.#viewer(), player, this.#hooks.clear);
 
     // React to the base-wide phase first: an alert pulls every conscious guard in.
-    if (phase === "alert" && this.state !== "alert" && this.state !== "checkBody") {
+    if (phase === "alert" && this.state !== "alert") {
       this.state = "alert";
-    } else if (
-      phase === "evasion" &&
-      (this.state === "alert" ||
-        this.state === "patrol" ||
-        this.state === "suspicious" ||
-        this.state === "investigate")
-    ) {
-      // Evasion is base-wide: every guard on its feet searches the last known spot, including a
-      // body that was just kicked awake.
+      this.#bodyTarget = undefined;
+    } else if (phase === "evasion" && (this.state === "alert" || this.state === "patrol")) {
+      // Evasion is base-wide: every guard on patrol searches the last known spot, including a
+      // body that was just kicked awake. A guard already checking a noise finishes that first.
       this.#startSearch(director);
     } else if (
       (phase === "caution" || phase === "infiltration") &&
       (this.state === "alert" || this.state === "search")
     ) {
-      this.state = "patrol";
+      this.#returnToRoute();
     }
 
     if (this.sight > 0) {
@@ -305,6 +302,8 @@ export class Guard extends Fighter {
         break;
       case "investigate":
         speed = this.#walkTo(this.#interest, PATROL_SPEED, dt, 0.8);
+        // Cannot get there: look from here instead of walking into the wall again.
+        if (this.#blocked) this.#interest.copy(this.mesh.position);
         if (speed === 0) {
           if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
@@ -314,6 +313,7 @@ export class Guard extends Fighter {
         break;
       case "search":
         speed = this.#walkTo(this.#interest, CAUTION_SPEED, dt, 0.8);
+        if (this.#blocked) this.#interest.copy(this.mesh.position);
         if (speed === 0) {
           if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
@@ -367,6 +367,16 @@ export class Guard extends Fighter {
     this.#body.teleport(this.mesh.position);
   }
 
+  /** Play is over (won or lost): stand where it is, tracer off. */
+  rest(dt: number): void {
+    this.#tracerTimer = 0;
+    if (this.#body !== undefined) {
+      this.#body.velocity.set(0, 0, 0);
+      this.#body.moveAndSlide(dt);
+    }
+    this.#present(dt, 0);
+  }
+
   velocityStop(): void {
     this.#body?.velocity.set(0, 0, 0);
   }
@@ -385,6 +395,10 @@ export class Guard extends Fighter {
           : "none";
     this.#marker.set(mood);
     this.cone.visible = this.conscious;
+    // Caution widens the eyes (`halfAngle`); stretch the drawn fan so its edges match exactly.
+    this.cone.scale.x = this.#caution
+      ? Math.tan(GUARD_HALF_ANGLE * CAUTION_ANGLE) / Math.tan(GUARD_HALF_ANGLE)
+      : 1;
     tintViewCone(this.cone, mood === "none" ? "patrol" : mood);
     if (this.state === "down" || this.state === "held") this.animateStill(dt);
     else
@@ -443,7 +457,8 @@ export class Guard extends Fighter {
     const dx = target.x - this.mesh.position.x;
     const dz = target.z - this.mesh.position.z;
     const distance = Math.hypot(dx, dz);
-    if (distance <= arrive || this.#stuck >= STUCK_TIME) {
+    this.#blocked = this.#stuck >= STUCK_TIME;
+    if (distance <= arrive || this.#blocked) {
       this.#stuck = 0;
       this.body.velocity.set(0, 0, 0);
       this.body.moveAndSlide(dt);
@@ -514,7 +529,9 @@ export class Guard extends Fighter {
 
   #becomeSuspicious(point: Vector3): void {
     if (this.state === "suspicious" || this.state === "investigate") {
+      // A new noise moves the spot; an investigation restarts its walk toward it.
       this.#interest.copy(point);
+      if (this.state === "investigate") this.#timer = 0;
       return;
     }
     this.state = "suspicious";
@@ -583,6 +600,14 @@ export class Guard extends Fighter {
     }
     const speed = this.#walkTo(body.mesh.position, ALERT_SPEED * 0.8, dt, 1.1);
     if (speed > 0) return speed;
+    if (this.#blocked) {
+      // The body lies behind cover this guard cannot walk round: radio it in and search.
+      director.disturbance(body.mesh.position.x, body.mesh.position.z);
+      this.bodiesFound += 1;
+      this.#bodyTarget = undefined;
+      this.#startSearch(director);
+      return 0;
+    }
     if (this.#timer === 0) {
       this.play("check", { fade: 0.1, hold: 1.5 });
       director.disturbance(body.mesh.position.x, body.mesh.position.z);

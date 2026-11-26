@@ -1,5 +1,5 @@
 import { useUiState } from "@threenative/ui";
-import { type Box, COMPOUND, CRATES, WALLS } from "../level.js";
+import { type Box, COMPOUND, CRATES, DOOR, EXTRACTION, KEYCARD, WALLS } from "../level.js";
 import type { GameState, RadarContact } from "../state.js";
 
 /** The radar shows this many metres from its centre to its edge. Keep it equal to RADAR_RANGE in Play.ts. */
@@ -44,6 +44,13 @@ export function Radar() {
   const playerX = useUiState<GameState, number>((state) => state.playerX) ?? 0;
   const playerZ = useUiState<GameState, number>((state) => state.playerZ) ?? 0;
   const playerYaw = useUiState<GameState, number>((state) => state.playerYaw) ?? 0;
+  const keycard = useUiState<GameState, number>((state) => state.keycard) ?? 0;
+  const doorOpen = useUiState<GameState, number>((state) => state.doorOpen) ?? 0;
+  // World metres to radar pixels, the player at the centre.
+  const px = (x: number): number => SIZE / 2 + (x - playerX) * SCALE;
+  const py = (z: number): number => SIZE / 2 + (z - playerZ) * SCALE;
+  // The mission's next step, as a marker: the keycard, then the door, then the pad.
+  const objective = keycard === 0 ? KEYCARD : doorOpen === 0 ? DOOR : EXTRACTION;
   if (radar === undefined) return null;
   const centre = SIZE / 2;
   return (
@@ -82,11 +89,20 @@ export function Radar() {
                 fill="#4f7a5e"
               />
             ))}
+            <rect
+              x={px(objective.x) - 3.5}
+              y={py(objective.z) - 3.5}
+              width={7}
+              height={7}
+              fill="none"
+              stroke="#e8b86a"
+              strokeWidth={1.5}
+            />
             <circle cx={centre} cy={centre} r={centre - 2} fill="none" stroke="#2c4a36" />
             <circle cx={centre} cy={centre} r={(centre - 2) / 2} fill="none" stroke="#2c4a36" />
             {radar.map((contact, index) => {
-              const x = centre + contact.x * SCALE;
-              const y = centre + contact.z * SCALE;
+              const x = px(contact.x);
+              const y = py(contact.z);
               const alert = contact.state === "alert";
               return (
                 <g key={`${contact.kind}-${index}`}>

@@ -48,6 +48,8 @@ const WALL_PRESS_DELAY = 0.1;
 const WALL_REACH = 0.3;
 /** How far past the body the wall-end probe looks: when it finds no wall there, this is a corner. */
 const EDGE_PROBE = 0.45;
+/** How far in front of the player a dragged body lies, metres. */
+const DRAG_DISTANCE = 1.1;
 /** Grab reach and the arc behind a guard it works from (more than 110 degrees off its facing). */
 export const GRAB_REACH = 1.3;
 const BEHIND_ANGLE = (110 * Math.PI) / 180;
@@ -91,9 +93,11 @@ export class Player extends Fighter {
   readonly #from = new Vector3();
   readonly #to = new Vector3();
   readonly #move = new Vector2();
+  readonly #ctx: GameCtx;
 
   constructor(ctx: GameCtx, model: IMannequin, spawn: Vector3) {
     super(ctx, model, CLIPS, { halfExtent: HALF_HEIGHT + RADIUS });
+    this.#ctx = ctx;
     dress(this.character.root, playerMaterial);
     this.mesh.position.copy(spawn);
     this.body = new CharacterBody3D({
@@ -195,10 +199,16 @@ export class Player extends Fighter {
     if (this.dragging !== undefined) {
       // The player walks backwards facing the body, so the body lies a metre in front of the
       // facing — behind the direction of travel.
+      // A wall or crate between the player and that spot shortens the pull, so the body never
+      // ends up inside cover or outside the compound.
       const yaw = this.figure.rotation.y;
+      const wantX = this.mesh.position.x + Math.sin(yaw) * DRAG_DISTANCE;
+      const wantZ = this.mesh.position.z + Math.cos(yaw) * DRAG_DISTANCE;
+      const hit = this.#worldHit(wantX, wantZ, 0.4);
+      const reach = hit === undefined ? DRAG_DISTANCE : Math.max(0, hit - 0.35);
       this.dragging.place(
-        this.mesh.position.x + Math.sin(yaw) * 1.1,
-        this.mesh.position.z + Math.cos(yaw) * 1.1,
+        this.mesh.position.x + Math.sin(yaw) * reach,
+        this.mesh.position.z + Math.cos(yaw) * reach,
         yaw + Math.PI,
       );
     }
@@ -206,10 +216,10 @@ export class Player extends Fighter {
     this.walkAction = this.running ? "run" : this.#crouched ? "crouchWalk" : "walk";
     this.idleAction = this.#crouched ? "crouchIdle" : "idle";
     const planar = Math.hypot(this.body.velocity.x, this.body.velocity.z);
-    if (this.stance === "wall" && planar < 0.05) {
-      // Back to the wall: face out of it.
+    if (this.stance === "wall") {
+      // Back to the wall, sliding or still: face out of it, the way MGS1 side-steps along cover.
       this.figure.rotation.y = Math.atan2(this.wallNormal.x, this.wallNormal.y);
-      this.animateRig(dt, undefined, 0);
+      this.animateRig(dt, undefined, planar);
     } else {
       const heading =
         this.dragging !== undefined
@@ -244,6 +254,8 @@ export class Player extends Fighter {
       const dz = this.mesh.position.z - guard.mesh.position.z;
       if (Math.hypot(dx, dz) > GRAB_REACH) continue;
       if (Math.abs(angleBetween(Math.atan2(dx, dz), guard.yaw)) < BEHIND_ANGLE) continue;
+      // Not through a wall: a thin wall puts a guard on its far side inside the reach.
+      if (this.#worldHit(guard.mesh.position.x, guard.mesh.position.z, 1.2) !== undefined) continue;
       return guard;
     }
     return undefined;
@@ -268,6 +280,7 @@ export class Player extends Fighter {
     const target = this.grabTarget(guards);
     if (target === undefined) return;
     this.held = target;
+    this.dragging = undefined;
     this.pumps = 0;
     this.#holdTimer = HOLD_TIME;
     this.#crouched = false;
@@ -397,6 +410,23 @@ export class Player extends Fighter {
       to: this.#to,
     });
     return hit !== undefined && Math.abs(hit.normal.y) <= 0.3;
+  }
+
+  /**
+   * Distance to the first wall or crate on the flat line from the player to (x, z) at `height`
+   * metres, or undefined when nothing stands in between.
+   */
+  #worldHit(x: number, z: number, height: number): number | undefined {
+    this.#from.set(this.mesh.position.x, height, this.mesh.position.z);
+    this.#to.set(x, height, z);
+    const hit = this.#ctx.physics.directSpaceState.intersectRay({
+      collisionMask: WORLD_LAYER,
+      from: this.#from,
+      to: this.#to,
+    });
+    return hit === undefined || hit.distance >= this.#from.distanceTo(this.#to)
+      ? undefined
+      : hit.distance;
   }
 
   /** The mission is over: stand still (or stay down) while the result shows. */

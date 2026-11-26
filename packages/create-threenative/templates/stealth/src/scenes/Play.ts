@@ -15,9 +15,15 @@ import {
 } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
 import { AlertDirector } from "../ai/phase.js";
-import { type ClearLine, type ITarget, NoiseBus } from "../ai/perception.js";
+import { type ClearLine, GUARD_RANGE, type ITarget, NoiseBus } from "../ai/perception.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
-import { GUARD_LAYER, Guard, PLAYER_LAYER, WORLD_LAYER } from "../entities/Guard.js";
+import {
+  GUARD_LAYER,
+  Guard,
+  PLAYER_LAYER,
+  PUMPS_TO_KNOCK_OUT,
+  WORLD_LAYER,
+} from "../entities/Guard.js";
 import { PICKUP_REACH, Player } from "../entities/Player.js";
 import { SecurityCamera } from "../entities/SecurityCamera.js";
 import { CAMERAS, COMPOUND, DOOR, EXTRACTION, KEYCARD, PATROLS, SPAWN } from "../level.js";
@@ -299,9 +305,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         kind,
         range,
         state,
-        x: round(dx),
+        x: round(x),
         yaw: round(yaw),
-        z: round(dz),
+        z: round(z),
       });
     };
 
@@ -339,7 +345,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       if (playing) {
         missionTime += dt;
         player.update(frameCtx, dt, guards, director, noises, touch);
-      } else player.freeze(dt);
+      } else {
+        player.freeze(dt);
+        for (const guard of guards) guard.rest(dt);
+      }
       if (playing && frameCtx.input.justPressed("interact") && player.dragging === undefined) {
         if (atKeycard) {
           hasKeycard = true;
@@ -415,7 +424,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
             guard.mesh.position.z,
             guard.yaw,
             guard.conscious ? guard.halfAngle : 0,
-            guard.conscious ? 10 : 0,
+            guard.conscious ? GUARD_RANGE : 0,
             guard.state,
           );
         for (const securityCamera of cameras)
@@ -447,20 +456,20 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frame.prompt = !playing
         ? "R  RESTART"
         : player.held !== undefined
-          ? `F  CHOKE  ${player.pumps}/5`
+          ? `F  CHOKE  ${player.pumps}/${PUMPS_TO_KNOCK_OUT}`
           : player.grabTarget(guards) !== undefined
             ? "F  GRAB"
-            : player.canDrag(guards)
-              ? "HOLD E  DRAG BODY"
-              : atKeycard
-                ? "E  TAKE KEYCARD"
-                : atDoor
-                  ? hasKeycard
-                    ? "E  OPEN DOOR"
-                    : "LOCKED  KEYCARD"
-                  : player.stance === "wall"
-                    ? "Q  KNOCK"
-                    : "";
+            : atKeycard
+              ? "E  TAKE KEYCARD"
+              : atDoor && hasKeycard
+                ? "E  OPEN DOOR"
+                : player.canDrag(guards)
+                  ? "HOLD E  DRAG BODY"
+                  : atDoor
+                    ? "LOCKED  KEYCARD"
+                    : player.stance === "wall"
+                      ? "Q  KNOCK"
+                      : "";
       frame.alertPhase = director.phase;
       frame.phaseTimer = round(director.timer, 10);
       frame.alerts = director.alerts;

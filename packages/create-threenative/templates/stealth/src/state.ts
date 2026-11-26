@@ -9,7 +9,10 @@ export type Stance = "stand" | "crouch" | "wall";
 /** One radar contact: a guard or a camera, in metres relative to the player, with its view. */
 export type RadarContact = {
   readonly kind: "guard" | "camera";
-  /** Metres east (+x) and south (+z) of the player, rounded to centimetres. */
+  /**
+   * World position, metres, rounded to centimetres. The radar subtracts the player's live position,
+   * so contacts and walls move together.
+   */
   readonly x: number;
   readonly z: number;
   /** Facing in radians, three.js yaw (0 faces +z). */
