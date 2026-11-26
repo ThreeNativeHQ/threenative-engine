@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -785,7 +785,18 @@ it("caps the procedural asset package at 6 MB packed and 10 MB unpacked", async 
   );
   await expect(enforceBudgets(root)).rejects.toThrow(/build @threenative\/procedural-environment/u);
   await writeFile(path.join(assets, "dist/index.js"), "export {};\n");
-  await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkPackages: 1 });
+  const releaseArchive = path.join(root, "procedural-environment.tgz");
+  await execFileAsync("pnpm", ["pack", "--out", releaseArchive], { cwd: assets });
+  const { size } = await stat(releaseArchive);
+  const log = vi.spyOn(console, "log");
+  try {
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkPackages: 1 });
+    expect(log).toHaveBeenCalledWith(
+      `procedural-environment packed tarball: ${size} B (limit <= 6000000 B)`,
+    );
+  } finally {
+    log.mockRestore();
+  }
 
   const fixture = path.join(assets, "dist/large.bin");
   await writeFile(fixture, randomBytes(6_000_000));

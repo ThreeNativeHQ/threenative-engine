@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { existsSync } from "node:fs";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { mkdtemp, readFile, readdir, rm, stat } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
 import { checkCapabilityManifest } from "./build-capability-manifest.js";
@@ -495,12 +496,13 @@ export async function capabilityManifestErrors(root: string): Promise<string[]> 
   }
 }
 
-async function npmPackSizes(cwd: string): Promise<{ size?: number; unpackedSize?: number }> {
-  const { stdout } = await execFileAsync(
-    "npm",
-    ["pack", "--dry-run", "--json", "--ignore-scripts"],
-    { cwd, maxBuffer: 8 * 1024 * 1024 },
-  );
+async function npmPackSizes(
+  cwd: string,
+  archive?: string,
+): Promise<{ size?: number; unpackedSize?: number }> {
+  const args = ["pack", "--dry-run", "--json", "--ignore-scripts"];
+  if (archive !== undefined) args.push(archive);
+  const { stdout } = await execFileAsync("npm", args, { cwd, maxBuffer: 8 * 1024 * 1024 });
   const [packed] = JSON.parse(stdout) as { size?: number; unpackedSize?: number }[];
   return packed ?? {};
 }
@@ -520,6 +522,18 @@ export async function terrainTarballErrors(root: string): Promise<string[]> {
   return size < 2_000_000 ? [] : [`terrain packed tarball ${size} B must be < 2000000 B`];
 }
 
+async function releasePackSizes(cwd: string) {
+  const directory = await mkdtemp(path.join(tmpdir(), "tn-procedural-pack-"));
+  try {
+    const archive = path.join(directory, "procedural-environment.tgz");
+    // pnpm rewrites catalog dependencies in the archived manifest, as it does for release.
+    await execFileAsync("pnpm", ["pack", "--out", archive], { cwd });
+    return await npmPackSizes(cwd, archive);
+  } finally {
+    await rm(directory, { recursive: true, force: true });
+  }
+}
+
 async function proceduralTarballErrors(root: string): Promise<string[]> {
   const cwd = path.join(root, "packages", "procedural-environment");
   if (!existsSync(path.join(cwd, "package.json"))) return [];
@@ -527,9 +541,9 @@ async function proceduralTarballErrors(root: string): Promise<string[]> {
     return [
       "procedural-environment tarball budget: build @threenative/procedural-environment first",
     ];
-  const { size, unpackedSize } = await npmPackSizes(cwd);
+  const { size, unpackedSize } = await releasePackSizes(cwd);
   if (!isPositiveSize(size) || !isPositiveSize(unpackedSize))
-    return ["procedural-environment tarball budget: npm pack returned no valid sizes"];
+    return ["procedural-environment tarball budget: packed archive returned no valid sizes"];
   const limits = [
     ["packed tarball", size, LIMITS.proceduralPackedBytes],
     ["unpacked package", unpackedSize, LIMITS.proceduralUnpackedBytes],
