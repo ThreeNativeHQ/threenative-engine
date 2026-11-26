@@ -9,11 +9,11 @@ import {
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type PerspectiveCamera, Vector2, Vector3 } from "three";
-import { type GameCtx, type IMannequin } from "../entities/Fighter.js";
 import { Farmer } from "../entities/Farmer.js";
-import { Farm, type DayCause, type IZones } from "../farm/Farm.js";
+import type { GameCtx, IMannequin } from "../entities/Fighter.js";
+import { type DayCause, Farm, type IZones } from "../farm/Farm.js";
 import { CROP_IDS } from "../farm/crops.js";
-import { type ITile } from "../farm/field.js";
+import type { ITile } from "../farm/field.js";
 import { clockLabel, dateLabel } from "../farm/time.js";
 import { TIER_SPEED } from "../farm/tools.js";
 import {
@@ -33,7 +33,7 @@ import {
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createFarmCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
-import { applyDaylight, createSkyBlend, prewarmDay } from "../render/daylight.js";
+import { applyDaylight } from "../render/daylight.js";
 import { createFarmScenery } from "../render/farm.js";
 import { FieldView } from "../render/fieldView.js";
 import { setupLighting } from "../render/lighting.js";
@@ -122,9 +122,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // One rig for the farmer: the combat mannequin (Quaternius' Universal Animation Library, CC0).
     this.#mannequin = await ctx.assets.model<IMannequin>("mannequin-combat.glb");
     primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));
-    // The dozen sky keyframes the day clock mixes: baked here, while the loading screen shows.
-    await prewarmDay(SKY_OPTIONS.clouds, SKY_OPTIONS.ground);
-    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined, true, SKY_OPTIONS.clouds, createSkyBlend({ minute: 360 }));
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined, true, SKY_OPTIONS.clouds);
     this.#environmentSample = await sampleEnvironment(ctx.renderer.raw, ctx.scene, {
       web: getPlatform().runtime === "web",
       rendererKind: ctx.renderer.kind,
@@ -140,7 +138,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       throw new Error("Play.enter ran before load() loaded mannequin-combat.glb.");
     const farm = new Farm();
     const camera = ctx.camera as PerspectiveCamera;
-    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined, true, SKY_OPTIONS.clouds, createSkyBlend(farm));
+    setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined, true, SKY_OPTIONS.clouds);
     const lighting = setupLighting(
       ctx.scene,
       ctx.renderer.raw as Parameters<typeof setupLighting>[1],
@@ -350,7 +348,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
             else if (plan.cost > farm.stamina) beginFaint("exhausted");
             else
               farmer.work(
-                slot.kind === "tool" ? ({ can: "interact", hammer: "chop", hoe: "chop", sickle: "jab" } as const)[slot.tool] : "pick",
+                slot.kind === "tool"
+                  ? ({ can: "interact", hammer: "chop", hoe: "chop", sickle: "jab" } as const)[
+                      slot.tool
+                    ]
+                  : "pick",
                 () => {
                   const result = plan.apply();
                   syncField();
@@ -401,7 +403,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frame.prompt = phase === "summary" ? "E  CONTINUE" : "";
       }
 
-      applyDaylight(farm.minute, lighting.key, centre);
+      applyDaylight(farm.minute, lighting.key, centre, ctx.scene);
       messageTimer = Math.max(0, messageTimer - dt);
       if (messageTimer === 0) message = "";
       const stats = farm.field.stats();

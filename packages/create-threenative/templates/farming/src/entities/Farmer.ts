@@ -1,7 +1,13 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import type { Vector2, Vector3 } from "three";
-import { type IToolRack, createCarried, createToolRack, dress, farmerMaterial } from "../render/props.js";
 import { PLAYER_LAYER, WORLD_LAYER } from "../level.js";
+import {
+  type IToolRack,
+  createCarried,
+  createToolRack,
+  dress,
+  farmerMaterial,
+} from "../render/props.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
 /** The clips `assets/mannequin-combat.glb` ships, by the work this file plays them under. */
@@ -130,7 +136,11 @@ export class Farmer extends Fighter {
     const walking = !this.busy && move.lengthSq() > 0.01;
     if (walking) {
       const length = Math.min(1, move.length());
-      this.body.velocity.set((move.x / move.length()) * maxSpeed * length, 0, (-move.y / move.length()) * maxSpeed * length);
+      this.body.velocity.set(
+        (move.x / move.length()) * maxSpeed * length,
+        0,
+        (-move.y / move.length()) * maxSpeed * length,
+      );
       if (Math.abs(move.x) > Math.abs(move.y)) {
         this.facing.x = Math.sign(move.x);
         this.facing.z = 0;
@@ -143,7 +153,11 @@ export class Farmer extends Fighter {
     this.conventions.applyGrounding(0, dt);
     this.speed = Math.hypot(this.body.velocity.x, this.body.velocity.z);
     this.walkAction = maxSpeed < 2.5 ? "tired" : "walk";
-    this.animateRig(dt, walking ? Math.atan2(this.body.velocity.x, this.body.velocity.z) : undefined, this.speed);
+    this.animateRig(
+      dt,
+      walking ? Math.atan2(this.body.velocity.x, this.body.velocity.z) : undefined,
+      this.speed,
+    );
   }
 
   /** Stand still while the night screen shows. */

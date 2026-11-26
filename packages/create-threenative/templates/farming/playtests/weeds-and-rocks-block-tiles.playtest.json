@@ -1,6 +1,7 @@
 {
   "name": "weeds-and-rocks-block-tiles",
   "warmupFrames": 10,
+  "drawEvery": 6,
   "schemaVersion": 1,
   "target": "web",
   "viewport": {

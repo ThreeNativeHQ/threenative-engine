@@ -124,7 +124,9 @@ export function Hud() {
             <div
               key={entry.label}
               className={`flex h-14 w-[4.5rem] flex-col items-center justify-center rounded border text-[10px] uppercase tracking-[0.1em] ${
-                index === slot ? "border-amber bg-black/80 text-amber" : "border-line bg-black/55 text-dim"
+                index === slot
+                  ? "border-amber bg-black/80 text-amber"
+                  : "border-line bg-black/55 text-dim"
               }`}
             >
               <span className="text-xs">{index + 1}</span>

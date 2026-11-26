@@ -51,7 +51,13 @@ function createTool(id: ToolId): Group {
     part(tool, new BoxGeometry(0.3, 0.13, 0.13), iron, [0, 0.6, 0]);
   } else if (id === "sickle") {
     part(tool, new CylinderGeometry(0.025, 0.025, 0.3, 8), wood, [0, 0.05, 0]);
-    part(tool, new TorusGeometry(0.17, 0.012, 6, 14, Math.PI * 1.1), iron, [0, 0.3, 0.12], [0, 0, 0.4]);
+    part(
+      tool,
+      new TorusGeometry(0.17, 0.012, 6, 14, Math.PI * 1.1),
+      iron,
+      [0, 0.3, 0.12],
+      [0, 0, 0.4],
+    );
   } else {
     part(tool, new BoxGeometry(0.26, 0.22, 0.2), tin, [0, 0.12, 0]);
     part(tool, new CylinderGeometry(0.025, 0.04, 0.34, 8), tin, [0.2, 0.26, 0], [0, 0, -0.9]);
@@ -86,7 +92,10 @@ export function createToolRack(): IToolRack {
 }
 
 /** The crop the farmer carries overhead: one fruit per crop, one shown at a time. */
-export function createCarried(): { readonly root: Group; readonly show: (crop: CropId | undefined) => void } {
+export function createCarried(): {
+  readonly root: Group;
+  readonly show: (crop: CropId | undefined) => void;
+} {
   const root = new Group();
   root.name = "carried-crop";
   const fruit = new Map<CropId, Mesh>();
@@ -111,7 +120,10 @@ export function createCarried(): { readonly root: Group; readonly show: (crop: C
 }
 
 /** The tile under the farmer's tool: a flat square that turns amber when the tool has nothing to do. */
-export function createHighlight(size: number): { readonly mesh: Mesh; readonly set: (ok: boolean) => void } {
+export function createHighlight(size: number): {
+  readonly mesh: Mesh;
+  readonly set: (ok: boolean) => void;
+} {
   const material = new MeshBasicMaterial({
     color: 0xffffff,
     depthWrite: false,

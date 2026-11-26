@@ -12,17 +12,17 @@ import {
   type Scene,
   Vector3,
 } from "three";
-import { type ISkyBlend, createGpuSky } from "./gpuSky.js";
+import { createGpuSky } from "./gpuSky.js";
+import { sunDirectionAt } from "./sunPath.js";
 import { HEIGHT_FOG, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
-import { sunDirectionAt } from "./sunPath.js";
-import { WAKE_MINUTE } from "../farm/time.js";
 
 /**
- * Unit vector toward the sun. It starts at the morning's 06:00 sun and `daylight.ts` moves it with
- * the day clock: mutate it in place, the sky, the fog and the light all read this one vector.
+ * Unit vector toward the sun the sky is baked for: a late-morning sun, 11:00 on the day clock.
+ * The sky bakes once, because a later environment update left the renderer drawing no frames.
+ * `daylight.ts` moves the light and scales this one sky's fill with the clock.
  */
-export const SUN_DIRECTION = sunDirectionAt(WAKE_MINUTE, new Vector3());
+export const SUN_DIRECTION = sunDirectionAt(11 * 60, new Vector3());
 
 export const SKY_OPTIONS: { clouds: boolean; ground: boolean } = {
   clouds: true,
@@ -58,7 +58,6 @@ export function setupSky(
   software = false,
   fogged = true,
   clouds = SKY_OPTIONS.clouds,
-  blend?: ISkyBlend,
 ): void {
   // Height fog only; FogExp2 holds the colour `heightFogNode` reads, at zero density. `createGpuSky`
   // sets that colour from the sky and again whenever the sun moves.
@@ -72,7 +71,6 @@ export function setupSky(
     clouds,
     ATMOSPHERE_FOG,
     SKY_OPTIONS.ground,
-    blend,
   );
   environment.mapping = EquirectangularReflectionMapping;
   environment.colorSpace = SRGBColorSpace;

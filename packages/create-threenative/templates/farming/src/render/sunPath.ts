@@ -4,7 +4,7 @@
 // from the front and its shadows fall away from the viewer) and sets in the west. Below the
 // horizon it carries on round the north, so the same function gives the night's moon position
 // (the opposite direction).
-import { Vector3 } from "three";
+import type { Vector3 } from "three";
 
 const SUNRISE_HOUR = 5.5;
 const SUNSET_HOUR = 18.5;
@@ -26,5 +26,7 @@ export function sunDirectionAt(minute: number, out: Vector3): Vector3 {
   const azimuth = Math.PI * arc(minute);
   const elevation = sunElevation(minute);
   const flat = Math.cos(elevation);
-  return out.set(Math.cos(azimuth) * flat, Math.sin(elevation), Math.sin(azimuth) * flat).normalize();
+  return out
+    .set(Math.cos(azimuth) * flat, Math.sin(elevation), Math.sin(azimuth) * flat)
+    .normalize();
 }

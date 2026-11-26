@@ -26,9 +26,33 @@ export interface ICropSpec {
 
 export const CROPS: Readonly<Record<CropId, ICropSpec>> = {
   // items.c:1097: the lowest root crop value.
-  turnip: { id: "turnip", label: "Turnip", season: "spring", days: 3, price: 60, seedPrice: 20, color: 0xe8e0f0 },
-  tomato: { id: "tomato", label: "Tomato", season: "summer", days: 4, price: 100, seedPrice: 45, color: 0xd8352a },
-  pumpkin: { id: "pumpkin", label: "Pumpkin", season: "autumn", days: 5, price: 160, seedPrice: 70, color: 0xe8821e },
+  turnip: {
+    id: "turnip",
+    label: "Turnip",
+    season: "spring",
+    days: 3,
+    price: 60,
+    seedPrice: 20,
+    color: 0xe8e0f0,
+  },
+  tomato: {
+    id: "tomato",
+    label: "Tomato",
+    season: "summer",
+    days: 4,
+    price: 100,
+    seedPrice: 45,
+    color: 0xd8352a,
+  },
+  pumpkin: {
+    id: "pumpkin",
+    label: "Pumpkin",
+    season: "autumn",
+    days: 5,
+    price: 160,
+    seedPrice: 70,
+    color: 0xe8821e,
+  },
 };
 
 export const CROP_IDS = Object.keys(CROPS) as readonly CropId[];

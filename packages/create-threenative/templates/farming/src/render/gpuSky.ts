@@ -658,8 +658,9 @@ class GpuSkyNode extends Node<"vec3"> {
 }
 
 /** Height fog and void colour: Unreal's distant sky light, scaled to scene radiance like the sky. */
-function distantFogColour(light: readonly number[]): Color {
+function distantFogColour(sun: Vector3): Color {
   const tint = temperatureColour(SUN_KELVIN);
+  const light = viewDistanceSkyLight(sun);
   return new Color(
     ...([0, 1, 2].map((c) => (light[c] ?? 0) * (tint[c] ?? 1) * SUN_ILLUMINANCE) as [
       number,
@@ -676,8 +677,8 @@ function distantFogColour(light: readonly number[]): Color {
  * Callers only read the result. Only the newest few suns are kept.
  */
 const radianceCache = new Map<string, Float32Array>();
-const RADIANCE_CACHE_SUNS = 16;
-export function bakedRadiance(
+const RADIANCE_CACHE_SUNS = 8;
+function bakedRadiance(
   sun: Vector3,
   w: number,
   h: number,
@@ -700,23 +701,6 @@ export function bakedRadiance(
  * At 64x32 this avoids the full 256x128 bake; both paths use the same radiometric scale.
  * Plain bytes, no canvas: the bake runs wherever the game's JavaScript runs.
  */
-/**
- * The environment's size. The farm draws it at 32 x 16: a day cycle bakes a dozen of them, and a
- * matte farm lights from the low-frequency sky, so a quarter of the rays read the same.
- */
-export const SKY_WIDTH = 32;
-export const SKY_HEIGHT = 16;
-
-/**
- * A blend replaces the one-sun bake and the one-sun sky light: the farm hands in two cached
- * keyframes mixed by the day clock, so the sky follows it without a 45 ms bake and two 4 ms
- * integrals on the frame the sun moves.
- */
-export interface ISkyBlend {
-  readonly radiance: (sun: Vector3) => Float32Array;
-  readonly skyLight: (sun: Vector3) => readonly [number, number, number];
-}
-
 export function createGpuSky(
   scene: Scene,
   sun: Vector3,
@@ -724,16 +708,15 @@ export function createGpuSky(
   clouds: boolean,
   fog: ISkyFog | undefined,
   ground: boolean,
-  blend?: ISkyBlend,
 ): { node: GpuSkyNode; environment: DataTexture } {
-  const w = SKY_WIDTH;
-  const h = SKY_HEIGHT;
+  const w = 64;
+  const h = 32;
   const pixels = new Uint8Array(w * h * 4);
   const environment = new DataTexture(pixels, w, h, RGBAFormat, UnsignedByteType);
   environment.minFilter = environment.magFilter = LinearFilter;
   const refresh = () => {
     const start = performance.now();
-    const data = blend?.radiance(sun) ?? bakedRadiance(sun, w, h, ground, clouds);
+    const data = bakedRadiance(sun, w, h, ground, clouds);
     const scale = temperatureColour(SUN_KELVIN).map((v) => v * SUN_ILLUMINANCE) as [
       number,
       number,
@@ -754,10 +737,9 @@ export function createGpuSky(
       }
     }
     environment.needsUpdate = true;
-    const light = blend?.skyLight(sun) ?? viewDistanceSkyLight(sun);
-    node.setAmbient(light);
+    node.setAmbient(viewDistanceSkyLight(sun));
     // The height fog takes its colour from the same sky light (Unreal's fog has none of its own).
-    scene.fog?.color.copy(distantFogColour(light));
+    scene.fog?.color.copy(distantFogColour(sun));
     console.info(`CPU environment sky 64x32: ${(performance.now() - start).toFixed(1)} ms`);
   };
   const node = new GpuSkyNode(sun, scene, fogged, clouds, refresh, fog);

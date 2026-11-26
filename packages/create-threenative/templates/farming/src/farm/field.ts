@@ -158,7 +158,11 @@ export class Field {
         if (spec.season === today) crop.stage = Math.min(spec.days, crop.stage + 1);
       }
       tile.watered = false;
-      if (crop !== undefined && seasonStarts !== undefined && CROPS[crop.id].season !== seasonStarts)
+      if (
+        crop !== undefined &&
+        seasonStarts !== undefined &&
+        CROPS[crop.id].season !== seasonStarts
+      )
         crop.dead = true;
     }
   }

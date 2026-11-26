@@ -17,20 +17,11 @@ import {
   SphereGeometry,
 } from "three";
 import { CROPS, CROP_IDS } from "../farm/crops.js";
+import { BED_ZONE, BIN, BOUNDS, FIELD, HOUSE, POND, SHOP, TREES } from "../level.js";
 import {
-  BED_ZONE,
-  BIN,
-  BOUNDS,
-  FIELD,
-  HOUSE,
-  POND,
-  SHOP,
-  TREES,
-} from "../level.js";
-import {
+  floorMaterial,
   gridMaterial,
   leafMaterial,
-  floorMaterial,
   propMaterial,
   rockMaterial,
   structureMaterial,
@@ -94,7 +85,8 @@ function createHouse(dressing: Group): void {
   const front = z + depth / 2;
   box(house, [1.3, 2.3, 0.2], [x, 1.15, front + 0.05], propMaterial);
   box(house, [1.4, 0.04, 1.4], [x, 0.02, BED_ZONE.z], propMaterial);
-  for (const side of [-1, 1] as const) box(house, [1.2, 1, 0.12], [x + side * 3, 1.9, front + 0.04], glass);
+  for (const side of [-1, 1] as const)
+    box(house, [1.2, 1, 0.12], [x + side * 3, 1.9, front + 0.04], glass);
   dressing.add(house);
 }
 
@@ -112,12 +104,18 @@ function createShop(dressing: Group): void {
   const stall = new Group();
   stall.name = "seed-stall";
   box(stall, [width, height, depth], [x, height / 2, z]);
-  for (const side of [-1, 1] as const) box(stall, [0.14, 2.6, 0.14], [x + side * (width / 2 - 0.1), 1.3, z - 0.5]);
+  for (const side of [-1, 1] as const)
+    box(stall, [0.14, 2.6, 0.14], [x + side * (width / 2 - 0.1), 1.3, z - 0.5]);
   box(stall, [width + 0.6, 0.12, depth + 1.2], [x, 2.65, z - 0.25], propMaterial, [-0.12, 0, 0]);
   // One crate of fruit per crop on the counter, in the crop's own colour.
   CROP_IDS.forEach((id, index) => {
     const crate = box(stall, [0.6, 0.3, 0.5], [x + (index - 1) * 0.95, height + 0.15, z - 0.1]);
-    box(stall, [0.4, 0.14, 0.34], [crate.position.x, height + 0.36, z - 0.1], new MeshStandardMaterial({ color: CROPS[id].color, roughness: 0.5 }));
+    box(
+      stall,
+      [0.4, 0.14, 0.34],
+      [crate.position.x, height + 0.36, z - 0.1],
+      new MeshStandardMaterial({ color: CROPS[id].color, roughness: 0.5 }),
+    );
   });
   dressing.add(stall);
 }
@@ -159,12 +157,19 @@ function createFence(dressing: Group): void {
 }
 
 function createTrees(dressing: Group): void {
-  const trunks = new InstancedMesh(new CylinderGeometry(0.28, 0.4, 3, 8), trunkMaterial, TREES.length);
+  const trunks = new InstancedMesh(
+    new CylinderGeometry(0.28, 0.4, 3, 8),
+    trunkMaterial,
+    TREES.length,
+  );
   const crowns = new InstancedMesh(new SphereGeometry(2.1, 14, 10), leafMaterial, TREES.length);
   const matrix = new Matrix4();
   TREES.forEach(([x, z, scale], index) => {
     trunks.setMatrixAt(index, matrix.makeScale(scale, scale, scale).setPosition(x, 1.5 * scale, z));
-    crowns.setMatrixAt(index, matrix.makeScale(scale, scale * 0.9, scale).setPosition(x, 4.1 * scale, z));
+    crowns.setMatrixAt(
+      index,
+      matrix.makeScale(scale, scale * 0.9, scale).setPosition(x, 4.1 * scale, z),
+    );
   });
   for (const mesh of [trunks, crowns]) {
     mesh.castShadow = true;
@@ -185,10 +190,18 @@ export function createFarmScenery(): IFarmScenery {
   dressing.add(ground);
   // The plot: a duller patch under the field so the eight by six tiles read as one bed.
   const bed = new Mesh(
-    worldGridUVs(new PlaneGeometry(FIELD.cols * FIELD.tile + 0.6, FIELD.rows * FIELD.tile + 0.6).rotateX(-Math.PI / 2)),
+    worldGridUVs(
+      new PlaneGeometry(FIELD.cols * FIELD.tile + 0.6, FIELD.rows * FIELD.tile + 0.6).rotateX(
+        -Math.PI / 2,
+      ),
+    ),
     plot,
   );
-  bed.position.set(FIELD.x0 + (FIELD.cols * FIELD.tile) / 2, 0.012, FIELD.z0 + (FIELD.rows * FIELD.tile) / 2);
+  bed.position.set(
+    FIELD.x0 + (FIELD.cols * FIELD.tile) / 2,
+    0.012,
+    FIELD.z0 + (FIELD.rows * FIELD.tile) / 2,
+  );
   bed.receiveShadow = true;
   dressing.add(bed);
   createHouse(dressing);

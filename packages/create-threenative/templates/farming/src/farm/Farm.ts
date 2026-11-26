@@ -182,7 +182,9 @@ export class Farm {
       const grows = spec.season === this.date.season;
       return {
         event: "planted",
-        message: grows ? `Planted ${slot.crop}.` : `Planted ${slot.crop}. It grows in ${spec.season}.`,
+        message: grows
+          ? `Planted ${slot.crop}.`
+          : `Planted ${slot.crop}. It grows in ${spec.season}.`,
       };
     }
     if (slot.tool === "hoe") return { event: "tilled", message: "" };
@@ -200,8 +202,7 @@ export class Farm {
       return zones.bin
         ? { kind: "ship", prompt: `E  SHIP ${this.carrying.toUpperCase()}` }
         : { kind: "none", prompt: "CARRYING  BRING IT TO THE BIN" };
-    if (tile !== undefined && isRipe(tile))
-      return { kind: "harvest", prompt: "E  PICK" };
+    if (tile !== undefined && isRipe(tile)) return { kind: "harvest", prompt: "E  PICK" };
     if (zones.bed) return { kind: "sleep", prompt: "E  SLEEP" };
     if (zones.shop) {
       const slot = this.hotbar;

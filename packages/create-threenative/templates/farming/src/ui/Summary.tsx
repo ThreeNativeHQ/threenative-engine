@@ -53,7 +53,7 @@ export function Summary() {
           </div>
         </div>
         <div className="mt-5 text-[11px] text-dim">next: {summary.nextDate}</div>
-        <div className="mt-3 text-xs text-text">E  wake up</div>
+        <div className="mt-3 text-xs text-text">E wake up</div>
       </div>
     </div>
   );
