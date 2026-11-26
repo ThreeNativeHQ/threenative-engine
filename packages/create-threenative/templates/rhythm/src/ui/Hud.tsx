@@ -107,10 +107,12 @@ export function Hud() {
         <div className="h-4 text-dim">
           {lastTiming === "early" || lastTiming === "late"
             ? lastTiming.toUpperCase()
-            : lastTiming === "on"
-              ? "ON THE BEAT"
-              : lastGrade === "miss"
-                ? "NO PRESS"
+            : lastGrade === "miss"
+              ? lastTiming === "on"
+                ? "WRONG BUTTON"
+                : "NO PRESS"
+              : lastTiming === "on"
+                ? "ON THE BEAT"
                 : ""}
         </div>
         <div className="mt-2 flex justify-between text-dim">
