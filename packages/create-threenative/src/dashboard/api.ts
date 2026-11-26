@@ -135,7 +135,10 @@ export function createDashboardApi(options: {
         // Back to the default is "remove the key", so an opted-in project carries no telemetry line.
         await patchConfig(root, { [CRASH_REPORTS_PATH]: crashReports ? null : false });
       }
-      if (Object.keys(prefs).length > 0) await writePrefs(prefs);
+      if (Object.keys(prefs).length > 0)
+        await writePrefs(prefs).catch((error: Error) => {
+          throw Object.assign(error, { status: 400 });
+        });
       return telemetryView();
     },
     "GET telemetry/traces": async () => ({ traces: await discoverTraces(root) }),

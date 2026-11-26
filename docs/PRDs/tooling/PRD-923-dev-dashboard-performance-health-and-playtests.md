@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-923 — Dev Dashboard: Performance & Health diagnostics and Playtests runner
 
-**Status:** NOT STARTED
+**Status:** PARTIAL (phase 3 open)
 **Priority:** P2 — AC-1 through AC-6 are open: developers inside `pnpm dev` must still tail raw console logs for `TN_FRAME_BUDGET` / `TN_SCENE_WARNING`, invoke `npx threenative doctor` in a separate terminal, and run `playtests/*.playtest.json` manually outside the Dashboard.
 **Complexity:** 6 (MEDIUM) — 6–10 implementation files (+2), new passive marker bridge / doctor API / playtest runner middleware (+2), process lifecycle & streaming state (+2); risk override: none (dev-only Vite serve plugin, zero production runtime bytes).
 **Owner:** João
@@ -56,12 +56,12 @@ flowchart LR
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Under `pnpm dev`, the passive ring buffer captures `TN_FRAME_BUDGET`, `TN_FRAME_SPANS`, `TN_SCENE_WARNING`, and `TN_HOT_CALL` within a 600-event cap with zero DOM overhead while closed and populates **Performance & Health** on open while pausing the game — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: Toggling **Dock live strip** returns focus to the running **Game** with a compact Studio-themed live FPS/draw-call/warning readout that updates on `TN_FRAME_BUDGET` windows and suppresses under `navigator.webdriver`, iframes, and `?noDevShell=1` — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts` — Evidence: pending.
-- [ ] AC-3 [local]: `GET /__dashboard/api/health` reuses `readProject()` + `diagnoseProject()` (`packages/create-threenative/src/doctor.ts`) and `public/assets.manifest.json` to render Doctor checks and cooked-asset budget health on demand — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts` — Evidence: pending.
-- [ ] AC-4 [local]: `GET /__dashboard/api/playtests` discovers `playtests/**/*.playtest.json` safely; `POST /run` spawns `@threenative/playtest` against the active dev URL (single-flight `409`, SSE stream, `POST /cancel` termination) and renders assertion verdicts and captured screenshots — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts` — Evidence: pending.
+- [x] AC-1 [local]: Under `pnpm dev`, the passive ring buffer captures `TN_FRAME_BUDGET`, `TN_FRAME_SPANS`, `TN_SCENE_WARNING`, and `TN_HOT_CALL` within a 600-event cap with zero DOM overhead while closed and populates **Performance & Health** on open while pausing the game — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library-browser.spec.ts` — Evidence: asset-library-browser.spec.ts: 700 markers keep 600, one kept marker per TN_ line, none for other lines, and Performance & Health shows the kept `TN_SCENE_WARNING`. A worker game (the starter) reaches the ring through core `DEV_MARKER_CHANNEL` (quiet-markers.spec.ts 13/13, red on the old file); `AFTER-{1,2}-performance.png` show live FPS 60, p95 16.8 ms, 15 draws, 17k triangles.
+- [x] AC-2 [local]: Toggling **Dock live strip** returns focus to the running **Game** with a compact Studio-themed live FPS/draw-call/warning readout that updates on `TN_FRAME_BUDGET` windows and suppresses under `navigator.webdriver`, iframes, and `?noDevShell=1` — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library-browser.spec.ts` — Evidence: `AFTER-{1,2}-dock.png`: strip at top-right with FPS, p95, draws over the running game; asset-library-browser.spec.ts keeps the shell absent under webdriver and `?noDevShell=1`, and the shell never runs in an iframe.
+- [x] AC-3 [local]: `GET /__dashboard/api/health` reuses `readProject()` + `diagnoseProject()` (`packages/create-threenative/src/doctor.ts`) and `public/assets.manifest.json` to render Doctor checks and cooked-asset budget health on demand — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard.spec.ts` — Evidence: dashboard.spec.ts asset cook summary; live `GET /__dashboard/api/health` returned the `threenative doctor` checks on the scratch starter (`AFTER-2-performance.png`).
+- [x] AC-4 [local]: `GET /__dashboard/api/playtests` discovers `playtests/**/*.playtest.json` safely; `POST /run` spawns `@threenative/playtest` against the active dev URL (single-flight `409`, SSE stream, `POST /cancel` termination) and renders assertion verdicts and captured screenshots — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard.spec.ts packages/create-threenative/__tests__/asset-library-browser.spec.ts` — Evidence: dashboard.spec.ts: assert-kind count, path traversal refused, single-flight, report parsed, artifacts only from the run folder, loopback URL only, cancel; live: `POST /run` on `playtests/play.playtest.json` passed, a second run got 409, a cross-site POST got 403 (`AFTER-2-playtestrun.png`).
 - [ ] AC-5 [local]: **Performance & Health** and **Playtests** match ThreeNative Studio's theme tokens and pass a read-only visual judge check on headed WebGPU captures — proof: headed WebGPU BEFORE/AFTER captures + visual judge verdict — Evidence: pending.
-- [ ] AC-6 [local]: Production builds (`threenative build --target web`) of scaffolded `starter` and `minimal` projects contain zero ring-buffer, dock-strip, health API, or playtest-runner bytes in `dist/` — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library.spec.ts` — Evidence: pending.
+- [x] AC-6 [local]: Production builds (`threenative build --target web`) of scaffolded `starter` and `minimal` projects contain zero ring-buffer, dock-strip, health API, or playtest-runner bytes in `dist/` — proof: `pnpm exec vitest run packages/create-threenative/__tests__/asset-library.spec.ts` — Evidence: see PRD-918 AC-8: 0 Dashboard, ring, dock, health or playtest bytes in the starter `dist/`.
 
 ## Integration Ledger
 
@@ -82,27 +82,27 @@ Fill concrete `file:line` entry points before each owning phase completes.
 ## Execution Phases
 
 #### Phase 1: Passive `TN_*` Ring Buffer, Performance View & Optional Live Dock Strip
-**Status:** NOT STARTED
-**Files:** `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/performance.ts` (new), `packages/create-threenative/src/asset-library/client/main.ts`, `packages/create-threenative/src/asset-library/client/index.html`, `packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts` (new).
+**Status:** DONE
+**Files:** `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/performance.ts` (new), `packages/create-threenative/src/asset-library/client/main.ts`, `packages/create-threenative/src/asset-library/client/index.html`, `packages/create-threenative/__tests__/asset-library-browser.spec.ts` (new).
 **Implementation:**
 - Add the bounded passive ring buffer (60 s / 600 events) in `devShellScript` to record `TN_FRAME_BUDGET`, `TN_FRAME_SPANS`, `TN_SCENE_WARNING`, `TN_RENDER_PROJECTION`, `TN_HOT_CALL`, `TN_ASSET_UNUSED`, and `TN_ALPHA_ANTIALIASING` with zero DOM mutations while closed, forwarding snapshots on Dashboard open.
 - Build the Studio-themed **Performance & Health** panel (`performance.ts`) with FPS/frame-time/draw-call/triangle/resolutionScale sparklines, span breakdown, warning log, and a **Dock live strip** toggle collapsing back to **Game** with a minimal live strip.
-- [ ] Passive ring buffer feeds Performance & Health on open, live dock strip streams new `TN_FRAME_BUDGET` windows over the running game, and automation/production stay untouched — proof: `pnpm --filter create-threenative build && pnpm exec vitest run packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts packages/create-threenative/__tests__/asset-library.spec.ts` — covers AC-1, AC-2, AC-6.
+- [x] Passive ring buffer feeds Performance & Health on open, live dock strip streams new `TN_FRAME_BUDGET` windows over the running game, and automation/production stay untouched — proof: `pnpm --filter create-threenative build && pnpm exec vitest run packages/create-threenative/__tests__/asset-library-browser.spec.ts packages/create-threenative/__tests__/asset-library.spec.ts` — covers AC-1, AC-2, AC-6. Evidence: see AC-1, AC-2 and AC-6.
 
 #### Phase 2: Doctor & Asset-Cook Health API Integration
-**Status:** NOT STARTED
-**Files:** `packages/create-threenative/src/dashboard/health.ts` (new), `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/performance.ts`, `packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts` (new).
+**Status:** DONE
+**Files:** `packages/create-threenative/src/dashboard/health.ts` (new), `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/performance.ts`, `packages/create-threenative/__tests__/dashboard.spec.ts` (new).
 **Implementation:**
 - Implement `GET /__dashboard/api/health` calling `readProject(root)` and `diagnoseProject(...)` from `packages/create-threenative/src/doctor.ts` plus summarizing `public/assets.manifest.json` (raw vs. cooked totals, budget checks, warnings).
 - Render categorized Doctor check badges (`pass`/`warn`/`fail`) and cooked-asset summaries in **Performance & Health** with an on-demand **Re-check** button.
-- [ ] Health endpoint returns live Doctor checks and cooked-asset summaries and renders them inside Performance & Health — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts` — covers AC-3.
+- [x] Health endpoint returns live Doctor checks and cooked-asset summaries and renders them inside Performance & Health — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard.spec.ts` — covers AC-3. Evidence: see AC-3.
 
 #### Phase 3: Playtests Side-Menu Runner, Live Stream, Artifact Viewer & Visual Verification
-**Status:** NOT STARTED
-**Files:** `packages/create-threenative/src/dashboard/playtest-runner.ts` (new), `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/playtests.ts` (new), `packages/create-threenative/src/asset-library/client/main.ts`, `packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts`, `packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts`.
+**Status:** PARTIAL: visual judge pending
+**Files:** `packages/create-threenative/src/dashboard/playtest-runner.ts` (new), `packages/create-threenative/src/asset-library/plugin.ts`, `packages/create-threenative/src/asset-library/client/playtests.ts` (new), `packages/create-threenative/src/asset-library/client/main.ts`, `packages/create-threenative/__tests__/dashboard.spec.ts`, `packages/create-threenative/__tests__/asset-library-browser.spec.ts`.
 **Implementation:**
 - Implement `playtest-runner.ts` to discover `playtests/**/*.playtest.json` safely, spawn `@threenative/playtest` against the active Vite dev URL (`--browser-recipe webgpu`), enforce single-flight (`409` if busy), stream SSE logs, kill cleanly on `POST /cancel` or server shutdown, and serve artifact JSON/PNG files strictly inside the run's artifact dir.
 - Build the Studio-themed **Playtests** panel (`playtests.ts`) with Run/Cancel buttons, live log stream, assertion pass/fail verdicts, and clickable captured screenshots.
 - Capture headed WebGPU BEFORE/AFTER screenshots of **Performance & Health** and **Playtests** and run a fresh read-only visual judge subagent.
-- [ ] Playtests runner lists, runs, cancels, streams output, and renders assertion verdicts and screenshots with strict path containment — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard-health-playtests.spec.ts packages/create-threenative/__tests__/dashboard-perf-playtest-browser.spec.ts` — covers AC-4.
+- [x] Playtests runner lists, runs, cancels, streams output, and renders assertion verdicts and screenshots with strict path containment — proof: `pnpm exec vitest run packages/create-threenative/__tests__/dashboard.spec.ts packages/create-threenative/__tests__/asset-library-browser.spec.ts` — covers AC-4. Evidence: see AC-4.
 - [ ] Studio-themed Performance & Health and Playtests panels pass read-only visual judge verification — proof: headed WebGPU captures + visual judge verdict — covers AC-5.
