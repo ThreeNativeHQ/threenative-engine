@@ -1,195 +1,194 @@
-// The hang glider's flight model: a point mass in moving air with a wing, not a steered velocity.
+// The hang glider, flown on the engine's `FlightModel`.
 //
-// The pilot holds an angle of attack. Pulling it up buys lift and costs speed, so a climb trades
-// speed for height and a dive trades it back. Lift and drag both grow with the square of the speed
-// through the air, so the glider settles at a trim speed for each angle. Below a minimum airspeed it
-// stalls: lift goes, the nose drops, and it flies again only when the speed is back above a higher one.
+// The engine owns lift, drag and stall: lift and drag come from the airspeed and the angle of
+// attack, a wing past its critical angle loses lift, and a stalled wing drops its nose. This file
+// owns only the airframe (a 95 kg glider and pilot under a 24 m² sail), the air it flies in (the
+// wind and the thermals ride in as the model's wind vector) and a small speed-stability term.
 //
-// Borrowed algorithms and constants, pilotwings-64-n64decomp (speeds are m/s here):
-//   `stall-threshold`: latch under 4 (`hang_glider2.c:253`), clear over 12 (`:249`), lift share
-//     ramped between 4 and 8 (`:252`), a ground clearance under 0.2 clears the latch (`:408`).
-//   `glide-lift`: lift grows with the square of airspeed, scaled by a table of angle of attack
-//     whose peak holds through the middle and collapses at extreme angles (`:47`, peak 1.85),
-//     and fades to nothing over a 100-unit band above a ceiling (`:555`).
-//   `glide-drag`: drag grows with the square of speed, and above a 22 reference it is divided by
-//     the speed ratio, capped at 2, so a long dive settles into a terminal glide (`:333`, `:335`).
-//   `hang-glider`: bank turns the glider because the lift vector tilts with the wing.
-import { GRAVITY, type IVec3, smoothstep } from "./world.js";
+// The engine's elevator is a load command, so a plane keeps its trim speed only by being fast. A
+// hang glider is speed-stable: it noses down when slow and noses up when fast. The term below adds
+// that, which is what keeps a dive from running away and gives a stall its recovery.
+//
+// Reference, pilotwings-64-n64decomp `stall-threshold`: the heads-up warning shows under 8 m/s
+// (`hang_glider1.c:423`). The stall itself is the engine's, so the game does not copy the card's
+// latch (4 and 12) any more.
+import { FlightModel } from "@threenative/core";
+import type { IAircraftAirframe, IFlightState } from "@threenative/core";
+import type { IVec3 } from "./world.js";
 
-const DEG = Math.PI / 180;
-export const STALL_IN = 4;
-export const STALL_OUT = 12;
-export const LIFT_FULL = 8;
 /** The heads-up warning shows under this airspeed. Reference: `hang_glider1.c:423`. */
 export const STALL_WARNING = 8;
-export const MAX_BANK = 40 * DEG;
-const ROLL_RATE = 1.4;
-const ROLL_RETURN = 0.9;
-const ALPHA_RATE = 1.3;
-const ALPHA_TRIM = 6 * DEG;
-/** Full pull holds the peak of the lift table, the slowest steady flight: 13 m/s. */
-const ALPHA_PULL = 20 * DEG;
-const ALPHA_PUSH = -4 * DEG;
-/** The nose the wing takes while it is stalled, so the glider drops its nose to fly again. */
-const ALPHA_STALLED = -14 * DEG;
-/** Lift acceleration per squared airspeed at the table's peak (1 g at 18 m/s and 6 degrees). */
-const LIFT_K = 0.055;
-const DRAG_PARASITE = 0.0025;
-const DRAG_INDUCED = 0.0029;
-const DRAG_FORM = 0.012;
-const DRAG_REFERENCE = 22;
-const DRAG_DIVISOR_CAP = 2;
-/** The trim glide's lift over drag, used only to start a glider in balance. */
-const GLIDE_RATIO = 9;
-/** Extra drag per m/s the glider flies faster than its trim speed: a dive settles instead of ringing. */
-const SPEED_DAMPING = 0.5;
-const CEILING_START = 400;
-const CEILING_BAND = 50;
+/** The glide the pilot trims for, m/s. */
+export const TRIM_SPEED = 17;
+/** Stick gain on the roll: full right banks about 30 degrees, a turn that still glides. */
+const TURN_AUTHORITY = 0.6;
+/** Pull added per m/s over the trim speed (and pushed under it). */
+const SPEED_STABILITY = 0.04;
+/** The stick the stability term may add, so it cannot out-pull the pilot. */
+const STABILITY_LIMIT = { high: 0.5, low: -0.4 };
+/** A wing is stalled over this share of its lift collapse, and flies again under the lower one. */
+const STALL_IN = 0.5;
+const STALL_OUT = 0.1;
 
-/** Angle of attack in degrees to the share of peak lift. Rises, holds through the middle, then collapses. */
-const LIFT_TABLE: ReadonlyArray<readonly [number, number]> = [
-  [-90, 0.2],
-  [-20, -0.3],
-  [-4, -0.02],
-  [0, 0.25],
-  [6, 0.55],
-  [12, 0.9],
-  [16, 1],
-  [22, 1],
-  [28, 0.45],
-  [40, 0.3],
-  [90, 0.25],
-];
+const AIRFRAME: IAircraftAirframe = Object.freeze({
+  chord: 1.6,
+  dryMass: 95,
+  fuelMass: 0,
+  pitchInertia: 60,
+  power: 0,
+  propEfficiency: 0,
+  rollInertia: 90,
+  span: 10.5,
+  staticThrust: 0,
+  wingArea: 24,
+  yawInertia: 120,
+});
 
-export function liftCoefficient(alpha: number): number {
-  const degrees = alpha / DEG;
-  const first = LIFT_TABLE[0];
-  const last = LIFT_TABLE[LIFT_TABLE.length - 1];
-  if (first === undefined || last === undefined) return 0;
-  if (degrees <= first[0]) return first[1];
-  if (degrees >= last[0]) return last[1];
-  for (let index = 1; index < LIFT_TABLE.length; index += 1) {
-    const upper = LIFT_TABLE[index];
-    const lower = LIFT_TABLE[index - 1];
-    if (upper === undefined || lower === undefined || degrees > upper[0]) continue;
-    return lower[1] + ((upper[1] - lower[1]) * (degrees - lower[0])) / (upper[0] - lower[0]);
-  }
-  return last[1];
+/** Every field the engine reads, so a state the game built is a whole `IFlightState`. */
+function newState(): IFlightState {
+  return {
+    aileron: 0,
+    aoa: 0,
+    assist: true,
+    beta: 0,
+    brakePos: 0,
+    brakes: false,
+    controlAileron: 0,
+    drag: 0,
+    elevator: 0,
+    engineCut: false,
+    flapPos: 0,
+    flaps: 0,
+    flightTime: 0,
+    fuel: 0,
+    gear: false,
+    gearPos: 0,
+    gforce: 1,
+    groundSpeed: 0,
+    heading: 0,
+    hp: 100,
+    ias: 0,
+    lift: 0,
+    mass: 0,
+    payloadDrag: 0,
+    payloadMass: 0,
+    pitch: 0,
+    pitchRate: 0,
+    roll: 0,
+    rollRate: 0,
+    rpm: 0,
+    rudder: 0,
+    speed: TRIM_SPEED,
+    stall: 0,
+    throttle: 0,
+    thrust: 0,
+    trim: 0.04,
+    vx: 0,
+    vy: 0,
+    vz: 0,
+    x: 0,
+    y: 0,
+    yawRate: 0,
+    z: 0,
+  };
 }
 
-const clamp = (value: number, low: number, high: number): number =>
-  Math.min(high, Math.max(low, value));
+/** A view of three state fields as one point, so the game moves the glider by writing `pos.y`. */
+function view(state: IFlightState, x: "x" | "vx", y: "y" | "vy", z: "z" | "vz"): IVec3 {
+  return {
+    get x() {
+      return state[x];
+    },
+    set x(value: number) {
+      state[x] = value;
+    },
+    get y() {
+      return state[y];
+    },
+    set y(value: number) {
+      state[y] = value;
+    },
+    get z() {
+      return state[z];
+    },
+    set z(value: number) {
+      state[z] = value;
+    },
+  };
+}
 
 export interface IGliderInput {
-  /** +1 pulls the nose up (more angle of attack), -1 pushes it down. */
+  /** +1 pulls the nose up, -1 pushes it down. */
   readonly pitch: number;
-  /** +1 banks right, -1 banks left. */
+  /** +1 banks right. */
   readonly roll: number;
 }
 
 export class Glider {
-  readonly pos: IVec3;
-  readonly vel: IVec3 = { x: 0, y: 0, z: 0 };
-  /** Direction of flight through the air, radians, three.js yaw (0 faces +z). */
-  heading: number;
-  /** Radians, positive banks right. */
-  bank = 0;
-  /** Wing angle of attack, radians. */
-  alpha = ALPHA_TRIM;
+  readonly state: IFlightState = newState();
+  readonly pos: IVec3 = view(this.state, "x", "y", "z");
+  readonly vel: IVec3 = view(this.state, "vx", "vy", "vz");
   stalled = false;
-  /** Speed through the air, m/s. */
-  airspeed = 0;
-  /** Flight path angle through the air, radians, positive climbs. */
-  gamma = 0;
-  liftShare = 1;
+  readonly #wind: IVec3 = { x: 0, y: 0, z: 0 };
+  #model: FlightModel;
 
-  /** A glider in trim at `speed` through the air: its sink rate is the glide's, so it starts without a bounce. */
-  constructor(
-    x: number,
-    y: number,
-    z: number,
-    heading: number,
-    speed: number,
-    air: IVec3 = { x: 0, y: 0, z: 0 },
-  ) {
-    this.pos = { x, y, z };
-    this.heading = heading;
-    this.vel.x = Math.sin(heading) * speed + air.x;
-    this.vel.y = -speed / GLIDE_RATIO + air.y;
-    this.vel.z = Math.cos(heading) * speed + air.z;
-    this.airspeed = speed;
+  constructor(x: number, y: number, z: number, heading: number, air: IVec3) {
+    this.#model = new FlightModel({
+      airframe: AIRFRAME,
+      deckHeight: -1000,
+      state: this.state,
+      wind: this.#wind,
+    });
+    this.place(x, y, z, heading, 0, air);
   }
 
-  /** Nose attitude for the drawn model, radians, positive noses up. */
+  /** Put the glider in trim at a point, with a heading (game yaw) and a bank (+ is right). */
+  place(x: number, y: number, z: number, heading: number, bank: number, air: IVec3): void {
+    const { state } = this;
+    state.x = x;
+    state.y = y;
+    state.z = z;
+    // The engine's heading is a compass angle: 0 flies down -Z and a right turn adds to it.
+    state.heading = Math.PI - heading;
+    state.pitch = -0.1;
+    state.roll = -bank;
+    state.speed = TRIM_SPEED;
+    Object.assign(this.#wind, air);
+    this.#model.reset();
+    this.stalled = false;
+  }
+
+  /** The game's yaw: forward is (sin, 0, cos), and a right turn lowers it. */
+  get heading(): number {
+    return Math.PI - this.state.heading;
+  }
+
+  /** Bank angle, + is right wing down. */
+  get bank(): number {
+    return -this.state.roll;
+  }
+
+  /** Nose angle over the horizon. */
   get attitude(): number {
-    return this.gamma + this.alpha;
+    return this.state.pitch;
   }
 
-  /** Metres per second the glider gains in height, in the ground frame. */
-  get climb(): number {
-    return this.vel.y;
+  /** Speed through the air, m/s. */
+  get airspeed(): number {
+    return this.state.speed;
   }
 
-  step(dt: number, input: IGliderInput, air: IVec3, clearance: number): void {
-    const target = input.roll * MAX_BANK;
-    const rate = input.roll === 0 ? ROLL_RETURN : ROLL_RATE;
-    this.bank += clamp(target - this.bank, -rate * dt, rate * dt);
-
-    const rx = this.vel.x - air.x;
-    const ry = this.vel.y - air.y;
-    const rz = this.vel.z - air.z;
-    const speed = Math.hypot(rx, ry, rz);
-    this.airspeed = speed;
-    // A glider at a standstill in the air falls: its flight direction is straight down.
-    const tx = speed > 0.01 ? rx / speed : 0;
-    const ty = speed > 0.01 ? ry / speed : -1;
-    const tz = speed > 0.01 ? rz / speed : 0;
-    if (Math.hypot(rx, rz) > 1) this.heading = Math.atan2(tx, tz);
-    this.gamma = Math.asin(clamp(ty, -1, 1));
-
-    if (!this.stalled && speed < STALL_IN) this.stalled = true;
-    else if (this.stalled && (speed > STALL_OUT || clearance < 0.2)) this.stalled = false;
-    this.liftShare = this.stalled ? 0 : clamp((speed - STALL_IN) / (LIFT_FULL - STALL_IN), 0, 1);
-
-    const command = this.stalled
-      ? ALPHA_STALLED
-      : input.pitch >= 0
-        ? ALPHA_TRIM + input.pitch * (ALPHA_PULL - ALPHA_TRIM)
-        : ALPHA_TRIM - input.pitch * (ALPHA_PUSH - ALPHA_TRIM);
-    this.alpha += clamp(command - this.alpha, -ALPHA_RATE * dt, ALPHA_RATE * dt);
-
-    const coefficient = liftCoefficient(this.alpha);
-    const ceiling = 1 - smoothstep(CEILING_START, CEILING_START + CEILING_BAND, this.pos.y);
-    const lift = LIFT_K * speed * speed * coefficient * this.liftShare * ceiling;
-    const form = Math.max(0, Math.abs(this.alpha) - 0.45);
-    const divisor = clamp(speed / DRAG_REFERENCE, 1, DRAG_DIVISOR_CAP);
-    let drag =
-      (speed *
-        speed *
-        (DRAG_PARASITE + DRAG_INDUCED * coefficient * coefficient + DRAG_FORM * form * form)) /
-      divisor;
-    // Trim speed at this angle: where one g of lift balances. Faster than that is paid for in drag.
-    if (coefficient > 0.2 && !this.stalled) {
-      const trim = Math.sqrt(GRAVITY / (LIFT_K * coefficient));
-      drag += Math.max(0, speed - trim) * SPEED_DAMPING;
-    }
-
-    // The wing's own axes: `right` from the heading, `up` perpendicular to the flight path, banked.
-    const right = { x: -Math.cos(this.heading), z: Math.sin(this.heading) };
-    let ux = -right.z * ty;
-    let uy = right.z * tx - right.x * tz;
-    let uz = right.x * ty;
-    const length = Math.hypot(ux, uy, uz) || 1;
-    ux /= length;
-    uy /= length;
-    uz /= length;
-    const cosB = Math.cos(this.bank);
-    const sinB = Math.sin(this.bank);
-    this.vel.x += (lift * (ux * cosB + right.x * sinB) - drag * tx) * dt;
-    this.vel.y += (-GRAVITY + lift * uy * cosB - drag * ty) * dt;
-    this.vel.z += (lift * (uz * cosB + right.z * sinB) - drag * tz) * dt;
-    this.pos.x += this.vel.x * dt;
-    this.pos.y += this.vel.y * dt;
-    this.pos.z += this.vel.z * dt;
+  step(dt: number, input: IGliderInput, air: IVec3): void {
+    const { state } = this;
+    Object.assign(this.#wind, air);
+    const stability = Math.min(
+      STABILITY_LIMIT.high,
+      Math.max(STABILITY_LIMIT.low, (state.speed - TRIM_SPEED) * SPEED_STABILITY),
+    );
+    this.#model.step(dt, {
+      pitch: Math.min(1, Math.max(-1, input.pitch + stability)),
+      turn: input.roll * TURN_AUTHORITY,
+    });
+    this.stalled = state.stall > (this.stalled ? STALL_OUT : STALL_IN);
   }
 }

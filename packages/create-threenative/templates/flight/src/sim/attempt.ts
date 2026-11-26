@@ -27,9 +27,8 @@ export type Phase = "flying" | "landed" | "crashed";
 
 /** The glider's body hangs this far under its sail's centre: the pilot's feet and the control bar. */
 const GLIDER_DROP = 1.6;
-/** A launch 8 m over the hill's crest, trimmed at 18 m/s through the air. */
+/** A launch 8 m over the hill's crest. */
 const LAUNCH_HEIGHT = 8;
-const TRIM_SPEED = 18;
 
 export interface IControls {
   /** Stick: +1 is up/forward on the keys. The glider reads it as nose down, the belt as a lean forward. */
@@ -64,7 +63,6 @@ export class Attempt {
         y,
         LAUNCH.z,
         LAUNCH.heading,
-        TRIM_SPEED,
         airAt(LAUNCH.x, y, LAUNCH.z, 0),
       );
     } else {
@@ -105,20 +103,9 @@ export class Attempt {
     return base + landing.points + (landing.onPad ? timeBonus(this.time, this.limits) : 0);
   }
 
-  /** Put the glider back in trim at a point, heading and speed (a playtest station). */
+  /** Put the glider back in trim at a point, heading and bank (a playtest station). */
   placeGlider(pos: IVec3, heading: number, bank = 0): void {
-    if (this.glider === undefined) return;
-    const speed = TRIM_SPEED;
-    const air = airAt(pos.x, pos.y, pos.z, this.time);
-    this.glider.pos.x = pos.x;
-    this.glider.pos.y = pos.y;
-    this.glider.pos.z = pos.z;
-    this.glider.heading = heading;
-    this.glider.bank = bank;
-    this.glider.stalled = false;
-    this.glider.vel.x = Math.sin(heading) * speed + air.x;
-    this.glider.vel.y = -speed / 9 + air.y;
-    this.glider.vel.z = Math.cos(heading) * speed + air.z;
+    this.glider?.place(pos.x, pos.y, pos.z, heading, bank, airAt(pos.x, pos.y, pos.z, this.time));
   }
 
   /** Put the belt at a point with its engine idling in the air (a playtest station). */
@@ -143,12 +130,7 @@ export class Attempt {
     if (this.air.y > 0.5) this.thermalTime += dt;
     if (this.glider !== undefined) {
       const wasStalled = this.glider.stalled;
-      this.glider.step(
-        dt,
-        { pitch: -controls.pitch, roll: controls.roll },
-        this.air,
-        this.clearance,
-      );
+      this.glider.step(dt, { pitch: -controls.pitch, roll: controls.roll }, this.air);
       if (this.glider.stalled && !wasStalled) this.stalls += 1;
     } else if (this.belt !== undefined) {
       const input: IBeltInput = {

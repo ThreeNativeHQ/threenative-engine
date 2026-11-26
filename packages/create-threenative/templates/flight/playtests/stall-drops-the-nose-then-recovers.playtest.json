@@ -44,7 +44,7 @@
       "waitForResource": {
         "id": "state",
         "path": "airspeed",
-        "gte": 45
+        "gte": 30
       },
       "release": false,
       "timeoutMs": 12000
