@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-920 — Capability and reference search accuracy, hybrid evaluation, and self-describing CLI schemas
 
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Priority:** P1 — Every Studio plan and build turn depends on `engine_search_capabilities`, `engine_search_references`, and `call.mjs`; AC-1 through AC-5 are open while substring false positives (`"street"`→`bakeVegetation`, `"billboard"`→`mario-party-1`), stem collisions (`"leaves"`+`"scene"`→`leaveScene`, `"closed"`→`ctx.quit`), missed core mechanics (countdown, night lighting, `Heightfield` in long queries), and schema-less `call.mjs` output degrade agent discovery.
 **Complexity:** 5 (MEDIUM) — 1–5 implementation files (+1), new offline hybrid benchmark/scorer module (+2), crosses engine npm/bundle release boundary (+2); risk override: none.
 **Owner:** João
@@ -56,8 +56,8 @@ Measured 2026-11-25 across `threenative-live-studio` local loop traces (`gpt-6.2
 
 ## Acceptance Criteria
 
-- [ ] AC-1 [local]: Zero substring/stem false positives on the Nov 25 trace regression suite (`"street"` never matches `bakeVegetation` via `'trees'`; `"billboard"` never matches `mario-party-1` via `'board'`; `"lush tropical leaves ... scene"` excludes `leaveScene`; `"closed spline"` excludes `ctx.quit`). proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — Evidence: pending.
-- [ ] AC-2 [local]: Mechanic plus verbatim-symbol recall passes on Nov 25 trace queries (`"countdown before race start, begin on GO"` ranks `Scheduler` top-3; `"night scene lighting, exposure and fog with emissive neon signage"` ranks `WorldEnvironment` top-5; long query with `"Heightfield"` ranks `Heightfield` top-3). proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — Evidence: pending.
+- [x] AC-1 [local]: Zero substring/stem false positives on the Nov 25 trace regression suite (`"street"` never matches `bakeVegetation` via `'trees'`; `"billboard"` never matches `mario-party-1` via `'board'`; `"lush tropical leaves ... scene"` excludes `leaveScene`; `"closed spline"` excludes `ctx.quit`). proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — Evidence: All nine Nov 25 regressions failed as expected on pinned commit `6a51f730f7348e6ed7b598b996528d0ec0aa1171`. The two suites then passed 162 tests with one optional live reference test skipped.
+- [x] AC-2 [local]: Mechanic plus verbatim-symbol recall passes on Nov 25 trace queries (`"countdown before race start, begin on GO"` ranks `Scheduler` top-3; `"night scene lighting, exposure and fog with emissive neon signage"` ranks `WorldEnvironment` top-5; long query with `"Heightfield"` ranks `Heightfield` top-3). proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts` — Evidence: The two suites passed after capabilities:sync. The trace regressions rank Scheduler and Heightfield in the top three and WorldEnvironment in the top five.
 - [ ] AC-3 [local]: Frozen PRD-865 held-out gold floor holds (`recall@1 >= 0.65`, `recall@5 >= 0.80`, 20/20 exact-symbol rank 1) while the Model2Vec+BM25F vs BM25F-only A/B result is recorded in `artifacts/capability-search-ab.json` plus `## Decisions`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/search-gold.spec.ts && pnpm tsx scripts/capability-search-ab.ts --base HEAD` — Evidence: pending.
 - [ ] AC-4 [local]: `node packages/core/mcp/call.mjs <server>` prints required/optional parameter hints per tool, while `call.mjs <server> <tool> --schema` prints valid JSON `inputSchema`. proof: `pnpm exec vitest run packages/engine-mcp/__tests__/server.spec.ts` — Evidence: pending.
 - [ ] AC-5 [local]: Bundled `packages/core/mcp/engine-server.mjs` plus `packages/core/capabilities.json` stay in sync, returning actionable hints for wrong arg aliases (`query`→`situation`), missing `kind`, or near-miss symbol names (`beforeRender`→`ctx.beforeRender`). proof: `pnpm capabilities:check && pnpm exec vitest run packages/engine-mcp` — Evidence: pending.
@@ -88,14 +88,14 @@ All implementation phases are verified against concrete before/after evidence be
 ## Execution Phases
 
 #### Phase 1: Word-boundary fielded BM25F scorer and alias hygiene
-**Status:** NOT STARTED
+**Status:** IN PROGRESS
 **Files:** `packages/engine-mcp/src/index.ts`, `packages/engine-mcp/__tests__/search.spec.ts`, `packages/engine-mcp/__tests__/references.spec.ts`, JSDoc `@alias`/`@situation` tags on core exports (e.g. `Scheduler`, `WorldEnvironment`) + `packages/core/capabilities.json` via `pnpm capabilities:sync`.
 **Implementation:**
 - Replace raw `.includes()` `phraseBonus` in `scorePhrase` and `notOwnedSituationScore` with word-boundary token-sequence matching (`hasTokenSubsequence`).
 - Implement fielded BM25F across `symbol`, `aliases`, best `situation`, and `summary` (and `name`/`tags`/`summary`/`title` in `searchReferences`), add verbatim PascalCase/camelCase identifier boost for long queries (`Heightfield`), guard stemmed false positives (`leaves`→`leaveScene`, `closed`→`ctx.quit`), and split clauses / down-weight exit hooks on `scope: "request"`.
 - Add missing `@alias`/`@situation` JSDoc tags, run `pnpm capabilities:sync`, and write red-green regressions for every Nov 25 false positive and miss.
 **Verification:** Confirm Nov 25 regression tests fail red against unmodified `index.ts`, sync metadata via `pnpm capabilities:sync`, and pass `pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts`.
-- [ ] Word-boundary fielded BM25F plus alias hygiene pass all capability/reference regression cases — proof: `pnpm capabilities:sync && pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — covers AC-1, AC-2.
+- [x] Word-boundary fielded BM25F plus alias hygiene pass all capability/reference regression cases — proof: `pnpm capabilities:sync && pnpm exec vitest run packages/engine-mcp/__tests__/search.spec.ts packages/engine-mcp/__tests__/references.spec.ts` — covers AC-1, AC-2. Red control 9/9 failures, green 162 passed and one optional live test skipped.
 
 #### Phase 2: Offline hybrid semantic benchmark (Model2Vec + RRF) and A/B gate
 **Status:** NOT STARTED

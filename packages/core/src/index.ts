@@ -261,10 +261,14 @@ export type { IRandom } from "./random.js";
  * Define the portable game entry shared by web and native.
  * @situation start a ThreeNative game from src/game.ts
  * @situation register physics and gameplay plugins
+ * @situation bind a reload input action for a game's magazine and reserve ammo
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
+ * @situation use chase camera framing behind a race car
+ * @situation make the player readable with an angled arena camera
  * @alias nearest target crosshair spawns
  * @alias third-person camera
+ * @alias chase camera framing
  * @alias restart run without page reload
  * @alias field of view while aiming
  * @constraint keep DOM and React mounting in src/main.ts
@@ -1432,6 +1436,8 @@ export type { IExposureSettings } from "./look/exposure-settings.js";
  *
  * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
  * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+ * @situation set night scene lighting and exposure for a foggy city with emissive signs
+ * @alias night lighting
  * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
  * @constraint an unknown option value throws instead of becoming the default
  * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
@@ -1604,7 +1610,8 @@ export type {
  * Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels
  * of detail, from the game's own placement rule.
  * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
- * @situation stream instanced props of any baked mesh round the player without one draw per prop
+ * @situation scatter fallen logs, twigs and leaf litter on the forest floor
+ * @situation stream instanced props around the player without one draw per prop
  * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
  * @constraint call `update(follow)` once per rendered frame
  * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
@@ -1862,6 +1869,7 @@ export type {
  * @situation show a 3D object while a pointer hovers over it
  * @situation handle touch and mouse taps on a loaded model without naming its child meshes
  * @situation drag a crate or prop with the mouse or a finger
+ * @situation click points of interest to inspect them as the player explores
  * @constraint listeners are side-table registrations; Three.js prototypes are never patched
  * @constraint one raycast serves each active pointer and no raycast runs when nothing is registered
  * @example ctx.pointer.on(tile, "tapped", (event) => place(event.point));
@@ -1943,6 +1951,8 @@ export type {
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
  * @situation a countdown timer: end the level when its time limit runs out
+ * @situation tick a race start countdown and unlock the controls on GO
+ * @alias race start countdown
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits

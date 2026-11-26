@@ -13,6 +13,7 @@ import {
   searchCapabilities,
   toolDefinitions,
 } from "../src/index.js";
+import { november25CapabilityTraces } from "./fixtures/nov25-search.js";
 
 const workspaceManifest = path.resolve("packages/core/capabilities.json");
 
@@ -25,6 +26,29 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
+  it.each(november25CapabilityTraces)(
+    "Nov 25 trace: $id",
+    ({ situation, scope, expected, excluded }) => {
+      const symbols = searchResults(situation, workspaceManifest, scope).map(
+        ({ symbol }) => symbol,
+      );
+
+      if (expected !== undefined) {
+        expect(symbols.slice(0, expected.rank)).toContain(expected.symbol);
+      }
+      expect(symbols.filter((symbol) => excluded?.includes(symbol))).toEqual([]);
+    },
+  );
+
+  it("keeps an explicit app quit in a complete request", () => {
+    const results = searchResults(
+      "Drive around the city and let the player close the app from the pause menu",
+      workspaceManifest,
+      "request",
+    );
+    expect(results.map(({ symbol }) => symbol)).toContain("ctx.quit");
+  });
+
   it("drops a stop word in every inflection, so 'keeps' cannot match a 'keep' situation", () => {
     expect(capabilitySituationTokens("keeps the arena readable")).not.toContain("keep");
     const symbols = searchResults(

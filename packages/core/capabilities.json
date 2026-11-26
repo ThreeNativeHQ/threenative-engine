@@ -1510,6 +1510,7 @@
       "aliases": [
         "nearest target crosshair spawns",
         "third-person camera",
+        "chase camera framing",
         "restart run without page reload",
         "field of view while aiming"
       ],
@@ -1527,8 +1528,11 @@
       "situations": [
         "start a ThreeNative game from src/game.ts",
         "register physics and gameplay plugins",
+        "bind a reload input action for a game's magazine and reserve ammo",
         "let the player zoom the camera with a wheel, pinch, or gamepad axis",
-        "frame a camera behind the player"
+        "frame a camera behind the player",
+        "use chase camera framing behind a race car",
+        "make the player readable with an angled arena camera"
       ],
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
@@ -2913,7 +2917,8 @@
         "let the player click on a thing in the world",
         "show a 3D object while a pointer hovers over it",
         "handle touch and mouse taps on a loaded model without naming its child meshes",
-        "drag a crate or prop with the mouse or a finger"
+        "drag a crate or prop with the mouse or a finger",
+        "click points of interest to inspect them as the player explores"
       ],
       "summary": "Dispatch portable pointer events from the game surface to registered Three.js objects.",
       "supersedes": [],
@@ -3494,8 +3499,10 @@
       "signature": "export class ScatterField3D extends Group { … }",
       "situations": [
         "scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor",
-        "stream instanced props of any baked mesh round the player without one draw per prop",
-        "place rocks, debris or plants on a heightfield with distance thinning and level of detail"
+        "scatter fallen logs, twigs and leaf litter on the forest floor",
+        "stream instanced props around the player without one draw per prop",
+        "place rocks, debris or plants on a heightfield with distance thinning and level of detail",
+        "stream instanced props of any baked mesh round the player without one draw per prop"
       ],
       "summary": "Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels of detail, from the game's own placement rule.",
       "supersedes": [],
@@ -3559,7 +3566,7 @@
       "symbol": "sceneWarning"
     },
     {
-      "aliases": ["tower defense game", "spawn waves"],
+      "aliases": ["race start countdown", "tower defense game", "spawn waves"],
       "constraints": [
         "dispose returned handles when the owning scene exits",
         "ease receives progress in the range 0 to 1 and its return value is the interpolation factor"
@@ -3574,7 +3581,8 @@
         "delay an enemy patrol transition",
         "run a callback every simulation tick",
         "tween a numeric property with a game-owned curve",
-        "a countdown timer: end the level when its time limit runs out"
+        "a countdown timer: end the level when its time limit runs out",
+        "tick a race start countdown and unlock the controls on GO"
       ],
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
@@ -4554,7 +4562,7 @@
       "symbol": "withVelocityContext"
     },
     {
-      "aliases": [],
+      "aliases": ["night lighting"],
       "constraints": [
         "post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`",
         "an unknown option value throws instead of becoming the default"
@@ -4569,7 +4577,8 @@
       "signature": "export class WorldEnvironment { … }",
       "situations": [
         "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
-        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look",
+        "set night scene lighting and exposure for a foggy city with emissive signs"
       ],
       "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
       "supersedes": [],
@@ -5341,7 +5350,7 @@
       "symbol": "publishHitRegions"
     },
     {
-      "aliases": ["journal objective panel", "readable HUD"],
+      "aliases": ["health bar", "journal objective panel", "readable HUD"],
       "constraints": [
         "publishes once per rendered frame unless stateFlushMs selects a slower interval, and not at all with no UI listening"
       ],
@@ -5353,6 +5362,7 @@
       "signature": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
       "situations": [
         "show score or health in a UI rendered over the game surface",
+        "update a health bar after the player takes damage",
         "keep a HUD in step with the game without re-rendering on the loop",
         "publish game state to a HUD in another realm",
         "keep a web and native UI mirror on the same coalesced state stream"
