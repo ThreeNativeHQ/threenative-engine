@@ -7,7 +7,7 @@
  * 2. Evaluates the page's `// @data-start` block and draws the progress map as a static SVG.
  * 3. Appends a snapshot of the box counts to `port-history.json` when they change, and draws the
  *    burn-up chart `unreal-port-progress.svg` with the finish date at the recent pace.
- * 4. Rewrites the status block of the root README between the `unreal-port-status` markers.
+ * 4. Rewrites the status block of `docs/PRDs/Unreal/README.md` between the `unreal-port-status` markers.
  *
  * Output depends on the working tree only, so `--check` gives the same answer locally and in CI.
  *
@@ -21,7 +21,7 @@ const ROOT = join(import.meta.dirname, "..");
 export const PAGE = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html";
 const MAP_MD = "docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.md";
 const SVG = "docs/PRDs/Unreal/research/unreal-port-status.svg";
-const README = "README.md";
+const README = "docs/PRDs/Unreal/README.md";
 const INTERNALS = "docs/PRDs/Unreal/research/internals";
 const HISTORY = "docs/PRDs/Unreal/research/port-history.json";
 const PROGRESS_SVG = "docs/PRDs/Unreal/research/unreal-port-progress.svg";
@@ -510,13 +510,13 @@ measured in lines of the Unreal source. Each one maps to the ThreeNative PRD tha
 **${pc("done")} done · ${pc("progress")} in progress · ${pc("notstarted")} not started · ${pc("deferred")} deferred · ${pc("gap")} with no PRD** (share of ${Math.round(total / 1000)}K Unreal lines; the tool-heavy Niagara, Landscape, World Partition, RHI and RenderCore modules are left out)
 · ${open} open PRDs on this branch · ${gaps} subsystems with no PRD
 
-[![Unreal port progress map](${SVG})](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
+[![Unreal port progress map](research/unreal-port-status.svg)](research/unreal-visuals-and-performance-feature-map.html)
 
 **Pace:** ${Math.round(rate)} PRD boxes ticked a week over the last 2 weeks. The port order runs waves 1-4 first,
 so at that pace the default look is done about **${long(lookEta)}**, and everything filed today about
 **${long(allEta)}**. Scope grows as PRDs are filed, so read the dates as the earliest finish.
 
-[![Unreal port burn-up](${PROGRESS_SVG})](docs/PRDs/Unreal/research/unreal-visuals-and-performance-feature-map.html)
+[![Unreal port burn-up](research/unreal-port-progress.svg)](research/unreal-visuals-and-performance-feature-map.html)
 
 Select the map to open the interactive page in a browser. It lists the PRDs and gaps of every
 feature and the order to port them in.
