@@ -22,7 +22,6 @@ own scripts. Agent packages add MCP tools to an editor; nothing in the game impo
 | `@threenative/three-native` | The owned engine's Three.js API catalog and the sources its bundlers read | Engine bundling |
 | `@threenative/terrain` | Headless Strata authoring: validated recipes, baked heightfields, indexed geometry, six starter worlds | A bake script, plus `threenative-terrain` MCP |
 | `@threenative/procedural-environment` | Bake-first procedural nature GLBs: vegetation, rocks, city modules, the Stylized Biome Kit | A bake script, then the game at runtime |
-| `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, conservative bounds | Game code |
 | `@threenative/metahuman` | MetaHuman head expressions: checksum-verified OpenRigLogic evaluator and the binding contract | Game code |
 | `@threenative/ueformat` | UEFormat v10 `.uemodel` parser and Three.js loader | An import script |
 | `@threenative/raw-unreal` | Raw Unreal `.uasset` static-mesh loader, UE5 and UE4.18 layouts | An import script |
@@ -113,7 +112,6 @@ bytes, so a game loads them like any other asset.
 | --- | --- | --- |
 | `@threenative/procedural-environment` | `bakeVegetation`, `bakeRock`, `bakeCity` in a bake script | Trees, ground cover, rocks, 75 city modules, plus the Stylized Biome Kit on `/stylized` |
 | `@threenative/terrain` | A copied starter world and its `bake.mjs` | Six worlds: `alpine`, `arbor`, `coastal`, `desert`, `forest`, `tundra` |
-| `@threenative/procedural-animals` | `loadAnimalBake(ctx.assets, "wolf.animal")`, then `createAnimalGeometry` | Baked animal payloads with a rig and a pose; `createAnimalActor` binds one to your motion and accepted state |
 
 Every appearance value is yours: the bake decides the bytes, and the material, scale and motion
 are game source.

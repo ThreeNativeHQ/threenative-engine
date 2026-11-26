@@ -153,7 +153,6 @@ Details in [`create-threenative`](packages/create-threenative/README.md).
 | `@threenative/metahuman` | MetaHuman head expressions — checksum-verified OpenRigLogic WASM evaluator and the binding-metadata asset contract |
 | `@threenative/physics` | Rapier-backed Godot-shaped physics and navigation |
 | `@threenative/playtest` | Browser, native, and scenario assertion harness |
-| `@threenative/procedural-animals` | Baked animal payloads, runtime poses, accepted-state following, and conservative bounds |
 | `@threenative/procedural-environment` | Optional bake-first procedural assets as GLBs: trees, cover and forest floor (`bakeVegetation`), rocks and cliffs (`bakeRock`), 75 city modules (`bakeCity`), plus the Three.js Stylized Biome Kit (`/stylized`). Browse them with `pnpm asset-library` |
 | `@threenative/runtime-native` | Owned C++ host for desktop and Android |
 | `@threenative/raw-unreal` | Raw Unreal editor `.uasset` static-mesh loader — UE5 FMeshDescription and UE4.18 FRawMesh, no interchange conversion |

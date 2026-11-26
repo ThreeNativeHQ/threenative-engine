@@ -83,6 +83,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Breaking
 
+- `@threenative/procedural-animals` is retired: `createAnimalActor`, `createAnimalGeometry`,
+  `loadAnimalBake`, `parseAnimalBake` and `@threenative/procedural-animals/build` (`animalBakePass`,
+  `bakeWolf`, `bakeWolfToFile`) are gone. The wolf ships as a baked, rigged GLB in ThreeNative's
+  public asset catalog instead: `asset_search` with the `threenative` provider finds `wolf-grey` and
+  `wolf-grey-high`, and `asset_download` saves the GLB. Version 0.1.19 stays on npm for existing games.
+
 - `@threenative/terrain/kit`'s `bakeKit` also takes `{ look }`: a kit whose `recipe.json` has a
   `world` row bakes a streamed world (`<out>/world/`) with its own look and prop policy. Existing
   `{ sky, cookTerrainWorld }` calls are unchanged; only the declared option type widened.
