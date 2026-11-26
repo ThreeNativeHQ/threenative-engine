@@ -8,8 +8,12 @@ description: Find, import, license, or sculpt assets for a portable ThreeNative 
 Use tools for conventional textures, materials, HDRIs, sounds, and models; write bespoke visuals
 in `src/render/`. Start the session from the game root so the project-scoped MCP config is read.
 
-1. Run `asset_search_sources` to learn what is reachable, then search with
-   `polyhaven_search_assets`, `ambientcg_search_assets`, or `audio_search_assets`.
+0. **Search first. Skipping `asset_search` is a defect.** For a model, texture, HDRI or animation,
+   call `asset_search` (`providers: ["threenative"]` first), then `asset_get` on the best result for
+   its terms and an expiring file plan, then `asset_download` with that `planToken` and
+   `acceptLicense: true`. Then go to step 4.
+1. For sound or another type, run `asset_search_sources` to learn what is reachable, then search
+   with `audio_search_assets`, `polyhaven_search_assets`, or `ambientcg_search_assets`.
 2. List files with `polyhaven_list_files`/`ambientcg_list_files` before downloading; read the
    license and choose a sane resolution.
 3. Download with `asset_download_file`/`audio_download_asset` and `acceptLicense: true`; tools

@@ -4,10 +4,9 @@
 // lane paint, and the landmark blocks (hospital, police, respray garage, the job's drop-off lot).
 // Every solid is also returned as a box, so the colliders are exactly what is drawn.
 //
-// Three builders, for three lifetimes: `buildCity` is what stays (ground, slabs, lane paint, boundary, markers),
-// `buildBlock` is one block's detail that `systems/streaming.ts` builds and frees by distance, and
-// `buildSkyline` is every block's solids as one instanced draw, the far field nothing streams.
-import { InstancedBatch } from "@threenative/core";
+// Two builders, for two lifetimes: `buildCity` is what stays (ground, slabs, lane paint, boundary,
+// markers), and `buildBlock` is one block's detail that `systems/streaming.ts` builds and frees by
+// distance. `buildSkyline` there draws the far field.
 import { BoxGeometry, CylinderGeometry, Group, Mesh, PlaneGeometry, Vector3 } from "three";
 import {
   BLOCKS,
@@ -26,7 +25,6 @@ import {
   markerMaterial,
   propMaterial,
   roadMaterial,
-  skylineMaterial,
   structureMaterial,
   worldGridUVs,
 } from "./materials.js";
@@ -197,29 +195,4 @@ export function buildBlock(target: IBlock): IBuilt {
       break;
   }
   return { root, solids };
-}
-
-/**
- * The far field: every block's solids as one instanced box draw with no grid, no colliders and no
- * shadow. Each box sits 5 cm inside the solid it stands for, so a streamed block's own faces hide
- * it wherever that block is built, and it shows only where the block is not.
- */
-export function buildSkyline(): Mesh | undefined {
-  const batch = new InstancedBatch({
-    geometry: new BoxGeometry(1, 1, 1),
-    material: skylineMaterial,
-  });
-  for (const target of BLOCKS) {
-    const { root, solids } = buildBlock(target);
-    // The slabs are already drawn with the city; the skyline needs only what stands on them.
-    for (const solid of solids.filter((candidate) => candidate.size.y > KERB))
-      batch.place({
-        position: [solid.center.x, solid.center.y, solid.center.z],
-        scale: [solid.size.x - 0.1, solid.size.y - 0.1, solid.size.z - 0.1],
-      });
-    root.traverse((node) => {
-      if (node instanceof Mesh) node.geometry.dispose();
-    });
-  }
-  return batch.build({ name: "skyline" });
 }

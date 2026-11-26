@@ -1,15 +1,16 @@
 // The city streams by block, the way a classic open world streams its map: the blocks near the
 // player are built in full (grid towers, landmarks, shadows, colliders) and freed again once
-// the player is far enough away. `buildSkyline` in `render/city.ts` stands in for every block that is
+// the player is far enough away. `buildSkyline` below stands in for every block that is
 // not built, so the horizon never empties. Building is charged to a frame budget, so driving across
 // the city never stalls a frame on the blocks it brings in.
-import { markStatic, mergeByMaterial } from "@threenative/core";
+import { InstancedBatch, markStatic, mergeByMaterial } from "@threenative/core";
 import { AdmissionBudget } from "@threenative/core/world";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
-import { Group, Mesh, type Vector3 } from "three";
-import { BLOCKS, DOWNTOWN, type IBlock, ROADS } from "../city/layout.js";
+import { BoxGeometry, Group, Mesh, type Vector3 } from "three";
+import { BLOCKS, DOWNTOWN, type IBlock, KERB, ROADS } from "../city/layout.js";
 import { WORLD_LAYER } from "../entities/layers.js";
 import { buildBlock } from "../render/city.js";
+import { skylineMaterial } from "../render/materials.js";
 
 /**
  * Metres from the player to a block's centre. A block is built inside `load` and freed past
@@ -109,4 +110,29 @@ export class CityStreamer {
       resident: this.#resident.size,
     };
   }
+}
+
+/**
+ * The far field: every block's solids as one instanced box draw with no grid, no colliders and no
+ * shadow. Each box sits 5 cm inside the solid it stands for, so a streamed block's own faces hide
+ * it wherever that block is built, and it shows only where the block is not.
+ */
+export function buildSkyline(): Mesh | undefined {
+  const batch = new InstancedBatch({
+    geometry: new BoxGeometry(1, 1, 1),
+    material: skylineMaterial,
+  });
+  for (const target of BLOCKS) {
+    const { root, solids } = buildBlock(target);
+    // The slabs are already drawn with the city; the skyline needs only what stands on them.
+    for (const solid of solids.filter((candidate) => candidate.size.y > KERB))
+      batch.place({
+        position: [solid.center.x, solid.center.y, solid.center.z],
+        scale: [solid.size.x - 0.1, solid.size.y - 0.1, solid.size.z - 0.1],
+      });
+    root.traverse((node) => {
+      if (node instanceof Mesh) node.geometry.dispose();
+    });
+  }
+  return batch.build({ name: "skyline" });
 }

@@ -54,3 +54,11 @@ model or sound file. Mechanics borrow algorithms and defaults from the pinned re
 - [ ] Five new kits, each on the minimal assets only: each scaffolded project's `assets/` holds only `mannequin-combat.glb`.
 - [ ] Every mechanic is proven by a fail-closed playtest, the kit contract is green, and the performance scenario holds its budget.
 - [ ] Each kit's AGENTS.md says which reference games it borrows from, and its routing words match a request that names one.
+- [ ] Each kit is usable through the authoring layer: `create-threenative --genre <reference game>` scaffolds it,
+  `engine_search_capabilities` with "make a game like <reference game>" returns it in `starterKits`, and the
+  per-kit doctor test (`scaffold.spec.ts`, "stamps the <kit> authoring layer it wrote") passes. The same holds for
+  the three PRD-921 kits (verified 2026-11-26: `gta`, `driver` → open-world; `resident-evil`, `silent-hill` →
+  survival-horror; `metal-gear-solid`, `splinter-cell` → stealth; doctor test green on all 19 kits).
+- [ ] Studio lists all eight classic kits: after the `create-threenative` release that ships them, Studio bumps
+  the package and adds them to `hosting/cloudflare/src/kits.ts` (`KITS`, checked by `kits.spec.ts`). Until then
+  Studio refuses a project on these kits ("Choose one of the starter kits").
