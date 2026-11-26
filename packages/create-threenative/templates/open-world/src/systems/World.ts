@@ -294,8 +294,10 @@ export class World {
     const deploy =
       this.people.filter((ped) => ped.cop && ped.alive).length < POPULATION.maxCopsOnFoot;
     for (const unit of this.police) {
+      // A held cruiser gives up its junction locks, or the traffic it stopped in waits for it forever.
       if (unit.crew === 0 || unit.driver.car.wrecked) {
         unit.driver.car.hold();
+        this.intersections.freeAll(unit.driver.car);
         continue;
       }
       unit.driver.deploy = deploy;
@@ -303,6 +305,7 @@ export class World {
       if (sees) this.#seen = true;
       if (stars === 0) {
         unit.driver.car.hold();
+        this.intersections.freeAll(unit.driver.car);
         continue;
       }
       unit.driver.update(
