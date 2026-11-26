@@ -15,11 +15,12 @@ import { type QualityTier, isWebGLFallbackRenderer, materialLightingEnabled } fr
 import { setupSky } from "../render/sky.js";
 import { createStage } from "../render/stage.js";
 import { cpuPad, newCpuMemory } from "../sim/cpu.js";
-import { STEP, shieldScale } from "../sim/constants.js";
+import { STEP } from "../sim/constants.js";
 import { Match } from "../sim/match.js";
-import type { FighterId, IFighter } from "../sim/types.js";
-import type { FighterState, GameState } from "../state.js";
+import type { FighterId } from "../sim/types.js";
+import type { GameState } from "../state.js";
 import { readPad } from "./pads.js";
+import { matchState, round } from "./snapshot.js";
 import { STATIONS } from "./stations.js";
 
 /** Frames the CPU stands still at the start of a match, so the player can take a breath. */
@@ -33,49 +34,12 @@ const MESSAGE_TIME = 1.4;
 const UNDER_PLAYTEST =
   (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
 
-const round = (value: number, scale = 100): number => Math.round(value * scale) / scale;
-
-function fighterState(f: IFighter, match: Match): FighterState {
-  const stats = match.stats[f.id];
-  return {
-    ...stats,
-    charge: f.attack?.charge ?? 0,
-    fastFalling: f.fastFalling ? 1 : 0,
-    grounded: f.floor === undefined ? 0 : 1,
-    intangible: f.invuln > 0 ? 1 : 0,
-    jumps: f.jumps,
-    ledge: f.ledge,
-    mode: f.mode,
-    peakY: round(f.peakY),
-    percent: round(f.percent, 10),
-    phase: f.mode === "attack" ? (f.attack?.phase ?? "") : "",
-    shield: round(f.shield, 10),
-    shieldSize: round(shieldScale(f.shield)),
-    stocks: f.stocks,
-    vx: round(f.vx),
-    vy: round(f.vy),
-    weight: f.weight,
-    x: round(f.x),
-    y: round(f.y),
-  };
-}
-
 export class Play extends Scene<GameState, undefined> {
-  static override readonly initialState: GameState = (() => {
-    const match = new Match();
-    return {
-      camera: { distance: 0, x: 0, y: 0 },
-      cpu: fighterState(match.fighters.cpu, match),
-      cpuDummy: 0,
-      last: { damage: 0, hitstun: 0, knockback: 0, measuredHitstun: 0, percentAfter: 0, victim: "", weight: 0 },
-      message: "",
-      p1: fighterState(match.fighters.p1, match),
-      paused: false,
-      phase: "playing",
-      time: 0,
-      uiReady: false,
-    };
-  })();
+  static override readonly initialState: GameState = {
+    ...matchState(new Match(), { camera: { distance: 0, x: 0, y: 0 }, cpuDummy: false, message: "" }),
+    paused: false,
+    uiReady: false,
+  };
 
   #mannequin: IMannequin | undefined;
   #post: ReturnType<typeof setupPost> | undefined;
@@ -177,16 +141,13 @@ export class Play extends Scene<GameState, undefined> {
           emitPlaytestEvent({ entity: "stage", name: `station${index + 1}` });
         });
 
-      // The simulation waits for the first frames to compile, so nothing happens behind the curtain.
-      if (frameCtx.startup.compileSettled) {
-        match.step({
-          cpu: cpuPad(match.fighters.cpu, match.fighters.p1, memory, frameCtx.random, match.frame),
-          p1: readPad(frameCtx.input),
-        });
-        for (const event of match.events) {
-          emitPlaytestEvent(event);
-          if (event.name === "ko") say(event.entity === "p1" ? "KO" : "KO!");
-        }
+      match.step({
+        cpu: cpuPad(match.fighters.cpu, match.fighters.p1, memory, frameCtx.random, match.frame),
+        p1: readPad(frameCtx.input),
+      });
+      for (const event of match.events) {
+        emitPlaytestEvent(event);
+        if (event.name === "ko") say(event.entity === "p1" ? "KO" : "KO!");
       }
       views.p1.sync(match.fighters.p1, dt);
       views.cpu.sync(match.fighters.cpu, dt);
@@ -194,21 +155,13 @@ export class Play extends Scene<GameState, undefined> {
 
       messageTimer = Math.max(0, messageTimer - dt);
       if (messageTimer === 0) message = "";
-      frameCtx.state.set({
-        camera: { distance: round(rig.state.distance), x: round(rig.state.x), y: round(rig.state.y) },
-        cpu: fighterState(match.fighters.cpu, match),
-        cpuDummy: memory.dummy ? 1 : 0,
-        last: {
-          ...match.last,
-          damage: round(match.last.damage),
-          knockback: round(match.last.knockback, 10),
-          percentAfter: round(match.last.percentAfter, 10),
-        },
-        message,
-        p1: fighterState(match.fighters.p1, match),
-        phase: match.winner === undefined ? "playing" : match.winner === "p1" ? "won" : "lost",
-        time: round(match.frame * STEP, 10),
-      });
+      frameCtx.state.set(
+        matchState(match, {
+          camera: { distance: round(rig.state.distance), x: round(rig.state.x), y: round(rig.state.y) },
+          cpuDummy: memory.dummy,
+          message,
+        }),
+      );
     };
   }
 

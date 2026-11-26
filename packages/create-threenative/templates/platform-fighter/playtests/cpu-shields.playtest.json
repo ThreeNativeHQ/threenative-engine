@@ -1,0 +1,158 @@
+{
+  "name": "cpu-shields",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 45,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyJ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "cpu.blocks",
+        "gte": 1
+      }
+    ]
+  }
+}

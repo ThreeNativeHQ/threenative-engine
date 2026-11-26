@@ -112,6 +112,8 @@ export const LEDGE_LOCK = 8;
 export const RESPAWN_DELAY = 90;
 export const RESPAWN_INVULN = 120;
 export const STOCKS = 3;
+/** The CPU is a little heavier than the player, so weight shows in every fight. */
+export const CPU_WEIGHT = 1.25;
 
 // --- Charging a strong attack. Tuned for this kit: hold up to one second for 40 percent more damage.
 export const CHARGE_FRAMES = 60;

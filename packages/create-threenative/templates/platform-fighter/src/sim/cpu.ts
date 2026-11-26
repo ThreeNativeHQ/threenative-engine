@@ -52,7 +52,7 @@ export function cpuPad(
 
   if (me.mode === "ledge") {
     // Hang a moment, then climb.
-    pad.y = me.timer > 24 ? 1 : 0;
+    pad.x = me.timer > 24 ? -me.ledge : 0;
     return pad;
   }
   const offStage = me.floor === undefined && (Math.abs(me.x) > MAIN.x1 - 0.2 || me.y < -0.5);

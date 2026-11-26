@@ -1,0 +1,102 @@
+{
+  "name": "match-win",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyK",
+      "holdTicks": 1,
+      "label": "smash",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 120,
+      "label": "won",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "won",
+            "equals": "won"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.stocks",
+        "atSteps": [
+          {
+            "label": "won",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.stocks",
+        "atSteps": [
+          {
+            "label": "won",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "element": {
+            "id": "match-result"
+          },
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

@@ -4,7 +4,7 @@
 import { SPAWN } from "../level.js";
 import { type ICpuMemory } from "../sim/cpu.js";
 import { JAB } from "../sim/attacks.js";
-import { SHIELD_MAX, STOCKS } from "../sim/constants.js";
+import { CPU_WEIGHT, SHIELD_MAX, STOCKS } from "../sim/constants.js";
 import { startAttack } from "../sim/fighter.js";
 import type { Match } from "../sim/match.js";
 
@@ -24,6 +24,7 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
       f.shield = SHIELD_MAX;
       f.stocks = STOCKS;
     }
+    match.fighters.cpu.weight = CPU_WEIGHT;
     cpu.dummy = true;
   },
   // 2. The bag at 100 percent.
@@ -40,7 +41,7 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
   },
   // 5. The player's shield is nearly spent.
   ({ match }) => {
-    match.fighters.p1.shield = 3;
+    match.fighters.p1.shield = 1;
   },
   // 6. The bag stands on the right edge at 180 percent, with the player beside it.
   ({ match, cpu }) => {
@@ -63,10 +64,11 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
     cpu.wakeAt = 0;
   },
   // 9. The CPU steps up to the player and swings a jab now.
-  ({ match }) => {
+  ({ match, cpu }) => {
     const p1 = match.fighters.p1;
     match.place("cpu", p1.x + p1.facing, p1.y, (-p1.facing) as -1 | 1);
     startAttack(match.fighters.cpu, JAB);
+    cpu.dummy = true;
   },
   // 10. The CPU is off the stage, beside the right ledge, and awake.
   ({ match, cpu }) => {
@@ -85,5 +87,11 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
   ({ match }) => {
     match.fighters.p1.stocks = 1;
     match.fighters.cpu.stocks = 1;
+  },
+  // 13. The fighters far apart, one up on a platform: the camera backs off to keep both in frame.
+  ({ match, cpu }) => {
+    match.place("p1", -6.5, 0, 1);
+    match.place("cpu", 4.5, 2.6, -1);
+    cpu.dummy = true;
   },
 ];

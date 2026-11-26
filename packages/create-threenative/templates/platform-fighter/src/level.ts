@@ -29,8 +29,8 @@ export const BLAST = { bottom: -14, left: -24, right: 24, top: 18 } as const;
 
 /** Where a fresh match and a respawn put each fighter. */
 export const SPAWN = {
-  cpu: { x: 3, y: 0 },
-  p1: { x: -3, y: 0 },
+  cpu: { x: 2, y: 0 },
+  p1: { x: -2, y: 0 },
   respawnHeight: 8,
 } as const;
 

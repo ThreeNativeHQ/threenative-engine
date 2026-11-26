@@ -1,0 +1,86 @@
+{
+  "name": "short-hop-and-full-hop",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 1,
+      "label": "tap",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 70,
+      "label": "short-landed",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 8,
+      "label": "hold",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 70,
+      "label": "full-landed",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.peakY",
+        "atSteps": [
+          {
+            "label": "short-landed",
+            "equals": 1.57
+          },
+          {
+            "label": "full-landed",
+            "equals": 2.98
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "short-landed",
+            "equals": 1
+          },
+          {
+            "label": "full-landed",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

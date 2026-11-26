@@ -1,0 +1,134 @@
+{
+  "name": "shield-breaks",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "holdTicks": 4,
+      "label": "raise",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": [
+        "KeyL",
+        "Digit9"
+      ],
+      "holdTicks": 1,
+      "label": "cpu-jab",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": "KeyL",
+      "holdTicks": 12,
+      "label": "broken",
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 60,
+      "label": "helpless",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 20,
+      "label": "hit-while-broken",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.shieldBreaks",
+        "atSteps": [
+          {
+            "label": "broken",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "broken",
+            "equals": "stun"
+          },
+          {
+            "label": "helpless",
+            "equals": "stun"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.shield",
+        "atSteps": [
+          {
+            "label": "broken",
+            "equals": 30
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "helpless",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.percent",
+        "atSteps": [
+          {
+            "label": "hit-while-broken",
+            "equals": 3
+          }
+        ]
+      }
+    ]
+  }
+}

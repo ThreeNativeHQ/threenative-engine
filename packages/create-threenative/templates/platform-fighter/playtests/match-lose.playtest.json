@@ -1,0 +1,80 @@
+{
+  "name": "match-lose",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 80,
+      "label": "lost",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "lost",
+            "equals": "lost"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.stocks",
+        "atSteps": [
+          {
+            "label": "lost",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "element": {
+            "id": "match-result"
+          },
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

@@ -1,6 +1,7 @@
-import { BLAST, MAIN, SPAWN } from "../level.js";
+import { BLAST, MAIN, PLATFORMS, SPAWN } from "../level.js";
 import { type AttackDef, chargedDamage, hitstunFrames, knockback } from "./attacks.js";
 import {
+  CPU_WEIGHT,
   HALF_WIDTH,
   HEAVY_HITSTUN,
   HEIGHT,
@@ -98,7 +99,7 @@ function hitsShield(f: IFighter, box: { x0: number; x1: number; y0: number; y1: 
  */
 export class Match {
   readonly fighters: Record<FighterId, IFighter> = {
-    cpu: createFighter("cpu", SPAWN.cpu.x, SPAWN.cpu.y, 1.25),
+    cpu: createFighter("cpu", SPAWN.cpu.x, SPAWN.cpu.y, CPU_WEIGHT),
     p1: createFighter("p1", SPAWN.p1.x, SPAWN.p1.y, 1),
   };
   readonly stats: Record<FighterId, IStats> = { cpu: newStats(), p1: newStats() };
@@ -256,7 +257,7 @@ export class Match {
     f.vx = f.vy = f.kx = f.ky = 0;
     f.facing = facing;
     f.attack = undefined;
-    f.floor = y === MAIN.y && x >= MAIN.x0 && x <= MAIN.x1 ? MAIN : undefined;
+    f.floor = [MAIN, ...PLATFORMS].find((floor) => floor.y === y && x >= floor.x0 && x <= floor.x1);
     f.jumps = 1;
     f.fastFalling = false;
     f.hitlag = 0;

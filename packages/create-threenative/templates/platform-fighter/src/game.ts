@@ -36,6 +36,7 @@ const game = defineGame<GameState, undefined>({
     station10: { keys: ["Digit0"] },
     station11: { keys: ["KeyZ"] },
     station12: { keys: ["KeyX"] },
+    station13: { keys: ["KeyC"] },
   },
   plugins: [playtest({ events: drainPlaytestEvents })],
   display: config.display,

@@ -1,0 +1,124 @@
+{
+  "name": "double-jump",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 8,
+      "label": "hop",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 1,
+      "label": "double",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "label": "doubled",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "Space",
+      "holdTicks": 1,
+      "label": "third",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "label": "no-third",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 80,
+      "label": "landed",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.jumps",
+        "atSteps": [
+          {
+            "label": "doubled",
+            "equals": 0
+          },
+          {
+            "label": "landed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.doubleJumps",
+        "atSteps": [
+          {
+            "label": "doubled",
+            "equals": 1
+          },
+          {
+            "label": "no-third",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "landed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.peakY",
+        "gte": 4.5
+      }
+    ]
+  }
+}

@@ -1,0 +1,106 @@
+{
+  "name": "ledge-drop",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "label": "grabbed",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "ArrowDown",
+      "holdTicks": 3,
+      "label": "drop",
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 10,
+      "label": "falling",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": "ledge"
+          },
+          {
+            "label": "falling",
+            "equals": "free"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.ledge",
+        "atSteps": [
+          {
+            "label": "falling",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "falling",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.y",
+        "atSteps": [
+          {
+            "label": "falling",
+            "lte": -2
+          }
+        ]
+      }
+    ]
+  }
+}

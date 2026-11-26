@@ -103,6 +103,8 @@ export function groundMove(f: IFighter, pad: Pad | undefined, friction = GROUND_
   const rate = speedingUp || Math.abs(f.vx) > RUN_SPEED ? DASH_DECEL : friction;
   f.vx = approach(f.vx, target, rate * STEP);
   f.x += f.vx * STEP;
-  f.peakY = f.y;
-  if (f.x < floor.x0 || f.x > floor.x1) f.floor = undefined;
+  if (f.x < floor.x0 || f.x > floor.x1) {
+    f.floor = undefined;
+    f.peakY = f.y;
+  }
 }
