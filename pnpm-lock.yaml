@@ -203,6 +203,9 @@ importers:
       pngjs:
         specifier: 7.0.0
         version: 7.0.0
+      procedural-animals:
+        specifier: 'catalog:'
+        version: https://codeload.github.com/majidmanzarpour/threejs-procedural-animals/tar.gz/c95ae49346aa8e140a924376cec6cf0073d99512(three@0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119))
       tsx:
         specifier: 4.23.5
         version: 4.23.5
