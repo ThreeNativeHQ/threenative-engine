@@ -137,12 +137,12 @@ export function mountPlaytests(root: HTMLElement, api: string): void {
             };
             return h("div", "flex items-center gap-3 px-5 py-3", [
               h("div", "min-w-0 flex-1", [
-                h("div", "truncate font-medium text-ink", scenario.name),
-                h(
-                  "code",
-                  "block truncate font-mono text-[11px] text-faint",
-                  `${scenario.path} · ${scenario.assertions} assertions`,
-                ),
+                // The count stays whole; only the path truncates.
+                h("div", "flex items-baseline gap-2", [
+                  h("span", "truncate font-medium text-ink", scenario.name),
+                  h("span", "shrink-0 text-[11px] text-muted", `${scenario.assertions} assertions`),
+                ]),
+                h("code", "block truncate font-mono text-[11px] text-faint", scenario.path),
               ]),
               scenario.last
                 ? chip(
