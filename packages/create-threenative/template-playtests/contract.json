@@ -612,6 +612,27 @@
       }
     }
   },
+  "rhythm": {
+    "subject": "player",
+    "move": ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"],
+    "explore": {
+      "actions": ["KeyZ", "KeyX"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "rung", "equals": 3 },
+        { "id": "state", "path": "songBeat", "lte": -2 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the performers dance in place on a fixed pad and never walk, so there is no ground speed to slip against",
+      "action-clip-completes": "the clip a press plays depends on its grade and the beat it lands on, not on its key; grade-poses proves each reaction clip",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a press is graded against a note, which the timing-windows scenario proves",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "rts": {
     "subject": "camera.main",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
