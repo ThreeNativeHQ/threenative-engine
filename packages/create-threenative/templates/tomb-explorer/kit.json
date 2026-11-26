@@ -1,0 +1,15 @@
+{
+  "name": "tomb-explorer",
+  "title": "Tomb explorer",
+  "blurb": "A grey-grid temple of block-grid jumps: run with a turn ramp, standing and running jumps, mid-air ledge grab, hang, shimmy, climb, swimming on an air meter, fall damage, a relic and a blade trap.",
+  "genre": "tomb-explorer",
+  "aliases": [
+    "tomb-raider",
+    "tombraider",
+    "lara-croft",
+    "lara",
+    "tomb-explorer",
+    "tomb-exploration"
+  ],
+  "kit": true
+}
