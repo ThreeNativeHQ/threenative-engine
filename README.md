@@ -51,7 +51,7 @@ pnpm create threenative my-game
 | **Physics** | ⚠️ Pick a library, write the bridge | ✅ Rapier (Rust, compiled to WebAssembly) built in, with Godot-style `RigidBody3D`, `CharacterBody3D`, `Area3D` and navigation. [RigidBody3D](packages/physics/src/RigidBody3D.ts) · [CharacterBody3D](packages/physics/src/CharacterBody3D.ts) · [navigation](packages/physics/src/navigation) |
 | **Engine** | ⚠️ JavaScript issues every draw call | ✅ An owned C++ engine behind the same Three.js API: WebAssembly in the browser (multithreaded on cross-origin-isolated pages), native code on desktop. [Engine source](packages/runtime-native/src/engine) · [`wasm-threads` preset](packages/runtime-native/CMakePresets.json) · [decision](docs/architecture/NATIVE-ENGINE-DECISION.md) |
 | **Draw calls** | ⚠️ One per mesh, unless you batch by hand | ✅ Fewer draws, more frames, on the same workload-equal stress scene: **57 draws vs 1,109**, **96.7 vs 75.3 fps** uncapped on an RTX 2080 (2026-11-11, both arms in ABBA order in one clean browser). [Data](docs/stress-loop/ledger.json) · [method](scripts/stress-fair.mjs) |
-| **Default look** | ⚠️ Tune tonemapping, exposure and lights by hand | ✅ Unreal-class out of the box: a filmic tone curve and Unreal's metered auto exposure by default, and sky, GI, shadows and foliage calibrated against Unreal renders of the same scene, without the Unreal install. [Look defaults](packages/core/src/look/world-environment.ts) · [quality tiers](packages/core/src/look/quality.ts) · [filmic curve](packages/core/src/look/filmic-tone-mapping.ts) · [see it](#unreal-class-visuals-without-the-unreal-install) |
+| **Default look** | ⚠️ Tune tonemapping, exposure and lights by hand | ✅ Unreal-class out of the box: a filmic tone curve and Unreal's metered auto exposure by default, and sky, GI, shadows and foliage calibrated against Unreal renders of the same scene, without the Unreal install. [Look defaults](packages/core/src/look/world-environment.ts) · [quality tiers](packages/core/src/look/quality.ts) · [filmic curve](packages/core/src/look/filmic-tone-mapping.ts) · [see it](#unreal-class-visuals-without-the-66-gb-unreal-install) |
 | **Ships to** | ❌ The browser | ✅ Web, Windows, macOS, Linux and Android from one source, with no WebView. [Native runtime](packages/runtime-native) |
 | **HUD and menus** | ⚠️ Hand-rolled DOM | ✅ React 19 and Tailwind, bound to game state. [`@threenative/ui`](packages/ui) |
 | **Assets** | ⚠️ Copy files and fix paths | ✅ Hashed asset pipeline, 200+ procedural assets, and an asset MCP that searches 10+ libraries. [Pipeline](packages/assets) · [procedural library](packages/procedural-environment) |
@@ -59,13 +59,13 @@ pnpm create threenative my-game
 | **Against Godot 4.7.1** | ❌ No numbers to compare | ✅ **1.8× faster** at 4,096 cubes on native desktop, **3.9× faster** at 16,384 instanced cubes on the web. [Data](docs/verification/runtime-perf-state.md) · [desktop bench](docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md) · [web bench](docs/PRDs/done/PRD-117-engine-load-test-godot.md) |
 | **Lock-in** | ✅ None | ✅ None either. Materials, lights and post are plain code in your `src/render/`, and `engine: "threejs"` runs stock Three.js. [Generated look code](packages/create-threenative/templates/starter/src/render) · [override](docs/architecture/NATIVE-ENGINE-DECISION.md) |
 
-### Unreal-class visuals, without the Unreal install
+### Unreal-class visuals, without the 66 GB Unreal install
 
-> **Why it matters:** Players judge a game by its first frame. You get a look that holds up, and players still reach it by clicking a link: no tens-of-gigabytes engine, no installer.
+> **Why it matters:** Players judge a game by its first frame. You get a look that holds up, and players still reach it by clicking a link: no 66 GB engine, no installer.
 
 <img src="docs/media/readme/vs-unreal.webp" alt="Four calibration scenes side by side: ThreeNative in the browser on the left, stock Unreal Engine 5.8.3 on the right: an exterior with sky and clouds, chrome and matte spheres, a palm with grass shadows, and a sunlit room" width="100%">
 
-Unreal makes great frames, but you pay for them with an editor install of tens of gigabytes. ThreeNative
+Unreal makes great frames, but you pay for them with a 66 GB editor install (Unreal Engine 5.8.3, measured on our build machine). ThreeNative
 takes only the parts worth having (the sky, global illumination, shadows, foliage, exposure and
 the frame-cost tricks) and runs them in a light engine that loads in a browser tab.
 
@@ -128,6 +128,18 @@ Start in your browser with Studio or work locally with the CLI. Both produce the
 | ✅ **Find music and sound effects** | Sonniss GDC bundles, Kenney audio, Tallbeard loops, plus a research list of 10 audio libraries |
 | ✅ **Make the asset game-ready** | Decimate heavy meshes behind a rendered before/after check, auto-rig a character, retarget animations, AI-paint a gray blockout |
 | ✅ **Stay legal** | Every source lists its license and attribution, and a download needs the license accepted. The MCP never buys anything, and it flags what it cannot convert (Blueprints, encrypted paks) |
+
+**Major supported providers**
+
+| 🧱 3D models | 🎨 Textures and HDRIs | 🏃 Characters and animation | 🔊 Sound and music | ✨ VFX, icons and fonts |
+| --- | --- | --- | --- | --- |
+| [Fab](https://www.fab.com/) (free listings, and Unreal packs you own) | [Poly Haven](https://polyhaven.com/) | [Quaternius](https://quaternius.com/) | [Sonniss GDC](https://gdc.sonniss.com/) | [Kenney Particle Pack](https://kenney.nl/assets/particle-pack) |
+| Unity Asset Store (packs you own) | [ambientCG](https://ambientcg.com/) | [KayKit](https://kaylousberg.itch.io/) | [Kenney audio](https://kenney.nl/assets/category:Audio) | [Brackeys VFX](https://brackeysgames.itch.io/brackeys-vfx-bundle) |
+| [Sketchfab](https://sketchfab.com/) (with your API token) | [Fab](https://www.fab.com/) materials | [Polyfork](https://polyfork.dev/) | [Tallbeard loops](https://tallbeard.itch.io/music-loop-bundle) | [game-icons.net](https://game-icons.net/) |
+| [Smithsonian 3D](https://3d.si.edu/) | | [Fab](https://www.fab.com/) animation | [Freesound](https://freesound.org/), [Pixabay](https://pixabay.com/sound-effects/), [OpenGameArt](https://opengameart.org/) | [Google Fonts](https://fonts.google.com/) |
+| [Kenney](https://kenney.nl/assets), [Polyfork](https://polyfork.dev/) | | | | |
+
+<sub>Provider names are shown only to describe compatibility. ThreeNative is not affiliated with or endorsed by any of them. See [Legal](#legal).</sub>
 
 In total it knows **33 sources** of models, textures, HDRIs, animation, VFX, icons, fonts, sound
 and music, and 13 of them download straight into your project. It ships with every new project:
@@ -338,6 +350,21 @@ Native compilation is opt-in; the default gate needs no CMake, NDK, or Xcode. Th
 Full terms: [threenative.com/privacy](https://threenative.com/privacy/) · Code:
 [`packages/core/src/telemetry.ts`](packages/core/src/telemetry.ts)
 
-## License
+## Legal
 
-MIT, end to end, including the native runtime. See [`LICENSE`](LICENSE). The name, logo, and game screenshots in `docs/media/` are not covered by the MIT license. See [`TRADEMARKS.md`](TRADEMARKS.md).
+- **License.** The ThreeNative source code, including the native runtime, is MIT licensed. See
+  [`LICENSE`](LICENSE). The software is provided "as is", without warranty of any kind.
+- **Our brand.** The ThreeNative name and logo, and the game screenshots in `docs/media/`, are not
+  covered by the MIT license. See [`TRADEMARKS.md`](TRADEMARKS.md).
+- **Other brands.** Unreal, Unreal Engine and Fab are trademarks of Epic Games, Inc. Unity and the
+  Unity Asset Store are trademarks of Unity Technologies. Three.js, Rapier, Godot, React, Tailwind
+  and every other product or provider named here belong to their owners. ThreeNative is not
+  affiliated with, sponsored by or endorsed by any of them. Their names appear only to describe
+  compatibility and comparisons.
+- **Assets.** An asset that you find, download or convert with ThreeNative tools stays under its
+  own license. You are responsible for holding the rights to every asset you use or ship. The asset
+  MCP converts only packs that you own or license. It does not buy, unlock or decrypt content.
+- **Benchmarks.** Every comparison names its hardware, versions and date, and links its data.
+  Results on other machines can differ.
+- **Privacy.** See [Privacy](#privacy) and the full terms at
+  [threenative.com/privacy](https://threenative.com/privacy/).
