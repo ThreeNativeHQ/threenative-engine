@@ -64,6 +64,7 @@
       "kits": [
         "action-rpg",
         "collectathon",
+        "farming",
         "kart",
         "minimal",
         "open-world",
@@ -115,6 +116,7 @@
         "action-rpg",
         "adventure",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -171,6 +173,7 @@
       "marker": "updateRateReport",
       "kits": [
         "action-rpg",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -194,7 +197,7 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure", "open-world", "stealth", "survival-horror"]
+      "kits": ["action-rpg", "adventure", "farming", "open-world", "stealth", "survival-horror"]
     },
     {
       "id": "ground-snap",
@@ -205,6 +208,7 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "farming",
         "minimal",
         "open-world",
         "runner",
@@ -221,7 +225,15 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "farming",
+        "open-world",
+        "shooter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "scale",
@@ -232,6 +244,7 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "farming",
         "minimal",
         "open-world",
         "racing",
@@ -260,6 +273,7 @@
       "kits": [
         "action-rpg",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -302,6 +316,7 @@
         "action-rpg",
         "adventure",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -335,6 +350,7 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -369,6 +385,7 @@
         "action-rpg",
         "adventure",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -468,6 +485,7 @@
         "action-rpg",
         "adventure",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
