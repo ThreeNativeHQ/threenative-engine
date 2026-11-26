@@ -116,7 +116,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     <td width="33%"><a href="docs/media/readme/wildwood.webp"><img src="docs/media/readme/wildwood.webp" alt="A pine trunk beside a lake in a dense fern forest"></a><br><sub><b>Wildwood</b>: scanned fern and pine forest</sub></td>
   </tr>
   <tr>
-    <td><a href="docs/media/readme/strata-alpine.webp"><img src="docs/media/readme/strata-alpine.webp" alt="An alpine vista with snow-capped mountains and haze"></a><br><sub><b>Strata</b>: procedural terrain across five biomes</sub></td>
+    <td><a href="docs/media/readme/strata-coastal.webp"><img src="docs/media/readme/strata-coastal.webp" alt="A Strata coastal biome: a calm lake, a sandy shore with reeds and boulders, and forested hills"></a><br><sub><b>Strata</b>: procedural terrain across five biomes</sub></td>
     <td><a href="docs/media/readme/bayview.webp"><img src="docs/media/readme/bayview.webp" alt="A first-person shooter street with minimap and ammo HUD"></a><br><sub><b>Bayview</b>: FPS with native Android HUD</sub></td>
     <td><a href="docs/media/readme/fox-platformer.webp"><img src="docs/media/readme/fox-platformer.webp" alt="A fox on floating islands with coins and a castle"></a><br><sub><b>Fox platformer</b>: 60 fps sustained on a Pixel 8</sub></td>
   </tr>
