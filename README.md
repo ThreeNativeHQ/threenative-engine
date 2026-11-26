@@ -31,7 +31,7 @@ pnpm create threenative my-game
 
 **[Website](https://threenative.com) · [Studio](https://studio.threenative.com/) · [Games store](https://store.threenative.com) · [Discord](https://discord.gg/mWxTQByxFR)**
 
-[vs Three.js](#threenative-vs-plain-threejs) · [Gallery](#built-with-threenative) · [Ecosystem](#the-ecosystem) · [Quickstart](#quickstart) · [Starter kits](#starter-kits) · [Built for AI agents](#built-for-ai-agents) · [Platforms](#platforms) · [Docs](#docs)
+[vs Three.js](#threenative-vs-plain-threejs) · [Gallery](#built-with-threenative) · [Ecosystem](#the-ecosystem) · [Asset MCP](#the-asset-mcp-every-asset-library-one-prompt-away) · [Quickstart](#quickstart) · [Starter kits](#starter-kits) · [Built for AI agents](#built-for-ai-agents) · [Platforms](#platforms) · [Docs](#docs)
 
 </div>
 
@@ -82,9 +82,9 @@ what we leave out: the [feature map (work in progress)](docs/PRDs/Unreal/researc
 
 <table>
   <tr>
-    <td width="33%"><a href="docs/media/readme/snow.webp"><img src="docs/media/readme/snow.webp" alt="A character walks through snowfall leaving footprints, with a weather control panel"></a><br><sub><b>Snow kit</b>: deformable snow that keeps every footprint</sub></td>
+    <td width="33%"><a href="docs/media/readme/snow.webp"><img src="docs/media/readme/snow.webp" alt="A character walks through snowfall leaving footprints, with a weather control panel"></a><br><sub><b>Snow kit</b>: footprints that stay</sub></td>
     <td width="33%"><a href="docs/media/readme/vesper-hall.webp"><img src="docs/media/readme/vesper-hall.webp" alt="A candlelit gothic nave with light from the rose window"></a><br><sub><b>Vesper Hall</b>: real-time GI, reflections, god rays</sub></td>
-    <td width="33%"><a href="docs/media/readme/wildwood.webp"><img src="docs/media/readme/wildwood.webp" alt="A pine trunk beside a lake in a dense fern forest"></a><br><sub><b>Wildwood</b>: scanned fern and pine forest</sub></td>
+    <td width="33%"><a href="docs/media/readme/racing.webp"><img src="docs/media/readme/racing.webp" alt="A race car on a neon city circuit with a lap timer HUD"></a><br><sub><b>Racing kit</b>: three laps, checklines and boost pads</sub></td>
   </tr>
   <tr>
     <td><a href="docs/media/readme/strata-coastal.webp"><img src="docs/media/readme/strata-coastal.webp" alt="A Strata coastal biome: a calm lake, a sandy shore with reeds and boulders, and forested hills"></a><br><sub><b>Strata</b>: procedural terrain across five biomes</sub></td>
@@ -101,7 +101,7 @@ Every image is a real engine or device capture. No mockups.
 
 Start in your browser with Studio or work locally with the CLI. Both produce the exact same plain Three.js and TypeScript project with zero lock-in.
 
-| | |
+| Where | What you get |
 | --- | --- |
 | 🧰 **This repo** | The engine, the `create-threenative` CLI, six MCP servers, and the native runtime. MIT, free forever. |
 | ✨ **[ThreeNative Studio](https://studio.threenative.com/)** | Prompt, preview, and play in your browser with nothing to install. Export the full TypeScript repo anytime. |
@@ -109,6 +109,30 @@ Start in your browser with Studio or work locally with the CLI. Both produce the
 | 📚 **[threenative.com](https://threenative.com)** | Docs, API reference, examples, and desktop downloads. |
 | ✈️ **[Midway](https://midway.threenative.com/)** | Flagship demo: carrier strikes over the open Pacific, live in your browser. |
 | 💬 **[Discord](https://discord.gg/mWxTQByxFR)** | Chat with the team and other ThreeNative developers. |
+
+## The asset MCP: every asset library, one prompt away
+
+> **Why it matters:** art is where most game prototypes stall. A coding agent can write a game
+> loop, but it cannot draw a tree, and it gets nowhere with an asset store behind a login, a
+> checkout and an editor-only format. The asset MCP removes all three walls. Your agent asks for
+> "a mossy rock" or "a sword swing sound", and a real, licensed asset lands in your game.
+
+<a href="docs/media/readme/wildwood.webp"><img src="docs/media/readme/wildwood.webp" alt="A pine trunk beside a lake in a dense fern forest, from a Fab Unreal pack converted to GLB and rendered by ThreeNative" width="100%"></a>
+
+<sub><b>Wildwood</b>: a Fab Unreal pack (Landscape Pro 2.0), converted to GLB by the asset MCP and rendered by ThreeNative.</sub>
+
+| Your agent can | From |
+| --- | --- |
+| ✅ **Search and download** with no browser, login or checkout | Fab free listings, Poly Haven, ambientCG, Smithsonian 3D, Polyfork, Quaternius, KayKit, Kenney, Brackeys VFX, game-icons.net |
+| ✅ **Convert packs you own** to clean, self-contained GLBs, without installing either editor | Unreal (`.uasset`, `.umap`) from Fab, and Unity Asset Store (`.unitypackage`) |
+| ✅ **Find music and sound effects** | Sonniss GDC bundles, Kenney audio, Tallbeard loops, plus a research list of 10 audio libraries |
+| ✅ **Make the asset game-ready** | Decimate heavy meshes behind a rendered before/after check, auto-rig a character, retarget animations, AI-paint a gray blockout |
+| ✅ **Stay legal** | Every source lists its license and attribution, and a download needs the license accepted. The MCP never buys anything, and it flags what it cannot convert (Blueprints, encrypted paks) |
+
+In total it knows **33 sources** of models, textures, HDRIs, animation, VFX, icons, fonts, sound
+and music, and 13 of them download straight into your project. It ships with every new project:
+no setup. Source: [`threenative-asset-mcp`](https://github.com/ThreeNativeHQ/threenative-asset-mcp)
+· [npm](https://www.npmjs.com/package/threenative-asset-mcp).
 
 ## Why ThreeNative
 
