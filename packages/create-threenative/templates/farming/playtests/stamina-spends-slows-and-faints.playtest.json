@@ -28,7 +28,7 @@
       "release": false
     },
     {
-      "label": "fresh-speed",
+      "label": "fresh-moving",
       "waitForResource": {
         "id": "state",
         "path": "speed",
@@ -97,16 +97,6 @@
         "id": "state",
         "path": "speed",
         "gte": 1.8
-      },
-      "release": false,
-      "timeoutMs": 4000
-    },
-    {
-      "label": "tired-speed",
-      "waitForResource": {
-        "id": "state",
-        "path": "speed",
-        "lte": 2.3
       },
       "release": false,
       "timeoutMs": 4000
@@ -193,6 +183,94 @@
       "timeoutMs": 12000
     },
     {
+      "kind": "input",
+      "label": "tired2-key",
+      "press": "NumpadDivide",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-c2",
+      "press": "Numpad3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spent2-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spent2-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "spent2",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-b2",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "zeroed-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "zeroed-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "zeroed",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "label": "fainted2",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "wake2",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "morning2",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
       "kind": "wait",
       "label": "end",
       "waitTicks": 4,
@@ -206,6 +284,20 @@
       "runtimeReady": true
     },
     "resources": [
+      {
+        "id": "state",
+        "path": "speed",
+        "atSteps": [
+          {
+            "label": "fresh-moving",
+            "equals": 3.6
+          },
+          {
+            "label": "tired-moving",
+            "equals": 2.1
+          }
+        ]
+      },
       {
         "id": "state",
         "path": "tier",
@@ -247,6 +339,36 @@
           {
             "label": "morning",
             "equals": 125
+          },
+          {
+            "label": "spent2",
+            "equals": 2
+          },
+          {
+            "label": "zeroed",
+            "equals": 0
+          },
+          {
+            "label": "fainted2",
+            "equals": 125
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "zeroed",
+            "equals": "fainting"
+          },
+          {
+            "label": "fainted2",
+            "equals": "summary"
+          },
+          {
+            "label": "morning2",
+            "equals": "playing"
           }
         ]
       },
@@ -256,6 +378,10 @@
         "atSteps": [
           {
             "label": "fainted",
+            "equals": "exhausted"
+          },
+          {
+            "label": "fainted2",
             "equals": "exhausted"
           }
         ]
@@ -271,6 +397,10 @@
           {
             "label": "morning",
             "equals": 1
+          },
+          {
+            "label": "fainted2",
+            "equals": 2
           }
         ]
       },
@@ -289,6 +419,10 @@
           {
             "label": "morning",
             "equals": 2
+          },
+          {
+            "label": "spent2",
+            "equals": 3
           }
         ]
       }

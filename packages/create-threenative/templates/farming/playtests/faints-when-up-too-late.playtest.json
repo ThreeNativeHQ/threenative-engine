@@ -114,6 +114,16 @@
       },
       {
         "id": "state",
+        "path": "dayIndex",
+        "atSteps": [
+          {
+            "label": "morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
         "path": "stamina",
         "atSteps": [
           {

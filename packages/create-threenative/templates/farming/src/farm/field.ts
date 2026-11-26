@@ -111,6 +111,8 @@ export class Field {
   /** The can: wet tilled soil, with or without a crop on it. */
   water(tile: ITile): Outcome {
     if (!tile.tilled || tile.watered) return "nothing";
+    // A withered or ripe crop needs no more water: the can would waste stamina and a swig.
+    if (tile.crop?.dead === true || isRipe(tile)) return "nothing";
     tile.watered = true;
     return "done";
   }
@@ -165,6 +167,11 @@ export class Field {
       )
         crop.dead = true;
     }
+  }
+
+  /** Crops still alive: a farmer with none, no seeds and no gold has nothing left to start from. */
+  live(): number {
+    return this.tiles.filter((tile) => tile.crop !== undefined && !tile.crop.dead).length;
   }
 
   stats(): IFieldStats {

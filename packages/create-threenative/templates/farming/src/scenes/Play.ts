@@ -50,6 +50,7 @@ import { SKY_OPTIONS, setupSky } from "../render/sky.js";
 import { sunElevation } from "../render/sunPath.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState, TargetKind } from "../state.js";
+import { hotbarTap } from "../ui/hotbarTap.js";
 import { CHEATS, CHEAT_NAMES, STATIONS, STATION_NAMES, UNDER_PLAYTEST } from "./stations.js";
 
 /** How long a HUD message stays up, seconds. */
@@ -99,6 +100,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     stageSum: 0,
     stamina: 250,
     summary: null,
+    lightLux: 0,
     sunElevation: 0,
     targetCol: -1,
     targetKind: "none",
@@ -315,11 +317,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         for (const name of UNDER_PLAYTEST ? CHEAT_NAMES : [])
           if (input.justPressed(name)) event(CHEATS[name]?.(farm) ?? "");
 
-        SLOT_KEYS.forEach((key, index) => {
-          if (input.justPressed(key)) farm.select(index);
-        });
-        if (input.justPressed("nextTool")) farm.select(farm.slot + 1);
-        if (input.justPressed("prevTool")) farm.select(farm.slot - 1);
+        // A swing keeps the tool it began with: a slot change waits for the farmer's hands.
+        if (!farmer.busy) {
+          SLOT_KEYS.forEach((key, index) => {
+            if (input.justPressed(key)) farm.select(index);
+          });
+          if (input.justPressed("nextTool")) farm.select(farm.slot + 1);
+          if (input.justPressed("prevTool")) farm.select(farm.slot - 1);
+          const tapped = hotbarTap.take();
+          if (tapped !== undefined) farm.select(tapped);
+        }
         const slot = farm.hotbar;
         farmer.rack.show(slot.kind === "tool" ? slot.tool : undefined);
 
@@ -345,8 +352,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (!farmer.busy) {
           if (input.justPressed("use") || touch?.attackPressed === true) {
             if (!plan.valid) say(plan.message);
-            else if (plan.cost > farm.stamina) beginFaint("exhausted");
-            else
+            else if (plan.cost > farm.stamina) {
+              farm.stamina = 0;
+              beginFaint("exhausted");
+            } else
               farmer.work(
                 slot.kind === "tool"
                   ? ({ can: "interact", hammer: "chop", hoe: "chop", sickle: "jab" } as const)[
@@ -400,7 +409,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       }
       if (phase !== "playing") {
         highlight.mesh.visible = false;
-        frame.prompt = phase === "summary" ? "E  CONTINUE" : "";
+        frame.prompt = "";
       }
 
       applyDaylight(farm.minute, lighting.key, centre, ctx.scene);
@@ -421,6 +430,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       frame.year = date.year;
       frame.minute = round(farm.minute, 10);
       frame.clock = clockLabel(farm.minute);
+      frame.lightLux = round(lighting.key.intensity, 100);
       frame.sunElevation = round((sunElevation(farm.minute) * 180) / Math.PI, 10);
       frame.money = farm.money;
       frame.stamina = farm.stamina;

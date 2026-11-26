@@ -37,6 +37,8 @@ export type GameState = {
   clock: string;
   /** The sun's height above the horizon in degrees; negative at night. */
   sunElevation: number;
+  /** The key light's strength in lux: 6 at noon, 0.1 under the moon. */
+  lightLux: number;
 
   money: number;
   stamina: number;

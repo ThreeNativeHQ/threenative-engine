@@ -48,6 +48,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     cheatLate: { keys: ["NumpadMultiply"] },
     cheatTired: { keys: ["NumpadDivide"] },
     cheatSeason: { keys: ["NumpadDecimal"] },
+    cheatBroke: { keys: ["NumpadEnter"] },
   },
   plugins: [rapier(), playtest({ events: drainPlaytestEvents })],
   display: config.display,

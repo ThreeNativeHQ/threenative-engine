@@ -146,6 +146,16 @@
       },
       {
         "id": "state",
+        "path": "summary.penalty",
+        "atSteps": [
+          {
+            "label": "one-night",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
         "path": "dayIndex",
         "atSteps": [
           {

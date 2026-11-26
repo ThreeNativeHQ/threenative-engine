@@ -3,6 +3,7 @@ import { CROPS } from "../farm/crops.js";
 import { HOTBAR, STAMINA_MAX, WATER_MAX } from "../farm/tools.js";
 import type { GameState } from "../state.js";
 import { Summary } from "./Summary.js";
+import { hotbarTap } from "./hotbarTap.js";
 
 /** One field of the published state; each read re-renders only when its own value changes. */
 function useField<K extends keyof GameState>(key: K): GameState[K] | undefined {
@@ -114,16 +115,15 @@ export function Hud() {
           {prompt}
         </div>
       )}
-      <div
-        id="farm-hotbar"
-        className="pointer-events-none absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-1.5"
-      >
+      <div id="farm-hotbar" className="absolute bottom-5 left-1/2 flex -translate-x-1/2 gap-1.5">
         {HOTBAR.map((entry, index) => {
           const crop = entry.kind === "seed" ? entry.crop : undefined;
           return (
-            <div
+            <button
+              type="button"
               key={entry.label}
-              className={`flex h-14 w-[4.5rem] flex-col items-center justify-center rounded border text-[10px] uppercase tracking-[0.1em] ${
+              onPointerDown={() => hotbarTap.push(index)}
+              className={`pointer-events-auto flex h-14 w-[4.5rem] flex-col items-center justify-center rounded border text-[10px] uppercase tracking-[0.1em] ${
                 index === slot
                   ? "border-amber bg-black/80 text-amber"
                   : "border-line bg-black/55 text-dim"
@@ -132,7 +132,7 @@ export function Hud() {
               <span className="text-xs">{index + 1}</span>
               <span>{crop === undefined ? entry.label : CROPS[crop].label}</span>
               {crop !== undefined && <span className="text-text">x{seeds[crop]}</span>}
-            </div>
+            </button>
           );
         })}
       </div>

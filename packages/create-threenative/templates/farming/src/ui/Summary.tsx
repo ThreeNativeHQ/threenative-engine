@@ -52,6 +52,11 @@ export function Summary() {
             <span className="tabular-nums">{summary.money} G</span>
           </div>
         </div>
+        {summary.gift !== "" && (
+          <div id="summary-gift" className="mt-4 text-xs text-leaf">
+            The stall left you a {summary.gift} seed.
+          </div>
+        )}
         <div className="mt-5 text-[11px] text-dim">next: {summary.nextDate}</div>
         <div className="mt-3 text-xs text-text">E wake up</div>
       </div>

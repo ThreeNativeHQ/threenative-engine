@@ -11,6 +11,7 @@ import {
   FAINT_MINUTE,
   type IDate,
   MINUTES_PER_SECOND,
+  type Season,
   WAKE_MINUTE,
   dateLabel,
   dateOf,
@@ -47,6 +48,8 @@ export interface ISummary {
   readonly cause: DayCause;
   readonly date: string;
   readonly earned: number;
+  /** The seed the stall left a broke farmer, or an empty string. */
+  readonly gift: string;
   readonly lines: readonly ISummaryLine[];
   readonly money: number;
   readonly nextDate: string;
@@ -208,7 +211,11 @@ export class Farm {
       const slot = this.hotbar;
       if (slot.kind !== "seed") return { kind: "none", prompt: "SELECT A SEED BAG, KEYS 5 TO 7" };
       const price = CROPS[slot.crop].seedPrice;
-      return { kind: "buy", prompt: `E  BUY ${slot.crop.toUpperCase()} SEED  ${price} G` };
+      const season = CROPS[slot.crop].season.toUpperCase();
+      return {
+        kind: "buy",
+        prompt: `E  BUY ${slot.crop.toUpperCase()} SEED  ${price} G  (${season})`,
+      };
     }
     return { kind: "none", prompt: "" };
   }
@@ -236,6 +243,22 @@ export class Farm {
     this.money -= price;
     this.seeds[slot.crop] += 1;
     return { event: "bought", message: `Bought a ${slot.crop} seed.` };
+  }
+
+  /**
+   * A farmer with no seeds, no live crop and too little gold for the cheapest seed would never earn
+   * again. The stall leaves one seed that grows in the new season. Game-owned: the card has no relief.
+   */
+  #gift(season: Season): string {
+    const cheapest = [...CROP_IDS].sort((a, b) => CROPS[a].seedPrice - CROPS[b].seedPrice);
+    const stuck =
+      CROP_IDS.every((id) => this.seeds[id] === 0) &&
+      this.field.live() === 0 &&
+      this.money < CROPS[cheapest[0] as CropId].seedPrice;
+    if (!stuck) return "";
+    const id = cheapest.find((crop) => CROPS[crop].season === season) ?? (cheapest[0] as CropId);
+    this.seeds[id] += 1;
+    return CROPS[id].label;
   }
 
   /** Open the morning: the clock goes back to 06:00. */
@@ -268,10 +291,12 @@ export class Farm {
     this.stamina = cause === "sleep" ? STAMINA_MAX : Math.ceil(STAMINA_MAX / 2);
     if (cause === "sleep") this.sleeps += 1;
     else this.faints += 1;
+    const gift = this.#gift(tomorrow.season);
     return {
       cause,
       date: dateLabel(today),
       earned,
+      gift,
       lines,
       money: this.money,
       nextDate: dateLabel(tomorrow),

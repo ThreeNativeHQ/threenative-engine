@@ -109,6 +109,20 @@
             "textIncludes": "21:"
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "lightLux",
+        "atSteps": [
+          {
+            "label": "noon",
+            "equals": 6
+          },
+          {
+            "label": "night",
+            "equals": 0.1
+          }
+        ]
       }
     ]
   }

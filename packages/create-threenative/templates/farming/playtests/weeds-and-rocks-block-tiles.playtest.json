@@ -146,6 +146,26 @@
       "label": "broken",
       "waitTicks": 48,
       "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-rock-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-rock-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled-rock",
+      "waitTicks": 48,
+      "release": true
     }
   ],
   "assert": {
@@ -182,6 +202,10 @@
           {
             "label": "broken",
             "equals": 1
+          },
+          {
+            "label": "tilled-rock",
+            "equals": 2
           }
         ]
       },
@@ -270,6 +294,10 @@
           {
             "label": "broken",
             "equals": 229
+          },
+          {
+            "label": "tilled-rock",
+            "equals": 223
           }
         ]
       }

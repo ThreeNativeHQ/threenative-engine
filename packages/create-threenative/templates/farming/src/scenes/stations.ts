@@ -3,6 +3,7 @@
 // only when a playtest runner launched the page. Delete this file with the playtests.
 import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import type { Farm } from "../farm/Farm.js";
+import { CROP_IDS } from "../farm/crops.js";
 import { FAINT_MINUTE } from "../farm/time.js";
 import { BED_ZONE, BIN_ZONE, POND_ZONE, SHOP_ZONE, tileCenter } from "../level.js";
 
@@ -70,6 +71,12 @@ export const CHEATS: Readonly<Record<string, (farm: Farm) => string>> = {
   cheatTired: (farm) => {
     farm.stamina = 8;
     return "tired";
+  },
+  /** Numpad Enter: no seeds and no gold, with nothing growing. */
+  cheatBroke: (farm) => {
+    farm.money = 0;
+    for (const id of CROP_IDS) farm.seeds[id] = 0;
+    return "broke";
   },
   /** Numpad .: the last day of spring. */
   cheatSeason: (farm) => {

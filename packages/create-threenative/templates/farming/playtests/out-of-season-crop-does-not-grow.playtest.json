@@ -221,6 +221,32 @@
       },
       "release": false,
       "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "tomato-now",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tomato-seen",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "turnip-now",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "turnip-seen",
+      "waitTicks": 6,
+      "release": true
     }
   ],
   "assert": {
@@ -230,6 +256,20 @@
       "runtimeReady": true
     },
     "resources": [
+      {
+        "id": "state",
+        "path": "targetKind",
+        "atSteps": [
+          {
+            "label": "tomato-seen",
+            "equals": "seedling"
+          },
+          {
+            "label": "turnip-seen",
+            "equals": "growing"
+          }
+        ]
+      },
       {
         "id": "state",
         "path": "seeds.tomato",

@@ -1,0 +1,142 @@
+{
+  "name": "broke-farmer-gets-a-seed",
+  "warmupFrames": 10,
+  "drawEvery": 6,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "broke-key",
+      "press": "NumpadEnter",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-bed",
+      "press": "Numpad6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-sleep",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-night",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "one-wake",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "broke-key",
+            "equals": 0
+          },
+          {
+            "label": "one-morning",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "seeds.turnip",
+        "atSteps": [
+          {
+            "label": "broke-key",
+            "equals": 0
+          },
+          {
+            "label": "one-morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "summary.gift",
+        "atSteps": [
+          {
+            "label": "one-night",
+            "equals": "Turnip"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "one-morning",
+            "equals": "playing"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "broke",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

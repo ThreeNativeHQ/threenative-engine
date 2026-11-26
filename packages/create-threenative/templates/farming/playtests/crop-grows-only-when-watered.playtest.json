@@ -177,6 +177,32 @@
     },
     {
       "kind": "input",
+      "label": "wet-now",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wet-seen",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "dry-now",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "dry-seen",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "two-bed",
       "press": "Numpad6",
       "holdTicks": 1,
@@ -224,6 +250,20 @@
       "runtimeReady": true
     },
     "resources": [
+      {
+        "id": "state",
+        "path": "targetKind",
+        "atSteps": [
+          {
+            "label": "wet-seen",
+            "equals": "growing"
+          },
+          {
+            "label": "dry-seen",
+            "equals": "seedling"
+          }
+        ]
+      },
       {
         "id": "state",
         "path": "stageSum",
