@@ -1,4 +1,4 @@
-import type { MeshStandardMaterial } from "three";
+import { MathUtils, type MeshStandardMaterial } from "three";
 import { dress } from "../render/props.js";
 import type { ButtonName } from "../rhythm/buttons.js";
 import type { Grade } from "../rhythm/judge.js";
@@ -112,9 +112,8 @@ export class Performer extends Fighter {
   update(dt: number, pulse: number): void {
     this.#dx *= Math.exp(-SETTLE_RATE * dt);
     this.#dz *= Math.exp(-SETTLE_RATE * dt);
-    const ease = 1 - Math.exp(-SETTLE_RATE * dt);
-    this.#sx += (this.#tx - this.#sx) * ease;
-    this.#sz += (this.#tz - this.#sz) * ease;
+    this.#sx = MathUtils.damp(this.#sx, this.#tx, SETTLE_RATE, dt);
+    this.#sz = MathUtils.damp(this.#sz, this.#tz, SETTLE_RATE, dt);
     this.#bob = BOB * pulse;
     this.mesh.position.set(
       this.#home + this.#dx + this.#sx,
