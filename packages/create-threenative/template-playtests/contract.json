@@ -165,6 +165,27 @@
       }
     }
   },
+  "farming": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyE", "KeyQ", "KeyR"]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Sword_Attack",
+        "ticks": 42,
+        "contactTicks": 21,
+        "effect": { "signal": "tilled" }
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "restart-resets": "a farm has no failure to retry: the day loop saves nothing between runs and a new run is a page reload",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "kart": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

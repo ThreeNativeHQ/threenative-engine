@@ -1,0 +1,175 @@
+{
+  "name": "stall-sells-seeds",
+  "warmupFrames": 10,
+  "drawEvery": 6,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "stall",
+      "press": "Numpad9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hoe-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hoe-prompt",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pumpkin-bag",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "buy-1",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "bought-1",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "buy-2",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "bought-2",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "buy-3",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "broke",
+      "waitTicks": 3,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "hoe-prompt",
+            "equals": 200
+          },
+          {
+            "label": "bought-1",
+            "equals": 130
+          },
+          {
+            "label": "bought-2",
+            "equals": 60
+          },
+          {
+            "label": "broke",
+            "equals": 60
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "seeds.pumpkin",
+        "atSteps": [
+          {
+            "label": "bought-1",
+            "equals": 1
+          },
+          {
+            "label": "bought-2",
+            "equals": 2
+          },
+          {
+            "label": "broke",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "prompt",
+        "atSteps": [
+          {
+            "label": "hoe-prompt",
+            "textIncludes": "SELECT A SEED"
+          },
+          {
+            "label": "bought-1",
+            "textIncludes": "BUY PUMPKIN"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "message",
+        "atSteps": [
+          {
+            "label": "broke",
+            "textIncludes": "Not enough"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "bought",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "broke",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

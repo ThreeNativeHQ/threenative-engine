@@ -29,6 +29,9 @@ const SERVERS: readonly PublishedServer[] = [
     package: "threenative-asset-mcp",
     snapshot: "asset-mcp-tools.json",
     recommended: [
+      "asset_search",
+      "asset_get",
+      "asset_download",
       "ambientcg_list_files",
       "ambientcg_search_assets",
       "asset_download_file",
@@ -47,7 +50,7 @@ const SERVERS: readonly PublishedServer[] = [
       "asset_import_unreal",
     ],
     comment: (version, tools) =>
-      `The asset MCP surface a generated project actually gets. \`tools\` is the live tools/list response of the pinned version, recorded by installing ${"threenative-asset-mcp"}@${version} from the registry into a clean directory containing \`.threenative\` and driving it over stdio - not copied from its docs. \`inputSchemas\` and \`descriptions\` come from that same response, so the documentation cannot name an argument the server does not accept. The published ${version} serves all ${tools} tools, including the humanoid rig and Unreal import tools. \`profile\` is null because the server has no profile selector. \`recommended\` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - \`asset_search_sources\` is the authority on that. It includes the Fab loop: \`fab_search_assets\` finds a listing, \`fab_list_owned\` confirms it is in the library, and \`fab_import_asset\` (or \`asset_import_unreal\` for a local pack) converts the Unreal source to textured GLBs. Regenerate with \`pnpm tsx scripts/capture-asset-mcp-tools.ts\`.`,
+      `The asset MCP surface a generated project actually gets. \`tools\` is the live tools/list response of the pinned version, recorded by installing ${"threenative-asset-mcp"}@${version} from the registry into a clean directory containing \`.threenative\` and driving it over stdio - not copied from its docs. \`inputSchemas\` and \`descriptions\` come from that same response, so the documentation cannot name an argument the server does not accept. The published ${version} serves all ${tools} tools, including the humanoid rig and Unreal import tools. \`profile\` is null because the server has no profile selector. \`recommended\` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - \`asset_search_sources\` is the authority on that. The item loop is \`asset_search\` (provider \`threenative\` first), \`asset_get\`, then \`asset_download\`; the provider tools remain for sound and other types. It includes the Fab loop: \`fab_search_assets\` finds a listing, \`fab_list_owned\` confirms it is in the library, and \`fab_import_asset\` (or \`asset_import_unreal\` for a local pack) converts the Unreal source to textured GLBs. Regenerate with \`pnpm tsx scripts/capture-asset-mcp-tools.ts\`.`,
   },
   {
     package: "threenative-sculpt-mcp",

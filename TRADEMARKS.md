@@ -6,6 +6,9 @@ the code. It grants no rights to the ThreeNative name or brand.
 "ThreeNative", the ThreeNative logo and the ThreeNative favicon and social artwork are trademarks
 of João Paulo Furtado. All rights in them are reserved.
 
+The game screenshots in `docs/media/` are captures of games built with ThreeNative. They are not
+covered by the MIT licence, and all rights in them are reserved.
+
 ## What you may do without asking
 
 - Say your game or project is "built with ThreeNative" or "made with ThreeNative", in plain text.

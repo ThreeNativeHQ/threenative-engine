@@ -1,0 +1,163 @@
+{
+  "name": "faints-when-up-too-late",
+  "warmupFrames": 10,
+  "drawEvery": 6,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "late-key",
+      "press": "NumpadMultiply",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "night",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "input",
+      "label": "wake",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "summary.cause",
+        "atSteps": [
+          {
+            "label": "night",
+            "equals": "late"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "summary.penalty",
+        "atSteps": [
+          {
+            "label": "night",
+            "equals": 20
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "night",
+            "equals": 180
+          },
+          {
+            "label": "morning",
+            "equals": 180
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "faints",
+        "atSteps": [
+          {
+            "label": "morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "dayIndex",
+        "atSteps": [
+          {
+            "label": "morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stamina",
+        "atSteps": [
+          {
+            "label": "night",
+            "equals": 125
+          },
+          {
+            "label": "morning",
+            "equals": 125
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "clock",
+        "atSteps": [
+          {
+            "label": "morning",
+            "equals": "06:00"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "collapsed",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "fainted",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

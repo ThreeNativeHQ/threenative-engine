@@ -13399,6 +13399,20 @@
       "words": ["collectathon", "mario", "sm64", "super-mario", "3d-platformer"]
     },
     {
+      "blurb": "A grey-grid farm on a day clock: till, plant and water a tile field, grow seasonal crops, ship them, sleep.",
+      "name": "farming",
+      "title": "Farm life",
+      "words": [
+        "farming",
+        "harvest-moon",
+        "harvest-moon-64",
+        "stardew",
+        "stardew-valley",
+        "farm-sim",
+        "life-sim"
+      ]
+    },
+    {
       "blurb": "Eight karts race three laps of Clover Loop, a figure-8 with a bridge, a jump over a creek and boost pads, with a hop into a power-slide, mini-turbo sparks, item boxes with burrs, acorns and nitro cans, and seven CPU drivers on a rubber band.",
       "name": "kart",
       "title": "Clover Cup",

@@ -16,7 +16,7 @@ import { PLACES } from "../city/layout.js";
 import type { IMannequin } from "../entities/Humanoid.js";
 import { CAR_LAYER, type GameCtx, WORLD_LAYER } from "../entities/layers.js";
 import { CityCamera } from "../render/camera.js";
-import { buildCity, buildSkyline } from "../render/city.js";
+import { buildCity } from "../render/city.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -28,7 +28,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
 import { STATIONS, World } from "../systems/World.js";
-import { CityStreamer } from "../systems/streaming.js";
+import { CityStreamer, buildSkyline } from "../systems/streaming.js";
 
 /** Radar dots change slowly; publishing them every sixth tick keeps the HUD cheap. */
 const RADAR_EVERY = 6;
