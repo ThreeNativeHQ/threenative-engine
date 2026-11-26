@@ -1,7 +1,7 @@
 {
   "name": "farming",
   "title": "Farm life",
-  "blurb": "A grey-grid farm on a day clock: till, plant and water a tile field, crops that grow one stage a watered day by season, stamina, a shipping bin paid overnight, a seed stall and the calendar.",
+  "blurb": "A grey-grid farm on a day clock: till, plant and water a tile field, grow seasonal crops, ship them, sleep.",
   "genre": "farming",
   "aliases": [
     "harvest-moon",
