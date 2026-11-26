@@ -17,7 +17,7 @@ export type GameState = {
   /** "count-in", "teacher" (the call), "player" (your answer) or "result". */
   part: Part;
   bpm: number;
-  /** Beats since the first call; negative during the count-in. Rounded to a thousandth. */
+  /** Beats since the first call; negative during the count-in. Floored to a thousandth. */
   songBeat: number;
   /** Whole beats of the song so far (floor of `songBeat`). */
   beatCount: number;

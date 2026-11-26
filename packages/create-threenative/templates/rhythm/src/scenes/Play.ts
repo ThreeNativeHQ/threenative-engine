@@ -14,7 +14,11 @@ import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
 import { playerMaterial, teacherMaterial } from "../render/props.js";
-import { type QualityTier, isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { PLAYER_X, Stage, TEACHER_X } from "../render/stage.js";
 import type { GameState } from "../state.js";
@@ -167,11 +171,17 @@ export class Play extends Scene<GameState, undefined> {
           lastTiming = result.timing;
           lastCells = result.cells;
           if (result.freestyle) say("Freestyle");
-          emitPlaytestEvent({ entity: "player", grade: result.grade, name: "press", timing: result.timing });
+          emitPlaytestEvent({
+            entity: "player",
+            grade: result.grade,
+            name: "press",
+            timing: result.timing,
+          });
         }
       } else if (event.kind === "miss") {
         lastGrade = "miss";
         lastTiming = "none";
+        lastCells = 0;
         player.react("left", "miss");
       } else if (event.kind === "line") {
         player.setMood(session.level);
@@ -195,12 +205,14 @@ export class Play extends Scene<GameState, undefined> {
         return;
       }
       // The song starts once the startup compile has settled, so a slow launch never eats the count-in.
-      const pressed = BUTTONS.filter(({ action }) => frameCtx.input.justPressed(action)).map(({ name }) => name);
+      const pressed = BUTTONS.filter(({ action }) => frameCtx.input.justPressed(action)).map(
+        ({ name }) => name,
+      );
       const events = session.update(frameCtx.startup.compileSettled ? dt : 0, pressed);
       for (const event of events) react(event);
 
       const pulse = session.clock.pulse;
-      stage.update(pulse);
+      stage.update(pulse, session.clock.beat);
       frameCamera(pulse);
       teacher.update(dt, pulse);
       player.update(dt, pulse);
@@ -211,7 +223,8 @@ export class Play extends Scene<GameState, undefined> {
       const { counts } = session;
       frame.phase = session.outcome;
       frame.part = session.part;
-      frame.songBeat = round(beat);
+      // Floored, never rounded: a published beat may not run ahead of the beat the stage is drawn on.
+      frame.songBeat = Math.floor(beat * 1000) / 1000;
       frame.beatCount = Math.floor(beat);
       frame.pulse = round(pulse, 100);
       frame.lineIndex = Math.min(session.line, LINES.length - 1);
@@ -232,10 +245,14 @@ export class Play extends Scene<GameState, undefined> {
       frame.freestyle = counts.freestyle;
       frame.linesJudged = session.linesJudged;
       frame.lineScore = session.lastScore === undefined ? 0 : round(session.lastScore.score, 100);
-      frame.lineThreshold = session.lastScore === undefined ? 0 : round(session.lastScore.threshold, 100);
+      frame.lineThreshold =
+        session.lastScore === undefined ? 0 : round(session.lastScore.threshold, 100);
       frame.message = message;
       if (session.listsDirty) {
-        frame.notes = session.notes.map(({ beat: noteBeat, button }) => ({ beat: noteBeat, button }));
+        frame.notes = session.notes.map(({ beat: noteBeat, button }) => ({
+          beat: noteBeat,
+          button,
+        }));
         frame.marks = session.marks.slice();
         session.listsDirty = false;
       }

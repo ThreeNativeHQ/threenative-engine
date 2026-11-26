@@ -6,7 +6,14 @@
 export const BUTTONS = [
   { name: "left", action: "pressLeft", keys: ["ArrowLeft"], pad: [14], glyph: "←", hint: "Left" },
   { name: "up", action: "pressUp", keys: ["ArrowUp"], pad: [12], glyph: "↑", hint: "Up" },
-  { name: "right", action: "pressRight", keys: ["ArrowRight"], pad: [15], glyph: "→", hint: "Right" },
+  {
+    name: "right",
+    action: "pressRight",
+    keys: ["ArrowRight"],
+    pad: [15],
+    glyph: "→",
+    hint: "Right",
+  },
   { name: "down", action: "pressDown", keys: ["ArrowDown"], pad: [13], glyph: "↓", hint: "Down" },
   { name: "z", action: "pressZ", keys: ["KeyZ"], pad: [0], glyph: "Z", hint: "Z / A" },
   { name: "x", action: "pressX", keys: ["KeyX"], pad: [1], glyph: "X", hint: "X / B" },

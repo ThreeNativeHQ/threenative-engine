@@ -107,6 +107,11 @@ export class Performer extends Fighter {
 
   /** What a playtest reads: the move last played and the dip on the beat. */
   debug(): Record<string, unknown> {
-    return { bob: Math.round(this.#bob * 1000) / 1000, fallen: this.#fallen, move: this.action, x: Math.round(this.mesh.position.x * 100) / 100 };
+    return {
+      bob: Math.round(this.#bob * 1000) / 1000,
+      fallen: this.#fallen,
+      move: this.action,
+      x: Math.round(this.mesh.position.x * 100) / 100,
+    };
   }
 }

@@ -1,12 +1,12 @@
 // Generated for you. Camera framing is yours to edit.
 //
-// A fixed front view of the stage: both performers in frame, level with their chests, a touch
-// above the floor so the pads read. The lens nudges toward the stage on each beat; the nudge is
+// A fixed front view of the stage: both performers in frame, a little above their heads and tilted
+// down, so the pads read and the bottom of the frame is left for the beat bar. The lens nudges toward the stage on each beat; the nudge is
 // the pulse of `clock.ts`, so the picture breathes with the song.
 import { type PerspectiveCamera, Vector3 } from "three";
 
-const POSITION = new Vector3(0, 2.3, 9.2);
-const AIM = new Vector3(0, 1.2, 0);
+const POSITION = new Vector3(0, 2.2, 9.6);
+const AIM = new Vector3(0, 0.25, 0);
 /** Metres the lens moves toward the stage at the top of a beat. */
 const PUSH = 0.12;
 

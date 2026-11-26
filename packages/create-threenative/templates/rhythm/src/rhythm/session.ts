@@ -19,9 +19,19 @@ export interface IMark {
 export type SessionEvent =
   | { readonly kind: "call"; readonly button: ButtonName }
   /** `result` is undefined for a press that is not graded: a dance step during the call or the result. */
-  | { readonly kind: "press"; readonly button: ButtonName; readonly result: IPressResult | undefined }
+  | {
+      readonly kind: "press";
+      readonly button: ButtonName;
+      readonly result: IPressResult | undefined;
+    }
   | { readonly kind: "miss"; readonly beat: number }
-  | { readonly kind: "line"; readonly line: number; readonly score: ILineScore; readonly before: number; readonly after: number }
+  | {
+      readonly kind: "line";
+      readonly line: number;
+      readonly score: ILineScore;
+      readonly before: number;
+      readonly after: number;
+    }
   | { readonly kind: "end"; readonly outcome: "cleared" | "failed" };
 
 export interface ICounts {
@@ -86,12 +96,17 @@ export class Session {
     const events: SessionEvent[] = [];
     this.clock.advance(dt);
     if (this.outcome === "playing") {
-      while (this.outcome === "playing" && this.clock.beat >= (this.line + 1) * BEATS_PER_LINE) this.#finishLine(events);
+      while (this.outcome === "playing" && this.clock.beat >= (this.line + 1) * BEATS_PER_LINE)
+        this.#finishLine(events);
     }
     if (this.outcome === "playing" && this.part !== "count-in") {
       const local = this.lineBeat;
       const notes = this.notes;
-      while (this.#cue < notes.length && local >= (notes[this.#cue] as INote).beat && local < BEATS_PER_PART) {
+      while (
+        this.#cue < notes.length &&
+        local >= (notes[this.#cue] as INote).beat &&
+        local < BEATS_PER_PART
+      ) {
         events.push({ button: (notes[this.#cue] as INote).button, kind: "call" });
         this.#cue += 1;
       }
@@ -113,7 +128,12 @@ export class Session {
       this.counts.presses += 1;
       this.counts[result.grade] += 1;
     }
-    this.marks.push({ beat: result.beat, freestyle: result.freestyle, grade: result.grade, timing: result.timing });
+    this.marks.push({
+      beat: result.beat,
+      freestyle: result.freestyle,
+      grade: result.grade,
+      timing: result.timing,
+    });
     this.listsDirty = true;
     events.push({ button, kind: "press", result });
   }

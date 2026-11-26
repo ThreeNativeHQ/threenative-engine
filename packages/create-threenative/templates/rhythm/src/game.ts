@@ -9,7 +9,9 @@ import type { GameState } from "./state.js";
 const game = defineGame<GameState, undefined>({
   input: {
     // One action per answer button, from the one table in `rhythm/buttons.ts`: keyboard and pad.
-    ...Object.fromEntries(BUTTONS.map(({ action, keys, pad }) => [action, { buttons: [...pad], keys: [...keys] }])),
+    ...Object.fromEntries(
+      BUTTONS.map(({ action, keys, pad }) => [action, { buttons: [...pad], keys: [...keys] }]),
+    ),
     restart: { buttons: [9], keys: ["KeyR"] },
   },
   plugins: [playtest({ events: drainPlaytestEvents })],

@@ -18,7 +18,11 @@ export type Grade = "cool" | "good" | "bad" | "miss";
 export type Timing = "early" | "late" | "on";
 
 /** Cells before and after a note that still earn the grade. Widest last. */
-export const WINDOWS: readonly { readonly grade: Exclude<Grade, "miss">; readonly early: number; readonly late: number }[] = [
+export const WINDOWS: readonly {
+  readonly grade: Exclude<Grade, "miss">;
+  readonly early: number;
+  readonly late: number;
+}[] = [
   { grade: "cool", early: 2, late: 2 },
   { grade: "good", early: 4, late: 4 + LATE_SHIFT_CELLS },
   { grade: "bad", early: 6, late: 6 + LATE_SHIFT_CELLS },
@@ -40,7 +44,11 @@ const ON_CELLS = 1;
  * at once (scrctrl.c:2619, 2644). A note answered cool counts a whole pair, good and bad count less.
  */
 const PAIR_WEIGHT = 2;
-const PAIR_VALUE: Readonly<Record<Exclude<Grade, "miss">, number>> = { cool: 1, good: 0.75, bad: 0.5 };
+const PAIR_VALUE: Readonly<Record<Exclude<Grade, "miss">, number>> = {
+  cool: 1,
+  good: 0.75,
+  bad: 0.5,
+};
 /** A line must reach half its best score to count as clean (`thresholdDivisor`, scrctrl.c:587). */
 const THRESHOLD_DIVISOR = 2;
 /** An improvised off-beat press in the top rating scores like a pair, and costs no press. */
@@ -71,11 +79,13 @@ interface INoteState {
   result: Grade | undefined;
 }
 
-const sign = (cells: number): Timing => (Math.abs(cells) <= ON_CELLS ? "on" : cells < 0 ? "early" : "late");
+const sign = (cells: number): Timing =>
+  Math.abs(cells) <= ON_CELLS ? "on" : cells < 0 ? "early" : "late";
 
 /** The grade a press earns at `cells` from a note, or undefined when it is outside every window. */
 export function gradeFor(cells: number): Exclude<Grade, "miss"> | undefined {
-  for (const window of WINDOWS) if (cells >= -window.early && cells <= window.late) return window.grade;
+  for (const window of WINDOWS)
+    if (cells >= -window.early && cells <= window.late) return window.grade;
   return undefined;
 }
 
@@ -124,10 +134,18 @@ export class LineJudge {
       return { beat, cells: bestCells, freestyle: false, grade, timing: sign(bestCells) };
     }
     const eighth = Math.round(beat * 2) / 2;
-    const offBeat = eighth * 2 % 2 !== 0;
+    const offBeat = (eighth * 2) % 2 !== 0;
     const cells = (beat - eighth) * CELLS_PER_BEAT;
-    const noteNear = this.#notes.some(({ note }) => Math.abs(beat - note.beat) * CELLS_PER_BEAT <= BAD.early);
-    if (freestyleOpen && offBeat && !noteNear && Math.abs(cells) <= WINDOWS[0]!.early && this.#freestyle < FREESTYLE_CAP) {
+    const noteNear = this.#notes.some(
+      ({ note }) => Math.abs(beat - note.beat) * CELLS_PER_BEAT <= BAD.early,
+    );
+    if (
+      freestyleOpen &&
+      offBeat &&
+      !noteNear &&
+      Math.abs(cells) <= WINDOWS[0]!.early &&
+      this.#freestyle < FREESTYLE_CAP
+    ) {
       this.#freestyle += 1;
       return { beat, cells, freestyle: true, grade: "cool", timing: sign(cells) };
     }

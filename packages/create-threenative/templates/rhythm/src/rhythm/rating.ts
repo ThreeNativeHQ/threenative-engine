@@ -38,4 +38,5 @@ export function nextRung(rung: number, score: number, threshold: number): number
 }
 
 /** Only the top two bands clear the stage; anything below sends the player back. */
-export const clears = (rung: number): boolean => levelOf(rung) === "cool" || levelOf(rung) === "good";
+export const clears = (rung: number): boolean =>
+  levelOf(rung) === "cool" || levelOf(rung) === "good";
