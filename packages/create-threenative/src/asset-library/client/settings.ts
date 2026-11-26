@@ -43,6 +43,14 @@ interface ITrace {
 }
 
 const SAVED = "tn-dashboard:saved";
+// Read by the dev shell (plugin.ts) on the game page's next load. A config write wakes Vite's
+// watcher, which can reload the page before the PATCH answers, so this is set before the write.
+const RESTORE = "tn-dev-dashboard-restore";
+const armRestore = () =>
+  sessionStorage.setItem(
+    RESTORE,
+    JSON.stringify({ src: location.pathname + location.search, until: Date.now() + 10_000 }),
+  );
 
 export function mountSettings(root: HTMLElement, api: string): void {
   const status = h("div", "flex items-center gap-2 text-muted", null, {
@@ -174,6 +182,7 @@ async function gameConfig(
   const save = async (path: string, value: unknown) => {
     for (const node of errors.values()) node.textContent = "";
     say("Saving");
+    armRestore();
     try {
       view = await sendJson<IConfigResponse>(`${api}config`, "PATCH", {
         changes: { [path]: value },
@@ -186,6 +195,7 @@ async function gameConfig(
       window.parent.postMessage({ type: "tn-dashboard:config-updated", path }, location.origin);
       render();
     } catch (error) {
+      sessionStorage.removeItem(RESTORE);
       const fields = (error as { fields?: Record<string, string> }).fields ?? {};
       say("Not saved: the config did not validate", "bad");
       const target = errors.get(path);
@@ -260,11 +270,14 @@ async function telemetry(
   let state = await getJson<ITelemetry>(`${api}telemetry`);
   const patch = async (change: Partial<ITelemetry>) => {
     say("Saving");
+    // Only the crash switch lives in threenative.config.ts; the sharing switches never reload.
+    if ("crashReports" in change) armRestore();
     try {
       state = await sendJson<ITelemetry>(`${api}telemetry`, "PATCH", change);
       say("Saved", "ok");
       render();
     } catch (error) {
+      sessionStorage.removeItem(RESTORE);
       say((error as Error).message, "bad");
     }
   };

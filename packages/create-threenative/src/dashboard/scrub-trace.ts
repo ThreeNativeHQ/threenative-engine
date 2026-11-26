@@ -57,7 +57,7 @@ const SECRET_SHAPES: readonly [string, RegExp][] = [
     "secret assignment",
     /\b(?:[A-Za-z0-9_]*(?:_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PAT|APIKEY|API_KEY)|DATABASE_URL|PASSWORD|SECRET)\b["']?\s*[:=]\s*["']?(?!\[redacted)(?=[^\s"'\\,;}]{6,})[^\s"'\\,;}]+/giu,
   ],
-  ["cookie header", /\b(?:Set-)?Cookie\b["']?\s*:\s*(?!\[redacted)[^\n"\\]{4,}/giu],
+  ["cookie header", /\b(?:Set-)?Cookie\b["']?\s*:\s*["']?(?!\[redacted)[^\n"\\]{4,}/giu],
 ];
 
 const SENSITIVE_FILE =
@@ -111,11 +111,12 @@ function identityPatterns(identity: IScrubIdentity): [RegExp, string][] {
 
 /** Scrubs one decoded string. */
 export function scrubText(text: string, identity: IScrubIdentity = localIdentity()): string {
-  let out = redactSecrets(text);
+  // Emails first: a username rewrite would turn alice@acme.com into <user>@acme.com, which no
+  // longer reads as an email and would ship the domain.
+  let out = redactSecrets(text).replace(EMAIL, "<email>");
   for (const [pattern, replacement] of identityPatterns(identity))
     out = out.replace(pattern, replacement);
   out = out.replace(USER_PATH, (match) => match.replace(/[^\\/]+$/u, "<user>"));
-  out = out.replace(EMAIL, "<email>");
   out = out.replace(IPV4, "<ip>");
   out = out.replace(IPV6, (match) => (match === "::1" ? match : "<ip>"));
   out = out.replace(QUERY_SECRET, `$1${R}`);
@@ -156,6 +157,8 @@ export function residualFinding(
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 const PRIVATE_FILE = "[redacted: private file]";
+const SECRET_KEY =
+  /^(?:(?:set-)?cookie|(?:proxy-)?authorization|password|passwd|secret|api_?key|access_token|refresh_token|database_url|[a-z0-9_]*_(?:key|token|secret|password|passwd))$/iu;
 const BODY_KEYS = new Set([
   "content",
   "text",
@@ -240,6 +243,8 @@ function scrubNode(node: Json, identity: IScrubIdentity, privateIds: Set<string>
   const out: { [key: string]: Json } = {};
   for (const [key, value] of Object.entries(node)) {
     if ((linked || namesPrivate) && BODY_KEYS.has(key)) out[key] = PRIVATE_FILE;
+    // A JSON header or env map holds the secret as the value of a named key.
+    else if (SECRET_KEY.test(key) && typeof value === "string" && value.length > 0) out[key] = R;
     else out[scrubText(key, identity)] = scrubNode(value, identity, privateIds);
   }
   return out;

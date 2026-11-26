@@ -233,6 +233,17 @@ describe("trace scrubber", () => {
     expect(jsonl).not.toContain(secret);
   });
 
+  it("redacts JSON cookie headers, secret-named keys and the whole email address", () => {
+    const record = {
+      headers: { Cookie: "session=abc123def456", "x-api-key": "plain" },
+      env: { STRIPE_SECRET: "topsecretvalue1" },
+      message: { content: '{"Set-Cookie": "sid=secret123456; HttpOnly"} from alice@acme-corp.com' },
+    };
+    const { jsonl } = scrubTrace(JSON.stringify(record), identity);
+    for (const leaked of ["abc123def456", "secret123456", "topsecretvalue1", "acme-corp", "alice@"])
+      expect(jsonl).not.toContain(leaked);
+  });
+
   it("catches lowercase secret assignments and bearer tokens", () => {
     const text = 'api_key: "abcdef123456" password=hunter2hunter bearer abcdefghijklmnop1234';
     const out = scrubText(text, identity);

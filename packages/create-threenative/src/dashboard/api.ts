@@ -1,6 +1,6 @@
 // `/__dashboard/api/*` (PRD-918, PRD-923): the Dev Dashboard's dev-server routes. Mounted by the
 // Asset Library plugin, which is `apply: "serve"`, so none of this reaches a build.
-import { createReadStream } from "node:fs";
+import { createReadStream, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
@@ -151,9 +151,8 @@ export function createDashboardApi(options: {
     "POST telemetry/traces/share": async (_req, res) => {
       if (!(await readPrefs()).shareSessionTraces)
         return send(res, 409, { error: "Share session traces is off on this machine." });
-      return shareTraces(root, {
-        ...(options.engineVersion ? { engineVersion: options.engineVersion } : {}),
-      });
+      const engineVersion = options.engineVersion ?? installedCoreVersion(root);
+      return shareTraces(root, engineVersion ? { engineVersion } : {});
     },
     "GET telemetry/procedurals": async () => ({ files: await procedurals(root) }),
     "POST telemetry/procedurals/share": async (req) => {
@@ -243,4 +242,15 @@ export function createDashboardApi(options: {
       runner.cancel();
     },
   };
+}
+
+/** The project's installed `@threenative/core` version: the engine a shared trace was made with. */
+function installedCoreVersion(root: string): string | undefined {
+  try {
+    const file = path.join(root, "node_modules/@threenative/core/package.json");
+    const version = (JSON.parse(readFileSync(file, "utf8")) as { version?: unknown }).version;
+    return typeof version === "string" ? version : undefined;
+  } catch {
+    return undefined;
+  }
 }

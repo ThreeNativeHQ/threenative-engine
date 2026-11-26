@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-923 — Dev Dashboard: Performance & Health diagnostics and Playtests runner
 
-**Status:** PARTIAL (phase 3 open)
-**Priority:** P2 — AC-1 through AC-6 are open: developers inside `pnpm dev` must still tail raw console logs for `TN_FRAME_BUDGET` / `TN_SCENE_WARNING`, invoke `npx threenative doctor` in a separate terminal, and run `playtests/*.playtest.json` manually outside the Dashboard.
+**Status:** DONE
+**Priority:** P2 — AC-1 through AC-6 are met (engine PR #768). The problem it solved: developers inside `pnpm dev` had to tail raw console logs for `TN_FRAME_BUDGET` / `TN_SCENE_WARNING`, invoke `npx threenative doctor` in a separate terminal, and run `playtests/*.playtest.json` manually outside the Dashboard.
 **Complexity:** 6 (MEDIUM) — 6–10 implementation files (+2), new passive marker bridge / doctor API / playtest runner middleware (+2), process lifecycle & streaming state (+2); risk override: none (dev-only Vite serve plugin, zero production runtime bytes).
 **Owner:** João
 **Depends on:** [PRD-918](./PRD-918-dev-dashboard-studio-theme-settings-and-telemetry.md) (mounts into the Studio-themed Dev Dashboard side menu)
