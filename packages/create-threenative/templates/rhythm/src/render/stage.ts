@@ -124,7 +124,10 @@ export class Stage {
         emissiveIntensity: PAD_DIM,
         roughness: 0.4,
       });
-      const panel = new Mesh(new BoxGeometry(1.7, 0.4, 0.1).translate((index - 3.5) * 2.2, 3.4, -5.25), material);
+      const panel = new Mesh(
+        new BoxGeometry(1.7, 0.4, 0.1).translate((index - 3.5) * 2.2, 3.4, -5.25),
+        material,
+      );
       this.mesh.add(panel);
       this.#chase.push(material);
     }
