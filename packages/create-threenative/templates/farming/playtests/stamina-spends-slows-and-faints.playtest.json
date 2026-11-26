@@ -28,6 +28,23 @@
       "release": false
     },
     {
+      "label": "fresh-speed",
+      "waitForResource": {
+        "id": "state",
+        "path": "speed",
+        "gte": 3.4
+      },
+      "release": false,
+      "timeoutMs": 4000
+    },
+    {
+      "kind": "input",
+      "label": "fresh-release",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
       "kind": "wait",
       "label": "stopped",
       "waitTicks": 1,
@@ -70,9 +87,36 @@
     {
       "kind": "input",
       "label": "tired-walk",
-      "press": "ArrowLeft",
+      "press": "ArrowDown",
       "holdTicks": 30,
       "release": false
+    },
+    {
+      "label": "tired-moving",
+      "waitForResource": {
+        "id": "state",
+        "path": "speed",
+        "gte": 1.8
+      },
+      "release": false,
+      "timeoutMs": 4000
+    },
+    {
+      "label": "tired-speed",
+      "waitForResource": {
+        "id": "state",
+        "path": "speed",
+        "lte": 2.3
+      },
+      "release": false,
+      "timeoutMs": 4000
+    },
+    {
+      "kind": "input",
+      "label": "tired-release",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
     },
     {
       "kind": "wait",
@@ -162,20 +206,6 @@
       "runtimeReady": true
     },
     "resources": [
-      {
-        "id": "state",
-        "path": "speed",
-        "atSteps": [
-          {
-            "label": "fresh-walk",
-            "equals": 3.6
-          },
-          {
-            "label": "tired-walk",
-            "equals": 2.1
-          }
-        ]
-      },
       {
         "id": "state",
         "path": "tier",

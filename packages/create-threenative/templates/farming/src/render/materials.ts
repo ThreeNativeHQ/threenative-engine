@@ -8,6 +8,7 @@
 // neighbours.
 import {
   type BufferGeometry,
+  Color,
   DataTexture,
   Float32BufferAttribute,
   LinearMipmapLinearFilter,
@@ -182,7 +183,10 @@ export function gridMaterial(base: number, roughness = 0.8): MeshStandardMateria
 
 /** Tilled soil, dry and wet. The wet grid is darker, as turned earth is after the can. */
 export const soilMaterial = gridMaterial(palette.soil, 0.95);
-export const wetSoilMaterial = gridMaterial(palette.wetSoil, 0.7);
+export const wetSoilMaterial = gridMaterial(
+  new Color(palette.soil).multiplyScalar(0.6).getHex(),
+  0.7,
+);
 /** Weeds, leaves and the water of the pond: plain colours with no grid, as small props are. */
 export const leafMaterial = new MeshStandardMaterial({ color: 0x4f9a3a, roughness: 0.7 });
 export const deadLeafMaterial = new MeshStandardMaterial({ color: 0x6f5a3a, roughness: 0.9 });

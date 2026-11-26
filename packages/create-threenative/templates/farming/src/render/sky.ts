@@ -13,9 +13,9 @@ import {
   Vector3,
 } from "three";
 import { createGpuSky } from "./gpuSky.js";
-import { sunDirectionAt } from "./sunPath.js";
 import { HEIGHT_FOG, heightFogNode } from "./heightFog.js";
 import { palette } from "./palette.js";
+import { sunDirectionAt } from "./sunPath.js";
 
 /**
  * Unit vector toward the sun the sky is baked for: a late-morning sun, 11:00 on the day clock.

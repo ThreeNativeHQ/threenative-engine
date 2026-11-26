@@ -9,9 +9,8 @@ export const palette = {
   gridLine: 0x587038,
   /** The one saturated colour: the bin, the stall, the bed and anything else you can use. */
   accent: 0xe8761e,
-  /** Tilled soil, dry and wet. */
+  /** Tilled soil. `materials.ts` darkens it for the wet grid. */
   soil: 0x8a6240,
-  wetSoil: 0x54392a,
   /** The sky's own horizon: distance fades into this, and it is the loading backdrop. */
   horizon: 0xb4c4d6,
 } as const;
