@@ -6,8 +6,8 @@
   "warmupFrames": 10,
   "subject": "player",
   "steps": [
-    { "kind": "input", "label": "walk", "press": "KeyA", "holdTicks": 30, "release": true },
-    { "kind": "input", "label": "forward", "press": "KeyW", "holdTicks": 60, "release": true },
+    { "kind": "input", "label": "walk", "press": "ArrowLeft", "holdTicks": 30, "release": true },
+    { "kind": "input", "label": "forward", "press": "ArrowUp", "holdTicks": 60, "release": true },
     { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }
   ],
   "assert": {

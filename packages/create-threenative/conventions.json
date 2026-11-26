@@ -20,6 +20,7 @@
         "collectathon",
         "kart",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -407,7 +408,7 @@
       "default": "every factory ships a stock look",
       "override": "per-call options on `@threenative/core/spells`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "open-world", "stealth", "survival-horror"]
+      "kits": ["action-rpg"]
     },
     {
       "id": "net",

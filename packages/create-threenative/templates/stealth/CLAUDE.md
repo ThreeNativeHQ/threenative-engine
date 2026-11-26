@@ -1,9 +1,9 @@
 <!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->
 
 <!-- shared: kit-identity -->
-# AGENTS.md — __PROJECT_NAME__ (Action RPG, the action-rpg kit)
+# AGENTS.md — __PROJECT_NAME__ (Stealth infiltration, the stealth kit)
 
-A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet. Routing words: action-rpg, diablo, arpg, hack-and-slash, dungeon-crawler. `CLAUDE.md` is a copy of this file.
+A grey-grid compound of patrolling guards: vision cones, suspicion, alert phases, noise, takedowns, bodies that raise the alarm, a radar and an extraction. Routing words: stealth, metal-gear, metal-gear-solid, mgs, splinter-cell, tenchu, infiltration. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -39,14 +39,14 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 ## This kit
 
 <!-- shared: kit-files -->
-Source in `src/`: `abilities/`, `conventions.ts`, `entities/`, `game.ts`, `items/`, `loot/`, `main.ts`, `playtest-events.ts`, `progress.ts`, `render/`, `scenes/`, `state.ts`, `stats/`, `ui/`.
-11 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+Source in `src/`: `ai/`, `conventions.ts`, `entities/`, `game.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
+10 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
-Kit notes: `node_modules/create-threenative/agent-docs/references/kit-action-rpg.md`.
+Kit notes: `node_modules/create-threenative/agent-docs/references/kit-stealth.md`.
 <!-- /shared -->
 
-This game owns dungeon, combat, stats, inventory, persistence and look; `src/game.ts` is portable, `src/main.ts` the web React mount.
-Keys: WASD/arrows move; Space/F attack; E Arcane Surge; Shift roll; Q/U equip toggle; C/R checkpoint.
+This game owns the compound (`src/level.ts`), guard AI (`src/ai/`) and the alert phases; `src/game.ts` is portable.
+Keys: WASD/arrows move; Shift run (loud); C crouch; push into a wall to press; Q knock; F grab, then choke; hold E drag; E take or open; R restart.
 
 <!-- shared: kit-commands -->
 ## Commands
@@ -94,7 +94,6 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.
 - **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
-- **Spells** `#spells`: every factory ships a stock look. Override: per-call options on `@threenative/core/spells`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
 - **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.

@@ -1,7 +1,7 @@
 <!-- shared: kit-identity -->
 # AGENTS.md — __PROJECT_NAME__ (Survival horror, the survival-horror kit)
 
-A four-room mansion wing in the classic survival-horror mould: fixed cameras that cut, tank controls with a quick turn, a handgun with aim stance, zombies that grab and get back up, a six-slot case, an item box and ink-ribbon saves. Routing words: survival-horror, resident-evil, biohazard, silent-hill, horror, zombie. `CLAUDE.md` is a copy of this file.
+A grey-grid mansion wing under fixed cameras: tank controls, aimed shots, scarce ammo, grabbing zombies, a six-slot case, herbs, keys and typewriter saves. Routing words: survival-horror, resident-evil, residentevil, biohazard, silent-hill, horror, zombie. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -38,13 +38,13 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `conventions.ts`, `entities/`, `game.ts`, `items.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
-17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+20 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-survival-horror.md`.
 <!-- /shared -->
 
-This game owns the mansion wing, tank controls, fixed cameras, handgun, zombies, case, item box and typewriter saves; `src/level.ts` is the map as data.
-Keys: W/S forward/back, A/D turn; Shift run; S+Shift quick turn; J/Ctrl/right mouse aim (W/S tilt); E/Space act or fire; R reload; I case (C mixes herbs); Enter continue after death; N new game.
+This game owns the mansion, cameras, zombies, case and saves; `src/level.ts` is the map.
+Keys: W/S walk, A/D turn; Shift run; S+Shift quick turn; J/right mouse aim (W/S tilt); E/Space act or fire; R reload; I case (C mixes); N new game.
 
 <!-- shared: kit-commands -->
 ## Commands
@@ -92,7 +92,6 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.
 - **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
-- **Spells** `#spells`: every factory ships a stock look. Override: per-call options on `@threenative/core/spells`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
 - **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.

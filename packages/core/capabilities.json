@@ -13405,6 +13405,22 @@
       "words": ["kart-racer", "mario-kart", "mariokart", "mk64", "kart"]
     },
     {
+      "blurb": "A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job.",
+      "name": "open-world",
+      "title": "Open-world crime",
+      "words": [
+        "open-world",
+        "gta",
+        "grand-theft-auto",
+        "gta3",
+        "vice-city",
+        "san-andreas",
+        "driver",
+        "crime",
+        "sandbox"
+      ]
+    },
+    {
       "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
       "name": "platformer",
       "title": "Fox Dash",
@@ -13457,6 +13473,34 @@
       "name": "snow",
       "title": "Snow glade",
       "words": ["snow"]
+    },
+    {
+      "blurb": "A grey-grid compound of patrolling guards: vision cones, suspicion, alert phases, noise, takedowns, bodies that raise the alarm, a radar and an extraction.",
+      "name": "stealth",
+      "title": "Stealth infiltration",
+      "words": [
+        "stealth",
+        "metal-gear",
+        "metal-gear-solid",
+        "mgs",
+        "splinter-cell",
+        "tenchu",
+        "infiltration"
+      ]
+    },
+    {
+      "blurb": "A grey-grid mansion wing under fixed cameras: tank controls, aimed shots, scarce ammo, grabbing zombies, a six-slot case, herbs, keys and typewriter saves.",
+      "name": "survival-horror",
+      "title": "Survival horror",
+      "words": [
+        "survival-horror",
+        "resident-evil",
+        "residentevil",
+        "biohazard",
+        "silent-hill",
+        "horror",
+        "zombie"
+      ]
     },
     {
       "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",

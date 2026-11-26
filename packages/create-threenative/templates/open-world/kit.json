@@ -1,7 +1,7 @@
 {
   "name": "open-world",
   "title": "Open-world crime",
-  "blurb": "A grey-grid city block to roam on foot or behind the wheel: carjack any car, ray-cast suspension handling, lane traffic, pedestrians who flee, a five-star wanted level with police pursuit and line-of-sight evasion, busted and wasted, and a timed delivery job.",
+  "blurb": "A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job.",
   "genre": "open-world",
   "aliases": ["gta", "grand-theft-auto", "gta3", "vice-city", "san-andreas", "driver", "crime", "sandbox", "open-world"],
   "kit": true

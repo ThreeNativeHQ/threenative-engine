@@ -12,7 +12,7 @@
     {
       "kind": "input",
       "label": "move",
-      "press": "KeyW",
+      "press": "ArrowUp",
       "holdTicks": 60,
       "release": true
     },

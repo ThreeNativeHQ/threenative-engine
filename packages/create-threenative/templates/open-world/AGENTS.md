@@ -1,7 +1,7 @@
 <!-- shared: kit-identity -->
-# AGENTS.md — __PROJECT_NAME__ (Action RPG, the action-rpg kit)
+# AGENTS.md — __PROJECT_NAME__ (Open-world crime, the open-world kit)
 
-A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet. Routing words: action-rpg, diablo, arpg, hack-and-slash, dungeon-crawler. `CLAUDE.md` is a copy of this file.
+A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job. Routing words: open-world, gta, grand-theft-auto, gta3, vice-city, san-andreas, driver, crime, sandbox. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -38,13 +38,13 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `city/`, `conventions.ts`, `entities/`, `game.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `systems/`, `ui/`.
-16 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-open-world.md`.
 <!-- /shared -->
 
-This game owns the city (`src/city/layout.ts` tables), cars, traffic, pedestrians, police, the wanted level, the job and the look; `src/game.ts` is portable, `src/main.ts` the web React mount.
-Keys: WASD/arrows move or drive; mouse looks; Shift sprint; Space/J/click punch or fire (handbrake in a car); hold E/right-click lock on; Q fist/pistol; F enter, carjack or exit; R restart. Digits 1-0, Minus and Equal are playtest stations.
+This game owns the city (`src/city/layout.ts`), traffic, police and wanted level.
+Keys: WASD/arrows move or drive; Shift sprint; Space punch, shoot, handbrake; E lock on; Q weapon; F car; R restart.
 
 <!-- shared: kit-commands -->
 ## Commands
@@ -67,6 +67,7 @@ Native downloads: first `pnpm build --target desktop`, once (~118 MiB); `node_mo
 Each is on by default with a named override. Detail: `node_modules/create-threenative/agent-docs/references/conventions.md#<id>`.
 
 - **Look** `#look`: filmic curve, metered auto exposure. Override: `tonemapMode: "aces"`; `autoExposureEnabled: false` + `exposure`. Marker: `TN_WORLD_ENVIRONMENT`.
+- **Ambient occlusion** `#ao-indirect`: darkens indirect light only, not the sun. Override: `gtaoIndirectOnly: false`; `gtaoEnabled: false`. Marker: `TN_WORLD_ENVIRONMENT`.
 - **Quality tier (`src/render/quality.ts`)** `#quality`: GPU class picks `high`, `medium` or `low`. Override: `setupPost(..., { tier: "low" })`. Marker: `TN_QUALITY_TIER`.
 - **Resolution scale** `#resolution`: `"auto"`, 0.85 on mobile-low. Override: numeric `resolutionScale`. Marker: `TN_FRAME_BUDGET`.
 - **Budget real time for the look** `#frame-budget`: frame meter and scene verdict on. Override: `frameBudget: false`. Marker: `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`.
@@ -92,7 +93,6 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.
 - **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
-- **Spells** `#spells`: every factory ships a stock look. Override: per-call options on `@threenative/core/spells`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
 - **Desktop window** `#desktop-mode`: CLI, then `display.fullscreen`, then `window.maximized`. Override: `--windowed`; `--maximized`; `--fullscreen`.
 - **CPU priority** `#cpu-priority`: game threads first. Override: `display.priority: "normal"`. Marker: `TN_PROCESS_PRIORITY`.

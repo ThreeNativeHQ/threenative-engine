@@ -43,17 +43,10 @@ export type { QualityTier } from "@threenative/core";
 export const resolveQualityTier = qualityTiers.resolve;
 
 /**
- * Named overrides of core's Unreal look: the owner (2026-10-26) prefers the 7b546d6 neutral look,
- * grey stone and pale floor with no yellow cast. `TN_WORLD_ENVIRONMENT` reports the tone curve and
- * the exposure this runs; delete a line to take core's value back.
+ * Named overrides of core's Unreal look. The tone curve and exposure are core's (filmic, metered by
+ * `exposure.ts`); `TN_WORLD_ENVIRONMENT` reports what this runs. Delete a line to take core's value back.
  */
 export const neutralLook: IWorldEnvironmentOptions = {
-  // ACES at a fixed exposure: core's filmic curve and metered exposure read yellowish here.
-  tonemapMode: "aces",
-  autoExposureEnabled: false,
-  // 0.62 was chosen under a sun of 6 x pi; the sun is Unreal's 6 lux now (PRD-632), so pi keeps the sunlit
-  // surfaces where the owner picked them.
-  exposure: 0.62 * Math.PI,
   // The kit's bloom: a low threshold that lifts the sunlit floor a little.
   bloomRadius: 0.5,
   bloomStrength: 0.7,
