@@ -38,7 +38,7 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `conventions.ts`, `entities/`, `game.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `sim/`, `state.ts`, `ui/`.
-31 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+30 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-platform-fighter.md`.
 <!-- /shared -->

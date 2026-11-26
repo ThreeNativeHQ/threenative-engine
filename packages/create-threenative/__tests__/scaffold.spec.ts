@@ -139,6 +139,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "2208bc1fc0162640bdc5e800cd86ef29d4add7008cf6e4f3989d1044be008de4",
     kit: "e0946ceee112f14586f2f3a655192031b00214c6f5df798ba6218ee6a346b856",
   },
+  "platform-fighter": {
+    shared: "3205bec814204cd7d92e2b65e32dab25433fb1e1205032cc43a9160995f9362d",
+    kit: "5610c88416baa3def44b61668fb8d56ec86cf4e289225613f633b9e514126937",
+  },
   platformer: {
     shared: "6a82cfd241793bf183ec0035a5ec2e939ac0f2cd5d9b4ee5dedc11c694cf2b2e",
     kit: "08d1aa7a06985636555571d204c6ba9d64553f6bc4e2f7b5a65fa7c4aae9e086",
