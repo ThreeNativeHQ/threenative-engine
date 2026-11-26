@@ -38,6 +38,8 @@ export interface IAssetElement {
   readonly source: string;
   /** Visual style ids. The first identifies the collection in the tree. */
   readonly styleTags: readonly string[];
+  /** A model with skins or animation clips: the Dashboard's Animations section lists these (PRD-918). */
+  readonly animated?: boolean;
   /** Setting ids, such as medieval or sci-fi. An asset can fit several settings. */
   readonly settingTags?: readonly string[];
   readonly biomes?: readonly string[];

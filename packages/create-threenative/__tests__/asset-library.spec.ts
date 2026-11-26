@@ -284,12 +284,17 @@ describe("asset library server", () => {
     const game = await (await fetch(`${base}/`)).text();
     expect(game).toContain('id = "tn-dev-shell"');
     expect((await get("")).body).not.toContain("tn-dev-shell");
-    // Nothing loads until the Asset Library tab is picked; automation and iframes never see it.
-    const script = devShellScript("/__assets/");
+    // Nothing loads until Dashboard is picked; automation and iframes never see it (PRD-918).
+    const script = devShellScript("/__assets/", "/__dashboard/");
     expect(script).toContain("navigator.webdriver");
     expect(script).toContain("window.self !== window.top");
     expect(script).toContain('"noDevShell"');
-    expect(script.indexOf("frame.src = mount")).toBeGreaterThan(script.indexOf("const show"));
+    expect(script).toContain('const dashboard = "/__dashboard/"');
+    expect(script.indexOf("frame.src = dashboard")).toBeGreaterThan(script.indexOf("const show"));
+    expect(script).toContain('tab("Dashboard", true)');
+    // A worker game's markers reach the ring through core's dev relay (PRD-923).
+    expect(script).toContain('new BroadcastChannel("threenative-dev-markers")');
+    expect((await get("")).body).toContain('id="rail"');
     // The switch says it is dev-only, so nobody expects it in a shipped game.
     expect(script).toContain('badge.textContent = "DEV"');
     expect(script).toContain("not in production builds");

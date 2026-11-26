@@ -196,7 +196,7 @@ describe("asset library in a browser", () => {
     await page.close();
   }, 90_000);
 
-  it("loads nothing for the Asset Library until its tab is picked", async () => {
+  it("loads nothing for the Dev Dashboard until its tab is picked", async () => {
     const context = await browser.newContext();
     // A person's browser: the switcher stands down under automation, so this case lifts the flag.
     await context.addInitScript(() =>
@@ -205,7 +205,8 @@ describe("asset library in a browser", () => {
     const page = await context.newPage();
     const library: string[] = [];
     page.on("request", (request) => {
-      if (request.url().includes("/__assets/")) library.push(request.url());
+      const url = request.url();
+      if (url.includes("/__assets/") || url.includes("/__dashboard/")) library.push(url);
     });
     await page.goto(`${base}/`);
     await page.waitForSelector("#tn-dev-shell");
@@ -213,15 +214,35 @@ describe("asset library in a browser", () => {
     expect(library).toEqual([]);
     expect(await page.locator("iframe").count()).toBe(0);
     // Collapsed to a DEV pill in a corner until pointed at, so it stays out of the game's view.
-    expect(await page.locator('#tn-dev-shell [data-view="assets"]').isVisible()).toBe(false);
+    expect(await page.locator('#tn-dev-shell [data-view="dashboard"]').isVisible()).toBe(false);
+    // The passive TN_* ring (PRD-923): one entry per kept marker, nothing for other lines, capped.
+    const ring = await page.evaluate(() => {
+      const kept = () => (window as unknown as { __tnDevMarkers: unknown[] }).__tnDevMarkers.length;
+      for (let i = 0; i < 700; i += 1) console.debug(`TN_HOT_CALL:${i}`);
+      const total = kept();
+      (window as unknown as { __tnDevMarkers: unknown[] }).__tnDevMarkers.length = 0;
+      console.debug("TN_SCENE_WARNING:test");
+      console.log("plain line");
+      console.debug("TN_UNLISTED_MARKER");
+      return { one: kept(), total };
+    });
+    expect(ring).toEqual({ one: 1, total: 600 });
     const pill = await page.locator("#tn-dev-shell").boundingBox();
     expect(pill && pill.y > 600 && pill.x > 1000).toBe(true);
     await page.hover("#tn-dev-shell");
-    await page.click('#tn-dev-shell [data-view="assets"]');
+    await page.click('#tn-dev-shell [data-view="dashboard"]');
     await expect.poll(() => library.length, { timeout: 30_000 }).toBeGreaterThan(0);
-    expect(await page.locator("#tn-asset-library-frame").isVisible()).toBe(true);
+    expect(await page.locator("#tn-dev-dashboard-frame").isVisible()).toBe(true);
+    // The side menu opens Performance & Health, which shows the markers the game page kept.
+    const frame = page.frameLocator("#tn-dev-dashboard-frame");
+    // The rail marks its first section once the Dashboard script has wired it.
+    await frame.locator('#rail [aria-current="page"]').waitFor({ timeout: 30_000 });
+    await frame.locator('#rail [data-section="performance"]').click();
+    await frame.locator("text=TN_SCENE_WARNING").first().waitFor({ timeout: 30_000 });
+    await frame.locator('#rail [data-section="settings"]').click();
+    await frame.locator("#settings-tab-config").waitFor({ timeout: 30_000 });
     await page.click('#tn-dev-shell [data-view="game"]');
-    expect(await page.locator("#tn-asset-library-frame").isVisible()).toBe(false);
+    expect(await page.locator("#tn-dev-dashboard-frame").isVisible()).toBe(false);
     await page.mouse.move(0, 0);
     expect(await page.locator('#tn-dev-shell [data-view="game"]').isVisible()).toBe(false);
     await context.close();

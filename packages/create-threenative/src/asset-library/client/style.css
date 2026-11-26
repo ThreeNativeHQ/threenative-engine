@@ -1,25 +1,37 @@
 @import "tailwindcss";
 @source "./";
 
-/* Storybook 8's dark theme as tokens; a light theme redefines these under a selector. */
+/* ThreeNative Studio's dark theme (`threenative-live-studio/src/client/theme.css`), PRD-918. The
+ * token names stay the library's own, so every existing utility re-themes from this one block. */
 @theme {
-  --color-app: #222425;
-  --color-sidebar: #1b1c1d;
-  --color-raised: #2e3438;
-  --color-line: #3a3f43;
-  --color-ink: #c9cdcf;
-  --color-muted: #798186;
-  --color-accent: #029cfd;
-  --color-accent-ink: #ffffff;
-  --color-hover: #2a2f33;
-  --color-doc: #ffae00;
-  --color-story: #37d5d3;
-  --color-group: #1ea7fd;
-  --color-danger: #ff6b5f;
-  /* The ThreeNative TN mark: #e0fb50 on #020407. */
+  --color-app: #08090c; /* Studio bg */
+  --color-sidebar: #101115; /* panel */
+  --color-raised: #17181d; /* raised */
+  --color-sunken: #0b0c0f;
+  --color-line: #24262c;
+  --color-line-soft: #1a1c21;
+  --color-line-strong: #44474f;
+  --color-ink: #f4f5f6; /* text */
+  --color-muted: #a9abb0;
+  --color-faint: #868991;
+  --color-accent: #e0fb50;
+  --color-accent-ink: #05070a;
+  --color-accent-soft: rgb(224 251 80 / 0.09);
+  --color-hover: #14151a;
+  --color-doc: #fbbf24;
+  --color-story: #7dd3fc;
+  --color-group: #e0fb50;
+  --color-live: #4ade80;
+  --color-warn: #fbbf24;
+  --color-danger: #f87171;
+  --color-danger-soft: rgb(248 113 113 / 0.12);
+  /* The ThreeNative TN mark. */
   --color-brand: #e0fb50;
-  --color-brand-ink: #020407;
-  --font-sans: "Nunito Sans", -apple-system, "Segoe UI", system-ui, sans-serif;
+  --color-brand-ink: #05070a;
+  --radius-panel: 10px;
+  --font-sans: "Inter Variable", Inter, ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto,
+    "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
 }
 
 :root {
@@ -31,7 +43,33 @@
     @apply inline-flex size-7 cursor-pointer items-center justify-center rounded text-muted hover:bg-hover hover:text-accent aria-pressed:text-accent disabled:opacity-40;
   }
   .field {
-    @apply w-full rounded border border-line bg-sidebar px-2 py-1.5 text-ink outline-none focus:border-accent;
+    @apply w-full rounded-md border border-line bg-sunken px-2 py-1.5 text-ink outline-none focus:border-accent;
+  }
+  /* The Dashboard's side menu (PRD-918). */
+  .rail-item {
+    @apply flex w-full cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-left font-medium text-muted hover:bg-raised hover:text-ink aria-[current=page]:bg-accent-soft aria-[current=page]:text-accent;
+  }
+  .card {
+    @apply rounded-[10px] border border-line bg-sidebar;
+  }
+  .btn {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md border border-line bg-raised px-3 py-1.5 font-medium text-ink hover:border-line-strong disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .btn-accent {
+    @apply inline-flex cursor-pointer items-center justify-center gap-1.5 rounded-md bg-accent px-3 py-1.5 font-semibold text-accent-ink hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .eyebrow {
+    @apply text-[11px] font-semibold tracking-[.08em] text-faint uppercase;
+  }
+  .switch {
+    @apply relative inline-flex h-5 w-9 shrink-0 cursor-pointer items-center rounded-full border border-line-strong bg-sunken transition-colors aria-checked:border-accent aria-checked:bg-accent disabled:cursor-not-allowed disabled:opacity-40;
+  }
+  .switch::after {
+    content: "";
+    @apply absolute left-0.5 size-3.5 rounded-full bg-muted transition-transform;
+  }
+  .switch[aria-checked="true"]::after {
+    @apply translate-x-4 bg-accent-ink;
   }
   details > summary {
     @apply cursor-pointer list-none select-none;
@@ -53,7 +91,24 @@ html[data-embed] body {
   grid-template-columns: minmax(0, 1fr);
 }
 html[data-embed] #sidebar,
-html[data-embed] #toolbar {
+html[data-embed] #toolbar,
+html[data-embed] #rail,
+html[data-sheet] #rail {
+  display: none !important;
+}
+/* Dashboard sections (PRD-918, PRD-923): a panel section covers the library's tree and stage. */
+html[data-section="settings"] #sidebar,
+html[data-section="settings"] #library-main,
+html[data-section="performance"] #sidebar,
+html[data-section="performance"] #library-main,
+html[data-section="playtests"] #sidebar,
+html[data-section="playtests"] #library-main,
+html[data-section="stage"] #sidebar {
+  display: none !important;
+}
+html:not([data-section="settings"]) #section-settings,
+html:not([data-section="performance"]) #section-performance,
+html:not([data-section="playtests"]) #section-playtests {
   display: none !important;
 }
 /* `?sheet=turntable`: the contact sheet covers the page. */
@@ -61,7 +116,7 @@ html[data-embed] #toolbar {
   position: fixed;
   inset: 0;
   z-index: 50;
-  background: #111;
+  background: #08090c;
   object-fit: contain;
   width: 100%;
   height: 100%;

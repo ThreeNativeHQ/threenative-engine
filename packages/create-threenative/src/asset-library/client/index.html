@@ -7,8 +7,29 @@
     <link rel="icon" type="image/svg+xml" href="%BASE%favicon.svg" />
     <style>%STYLE%</style>
   </head>
-  <body class="grid h-dvh overflow-hidden bg-app font-sans text-[13px] leading-snug text-ink md:grid-cols-[250px_minmax(0,1fr)]">
-    <aside id="sidebar" class="hidden min-h-0 flex-col bg-sidebar max-md:fixed max-md:inset-0 max-md:z-30 md:flex">
+  <body class="flex h-dvh overflow-hidden bg-app font-sans text-[13px] leading-snug text-ink">
+    <nav id="rail" aria-label="Dashboard" class="flex w-[52px] shrink-0 flex-col gap-0.5 border-r border-line bg-sidebar p-2 md:w-[212px]">
+      <div class="mb-3 flex items-center gap-2.5 px-1 pt-1">
+        <span id="rail-logo" class="inline-flex size-8 shrink-0 items-center justify-center rounded-md border border-line bg-brand-ink text-brand" title="ThreeNative"></span>
+        <div class="min-w-0 max-md:hidden">
+          <div class="text-[14px] leading-tight font-semibold text-ink">ThreeNative</div>
+          <div class="eyebrow">Dev Dashboard</div>
+        </div>
+      </div>
+      <p class="eyebrow mt-1 mb-1 px-2.5 max-md:hidden">Create</p>
+      <button type="button" class="rail-item" data-section="assets" title="Asset Library"><span data-icon="grid"></span><span class="max-md:hidden">Asset Library</span></button>
+      <button type="button" class="rail-item" data-section="animations" data-project title="Animations"><span data-icon="play"></span><span class="max-md:hidden">Animations</span></button>
+      <button type="button" class="rail-item" data-section="stage" data-project title="Stage / Bundler"><span data-icon="wire"></span><span class="max-md:hidden">Stage / Bundler</span></button>
+      <p class="eyebrow mt-4 mb-1 px-2.5 max-md:hidden" data-project>Run</p>
+      <button type="button" class="rail-item" data-section="performance" data-project title="Performance &amp; Health"><span data-icon="pulse"></span><span class="max-md:hidden">Performance &amp; Health</span></button>
+      <button type="button" class="rail-item" data-section="playtests" data-project title="Playtests"><span data-icon="flask"></span><span class="max-md:hidden">Playtests</span></button>
+      <p class="eyebrow mt-4 mb-1 px-2.5 max-md:hidden" data-project>Project</p>
+      <button type="button" class="rail-item" data-section="settings" data-project title="Settings"><span data-icon="gear"></span><span class="max-md:hidden">Settings</span></button>
+      <span class="flex-1"></span>
+      <button type="button" id="rail-game" class="rail-item" title="Back to the game" hidden><span data-icon="gamepad"></span><span class="max-md:hidden">Back to game</span></button>
+      <p class="mt-2 px-2.5 text-[11px] leading-snug text-faint max-md:hidden">Dev only. <code class="font-mono">pnpm dev</code> shows this; production builds do not.</p>
+    </nav>
+    <aside id="sidebar" class="hidden min-h-0 w-[250px] shrink-0 flex-col border-r border-line bg-sidebar max-md:fixed max-md:inset-0 max-md:z-30 max-md:w-auto md:flex">
       <header class="flex flex-col gap-3 p-4 pb-2">
         <div class="flex items-center gap-2">
           <span id="logo" class="inline-flex size-6 items-center justify-center rounded bg-brand-ink text-brand" title="ThreeNative"></span>
@@ -37,7 +58,7 @@
       <nav id="tree" aria-label="Assets" class="min-h-0 flex-1 overflow-y-auto px-3 pb-4"></nav>
     </aside>
 
-    <div class="flex min-h-0 min-w-0 flex-col">
+    <div id="library-main" class="flex min-h-0 min-w-0 flex-1 flex-col">
       <div id="toolbar" class="flex h-10 shrink-0 items-center gap-0.5 overflow-x-auto border-b border-line bg-app px-2" role="toolbar" aria-label="Preview tools">
         <button id="open-tree" class="tool md:hidden" data-icon="menu" title="Open the asset list"></button>
         <button id="rebake" class="tool" data-icon="reload" title="Bake again"></button>
@@ -105,6 +126,9 @@
         </section>
       </div>
     </div>
+    <main id="section-settings" class="min-h-0 min-w-0 flex-1 overflow-y-auto" aria-label="Settings"></main>
+    <main id="section-performance" class="min-h-0 min-w-0 flex-1 overflow-y-auto" aria-label="Performance and Health"></main>
+    <main id="section-playtests" class="min-h-0 min-w-0 flex-1 overflow-y-auto" aria-label="Playtests"></main>
     <script type="module" src="%ENTRY%"></script>
   </body>
 </html>

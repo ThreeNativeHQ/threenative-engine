@@ -57,9 +57,12 @@ export async function listScenarios(
         try {
           const json = JSON.parse(await readFile(full, "utf8")) as {
             name?: unknown;
-            assertions?: unknown;
+            assert?: unknown;
           };
-          if (Array.isArray(json.assertions)) assertions = json.assertions.length;
+          // `assert` is keyed by assertion kind; a kind holding a list counts each entry.
+          if (json.assert && typeof json.assert === "object")
+            for (const value of Object.values(json.assert))
+              assertions += Array.isArray(value) ? value.length : 1;
           if (typeof json.name === "string") name = json.name;
         } catch {
           // An unreadable scenario still lists; running it reports why.

@@ -260,6 +260,8 @@ export function devShellScript(mount: string, dashboard = mount): string {
     };
   }
   window.__tnDevMarkers = ring;
+  // A worker game's lines arrive on core's dev relay (DEV_MARKER_CHANNEL): a page cannot read a worker's console.
+  if (typeof BroadcastChannel === "function") new BroadcastChannel("threenative-dev-markers").onmessage = (event) => keep(event.data?.level ?? "log", [event.data?.text]);
   let frame, held = [], holding = false;
   const raf = window.requestAnimationFrame.bind(window);
   const hold = (on) => {
@@ -349,7 +351,7 @@ export function devShellScript(mount: string, dashboard = mount): string {
     strip = document.createElement("div");
     strip.id = "tn-dev-dock";
     strip.setAttribute("role", "status");
-    strip.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:2147483647;display:flex;gap:12px;align-items:center;padding:5px 6px 5px 12px;border-radius:10px;background:#101115ee;border:1px solid #24262c;color:#f4f5f6;font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace";
+    strip.style.cssText = "position:fixed;right:8px;top:8px;z-index:2147483647;display:flex;gap:12px;align-items:center;padding:5px 6px 5px 12px;border-radius:10px;background:#101115ee;border:1px solid #24262c;color:#f4f5f6;font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace";
     const cell = (label) => {
       const wrap = document.createElement("span");
       const name = document.createElement("span");

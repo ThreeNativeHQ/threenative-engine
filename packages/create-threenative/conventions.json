@@ -520,8 +520,8 @@
     {
       "id": "telemetry",
       "name": "Telemetry",
-      "default": "`TN_*` faults are reported",
-      "override": "`defineGame({ telemetry: false })`",
+      "default": "dev runs report `TN_*` faults",
+      "override": "`telemetry.crashReports: false`",
       "marker": "TN_TELEMETRY",
       "kits": "all"
     },

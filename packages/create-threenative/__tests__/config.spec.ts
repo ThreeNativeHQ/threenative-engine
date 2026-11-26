@@ -361,8 +361,21 @@ describe("threenative.config.ts", () => {
       },
       nativeEntry: "src/game.ts",
       renderer: { preferWebGPU: false },
+      telemetry: { crashReports: true },
       ui: { renderer: "web" },
     });
+  });
+
+  it("reads telemetry.crashReports, defaults it on, and rejects a non-boolean (PRD-918)", async () => {
+    const root = await project();
+    await config(root, "export default { telemetry: { crashReports: false } };");
+    await expect(loadConfig(root)).resolves.toMatchObject({ telemetry: { crashReports: false } });
+    await config(root, 'export default { telemetry: { crashReports: "no" } };');
+    await expect(loadConfig(root)).rejects.toThrow("TN_CONFIG_TELEMETRY_INVALID");
+    // A candidate source validates without touching the file on disk (the Dashboard's save path).
+    await expect(
+      loadConfig(root, undefined, { source: "export default { telemetry: {} };" }),
+    ).resolves.toMatchObject({ telemetry: { crashReports: true } });
   });
 
   it("preserves renderer resolution scale and the Android override", async () => {
