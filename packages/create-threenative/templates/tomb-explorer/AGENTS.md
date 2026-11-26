@@ -1,7 +1,7 @@
 <!-- shared: kit-identity -->
 # AGENTS.md — __PROJECT_NAME__ (Tomb explorer, the tomb-explorer kit)
 
-A grey-grid temple of block-grid jumps: run with a turn ramp, standing and running jumps, mid-air ledge grab, hang, shimmy, climb, swimming on an air meter, fall damage, a relic and a blade trap. Routing words: tomb-explorer, tomb-raider, tombraider, lara-croft, lara, tomb-exploration. `CLAUDE.md` is a copy of this file.
+A grey-grid temple of block-grid jumps: run with a turn ramp, standing and running jumps, mid-air ledge grab, hang, shimmy, climb, swimming on an air meter, fall damage, a relic and a blade trap. Routing words: tomb-explorer, tomb-raider, tombraider, lara-croft, tomb-exploration. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -70,15 +70,24 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Quality tier (`src/render/quality.ts`)** `#quality`: GPU class picks `high`, `medium` or `low`. Override: `setupPost(..., { tier: "low" })`. Marker: `TN_QUALITY_TIER`.
 - **Resolution scale** `#resolution`: `"auto"`, 0.85 on mobile-low. Override: numeric `resolutionScale`. Marker: `TN_FRAME_BUDGET`.
 - **Budget real time for the look** `#frame-budget`: frame meter and scene verdict on. Override: `frameBudget: false`. Marker: `TN_FRAME_BUDGET`, `TN_SCENE_WARNING`.
+- **Anti-aliasing** `#aa`: 4x MSAA on `high`, else SMAA. Override: `temporalAA: true`.
 - **World-matrix walk** `#matrix-world`: visible subtrees only. Override: `renderer.matrixWorld: "all"`. Marker: `TN_PROJECTION`.
 - **Projected-pixel cull** `#projected-cull`: under 0.5 px. Override: `minimumProjectedPixels`; `alwaysRender(obj)`. Marker: `TN_RENDER_PROJECTION`.
 - **Physics interpolation** `#interpolation`: on for bodies and `ctx.camera`. Override: `physicsInterpolation: false`. Marker: `TN_PHYSICS_INTERPOLATION`.
+- **Continuous collision** `#continuous`: on for `RigidBody3D`. Override: `continuousCollision: false`. Marker: `body.continuousCollision`.
 - **Loading** `#loading`: `loadAll` keeps order; `addInSlices` attaches in 8 ms slices. Override: `concurrency`, `sliceSize`, `marker: false`. Marker: `TN_LOAD_ALL`.
 - **Loading curtain** `#startup`: `ctx.startup.hold(label, () => ready)`. Override: reveal on measured readiness only.
 - **Asset cache** `#asset-cache`: on, with idle fill. Override: `assets: { cache: false, backgroundFill: false }`. Marker: `ctx.assets.cache`.
 - **Asset cook** `#asset-cook`: compact, shared images. Override: `compact: false`; `assets.exclude`; `assets.budget`. Marker: `TN_ASSETS_CONFIG`.
+- **Animation rate** `#animation-rate`: `updateRate: "auto"`. Override: `updateRate: 1`. Marker: `updateRateReport`.
+- **Feet on the floor** `#ground-snap`: `GroundSnap`. Override: `enabled: false`.
+- **One metre is one metre** `#scale`: `normaliseToMetres`. Override: per-call options.
 - **Rigged assets** `#rigged`: `.glb` in `assets/`; `AnimationPlayer` drives clips. Override: `ctx.assets.model("hero.glb")` in `Scene.load()`.
+- **Clip conformance** `#clip-conformance`: measure a clip before rewriting it. Override: `clipPoseError`; `clipTrackBindings`; `clipBoneCoverage`. Marker: `boneContact`.
+- **Unlit foliage** `#unlit-foliage`: warns. Override: `material.userData.tnUnlitOk = true`. Marker: `TN_UNLIT_FOLIAGE`.
 - **Material backlight** `#backlight`: none, as in stock Unreal. Override: `rimGain`; `fillGain`.
+- **Environment contribution** `#env-contribution`: reported even at zero. Override: `environmentSampling`. Marker: `TN_ENVIRONMENT_CONTRIBUTION`.
+- **Pointer look** `#pointer-look`: captures the canvas on click. Override: `captureOnClick: false` + `ctx.input.captureMouse()`.
 - **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.
 - **Frame spans** `#spans`: off. Override: `TN_FRAME_SPANS=1`. Marker: `TN_FRAME_SPANS`.
 - **Multiplayer** `#net`: none; unsupported transport rejects. Override: `connect` from `@threenative/core/net` with four limits. Marker: `TN_NET_UNAVAILABLE`.
@@ -87,6 +96,7 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Terrain** `#terrain`: authored in the game. Override: optional `@threenative/terrain`; `references/terrain-authoring.md`.
 - **Navigation** `#navigation`: none; browser-only WASM. Override: import `@threenative/physics/navigation` on purpose.
 - **Controller** `#gamepad`: W3C standard mapping on every pad, radial dead zone `0.2`, and a button press or a decisive stick move claims which pad is read. Override: `gamepadDeadZone: 0` for raw axes. Marker: `TN_GAMEPAD`.
+- **Move input** `#move-axis`: `input.vector("move").y` is +up. Override: one explicit `-move.y` conversion.
 - **Scene change** `#scene-change`: `ctx.goto(name)` keeps state. Override: `game.goto(name)` resets state.
 - **Randomness** `#seed`: unseeded. Override: `defineGame({ seed })`.
 - **Engine** `#engine`: owned C++ engine. Override: `engine: "threejs"` only when the user asks. Marker: `TN_NATIVE_ENGINE_UNBOUND`.
