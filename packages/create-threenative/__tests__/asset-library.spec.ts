@@ -123,7 +123,9 @@ beforeAll(async () => {
     root,
     configFile: false,
     logLevel: "silent",
-    server: { port: 0, host: "127.0.0.1" },
+    // No file watcher: no test edits a file after start, and closing chokidar over the symlinked
+    // core package outlived the 60 s afterAll hook on a loaded CI runner.
+    server: { port: 0, host: "127.0.0.1", watch: null },
     plugins: [
       // A kit's engine alias, listed first as in every kit: it claims every `three` import.
       {
