@@ -83,9 +83,10 @@ export class Boss {
     return this.pods.filter((pod) => pod.hp > 0).length;
   }
 
-  /** 0 before the fight, then 1 armoured, 2 core open, 3 core raging. */
+  /** 0 before the fight, then 1 armoured, 2 core open, 3 core raging, 4 defeated. */
   get phase(): number {
     if (!this.engaged) return 0;
+    if (this.defeated) return 4;
     if (this.podsLeft > 0) return 1;
     return this.core.hp / BOSS.core.hp <= BOSS.rageShare ? 3 : 2;
   }

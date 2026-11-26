@@ -1,13 +1,15 @@
 import { Vector3 } from "three";
+import type { Boss } from "../entities/Boss.js";
 import { Enemy } from "../entities/Enemy.js";
 import type { Ship } from "../entities/Ship.js";
 import type { Weapons } from "../entities/Weapons.js";
 import { PICKUPS, WAVES } from "../level.js";
-import { SHIELD } from "../tuning.js";
+import { BOSS, SHIELD } from "../tuning.js";
 
 export interface IStationWorld {
   readonly ship: Ship;
   readonly weapons: Weapons;
+  readonly boss: Boss;
   readonly addEnemy: (enemy: Enemy) => void;
   /** The distance at which the ship holds before the boss. */
   readonly arenaStop: number;
@@ -57,6 +59,14 @@ export function createStations(world: IStationWorld): Readonly<Record<string, ()
     // A killing blow, through the same path every hit takes.
     station7: () => {
       ship.hit(SHIELD.max + 10);
+    },
+    // Both boss pods down to one hit point: the next shot on each one destroys it.
+    station9: () => {
+      for (const pod of world.boss.pods) pod.hp = Math.min(pod.hp, 1);
+    },
+    // The boss core down to 35 percent, which is past the rage threshold.
+    station8: () => {
+      world.boss.core.hp = Math.min(world.boss.core.hp, BOSS.core.hp * 0.35);
     },
   };
 }

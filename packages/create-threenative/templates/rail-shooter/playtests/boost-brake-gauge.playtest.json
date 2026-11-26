@@ -124,11 +124,21 @@
       "release": true
     },
     {
+      "label": "coasting:speed",
+      "waitForResource": {
+        "id": "state",
+        "path": "speed",
+        "gte": 20.5
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "input",
       "label": "overheating",
       "press": "ShiftLeft",
       "holdTicks": 100,
-      "release": true
+      "release": false
     },
     {
       "label": "overheating:gaugeLocked",
@@ -143,6 +153,35 @@
     {
       "kind": "wait",
       "label": "cooling-down",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "press-while-locked",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "release-boost",
+      "press": "ShiftLeft",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "unlocked",
+      "waitForResource": {
+        "id": "state",
+        "path": "gaugeLocked",
+        "equals": 0
+      },
+      "release": false,
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "wait",
+      "label": "recharged",
       "waitTicks": 2,
       "release": true
     }
@@ -196,6 +235,16 @@
       },
       {
         "id": "state",
+        "path": "mode",
+        "atSteps": [
+          {
+            "label": "press-while-locked",
+            "equals": "cruise"
+          }
+        ]
+      },
+      {
+        "id": "state",
         "path": "gauge",
         "atSteps": [
           {
@@ -227,6 +276,14 @@
           {
             "label": "cooling-down",
             "equals": 1
+          },
+          {
+            "label": "press-while-locked",
+            "equals": 1
+          },
+          {
+            "label": "recharged",
+            "equals": 0
           }
         ]
       }

@@ -172,7 +172,8 @@ export function createBossModel(): IBossModel {
   group.add(core);
   const plate = (x: number): Mesh => {
     const mesh = hull([[box(2.7, 5.6, 0.7), [0, 0, 0]]], structureMaterial);
-    mesh.position.set(x, 0, -4.4);
+    // In front of the core, which reaches z = -5.7, so the closed armour hides it.
+    mesh.position.set(x, 0, -6.2);
     return mesh;
   };
   const plates: [Mesh, Mesh] = [plate(-1.35), plate(1.35)];

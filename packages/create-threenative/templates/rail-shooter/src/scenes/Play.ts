@@ -187,6 +187,7 @@ export class Play extends Scene<GameState> {
     // Local, and published every tick: a restart through `goto` keeps the store, so this is what resets it.
     let phase: GamePhase = "playing";
     let deathBurst = 0;
+    let coreAnnounced = false;
     const say = (text: string): void => {
       message = text;
       messageTimer = MESSAGE_TIME;
@@ -204,6 +205,7 @@ export class Play extends Scene<GameState> {
     const stations = createStations({
       ship,
       weapons,
+      boss,
       addEnemy,
       arenaStop,
       skipTo: (s) => {
@@ -225,7 +227,8 @@ export class Play extends Scene<GameState> {
         emitPlaytestEvent({ entity: "player", name: "deflect" });
       },
       onStruck: (damage: number): void => {
-        if (!ship.hit(damage)) return;
+        // A shot still in the air after the run ends must not change the result.
+        if (phase !== "playing" || boss.defeated || !ship.hit(damage)) return;
         shake.trigger();
         say("HIT");
         emitPlaytestEvent({ entity: "player", name: "struck" });
@@ -287,7 +290,10 @@ export class Play extends Scene<GameState> {
         say(event.core ? "CORE DESTROYED" : "WEAK POINT DOWN");
         emitPlaytestEvent({ entity: "boss", name: event.core ? "core-down" : "pod-down" });
       }
-      if (boss.phase === 2 && messageTimer <= 0) say("CORE EXPOSED");
+      if (boss.phase === 2 && !coreAnnounced) {
+        coreAnnounced = true;
+        say("CORE EXPOSED");
+      }
       if (boss.dying > 0) {
         deathBurst -= dt;
         if (deathBurst <= 0) {
@@ -321,7 +327,7 @@ export class Play extends Scene<GameState> {
       for (const entry of rings) {
         entry.ring.rotation.y += dt * 1.6;
         entry.ring.visible = !entry.taken;
-        if (!entry.taken && entry.ring.position.distanceTo(ship.position) < 3.4) {
+        if (playing && !entry.taken && entry.ring.position.distanceTo(ship.position) < 3.4) {
           entry.taken = true;
           pickups += 1;
           ship.heal(SHIELD.pickup);
@@ -358,11 +364,13 @@ export class Play extends Scene<GameState> {
       if (playing) {
         if (ship.dead) {
           phase = "lost";
+          weapons.cancel();
           bursts.spawn(ship.position, 5);
           say("SHIP DESTROYED");
           emitPlaytestEvent({ entity: "player", name: "destroyed" });
         } else if (boss.defeated && boss.dying >= DEATH_TIME) {
           phase = "won";
+          weapons.cancel();
           score += Math.round(ship.shield) * 4;
           say("MISSION COMPLETE");
           emitPlaytestEvent({ entity: "player", name: "complete" });

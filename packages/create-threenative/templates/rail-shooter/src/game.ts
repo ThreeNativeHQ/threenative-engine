@@ -26,7 +26,7 @@ const game = defineGame<GameState>({
     rollLeft: { buttons: [2], keys: ["KeyQ"] },
     rollRight: { buttons: [1], keys: ["KeyE"] },
     restart: { buttons: [9], keys: ["KeyR"] },
-    // Playtest stations: each sets up one test situation (see `STATIONS` in Play.ts).
+    // Playtest stations: each sets up one test situation (see `scenes/stations.ts`).
     // They answer only under a playtest runner (`UNDER_PLAYTEST`), never in a real build.
     // They exist so a scenario proves one mechanic in a few ticks; delete them with the playtests.
     station1: { keys: ["Digit1"] },
@@ -36,6 +36,8 @@ const game = defineGame<GameState>({
     station5: { keys: ["Digit5"] },
     station6: { keys: ["Digit6"] },
     station7: { keys: ["Digit7"] },
+    station8: { keys: ["Digit8"] },
+    station9: { keys: ["Digit9"] },
   },
   plugins: [playtest({ events: drainPlaytestEvents })],
   display: config.display,

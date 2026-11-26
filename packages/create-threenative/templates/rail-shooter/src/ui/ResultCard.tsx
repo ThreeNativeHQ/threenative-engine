@@ -8,11 +8,14 @@ export function ResultCard() {
   const total = useField("killsTotal") ?? 0;
   const shots = useField("shots") ?? 0;
   const hits = useField("hits") ?? 0;
+  const homingShots = useField("homingShots") ?? 0;
+  const shieldMax = useField("shieldMax") ?? 1;
   const shield = useField("shield") ?? 0;
   const time = useField("missionTime") ?? 0;
   if (phase === undefined || phase === "playing") return null;
   const won = phase === "won";
-  const accuracy = shots === 0 ? 0 : Math.min(100, Math.round((hits / shots) * 100));
+  const fired = shots + homingShots;
+  const accuracy = fired === 0 ? 0 : Math.min(100, Math.round((hits / fired) * 100));
   return (
     <div
       id="result-card"
@@ -33,7 +36,9 @@ export function ResultCard() {
         {won && (
           <>
             <dt>shield left</dt>
-            <dd className="text-right text-text tabular-nums">{Math.round(shield)}</dd>
+            <dd className="text-right text-text tabular-nums">
+              {Math.round((shield / shieldMax) * 100)}%
+            </dd>
           </>
         )}
         <dt>time</dt>

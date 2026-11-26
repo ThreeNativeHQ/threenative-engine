@@ -1,3 +1,4 @@
+import { SHIELD } from "../tuning.js";
 import { ResultCard } from "./ResultCard.js";
 import { useField } from "./useField.js";
 
@@ -53,7 +54,7 @@ export function Hud() {
           label="shield"
           value={shield}
           max={shieldMax}
-          tone={shield / shieldMax > 0.3 ? "bg-cyan" : "bg-red"}
+          tone={shield > SHIELD.warnSoft ? "bg-cyan" : "bg-red"}
         />
         <Bar
           id="gauge-bar"
@@ -87,7 +88,7 @@ export function Hud() {
           </div>
         )}
       </section>
-      {bossPhase > 0 && (
+      {bossPhase > 0 && bossPhase < 4 && (
         <div
           id="boss-hud"
           className="pointer-events-none absolute left-1/2 top-5 w-80 -translate-x-1/2 bg-black/70 p-3 text-[10px] uppercase tracking-[0.2em] text-text"

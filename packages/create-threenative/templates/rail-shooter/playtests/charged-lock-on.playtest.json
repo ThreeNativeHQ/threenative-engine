@@ -54,6 +54,26 @@
       "screenshot": "charging"
     },
     {
+      "label": "charging:locked",
+      "waitForResource": {
+        "id": "state",
+        "path": "locked",
+        "equals": "dummy.1"
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "charging:charge",
+      "waitForResource": {
+        "id": "state",
+        "path": "charge",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "input",
       "label": "charge-ends",
       "press": "Space",
@@ -100,6 +120,14 @@
         "atSteps": [
           {
             "label": "tapped",
+            "equals": ""
+          },
+          {
+            "label": "charging",
+            "equals": "dummy.1"
+          },
+          {
+            "label": "released",
             "equals": ""
           }
         ]

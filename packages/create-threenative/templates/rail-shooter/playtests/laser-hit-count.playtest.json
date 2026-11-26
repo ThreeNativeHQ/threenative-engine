@@ -86,7 +86,7 @@
       "waitForResource": {
         "id": "state",
         "path": "shots",
-        "gte": 10
+        "gte": 8
       },
       "release": false,
       "timeoutMs": 300

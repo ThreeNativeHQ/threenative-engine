@@ -9,6 +9,7 @@ import { CAMERA } from "../tuning.js";
 
 const _eye = new Vector3();
 const _look = new Vector3();
+const _axis = new Vector3();
 
 export interface ICameraInput {
   /** Eye and look-at frames on the rail, written by the caller from `Rail.frameAt`. */
@@ -47,7 +48,10 @@ export function createRailCamera(camera: PerspectiveCamera): IRailCamera {
     camera.position.lerp(_eye, blend);
     camera.up
       .set(0, 1, 0)
-      .applyAxisAngle(_look.clone().sub(camera.position).normalize(), input.bank * CAMERA.roll);
+      .applyAxisAngle(
+        _axis.subVectors(_look, camera.position).normalize(),
+        input.bank * CAMERA.roll,
+      );
     camera.lookAt(_look);
   };
   return {

@@ -44,7 +44,7 @@ Kit notes: `node_modules/create-threenative/agent-docs/references/kit-rail-shoot
 <!-- /shared -->
 
 This game owns the rail, the waves (`src/level.ts`) and the flight model (`src/entities/Ship.ts`); `src/tuning.ts` names each reference card.
-Keys: arrows steer; Space fire (hold to charge, release to lock on); Shift boost; X brake; Q/E bank, tap twice to roll; R restart.
+Keys: arrows steer; Space fire (hold to charge and lock on, release to fire); Shift boost; X brake; Q/E bank, tap twice to roll; R restart.
 
 <!-- shared: kit-commands -->
 ## Commands

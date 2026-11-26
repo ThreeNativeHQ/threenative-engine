@@ -25,7 +25,6 @@ interface IBolt {
   owner: Owner;
   damage: number;
   life: number;
-  speed: number;
   turn: number;
   target: ITarget | undefined;
   readonly position: Vector3;
@@ -41,6 +40,8 @@ const _scale = new Vector3(1, 1, 1);
 const _forward = new Vector3(0, 0, -1);
 const _to = new Vector3();
 const _axis = new Vector3();
+const _heading = new Vector3();
+const _aimLine = new Vector3();
 const _segment = new Vector3();
 const _closest = new Vector3();
 const _hidden = new Matrix4().makeScale(0, 0, 0);
@@ -106,7 +107,6 @@ export class Weapons {
           owner: kind === "enemy" ? "enemy" : "player",
           damage: 0,
           life: 0,
-          speed: 0,
           turn: 0,
           target: undefined,
           position: new Vector3(),
@@ -164,7 +164,6 @@ export class Weapons {
     bolt.target = target;
     bolt.position.copy(from);
     bolt.previous.copy(from);
-    bolt.speed = CHARGE.speed;
     bolt.velocity
       .subVectors(toward, from)
       .normalize()
@@ -197,7 +196,7 @@ export class Weapons {
     shipVelocity: Vector3,
     targets: readonly ITarget[],
   ): void {
-    this.#cooldown -= dt;
+    this.#cooldown = Math.max(0, this.#cooldown - dt);
     if (input.justPressed) {
       this.fireLaser(from, reticle, shipVelocity);
       this.#cooldown = LASER.interval;
@@ -211,7 +210,7 @@ export class Weapons {
       this.#search -= dt;
       if (this.#held >= CHARGE.searchFrom && this.#search <= 0) {
         this.#search = CHARGE.searchEvery;
-        const found = this.#nearest(reticle, targets);
+        const found = this.#nearest(from, reticle, targets);
         if (found !== undefined) {
           this.mark = found;
           this.#markLife = CHARGE.markLife;
@@ -221,24 +220,38 @@ export class Weapons {
     this.#markLife -= dt;
     if (this.#markLife <= 0 || this.mark?.live === false) this.mark = undefined;
     if (input.justReleased) {
-      if (this.#held >= CHARGE.releaseMin)
-        this.#homing(from, this.mark?.position ?? reticle, shipVelocity, this.mark);
-      this.#held = 0;
-      this.#search = 0;
+      // The shot leaves along the reticle line and then turns onto its mark.
+      if (this.#held >= CHARGE.releaseMin) this.#homing(from, reticle, shipVelocity, this.mark);
+      this.cancel();
     }
     this.charge = this.#held / CHARGE.full;
   }
 
-  #nearest(point: Vector3, targets: readonly ITarget[]): ITarget | undefined {
+  /** Drops the charge and the mark, for a release and for the end of a run. */
+  cancel(): void {
+    this.#held = 0;
+    this.#search = 0;
+    this.mark = undefined;
+    this.charge = 0;
+  }
+
+  /**
+   * lock-on-tracking: the live target nearest the aim line, inside a cone that widens with range.
+   * A target dead-centre on the reticle counts at any range the search reaches.
+   */
+  #nearest(from: Vector3, reticle: Vector3, targets: readonly ITarget[]): ITarget | undefined {
+    _aimLine.subVectors(reticle, from).normalize();
     let best: ITarget | undefined;
-    let bestDistance: number = CHARGE.searchRadius;
+    let bestOffset = Number.POSITIVE_INFINITY;
     for (const target of targets) {
       if (!target.live) continue;
-      const distance = target.position.distanceTo(point) - target.radius;
-      if (distance < bestDistance) {
-        bestDistance = distance;
-        best = target;
-      }
+      _to.subVectors(target.position, from);
+      const along = _to.dot(_aimLine);
+      if (along < CHARGE.searchNear || along > CHARGE.searchReach) continue;
+      const off = _to.addScaledVector(_aimLine, -along).length() - target.radius;
+      if (off > along * CHARGE.searchSlope || off >= bestOffset) continue;
+      bestOffset = off;
+      best = target;
     }
     return best;
   }
@@ -294,7 +307,7 @@ export class Weapons {
     bolt.turn = Math.min(CHARGE.turnMax, bolt.turn + CHARGE.turnRamp * dt);
     _to.subVectors(target.position, bolt.position).normalize();
     const speed = bolt.velocity.length();
-    const direction = bolt.velocity.clone().normalize();
+    const direction = _heading.copy(bolt.velocity).normalize();
     const angle = direction.angleTo(_to);
     if (angle < 1e-4) return;
     const step = Math.min(angle, bolt.turn * dt);

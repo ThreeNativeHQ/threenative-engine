@@ -35,13 +35,11 @@ export const SHIP = {
   /** Lateral speed at full stick, m/s, and how fast it follows the stick (per second). Own tuning. */
   steerSpeed: 15,
   steerRate: 7,
-  /** pitch-yaw: lateral and vertical velocity are spread by 1.4 on rails (fox_play.c:3580). */
-  railSpread: 1.4,
   /** banking: a held shoulder button drives the bank target to 90 degrees (fox_play.c:3368). */
   bankHold: 90 * DEGREES,
   /** banking: the bank chases its target by 0.2 of the gap per update (fox_play.c:3369) as a rate per second. */
   bankChase: -Math.log(1 - 0.2) * PER_SECOND,
-  /** banking: at most 10 degrees per update (fox_play.c:3366). */
+  /** banking: at most 10 degrees per update (fox_play.c:3395). */
   bankLimit: 10 * PER_SECOND * DEGREES,
   /** The bank a full stick adds, radians. Own tuning. */
   bankLean: 0.6,
@@ -82,9 +80,8 @@ export const SHIELD = {
   shotDamage: 30,
   /** What a shield ring restores, points. Own tuning. */
   pickup: 100,
-  /** shield-damage: the soft and hard warnings sit at 100 and 50 points (fox_play.c:900, 898). */
+  /** shield-damage: the soft warning sits at 100 points (fox_play.c:900). */
   warnSoft: 100,
-  warnHard: 50,
 } as const;
 
 export const LASER = {
@@ -106,8 +103,12 @@ export const CHARGE = {
   releaseMin: 10 / UPDATE_HZ,
   /** lock-on-tracking: a mark lasts 20 updates (fox_beam.c:1769). */
   markLife: 20 / UPDATE_HZ,
-  /** lock-on-tracking: the search box, scaled to this kit's smaller scene, metres (fox_beam.c:1759). */
-  searchRadius: 16,
+  /** lock-on-tracking: the search reaches 300 units down the aim line, 120 m (fox_beam.c:1759). */
+  searchReach: 120,
+  /** The search starts this far ahead of the nose, metres. Own tuning. */
+  searchNear: 8,
+  /** The search cone: a target this many metres off the aim line per metre of range still counts. Own tuning. */
+  searchSlope: 0.36,
   /** charge-lock-on: the homing shot lives 30 updates (fox_play.c:2953). */
   life: 30 / UPDATE_HZ,
   /** Speed relative to the ship, m/s, and damage. Own tuning. */
@@ -143,7 +144,7 @@ export const CAMERA = {
 } as const;
 
 export const ENEMY = {
-  /** Shot speed in the world, m/s, and the aim error that keeps a dodge possible. Own tuning. */
+  /** Shot speed in the world, m/s. Shots lead the ship, so a dodge or a roll is what saves it. Own tuning. */
   shotSpeed: 38,
   shotLife: 4,
   shotRadius: 0.6,

@@ -108,7 +108,7 @@ export class Ship {
     this.speed =
       Math.max(0, SHIP.cruise + this.speedOffset) * Math.min(1, toStop / 60) * this.#throttle;
     this.s = Math.min(this.arenaStop, this.s + this.speed * dt);
-    this.#bank(input, dt);
+    this.#bank(input, dt, held);
     this.#place(held);
   }
 
@@ -182,8 +182,8 @@ export class Ship {
   }
 
   /** banking: a held shoulder key leans the hull to 90 degrees; the stick leans it into the turn. */
-  #bank(input: InputMap, dt: number): void {
-    const hold = -input.vector("bank").x;
+  #bank(input: InputMap, dt: number, held: boolean): void {
+    const hold = held ? -input.vector("bank").x : 0;
     const target =
       hold !== 0 ? hold * SHIP.bankHold : (-this.#vx / SHIP.steerSpeed) * SHIP.bankLean;
     const step = MathUtils.damp(this.bank, target, SHIP.bankChase, dt) - this.bank;

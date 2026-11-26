@@ -67,6 +67,13 @@
     },
     {
       "kind": "input",
+      "label": "pods-station",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
       "label": "charge-3",
       "press": "Space",
       "holdTicks": 50,
@@ -90,6 +97,55 @@
       "label": "fly-4",
       "waitTicks": 50,
       "release": true
+    },
+    {
+      "label": "pods-down",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPods",
+        "equals": 0
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "core-open",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPhase",
+        "equals": 2
+      },
+      "release": false,
+      "timeoutMs": 300,
+      "screenshot": "core-open"
+    },
+    {
+      "kind": "input",
+      "label": "rage-station",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "raging",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPhase",
+        "equals": 3
+      },
+      "release": false,
+      "timeoutMs": 4000,
+      "screenshot": "raging"
+    },
+    {
+      "label": "raging-alive",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossHp",
+        "gte": 0.05
+      },
+      "release": false,
+      "timeoutMs": 300
     },
     {
       "kind": "input",
@@ -131,27 +187,6 @@
       "release": true
     },
     {
-      "label": "pods-down",
-      "waitForResource": {
-        "id": "state",
-        "path": "bossPods",
-        "equals": 0
-      },
-      "release": false,
-      "timeoutMs": 20000
-    },
-    {
-      "label": "core-open",
-      "waitForResource": {
-        "id": "state",
-        "path": "bossPhase",
-        "gte": 2
-      },
-      "release": false,
-      "timeoutMs": 20000,
-      "screenshot": "core-open"
-    },
-    {
       "kind": "input",
       "label": "charge-8",
       "press": "Space",
@@ -176,56 +211,6 @@
       "label": "fly-9",
       "waitTicks": 50,
       "release": true
-    },
-    {
-      "kind": "input",
-      "label": "charge-10",
-      "press": "Space",
-      "holdTicks": 50,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "fly-10",
-      "waitTicks": 50,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "charge-11",
-      "press": "Space",
-      "holdTicks": 50,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "fly-11",
-      "waitTicks": 50,
-      "release": true
-    },
-    {
-      "kind": "input",
-      "label": "charge-12",
-      "press": "Space",
-      "holdTicks": 50,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "fly-12",
-      "waitTicks": 50,
-      "release": true
-    },
-    {
-      "label": "raging",
-      "waitForResource": {
-        "id": "state",
-        "path": "bossPhase",
-        "gte": 3
-      },
-      "release": false,
-      "timeoutMs": 20000,
-      "screenshot": "raging"
     },
     {
       "label": "victory",
@@ -288,8 +273,40 @@
             "equals": 1
           },
           {
+            "label": "raging",
+            "lte": 0.4
+          },
+          {
             "label": "score-card",
             "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bossPhase",
+        "atSteps": [
+          {
+            "label": "core-open",
+            "equals": 2
+          },
+          {
+            "label": "raging",
+            "equals": 3
+          },
+          {
+            "label": "score-card",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "raging",
+            "equals": "playing"
           }
         ]
       },
