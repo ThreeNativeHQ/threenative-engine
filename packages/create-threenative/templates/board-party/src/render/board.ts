@@ -1,14 +1,7 @@
 // The board and the arena, built from the tables in `board/layout.ts`. The scene syncs them to the match
 // each tick: a space takes the material of its type, the star floats above the live space, and the
 // arena shows the set of the minigame that is running.
-import {
-  BoxGeometry,
-  CylinderGeometry,
-  Group,
-  type Material,
-  Mesh,
-  PlaneGeometry,
-} from "three";
+import { BoxGeometry, CylinderGeometry, Group, type Material, Mesh, PlaneGeometry } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { CHAINS, type ISpace, lookahead, spaceAt } from "../board/layout.js";
 import { DASH_FINISH_X, DASH_START_X } from "../minigames/dash.js";
@@ -88,7 +81,10 @@ export function createBoard(spaces: readonly ISpace[]): IBoardView {
   discGeometry.translate(0, SPACE_HEIGHT / 2, 0);
   const startGeometry = worldGridUVs(discGeometry.clone());
   const discs = spaces.map((space) => {
-    const disc = new Mesh(space.base === "start" ? startGeometry : discGeometry, MATERIAL[space.type]);
+    const disc = new Mesh(
+      space.base === "start" ? startGeometry : discGeometry,
+      MATERIAL[space.type],
+    );
     disc.position.set(space.x, 0, space.z);
     disc.castShadow = true;
     disc.receiveShadow = true;
@@ -105,14 +101,17 @@ export function createBoard(spaces: readonly ISpace[]): IBoardView {
   dash.name = "dash-set";
   for (let lane = 0; lane < 4; lane += 1) {
     const laneMesh = new Mesh(
-      strip(DASH_FINISH_X - DASH_START_X + 2, 0.04, 2, 0, 0.02, ARENA.z + (lane - 1.5) * 2.4),
+      strip(DASH_FINISH_X - DASH_START_X + 2, 0.04, 2, 0, 0.02, ARENA.z + (1.5 - lane) * 2.4),
       floorMaterial,
     );
     laneMesh.receiveShadow = true;
     dash.add(laneMesh);
   }
   for (const x of [DASH_START_X, DASH_FINISH_X]) {
-    const line = new Mesh(new BoxGeometry(0.2, 0.06, 9.8).translate(x, 0.05, ARENA.z), propMaterial);
+    const line = new Mesh(
+      new BoxGeometry(0.2, 0.06, 9.8).translate(x, 0.05, ARENA.z),
+      propMaterial,
+    );
     dash.add(line);
   }
   const lamp = new Mesh(new CylinderGeometry(0.35, 0.35, 0.3, 20), redLamp);

@@ -53,7 +53,13 @@ export class Rope implements IMinigame {
       this.#seatAngle.push(theta);
       const x = ARENA.x + SEAT_RADIUS * Math.cos(theta);
       const z = ARENA.z + SEAT_RADIUS * Math.sin(theta);
-      this.contestants.push({ x, z, y: 0, yaw: Math.atan2(ARENA.x - x, ARENA.z - z), pose: "idle" });
+      this.contestants.push({
+        x,
+        z,
+        y: 0,
+        yaw: Math.atan2(ARENA.x - x, ARENA.z - z),
+        pose: "idle",
+      });
     }
     this.angle = (this.#seatAngle[0] as number) - 2;
   }

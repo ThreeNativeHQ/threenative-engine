@@ -38,7 +38,6 @@ const UNDER_PLAYTEST =
 const SHARE_RADIUS = 0.55;
 const MINIGAME_PHASES: ReadonlySet<TurnPhase> = new Set(["intro", "minigame", "result"]);
 
-
 function row(player: IPlayer): PlayerRow {
   return {
     name: player.name,
@@ -181,9 +180,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       pawn.mesh.position.z += (player.z + oz - pawn.mesh.position.z) * ease;
       pawn.mesh.position.y = PAWN_HALF + SURFACE;
       const ahead = match.spaces[CHAINS[player.next.chain]?.ids[player.next.slot] ?? 0] as ISpace;
-      const yaw = player.walking
-        ? player.yaw
-        : Math.atan2(ahead.x - player.x, ahead.z - player.z);
+      const yaw = player.walking ? player.yaw : Math.atan2(ahead.x - player.x, ahead.z - player.z);
       pawn.face(yaw, dt);
       pawn.update(dt, player.walking ? "walk" : "idle");
     };
@@ -215,7 +212,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         match.update(dt, { jump: confirm, run: frameCtx.input.vector("move").x });
       }
       for (const event of match.events.splice(0)) {
-        emitPlaytestEvent({ entity: "match", name: event.name, seat: event.seat, value: event.value });
+        emitPlaytestEvent({
+          entity: "match",
+          name: event.name,
+          seat: event.seat,
+          value: event.value,
+        });
         const pawn = pawns[event.seat];
         if (event.name === "roll") pawn?.gesture("roll", 0.8);
         if (event.name === "star") pawn?.gesture("cheer", 1.2);
@@ -265,8 +267,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         board.star.rotation.y = clock * 1.4;
       }
 
-      frame.phase =
-        match.phase !== "over" ? "playing" : match.ranking[0] === 0 ? "won" : "lost";
+      frame.phase = match.phase !== "over" ? "playing" : match.ranking[0] === 0 ? "won" : "lost";
       frame.time = Math.round(matchTime * 10) / 10;
       frame.turn = match.turn;
       frame.active = match.active;

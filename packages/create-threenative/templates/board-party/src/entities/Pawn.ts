@@ -36,7 +36,7 @@ export class Pawn extends Fighter {
 
   /** A one-shot gesture that holds the locomotion loop off for `hold` seconds. */
   gesture(action: "cheer" | "roll" | "hit", hold: number): void {
-    this.play(action, { hold });
+    this.play(action, { fit: true, hold });
   }
 
   /** Advance the rig for one tick in the pose the rules put this pawn in. */

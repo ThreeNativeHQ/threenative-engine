@@ -74,7 +74,11 @@ function Prompt() {
     );
   } else if (miniId === "rope" && turnPhase === "minigame") body = yes("Hop  [space]");
   else if (miniId === "dash" && turnPhase === "minigame")
-    body = <span className="text-xs tracking-[0.3em] text-text">{miniGo === 1 ? "GO: hold right" : "wait for green"}</span>;
+    body = (
+      <span className="text-xs tracking-[0.3em] text-text">
+        {miniGo === 1 ? "GO: hold right" : "wait for green"}
+      </span>
+    );
   else if (turnPhase === "roll" || turnPhase === "walk" || turnPhase === "rolling")
     body = (
       <span className="text-xs uppercase tracking-[0.24em] text-dim">
@@ -119,7 +123,7 @@ function Banner() {
       {message !== "" && (
         <div
           id="board-message"
-          className="pointer-events-none absolute left-1/2 top-16 -translate-x-1/2 text-sm uppercase tracking-[0.3em] text-amber"
+          className="pointer-events-none absolute left-1/2 top-16 -translate-x-1/2 rounded bg-black/70 px-4 py-1 text-sm uppercase tracking-[0.3em] text-amber"
         >
           {message}
         </div>
@@ -160,7 +164,8 @@ function Result() {
       <ol className="mt-3 text-[11px] uppercase tracking-[0.2em] text-dim">
         {ranking.map((seat, place) => (
           <li key={players[seat]?.name ?? place}>
-            {place + 1}. {players[seat]?.name} / {players[seat]?.stars} stars / {players[seat]?.coins} coins
+            {place + 1}. {players[seat]?.name} / {players[seat]?.stars} stars /{" "}
+            {players[seat]?.coins} coins
           </li>
         ))}
       </ol>
@@ -170,7 +175,7 @@ function Result() {
         onClick={() => send("restart")}
         type="button"
       >
-        Play again  [r]
+        Play again [r]
       </button>
     </div>
   );

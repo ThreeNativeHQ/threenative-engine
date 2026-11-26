@@ -10,7 +10,7 @@ import { ARENA } from "../minigames/minigame.js";
 const BOARD_FOV = 45;
 const MINIGAME_FOV = 10;
 /** The board camera sits high and a little south of what it looks at. */
-const BOARD_OFFSET = new Vector3(0, 21, 15);
+const BOARD_OFFSET = new Vector3(0, 28, 12);
 /** The arena camera tilts 35 degrees down (mario-party-1 `camera-slot-defaults` orbit rotation x 325). */
 const ARENA_DISTANCE = 78;
 const ARENA_OFFSET = new Vector3(
@@ -18,8 +18,8 @@ const ARENA_OFFSET = new Vector3(
   Math.sin((35 * Math.PI) / 180) * ARENA_DISTANCE,
   Math.cos((35 * Math.PI) / 180) * ARENA_DISTANCE,
 );
-/** How much of the active pawn's position the board pan follows. The board fits on screen, so half. */
-const PAN_SHARE = 0.5;
+/** How much of the active pawn's position the board pan follows. The board fits on screen, so a third. */
+const PAN_SHARE = 0.35;
 /** The pan divisor, applied per update at 60 Hz. mario-party-1 `board-camera-follow` (257020.c:228). */
 const PAN_DIVISOR = 3;
 const _want = new Vector3();

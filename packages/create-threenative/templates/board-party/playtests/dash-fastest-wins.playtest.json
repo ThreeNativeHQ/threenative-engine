@@ -40,8 +40,8 @@
       "kind": "input",
       "label": "run",
       "press": "ArrowRight",
-      "holdTicks": 400,
-      "release": true
+      "holdTicks": 1,
+      "release": false
     },
     {
       "label": "finished",

@@ -33,7 +33,7 @@ export class Dash implements IMinigame {
     for (let seat = 0; seat < 4; seat += 1) {
       this.contestants.push({
         x: START_X,
-        z: ARENA.z + (seat - 1.5) * LANE,
+        z: ARENA.z + (1.5 - seat) * LANE,
         y: 0,
         yaw: Math.PI / 2,
         pose: "idle",

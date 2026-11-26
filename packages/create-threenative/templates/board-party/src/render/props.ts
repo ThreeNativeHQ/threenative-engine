@@ -1,18 +1,11 @@
 // Every prop is a few primitives on the grid materials or a plain colour: no asset.
-import {
-  ExtrudeGeometry,
-  Group,
-  Mesh,
-  MeshStandardMaterial,
-  type Object3D,
-  Shape,
-} from "three";
+import { ExtrudeGeometry, Group, Mesh, MeshStandardMaterial, type Object3D, Shape } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 
 /** The four seats, apart by one material swap on the same mannequin: you, then three CPU. */
-export const pawnMaterials: readonly MeshStandardMaterial[] = [0xd0532a, 0x2a6cf0, 0xe8b86a, 0x3fae5a].map(
-  (color) => new MeshStandardMaterial({ color, roughness: 0.5 }),
-);
+export const pawnMaterials: readonly MeshStandardMaterial[] = [
+  0xd0532a, 0x2a6cf0, 0xe8b86a, 0x3fae5a,
+].map((color) => new MeshStandardMaterial({ color, roughness: 0.5 }));
 
 /** Red spaces take coins; the lone saturated blue is `propMaterial`. */
 export const redMaterial = new MeshStandardMaterial({ color: 0xd0532a, roughness: 0.5 });
