@@ -8,6 +8,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { WEB_ENGINE_ID } from "../web-engine.js";
+import { cloudflareCatalogSource } from "./cloudflare-source.js";
 import { projectSource } from "./project-source.js";
 import type { IAssetCatalog, IAssetLibraryServer, IAssetLibrarySource } from "./types.js";
 
@@ -26,6 +27,8 @@ export interface IAssetLibraryOptions {
   readonly procedural?: boolean;
   /** List every `@threenative/core/vfx` effect as a story when the project's core has them. Default true. */
   readonly vfx?: boolean;
+  /** Attach the lazy-loading Cloudflare public catalog (`gateway.threenative.com`, or pass a custom origin). */
+  readonly cloudflare?: boolean | string;
 }
 
 /** The slice of Vite's plugin surface this plugin uses, so the type needs no `vite` import. */
@@ -391,6 +394,18 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
     },
     configureServer(server) {
       dir = clientDir();
+      const attachCloudflare = (target: typeof sources, root: string): void => {
+        if (options.cloudflare === false || target.some((s) => s.id === "cloudflare")) return;
+        const explicit = options.cloudflare === true || typeof options.cloudflare === "string";
+        if (!explicit && process.env.VITEST) return;
+        target.push(
+          cloudflareCatalogSource({
+            origin: typeof options.cloudflare === "string" ? options.cloudflare : undefined,
+            root,
+            save: options.project !== false,
+          }),
+        );
+      };
       const pose =
         options.project === false ? Promise.resolve(undefined) : poseLab(server.config.root);
       const ready = (async () => {
@@ -405,6 +420,7 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
           const vfx = vfxSource(server.config.root);
           if (vfx) sources.push(vfx);
         }
+        attachCloudflare(sources, server.config.root);
         for (const source of sources) source.configureServer?.(server);
         return handler;
       })();

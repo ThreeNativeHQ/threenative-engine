@@ -5,6 +5,7 @@ import * as three from "three";
 import "./style.css";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import type {
@@ -127,6 +128,7 @@ const facet = (id: (typeof facetIds)[number]) => $<HTMLSelectElement>(id).value;
 let route: { kind: string; id?: string; category?: string; tiled?: string } = { kind: "" };
 let token = 0;
 const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
 const status = $("status");
 const say = (text: string, error = false) => {
   status.textContent = text;
@@ -434,19 +436,35 @@ function renderDocs(element: IAssetElement, baked: IAssetReport, model: three.Ob
     ...(file ? [["File", file] as [string, string]] : []),
   ]);
   const call = baked.call ?? `await ${callFor(element)};`;
+  const actions: HTMLElement[] = [copyButton(runtime ? "Copy code" : "Copy bake call", () => call)];
+  const rawSave = (baked as { readonly save?: unknown }).save;
+  if (typeof rawSave === "string") {
+    const saveUrl = rawSave;
+    const saveButton = el(
+      "button",
+      "tool w-auto justify-self-start px-2 text-ink",
+      "Save to assets/",
+    );
+    saveButton.onclick = () => {
+      void fetch(saveUrl, { method: "POST" })
+        .then(async (res) => (await res.json()) as { written?: string; error?: string })
+        .then((body) =>
+          say(
+            body.written ? `Saved ${body.written}` : (body.error ?? "Save failed"),
+            !body.written,
+          ),
+        )
+        .catch((error: Error) => say(error.message, true));
+    };
+    actions.push(saveButton);
+  }
   const parts = el(
     "label",
     "grid gap-1 font-bold text-muted",
     runtime ? "Mesh attributes" : "GLB primitives and attributes",
   );
   parts.append(el("pre", PRE, attributesOf(model)));
-  $("docs").replaceChildren(
-    head,
-    dl,
-    el("pre", PRE, call),
-    copyButton(runtime ? "Copy code" : "Copy bake call", () => call),
-    parts,
-  );
+  $("docs").replaceChildren(head, dl, el("pre", PRE, call), ...actions, parts);
 }
 
 // ── background: the source's sky, or a flat dark or light backdrop ──
@@ -618,7 +636,44 @@ async function assetOf(element: IAssetElement, lod = state.lod): Promise<IAssetL
   }
   const baked = await bakeOf(element, lod);
   const { model, windy } = await modelOf(element, baked);
+  if (baked.triangles === 0) {
+    let triangles = 0;
+    model.traverse((node) => {
+      const mesh = node as three.Mesh & three.InstancedMesh;
+      if (!mesh.isMesh) return;
+      const count = mesh.isInstancedMesh ? mesh.count : 1;
+      const verts =
+        mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position")?.count ?? 0;
+      triangles += (verts / 3) * count;
+    });
+    const box = new three.Box3().setFromObject(model);
+    return {
+      model,
+      animated: windy,
+      report: {
+        ...baked,
+        triangles: Math.round(triangles),
+        bounds: box.isEmpty() ? baked.bounds : { min: box.min.toArray(), max: box.max.toArray() },
+      },
+    };
+  }
   return { model, animated: windy, report: baked };
+}
+
+function renderLazyOverview(name: string, shown: IAssetElement[]): void {
+  const grid = viewerHost.overlay(
+    "inset-0 grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-3 overflow-y-auto bg-app p-4",
+  );
+  for (const e of shown) {
+    const card = el("a", "grid gap-1 rounded border border-line p-3 text-xs hover:border-accent");
+    card.href = hashOf(e.kind, e.id);
+    card.append(
+      el("span", "truncate font-semibold text-ink", e.name),
+      el("span", "truncate text-muted", e.category ? `${e.category} · ${e.id}` : e.id),
+    );
+    grid.append(card);
+  }
+  say(`${name} · ${plural(shown.length, "asset")} · pick one to lazy-load`);
 }
 
 /** The overview story: every visible element of the kind (or category) on one line, at its true size. */
@@ -647,6 +702,10 @@ async function overview(mine: number, kindRows: IAssetElement[]): Promise<boolea
     ),
     list,
   );
+  if (kindInfo(route.kind).lazy) {
+    renderLazyOverview(name, shown);
+    return false;
+  }
   const lineup = shown.filter((row) => !row.backdrop && !BUILT_IN_KINDS.has(row.kind));
   if (BUILT_IN_KINDS.has(route.kind) && route.kind !== "model") {
     // A 2D kind has no 3D lineup: its overview is a card per file over the stage, not an empty floor.
@@ -889,8 +948,8 @@ function elementNode(e: IAssetElement) {
   const at = hashOf(e.kind, e.id);
   const biome = controlsFor(e.kind, e.id).find((c) => c.key === "biome" && c.type === "select");
   const tile = tileControl(e.kind, e.id);
-  // A project file has one story: it is a leaf. A source element keeps its Docs and Default nodes.
-  if (BUILT_IN_KINDS.has(e.kind) && !biome && !tile)
+  // A project file or lazy catalog item has one story: it is a leaf row loaded on demand.
+  if ((BUILT_IN_KINDS.has(e.kind) || kindInfo(e.kind).lazy) && !biome && !tile)
     return leaf(at, e.name, "story", story, "pl-10", "controls");
   const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-5");
   group.append(
