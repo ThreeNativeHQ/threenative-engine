@@ -276,6 +276,24 @@ describe("reference release cache", () => {
 });
 
 describe("reference MCP tools", () => {
+  it("Nov 25 trace: billboards do not match board games", async () => {
+    vi.spyOn(process, "cwd").mockReturnValue(project);
+    (await refs()).saveReferenceGame(
+      {
+        ...game,
+        id: "mario-party-1",
+        title: "Mario Party 1",
+        nodes: [game.nodes[0]],
+        cards: [{ ...game.cards[0], id: "board-camera-follow", node: "player", tags: ["board"] }],
+      },
+      project,
+    );
+    const result = await call("engine_search_references", {
+      situation: "neon signs and glowing billboards on city buildings at night",
+    });
+    expect(result.results).not.toContainEqual(expect.objectContaining({ game: "mario-party-1" }));
+  });
+
   it("keeps published search entries beside a partial local override", async () => {
     vi.spyOn(process, "cwd").mockReturnValue(project);
     (await refs()).saveReferenceGame(

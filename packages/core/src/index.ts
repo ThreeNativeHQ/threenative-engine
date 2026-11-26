@@ -57,6 +57,7 @@ export type {
 /**
  * Compose game-authored locomotion and masked actions on one Three.js mixer.
  * @situation synchronize walk/run/strafe clips with different durations
+ * @situation blend walking and running clips smoothly on a rigged character skeleton
  * @situation reload with the upper body while locomotion continues
  * @situation apply an additive recoil clip with an explicit reference pose
  * @situation route root motion through collision-aware character movement
@@ -143,6 +144,7 @@ export type { CameraShakeCurve, ICameraShakeOffset, ICameraShakeOptions } from "
  * Create the portable asset loader a scene also receives as `ctx.assets`.
  * @situation preload models, textures, or audio before a scene enters
  * @situation keep downloaded web assets on disk between visits
+ * @situation load and cache a PNG image or texture and assign it to a material map or UI marker
  * @situation download the next scene before the player gets there
  * @situation free the disk cache from a settings menu
  * @situation prefetch assets into the Cache Storage disk cache of a large web game
@@ -210,6 +212,8 @@ export type {
  * Route effects through a named audio bus.
  * @situation play a sound effect with a volume bus
  * @situation mute or adjust a category of game audio
+ * @situation fade background music volume while a pause menu is open
+ * @situation play a different looping music track when the scene or quest changes
  * @situation keep a gunshot audible at 20 metres by tuning positional falloff
  * @situation hold a loud mix below clipping with a compressor on the bus
  * @situation play cannon, wave, and ship sound effects
@@ -261,8 +265,11 @@ export type { IRandom } from "./random.js";
  * Define the portable game entry shared by web and native.
  * @situation start a ThreeNative game from src/game.ts
  * @situation register physics and gameplay plugins
+ * @situation bind a reload input action for a game's magazine and reserve ammo
  * @situation let the player zoom the camera with a wheel, pinch, or gamepad axis
  * @situation frame a camera behind the player
+ * @situation use chase camera framing behind a race car
+ * @situation make the player readable with an angled arena camera
  * @alias nearest target crosshair spawns
  * @alias third-person camera
  * @alias restart run without page reload
@@ -1432,6 +1439,7 @@ export type { IExposureSettings } from "./look/exposure-settings.js";
  *
  * @situation a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand
  * @situation turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look
+ * @situation set night scene lighting and exposure for a foggy city with emissive signs
  * @constraint post stages run on WebGPU only: a renderer without it keeps the fixed exposure and reports `TN_AUTO_EXPOSURE_REFUSED`, and a missing node library keeps ACES and reports `TN_TONEMAP`
  * @constraint an unknown option value throws instead of becoming the default
  * @override every option on `IWorldEnvironmentOptions`: `tonemapMode: "aces" | "agx" | "neutral"`, `autoExposureEnabled: false` with a fixed `exposure`, `bloomEnabled`, `gtaoEnabled`, `ssgiEnabled`, `screenSpaceAA`
@@ -1604,7 +1612,8 @@ export type {
  * Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels
  * of detail, from the game's own placement rule.
  * @situation scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor
- * @situation stream instanced props of any baked mesh round the player without one draw per prop
+ * @situation scatter fallen logs, twigs and leaf litter on the forest floor
+ * @situation stream instanced props around the player without one draw per prop
  * @situation place rocks, debris or plants on a heightfield with distance thinning and level of detail
  * @constraint call `update(follow)` once per rendered frame
  * @constraint `place` runs once per candidate per tile build: return false for paths and clearings
@@ -1628,6 +1637,7 @@ export type {
  * Dispatch a game-owned particle surface and process function through a pooled system.
  * @situation emit sparks, smoke, or other transient effects
  * @situation update many small visual particles
+ * @situation emit floating fireflies or drifting dust motes
  * @situation trail dust, exhaust, or spray behind a moving object
  * @situation emit cannon smoke and muzzle flash particles
  * @situation fire a cannonball projectile with cannon smoke particles
@@ -1724,6 +1734,7 @@ export type { IRippleFieldFlow, IRippleFieldOptions } from "./ripple-field.js";
  * Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph.
  * @situation float a boat on waves
  * @situation make water move
+ * @situation animate open ocean waves with analytic displacement and use domain warp to break repeating patterns
  * @situation find the water surface height at a point
  * @constraint supply every wave amplitude, wavelength, direction, speed and warp value
  * @constraint call setTime for the default graph clock when the game advances its own time
@@ -1862,6 +1873,7 @@ export type {
  * @situation show a 3D object while a pointer hovers over it
  * @situation handle touch and mouse taps on a loaded model without naming its child meshes
  * @situation drag a crate or prop with the mouse or a finger
+ * @situation click points of interest to inspect them as the player explores
  * @constraint listeners are side-table registrations; Three.js prototypes are never patched
  * @constraint one raycast serves each active pointer and no raycast runs when nothing is registered
  * @example ctx.pointer.on(tile, "tapped", (event) => place(event.point));
@@ -1943,6 +1955,7 @@ export type {
  * @situation run a callback every simulation tick
  * @situation tween a numeric property with a game-owned curve
  * @situation a countdown timer: end the level when its time limit runs out
+ * @situation tick a race start countdown and unlock the controls on GO
  * @alias tower defense game
  * @alias spawn waves
  * @constraint dispose returned handles when the owning scene exits
@@ -1957,6 +1970,7 @@ export type { ITweenOptions, ScheduleHandle } from "./schedule.js";
  * @situation add a playable level or menu scene
  * @situation move scene setup and per-frame gameplay out of the entry point
  * @situation run scene work once per actual world draw, after the frame's last fixed update and before the projection packs
+ * @situation interpolate transforms in Scene.render using ctx.alpha after the fixed update
  * @constraint scene code must stay portable across web and native
  * @example class Play extends Scene { update(ctx, dt) {} }
  * @example ctx.beforeRender(() => packBatches()); // cleared on scene change and stop, like ctx.afterPhysics

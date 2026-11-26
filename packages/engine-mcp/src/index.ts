@@ -454,11 +454,10 @@ function undouble(stem: string): string {
  * and a request is written in the vocabulary of the game — *drag a crate by clicking on it*.
  * Without `-ing` and `-ed`, `clicking` and `click` were different tokens, that request scored
  * zero against every pointer capability, and the agent hand-wrote a `Raycaster` the framework
- * already ships. Both sides run through the same stemmer, so an over-eager strip costs nothing:
- * only a collision between two distinct words would, and the suffixes here do not produce one
- * across this manifest.
+ * already ships. Identifiers use unstemmed words so ordinary inflections cannot spell a symbol.
  */
 function stem(token: string): string {
+  if (token === "leaves") return "leaf";
   const stripped = suffixStripped(token);
   // Drop a trailing silent `e` last, on every word rather than only on the stripped ones, so that
   // `hinge` and `hinged` land on one token instead of two. Stripping `-ed` alone leaves `hing`
@@ -516,387 +515,324 @@ function tokens(value: string): readonly string[] {
   return cached;
 }
 
-/**
- * How much a word narrows the search, measured against this manifest rather than assumed.
- *
- * `player` and `scene` appear in dozens of situations and separate nothing; `buoyancy`, `hinge`
- * and `click` appear in one or two and are the whole answer. Counting raw token overlap made a
- * verbose request score by length: a long request divides its overlap by its own word count, so
- * every capability landed on the same near-zero score and the ranking fell through to the
- * alphabet. That is how a physics-puzzle request came back holding `attachToBone`.
- */
-function tokenWeights(
-  entries: readonly Pick<ICapabilityEntry, "situations" | "aliases">[],
-): ReadonlyMap<string, number> {
+/** Field normalization is independent of how much prose a package documents for an export. */
+interface IIndexedPhrase {
+  readonly text: string;
+  readonly words: readonly string[];
+  readonly terms: ReadonlyMap<string, number>;
+  readonly boost: number;
+}
+
+function lexicalIndex<T>(
+  rows: readonly T[],
+  fieldsOf: (row: T) => readonly (readonly string[])[],
+  boosts: readonly number[],
+) {
+  const fields = rows.map((row) =>
+    fieldsOf(row).map((phrases) => phrases.map((text) => ({ text, words: tokens(text) }))),
+  );
+  const lengths = boosts.map((_, field) => {
+    const phrases = fields.flatMap((row) => row[field] ?? []).filter(({ words }) => words.length);
+    return phrases.reduce((sum, { words }) => sum + words.length, 0) / (phrases.length || 1);
+  });
   const frequency = new Map<string, number>();
-  let situations = 0;
-  for (const entry of entries) {
-    for (const situation of [...entry.situations, ...entry.aliases]) {
-      situations += 1;
-      for (const token of new Set(tokens(situation)))
-        frequency.set(token, (frequency.get(token) ?? 0) + 1);
-    }
+  const documents = fields.map((row) => {
+    const seen = new Set<string>();
+    const indexed = row.map((phrases, field) =>
+      phrases.map(({ text, words }): IIndexedPhrase => {
+        const terms = new Map<string, number>();
+        for (const word of words) {
+          seen.add(word);
+          terms.set(word, (terms.get(word) ?? 0) + 1);
+        }
+        const average = lengths[field] || 1;
+        const norm = 1 - BM25_B + BM25_B * (words.length / average);
+        return { boost: (boosts[field] ?? 0) / norm, terms, text, words };
+      }),
+    );
+    for (const word of seen) frequency.set(word, (frequency.get(word) ?? 0) + 1);
+    return indexed;
+  });
+  const idf = new Map<string, number>();
+  for (const [word, df] of frequency) {
+    idf.set(word, Math.log1p((rows.length - df + 0.5) / (df + 0.5)));
   }
-  const weights = new Map<string, number>();
-  for (const [token, count] of frequency) weights.set(token, Math.log(1 + situations / count));
-  return weights;
+  return { documents, idf };
 }
 
-/** A word the index has never used narrows nothing here, whatever it means elsewhere. */
-function weightOf(weights: ReadonlyMap<string, number>, token: string): number {
-  return weights.get(token) ?? 0;
-}
+const BM25_B = 0.45;
+const BM25_K1 = 1.2;
+const DISTINCTIVE_FLOOR = Math.log1p(1 / 0.02);
+const CAPABILITY_IDF_LIMIT = 4;
 
-/**
- * The weights a name and a summary are read with, indexed apart from the situations on purpose.
- * Folding one summary and one symbol document per entry into the situation index moved the coverage
- * of every existing match: `SnowField` fell under `RELEVANCE_FLOOR` for "fresh snowfall slowly
- * fills old tracks back in", a row the recall budget had held. A channel added to help a name must
- * not retune the prose index it is added beside.
- */
-/**
- * The words a name is spelled with, on both sides of a match. `GPUParticles3D` is "gpu particles"
- * to a reader: glueing the digit run on (`particles3d`) meant that capability matched no request
- * that said "particles", and a digit carries no name in this manifest, so `Area3D` is `area` and
- * `Joint3D` is `joint`.
- */
-function nameWords(value: string): readonly string[] {
-  return tokens(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2")).filter((token) => !/\d/u.test(token));
-}
-
-/** `mergeParts`, `MERGEPARTS`, `merge parts` and `merge-parts` are the same name to a reader. */
-function normaliseName(value: string): string {
-  return value.toLocaleLowerCase().replace(/[^a-z0-9]+/gu, "");
-}
-
-/** The words a request spells, before the stemmer and the stop list: a name is matched as written. */
-function spelledWords(value: string): readonly string[] {
-  return value
-    .toLocaleLowerCase()
-    .split(/[^a-z0-9]+/u)
-    .filter((word) => word.length > 0);
-}
-
-/**
- * Does the request spell this name, as whole words and in order? `CharacterBody3D movement` and
- * `character body 3d` both spell `CharacterBody3D`; `physics` does not spell `afterPhysics`, and
- * `the viewer` does not spell the `View` symbol, because a run of whole words has to match the
- * whole name. A run longer than four words is never a name an author types.
- */
-function spellsName(situation: string, symbol: string): boolean {
-  const words = spelledWords(situation);
-  const whole = normaliseName(symbol);
-  for (let start = 0; start < words.length; start += 1) {
-    let piece = "";
-    for (let end = start; end < words.length && end < start + 4; end += 1) {
-      piece += normaliseName(words[end] ?? "");
-      if (piece === whole) return true;
-      if (piece.length >= whole.length) break;
-    }
-  }
-  return false;
-}
-
-function nameTokenWeights(entries: readonly ICapabilityEntry[]): ReadonlyMap<string, number> {
-  return tokenWeights(
-    entries.map((entry) => ({
-      aliases: [nameWords(entry.symbol).join(" ")],
-      situations: [entry.summary],
-    })),
+function hasTokenSubsequence(haystack: readonly string[], needle: readonly string[]): boolean {
+  return (
+    needle.length > 0 &&
+    needle.length <= haystack.length &&
+    haystack.some(
+      (word, start) =>
+        word === needle[0] && needle.every((part, offset) => haystack[start + offset] === part),
+    )
   );
 }
 
-/**
- * A word is distinctive enough to carry a match alone when the index uses it in at most this
- * share of its situations. `player` reaches 2.5% and separates nothing; `particle` reaches 0.9%
- * and names one capability. The old rule — a query of four words or more needs two overlapping
- * tokens — threw away exactly the case this search exists for: one word that names the capability
- * outright, in a sentence otherwise made of scenery.
- */
-const DISTINCTIVE_SITUATION_SHARE = 0.02;
-const DISTINCTIVE_FLOOR = Math.log(1 + 1 / DISTINCTIVE_SITUATION_SHARE);
-/** How much each word of agreement beyond the first is worth, as a multiplier on coverage. */
-const AGREEMENT_WEIGHT = 0.4;
-/** How much of a situation a single matched word must account for to answer on its own. */
-const LONE_WORD_COVERAGE = 0.22;
-
-/**
- * How much of the agreement rests on more than one word.
- *
- * The distinctive-word floor is what makes a one-word match possible at all, and it is also how
- * a homonym wins: `cycle` reaches one situation (a walk cycle) and `health` reaches one (an asset
- * health report), so each cleared the floor alone and displaced the answer a reader wanted — a
- * day/night cycle is `solarPosition`, a health bar is the UI state bridge. Neither is a scoring
- * accident that a threshold can fix, because both single-word matches are genuinely rare words.
- *
- * What separates them is corroboration: the right answer usually agrees on *several* words, and
- * the homonym on exactly one. This multiplies coverage by that agreement, so a two-word match at
- * modest coverage outranks a one-word match at high coverage, and a one-word match still ranks
- * above nothing at all.
- */
-function agreement(situation: readonly string[], query: ReadonlySet<string>): number {
-  const matched = situation.filter((token) => query.has(token)).length;
-  return 1 + AGREEMENT_WEIGHT * Math.max(0, matched - 1);
+function lexicalQuery(
+  words: readonly string[],
+  idf: ReadonlyMap<string, number>,
+  maxWeight = Number.POSITIVE_INFINITY,
+) {
+  const weights = new Map(
+    [...new Set(words)].map((word) => [word, Math.min(idf.get(word) ?? 2, maxWeight)]),
+  );
+  const total = [...weights.values()].reduce((sum, weight) => sum + weight, 0);
+  return { total, weights, words };
 }
 
-interface IPhraseScore {
-  readonly agreed: number;
-  readonly coverage: number;
-  readonly matched: number;
-  readonly phraseBonus: number;
+type ILexicalQuery = ReturnType<typeof lexicalQuery>;
+
+interface IFieldMatch {
+  readonly phrase: IIndexedPhrase;
+  readonly boost: number;
   readonly score: number;
+  readonly count: number;
+  readonly exact: boolean;
+  readonly distinctive: boolean;
 }
 
-function scorePhrase(
-  value: string,
-  queryTokens: ReadonlySet<string>,
-  queryText: string,
-  weights: ReadonlyMap<string, number>,
-): IPhraseScore | undefined {
-  const phrase = tokens(value);
-  const unique = [...new Set(phrase)];
-  const total = unique.reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const matched = unique
-    .filter((token) => queryTokens.has(token))
-    .reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const phraseBonus =
-    phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
-  if (total === 0 || (matched === 0 && phraseBonus === 0)) return undefined;
-  const coverage = matched / total;
-  const agreed = agreement(unique, queryTokens);
-  return { agreed, coverage, matched, phraseBonus, score: coverage * agreed + phraseBonus };
-}
-
-function isDistinctivePhrase(candidate: IPhraseScore): boolean {
-  if (candidate.phraseBonus > 0) return true;
-  if (candidate.matched < DISTINCTIVE_FLOOR) return false;
-  return !(candidate.agreed === 1 && candidate.coverage < LONE_WORD_COVERAGE);
-}
-
-interface IReadabilityScore {
-  readonly best: number;
-  /** The best score any phrase reached, before the distinctive-word gate judged it. */
-  readonly bestReadableScore: number;
-  readonly matchedSituation: string;
-  readonly bestReadableSituation: string;
-}
-
-function scoreReadableSituations(
-  situations: readonly string[],
-  queryTokens: ReadonlySet<string>,
-  queryText: string,
-  weights: ReadonlyMap<string, number>,
-): IReadabilityScore {
-  // An empty query text is a substring of every phrase, so it would earn every situation the
-  // phrase bonus. A request of nothing but stop words shares no word with anything.
-  if (queryTokens.size === 0)
-    return {
-      best: 0,
-      bestReadableScore: 0,
-      bestReadableSituation: situations[0] ?? "",
-      matchedSituation: "",
-    };
-  let best = 0;
-  let matchedSituation = "";
-  let bestReadableScore = 0;
-  let bestReadableSituation = situations[0] ?? "";
-  for (const situation of situations) {
-    const candidate = scorePhrase(situation, queryTokens, queryText, weights);
-    if (candidate === undefined) continue;
-    if (candidate.score > bestReadableScore) {
-      bestReadableScore = candidate.score;
-      bestReadableSituation = situation;
-    }
-    if (isDistinctivePhrase(candidate) && candidate.score > best) {
-      best = candidate.score;
-      matchedSituation = situation;
-    }
+function scoreField(phrase: IIndexedPhrase, query: ILexicalQuery): IFieldMatch | undefined {
+  let matched = 0;
+  let count = 0;
+  let score = 0;
+  for (const [word, tf] of phrase.terms) {
+    const weight = query.weights.get(word);
+    if (weight === undefined) continue;
+    matched += weight;
+    count += 1;
+    score += weight * saturate(tf * phrase.boost);
   }
-  return { best, bestReadableScore, bestReadableSituation, matchedSituation };
+  if (count === 0) return undefined;
+  const exact =
+    hasTokenSubsequence(query.words, phrase.words) ||
+    hasTokenSubsequence(phrase.words, query.words);
+  const bonus = exact ? 1.6 : 1;
+  const distinctive =
+    (exact && (count > 1 || query.weights.size === 1 || matched >= DISTINCTIVE_FLOOR)) ||
+    (matched >= DISTINCTIVE_FLOOR && (count > 1 || phrase.words.length <= 3));
+  return { boost: phrase.boost * bonus, count, distinctive, exact, phrase, score: score * bonus };
 }
 
-function scoreAliases(
-  aliases: readonly string[],
-  queryTokens: ReadonlySet<string>,
-  queryText: string,
-  weights: ReadonlyMap<string, number>,
-): number {
-  // An empty query text is a substring of every alias and would earn every one the phrase bonus,
-  // so a request of nothing but stop words or punctuation used to answer with the whole index.
-  if (queryTokens.size === 0) return 0;
-  let best = 0;
-  for (const alias of aliases) {
-    const candidate = scorePhrase(alias, queryTokens, queryText, weights);
-    if (candidate !== undefined) best = Math.max(best, candidate.score);
+/** There can be many ways to ask for the same mechanic. Only the best phrase in a field votes. */
+function bestField(
+  phrases: readonly IIndexedPhrase[] | undefined,
+  query: ILexicalQuery,
+  isAlias = false,
+) {
+  let best: IFieldMatch | undefined;
+  for (const phrase of phrases ?? []) {
+    const match = scoreField(phrase, query);
+    if (match === undefined || (isAlias && match.count === 1 && phrase.words.length > 1)) continue;
+    if (best === undefined || match.score > best.score) best = match;
   }
   return best;
 }
 
-/**
- * The answer one phrase set gives, from a readability pass that a caller can reuse. `situationScore`
- * is this plus the pass; the reference search needs the pass itself, so the derivation lives here
- * once instead of being scored twice per candidate.
- */
-function answeredSituation(
-  readable: IReadabilityScore,
-  aliasScore: number,
-): { readonly matchedSituation: string; readonly score: number } {
-  const best = Math.max(readable.best, aliasScore);
-  const matchedSituation =
-    readable.matchedSituation.length > 0
-      ? readable.matchedSituation
-      : best >= RELEVANCE_FLOOR
-        ? readable.bestReadableSituation
-        : "";
-  return matchedSituation.length > 0
-    ? { matchedSituation, score: best }
-    : { matchedSituation: "", score: 0 };
+function saturate(tf: number): number {
+  return ((BM25_K1 + 1) * tf) / (BM25_K1 + tf);
 }
 
-function situationScore(
-  query: readonly string[],
-  situations: readonly string[],
-  aliases: readonly string[],
-  weights: ReadonlyMap<string, number>,
-): { readonly matchedSituation: string; readonly score: number } {
-  if (query.length === 0) return { matchedSituation: "", score: 0 };
-  const queryTokens = new Set(query);
-  const queryText = query.join(" ");
-  return answeredSituation(
-    scoreReadableSituations(situations, queryTokens, queryText, weights),
-    scoreAliases(aliases, queryTokens, queryText, weights),
-  );
+/** BM25F saturates term frequency after combining the independently normalized fields. */
+function bm25f(
+  query: ILexicalQuery,
+  fields: readonly (IFieldMatch | undefined)[],
+  clauses: readonly ILexicalQuery[] = [],
+): number {
+  if (fields.every((field) => field === undefined)) return 0;
+  let matched = 0;
+  let score = 0;
+  for (const [word, weight] of query.weights) {
+    let tf = 0;
+    for (const field of fields) {
+      if (field !== undefined) tf += field.boost * (field.phrase.terms.get(word) ?? 0);
+    }
+    if (tf === 0) continue;
+    matched += weight;
+    score += weight * saturate(tf);
+  }
+  if (matched === 0) return 0;
+  let coverage = matched / query.total;
+  for (const clause of clauses) {
+    let clauseMatched = 0;
+    let count = 0;
+    for (const [word, weight] of clause.weights) {
+      if (!fields.some((field) => field?.phrase.terms.has(word))) continue;
+      clauseMatched += weight;
+      count += 1;
+    }
+    if (count > 1) coverage = Math.max(coverage, 0.55 * (clauseMatched / clause.total));
+  }
+  // Reward corroborating terms with diminishing returns so one rare scene detail cannot lead.
+  const evidence = 1 - 0.25 * Math.exp(-matched / 5);
+  return (score / matched) * coverage ** 0.65 * evidence;
 }
 
-/**
- * A request that names a symbol the manifest exports is the strongest statement it can make, and
- * the situation scorer cannot see it: `godrays` is a name, and the index held only its prose. The
- * lead is gated on how much of the request the symbol accounts for, so a request that mentions
- * `view` or `read` in passing does not get answered with the `View` or `readFile` symbol.
- */
-const EXACT_SYMBOL_LEAD = 4;
-/**
- * A name match scores on how much of the request the name accounts for: a request that is mostly
- * one name leads at full strength, and a name mentioned inside a rich sentence barely moves. That
- * is what separates `Area3D trigger` (about the area) from `first person view with a weapon held
- * in the hand` (about the camera, which merely says "view") without a list of English homonyms.
- */
-const NAME_BASE_LEAD = 2;
-const NAME_SHARE_LEAD = 1.4;
-/**
- * A name the name index uses everywhere names nothing. `playtest` reaches 81 of its 1 062
- * documents and `Scene` 44, so a request mentioning either is asking about a scene or a playtest,
- * not for a symbol; `godrays` and `traa` reach 2 and `mergeParts`' own words reach 11 and 15.
- */
-const SYMBOL_WEIGHT_FLOOR = 4.2;
-/**
- * A one-word name spelled in passing also has to hold this much of the request. `depth` is rare
- * enough for the weight floor, and a request about underwater fog still says it once; below this
- * share the word is scenery and the row it would lead is a wrong answer at a weak score.
- */
-const SINGLE_WORD_SHARE_FLOOR = 0.3;
+function weakMatch(score: number): number {
+  return (RELEVANCE_FLOOR * score) / (1 + score);
+}
 
-interface ISymbolScore {
-  readonly score: number;
-  /** How much a name narrows this index, so `godrays` outranks `Scene` when both are spelled. */
+/** Identifier matching uses whole, unstemmed words and runs before field scoring. */
+function nameWords(value: string): string[] {
+  return splitSymbolCase(value.replace(/([a-zA-Z])(\d+)/gu, "$1 $2"))
+    .toLowerCase()
+    .split(/[^a-z]+/u)
+    .filter((word) => word.length > 1 && !STOP_WORDS.has(word));
+}
+
+function normaliseName(value: string): string {
+  return value.toLowerCase().replace(/[^a-z0-9]+/gu, "");
+}
+
+function spelledNames(value: string): ReadonlySet<string> {
+  const words = value.toLowerCase().match(/[a-z0-9]+/gu) ?? [];
+  const names = new Set<string>();
+  for (let start = 0; start < words.length; start += 1) {
+    let name = "";
+    for (const word of words.slice(start, start + 4)) {
+      name += word;
+      names.add(name);
+    }
+  }
+  return names;
+}
+
+function capabilityQuery(
+  situation: string,
+  idf: ReadonlyMap<string, number>,
+  scope: "mechanic" | "request",
+) {
+  const clauses = scope === "request" ? situation.split(/[,;:\n]|[.!?]+(?=\s|$)/u) : [situation];
+  const identifiers = situation.match(/[a-zA-Z0-9_$]+(?:\.[a-zA-Z0-9_$]+)*/gu) ?? [];
+  const verbatim = new Set(identifiers);
+  // A method spelling also names its exported class, such as `Scene.render`.
+  for (const identifier of identifiers) {
+    const qualified = /^([A-Z][\w$]*)\./u.exec(identifier)?.[1];
+    if (qualified !== undefined) verbatim.add(qualified);
+  }
+  // Rare props and scene details should leave room for the mechanic a request asks for.
+  return {
+    ...lexicalQuery(tokens(situation), idf, CAPABILITY_IDF_LIMIT),
+    clauses,
+    clauseQueries:
+      clauses.length < 2
+        ? []
+        : clauses
+            .map((clause) => lexicalQuery(tokens(clause), idf, CAPABILITY_IDF_LIMIT))
+            .filter((clause) => clause.weights.size > 1),
+    names: spelledNames(situation),
+    nameWords: nameWords(situation),
+    normalised: normaliseName(situation),
+    verbatim,
+  };
+}
+
+type ICapabilityQuery = ReturnType<typeof capabilityQuery>;
+
+interface IIndexedSymbol {
+  readonly name: string;
   readonly specificity: number;
+  readonly words: readonly string[];
 }
 
 function scoreSymbolName(
-  symbol: string,
-  situation: string,
-  queryTokens: ReadonlySet<string>,
-  weights: ReadonlyMap<string, number>,
-): ISymbolScore | undefined {
-  const name = [...new Set(nameWords(symbol))];
-  if (name.length === 0) return undefined;
-  const nameWeights = name.map((token) => weightOf(weights, token));
-  // Summing, not taking the max, is what makes `gpu particles` prefer `GPUParticles3D` over the
-  // generic `Particles`: the longer name accounts for more of the request.
-  const specificity = nameWeights.reduce((sum, weight) => sum + weight, 0);
-  const requestTotal = [...queryTokens].reduce((sum, token) => sum + weightOf(weights, token), 0);
-  const share = requestTotal === 0 ? 0 : specificity / requestTotal;
-  const nameScore = NAME_BASE_LEAD + NAME_SHARE_LEAD * Math.min(1, share);
-  // A request that spells the name — `add godrays`, `use rapier`, `GPUParticles3D sparks`,
-  // `use addInSlices for loading` — is asking for that symbol: equality with the whole name, not
-  // with what the stemmer leaves of it, which is how `afterPhysics` once answered "physics".
-  if (spellsName(situation, symbol)) {
-    if (normaliseName(situation) === normaliseName(symbol)) {
-      return { score: EXACT_SYMBOL_LEAD, specificity };
-    }
-    // A one-word name spelled inside a longer request is the weakest form of the signal: `view`,
-    // `scene`, `depth`, `velocity` and `connect` are ordinary English that a request uses without
-    // naming the symbol. It must then earn its place twice — the word has to be one the name index
-    // rarely uses, and it has to hold a real share of the request — or `camera follows the player
-    // with a third person view` answers the React `View` rectangle over the camera it asks for.
-    if (name.length === 1) {
-      if (weightOf(weights, name[0] ?? "") < SYMBOL_WEIGHT_FLOOR) return undefined;
-      if (share < SINGLE_WORD_SHARE_FLOOR) return undefined;
-      return { score: (NAME_BASE_LEAD + NAME_SHARE_LEAD) * Math.min(1, share), specificity };
-    }
-    return { score: nameScore, specificity };
+  entry: ICapabilityEntry,
+  { name, specificity, words }: IIndexedSymbol,
+  query: ICapabilityQuery,
+) {
+  if (query.normalised === name) return { score: 5, specificity };
+  if (query.verbatim.has(entry.symbol) && /[A-Z0-9.]/u.test(entry.symbol)) {
+    return { score: 4, specificity };
   }
-  // A one-word name has to be spelled; a name scattered through the prose needs the gates below.
-  if (name.length < 2) return undefined;
-  const queryWords = new Set(nameWords(situation));
-  if (!name.every((token) => queryWords.has(token))) return undefined;
-  // A name made of words the index uses everywhere names nothing; the share-scaled score already
-  // keeps a name mentioned in passing behind the mechanic the request is actually about.
-  if (Math.max(...nameWeights) < SYMBOL_WEIGHT_FLOOR) return undefined;
-  return { score: nameScore, specificity };
+
+  const share = Math.min(1, specificity / query.total);
+  if (query.names.has(name)) {
+    if (words.length > 1) return { score: 2 + share, specificity };
+    if (specificity >= 2.5 && share >= 0.3) return { score: 3.4 * share, specificity };
+  }
+  if (words.length > 1 && hasTokenSubsequence(query.nameWords, words)) {
+    return { score: 1.8 + share, specificity };
+  }
+  if (
+    words.length > 1 &&
+    specificity >= DISTINCTIVE_FLOOR &&
+    words.every((word) => query.nameWords.includes(word))
+  ) {
+    return { score: 0.55 + share * 0.6, specificity };
+  }
+  return undefined;
 }
 
-/**
- * The summary corroborates; it never outranks a situation. It is the one line written for a reader
- * who already knows the name (`ThreeNative equivalent for realism-effects traa`), so it answers a
- * retired or thinly described capability and stays quiet next to a real situation match.
- */
-const SUMMARY_WEIGHT = 0.4;
+const LIFECYCLE_INTENT = new Map<string, RegExp>([
+  [
+    "ctx.quit",
+    /\bquit\b|\b(?:close|exit)\s+(?:the\s+)?(?:app(?:lication)?|game|window)\b|\b(?:app(?:lication)?|game|window)\s+(?:is\s+)?(?:closed|closes)\b/iu,
+  ],
+  [
+    "leaveScene",
+    /\b(?:leave|leaving|exit|exiting|unload)\s+(?:(?:the|a|current)\s+)*(?:scene|level)\b/iu,
+  ],
+  [
+    "onLaunchFailure",
+    /\b(?:launch|startup|boot)\s+(?:fails?|failed|failure|error|crash)\b|\b(?:fail(?:s|ed)?|error|crash)\s+(?:to\s+|during\s+)?(?:launch|start|boot)\b/iu,
+  ],
+]);
 
-function summaryScore(
-  summary: string,
-  queryTokens: ReadonlySet<string>,
-  queryText: string,
-  weights: ReadonlyMap<string, number>,
-): number {
-  const candidate = scorePhrase(summary, queryTokens, queryText, weights);
-  return candidate === undefined ? 0 : candidate.score * SUMMARY_WEIGHT;
-}
-
-/** Every channel a capability answer can come from, combined; the symbol leads and explains itself. */
 interface ICapabilityScore {
   readonly matchedSituation: string;
   readonly score: number;
-  /** Only a name carries one; it orders two names spelled in the same request. */
   readonly specificity: number;
 }
 
 function capabilityScore(
-  query: readonly string[],
+  query: ICapabilityQuery,
   entry: ICapabilityEntry,
-  weights: ReadonlyMap<string, number>,
-  nameWeights: ReadonlyMap<string, number>,
-  situation: string,
+  nameInfo: IIndexedSymbol,
+  fields: readonly (readonly IIndexedPhrase[])[],
+  scope: "mechanic" | "request",
 ): ICapabilityScore {
-  const situations = {
-    ...situationScore(query, entry.situations, entry.aliases, weights),
-    specificity: 0,
-  };
-  if (query.length === 0) return situations;
-  const queryTokens = new Set(query);
-  const symbol = scoreSymbolName(entry.symbol, situation, queryTokens, nameWeights);
-  const summary = summaryScore(entry.summary, queryTokens, query.join(" "), nameWeights);
-  const symbolScore = symbol?.score ?? 0;
-  const best = Math.max(situations.score, symbolScore, summary);
-  if (best <= situations.score) return situations;
-  if (symbol !== undefined && symbolScore >= best) {
-    return { matchedSituation: entry.symbol, score: symbolScore, specificity: symbol.specificity };
+  const symbol = scoreSymbolName(entry, nameInfo, query);
+  const intent = LIFECYCLE_INTENT.get(entry.symbol);
+  const explicit =
+    intent === undefined ||
+    (scope === "mechanic" && entry.symbol !== "ctx.quit") ||
+    query.verbatim.has(entry.symbol) ||
+    query.normalised === nameInfo.name ||
+    query.clauses.some((clause) => intent.test(clause));
+  if (symbol !== undefined && explicit && symbol.score >= 1.8) {
+    return { ...symbol, matchedSituation: entry.symbol };
   }
-  // A summary-only answer still needs a readable explanation, and the entry's own first situation
-  // is the sentence a reader recognises; an entry with no situations keeps the summary itself.
+  const name = bestField(fields[0], query);
+  const alias = bestField(fields[1], query, true);
+  const situation = bestField(fields[2], query);
+  const summary = bestField(fields[3], query);
+  const anchoredName =
+    name !== undefined &&
+    (name.count > 1 || (name.phrase.words[0] === query.words[0] && (situation?.count ?? 0) > 1));
+  const lexical = bm25f(
+    query,
+    [anchoredName ? name : undefined, alias, situation, summary],
+    query.clauseQueries,
+  );
+  const distinctive =
+    (alias?.distinctive && entry.situations.length > 0) ||
+    situation?.distinctive ||
+    summary?.distinctive;
+  const score = distinctive && explicit ? lexical : weakMatch(lexical);
+  if (symbol !== undefined && explicit && symbol.score > score) {
+    return { ...symbol, matchedSituation: entry.symbol };
+  }
   return {
-    matchedSituation: situations.matchedSituation || entry.situations[0] || entry.summary,
-    score: best,
+    matchedSituation:
+      lexical === 0 ? "" : (situation?.phrase.text ?? entry.situations[0] ?? entry.summary),
+    score,
     specificity: 0,
   };
 }
@@ -906,7 +842,6 @@ function notOwnedSituationScore(
   situations: readonly string[],
 ): { readonly matchedSituation: string; readonly score: number } {
   if (query.length === 0) return { matchedSituation: "", score: 0 };
-  const queryText = query.join(" ");
   let best = 0;
   let matchedSituation = "";
   for (const situation of situations) {
@@ -914,7 +849,7 @@ function notOwnedSituationScore(
     const overlap = new Set(phrase.filter((token) => query.includes(token))).size;
     const score = overlap / Math.max(query.length, phrase.length);
     const phraseBonus =
-      phrase.join(" ").includes(queryText) || queryText.includes(phrase.join(" ")) ? 1 : 0;
+      hasTokenSubsequence(query, phrase) || hasTokenSubsequence(phrase, query) ? 1 : 0;
     if (overlap < (query.length >= 4 ? 2 : 1) && phraseBonus === 0) continue;
     const candidate = score + phraseBonus;
     if (candidate > best) {
@@ -1060,20 +995,43 @@ function withReferenceTools(situation: string, response: ICapabilitySearchRespon
   };
 }
 
-/** The token weights depend only on the entries, and the cached manifest keeps one entries array,
- * so they are computed once per manifest instead of once per search. */
-const weightCache = new WeakMap<
+function indexCapabilities(entries: readonly ICapabilityEntry[]) {
+  const { documents, idf } = lexicalIndex(
+    entries,
+    (entry) => [
+      [entry.symbol],
+      entry.aliases,
+      entry.situations,
+      entry.summary.split(/(?<=[.!?])\s+/u),
+    ],
+    [2.8, 2.1, 1.25, 0.4],
+  );
+  return {
+    entries: entries.map((entry, index) => {
+      const words = nameWords(entry.symbol);
+      const specificity = words.reduce((sum, word) => sum + (idf.get(stem(word)) ?? 0), 0);
+      return {
+        entry,
+        fields: documents[index] ?? [],
+        symbol: { name: normaliseName(entry.symbol), specificity, words },
+      };
+    }),
+    idf,
+  };
+}
+
+const capabilityIndexes = new WeakMap<
   readonly ICapabilityEntry[],
-  { weights: ReadonlyMap<string, number>; nameWeights: ReadonlyMap<string, number> }
+  ReturnType<typeof indexCapabilities>
 >();
 
-function manifestWeights(entries: readonly ICapabilityEntry[]) {
-  let cached = weightCache.get(entries);
-  if (cached === undefined) {
-    cached = { weights: tokenWeights(entries), nameWeights: nameTokenWeights(entries) };
-    weightCache.set(entries, cached);
+function capabilityIndex(entries: readonly ICapabilityEntry[]) {
+  let index = capabilityIndexes.get(entries);
+  if (index === undefined) {
+    index = indexCapabilities(entries);
+    capabilityIndexes.set(entries, index);
   }
-  return cached;
+  return index;
 }
 
 function searchMechanics(
@@ -1083,34 +1041,32 @@ function searchMechanics(
   /** False when a starter kit already answers: a suggestion beside a definite kit is noise. */
   suggest = true,
 ): ICapabilitySearchResponse {
-  const query = tokens(situation);
   const limit = scope === "request" ? MAX_COMPLETE_REQUEST_RESULTS : MAX_SITUATION_RESULTS;
-  const { weights, nameWeights } = manifestWeights(manifest.entries);
-  const notOwned = notOwnedMatch(manifest, query);
+  const { entries, idf } = capabilityIndex(manifest.entries);
+  const query = capabilityQuery(situation, idf, scope);
+  const notOwned = notOwnedMatch(manifest, query.words);
   const specific =
-    notOwned !== undefined && isSpecificNotOwnedMatch(query, notOwned.matchedSituation);
+    notOwned !== undefined && isSpecificNotOwnedMatch(query.words, notOwned.matchedSituation);
   // A not-owned entry can name an optional engine package (`procedural-environment`): the framework
   // has no such system, but that package is indexed here. Its own exports answer the query, beside
   // the install line; only a package the manifest does not index ends the search at `none`.
   const optionalPackage = specific ? `@threenative/${notOwned.entry.id}` : undefined;
-  const candidates =
-    optionalPackage === undefined
-      ? manifest.entries
-      : manifest.entries.filter(
-          (entry) =>
-            entry.importPath === optionalPackage ||
-            entry.importPath.startsWith(`${optionalPackage}/`),
-        );
-  if (specific && candidates.length === 0) {
+  const includesEntry = (entry: ICapabilityEntry) =>
+    optionalPackage === undefined ||
+    entry.importPath === optionalPackage ||
+    entry.importPath.startsWith(`${optionalPackage}/`);
+  if (specific && !manifest.entries.some(includesEntry)) {
     return { guidance: notOwned.entry.guidance, results: [], verdict: "none" };
   }
-  // The not-owned match already tied the query to the package, so any export of it that matches at
-  // all is relevant: "swaying trees" shares only "tree" with bakeVegetation, under the general floor.
+  // A specific not-owned match already ties the request to the optional package.
   const floor = optionalPackage === undefined ? RELEVANCE_FLOOR : Number.MIN_VALUE;
-  // Scored once and split by the floor afterwards: the rows an author is shown as suggestions are
-  // the ones this search already computed and used to throw away (PRD-063).
-  const scored = candidates
-    .map((entry) => ({ entry, ...capabilityScore(query, entry, weights, nameWeights, situation) }))
+  const seen = new Set<string>();
+  const scored = entries
+    .flatMap(({ entry, fields, symbol }) =>
+      includesEntry(entry)
+        ? [{ entry, ...capabilityScore(query, entry, symbol, fields, scope) }]
+        : [],
+    )
     .filter(({ matchedSituation }) => matchedSituation.length > 0)
     .sort(
       (left, right) =>
@@ -1120,12 +1076,12 @@ function searchMechanics(
           `${right.entry.importPath}:${right.entry.symbol}`,
         ),
     )
-    .filter(
-      (candidate, index, all) =>
-        all.findIndex(
-          (other) => capabilitySearchKey(other.entry) === capabilitySearchKey(candidate.entry),
-        ) === index,
-    );
+    .filter(({ entry }) => {
+      const key = capabilitySearchKey(entry);
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
   const results = scored
     .filter(({ score }) => score >= floor)
     .slice(0, limit)
@@ -1167,10 +1123,47 @@ function searchMechanics(
   };
 }
 
+function editDistance(a: string, b: string): number {
+  let costs = Array.from({ length: b.length + 1 }, (_, index) => index);
+  for (let i = 0; i < a.length; i += 1) {
+    const next = [i + 1];
+    for (let j = 0; j < b.length; j += 1) {
+      next.push(
+        Math.min(
+          (next[j] ?? 0) + 1,
+          (costs[j + 1] ?? 0) + 1,
+          (costs[j] ?? 0) + (a[i] === b[j] ? 0 : 1),
+        ),
+      );
+    }
+    costs = next;
+  }
+  return costs[b.length] ?? a.length;
+}
+
+function nearbySymbols(symbol: string, entries: readonly ICapabilityEntry[]): string {
+  const sought = normaliseName(symbol);
+  if (sought.length < 3 || sought.length > 80) return "";
+  const names = [...new Set(entries.map((entry) => entry.symbol))];
+  const best = names
+    .map((name) => {
+      const full = normaliseName(name);
+      const member = normaliseName(name.split(".").at(-1) ?? name);
+      const distance = [full, member]
+        .filter((part) => Math.abs(part.length - sought.length) <= 2)
+        .reduce((lowest, part) => Math.min(lowest, editDistance(part, sought)), 3);
+      return { distance, name };
+    })
+    .filter(({ distance }) => distance <= (sought.length >= 7 ? 2 : 1))
+    .sort((a, b) => a.distance - b.distance || a.name.localeCompare(b.name))
+    .slice(0, 3);
+  return best.length ? ` Did you mean ${best.map(({ name }) => `'${name}'`).join(" or ")}?` : "";
+}
+
 /**
  * Every manifest entry named `symbol` (optionally in one `importPath`); throws when there is none.
  * Two packages can export one name (`createThreeObject` from raw-unreal and ueformat), so a lookup
- * by name alone must return both — answering with the first hides the second from detail.
+ * by name alone must return both.
  */
 export function capabilityDetails(
   symbol: string,
@@ -1179,14 +1172,13 @@ export function capabilityDetails(
 ): readonly ICapabilityDetail[] {
   if (typeof symbol !== "string" || symbol.trim().length === 0)
     throw new Error("engine_capability_detail requires a non-empty symbol string.");
-  const matches = loadCapabilityManifest(manifestFile).entries.filter(
-    (candidate) =>
-      candidate.symbol === symbol &&
-      (importPath === undefined || candidate.importPath === importPath),
+  const entries = loadCapabilityManifest(manifestFile).entries.filter(
+    (candidate) => importPath === undefined || candidate.importPath === importPath,
   );
+  const matches = entries.filter((candidate) => candidate.symbol === symbol);
   if (matches.length === 0)
     throw new Error(
-      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.`,
+      `Unknown engine capability '${symbol}'${importPath === undefined ? "" : ` in '${importPath}'`}.${nearbySymbols(symbol, entries)}`,
     );
   return matches;
 }
@@ -1421,26 +1413,30 @@ async function searchReferences(situation: string, limit = 5) {
         guidance: "Explore this repository, then call engine_save_reference.",
       })),
   ];
-  const phrases = candidates.map((stub) => ({
-    situations: [stub.name, stub.summary, ...stub.tags],
-    aliases: [stub.title],
-  }));
-  const weights = tokenWeights(phrases);
-  const query = tokens(situation);
-  const querySet = new Set(query);
-  const queryText = query.join(" ");
-  // The readable score is kept beside the result because it survives a miss: `situationScore`
-  // empties `matchedSituation` for a phrase that no distinctive word carried, which is exactly the
-  // row a suggestion needs, and the score it reached is what ranks it (PRD-063).
+  const { documents, idf } = lexicalIndex(
+    candidates,
+    (stub) => [[stub.name], [stub.title], stub.tags, [stub.summary]],
+    [2.4, 1.6, 1.2, 0.7],
+  );
+  const query = lexicalQuery(tokens(situation), idf);
   const scored = candidates.map((stub, index) => {
-    const situations = phrases[index]?.situations ?? [];
-    const readable = scoreReadableSituations(situations, querySet, queryText, weights);
-    const content = answeredSituation(readable, 0);
-    // A shared game title must not erase agreement with the requested mechanic.
-    const title = scoreAliases(phrases[index]?.aliases ?? [], querySet, queryText, weights);
+    const matches = documents[index]?.map((field) => bestField(field, query)) ?? [];
+    const [name, title, tag, summary] = matches;
+    const score = bm25f(query, matches);
+    const content = [name, tag, summary].reduce<IFieldMatch | undefined>(
+      (best, match) =>
+        match !== undefined && (best === undefined || match.score > best.score) ? match : best,
+      undefined,
+    );
+    const matched = content ?? title;
+    const relevant = matches.some((match) => match?.distinctive);
     return {
-      near: { score: readable.bestReadableScore, situation: readable.bestReadableSituation },
-      stub: { ...stub, ...content, score: content.score + title },
+      near: { score, situation: matched?.phrase.text ?? "" },
+      stub: {
+        ...stub,
+        matchedSituation: relevant ? (matched?.phrase.text ?? "") : "",
+        score: relevant ? score : 0,
+      },
     };
   });
   const results = scored
@@ -1495,6 +1491,13 @@ function referenceSuggestions(
     }));
 }
 
+function searchSituation(tool: string, argumentsValue: Record<string, unknown>): string {
+  const { situation, query } = argumentsValue;
+  if (typeof situation === "string" && situation.trim().length > 0) return situation;
+  const hint = query === undefined ? "" : " Pass 'situation' instead of 'query'.";
+  throw new Error(`${tool} requires a string 'situation' argument with text.${hint}`);
+}
+
 async function handleToolCall(
   params: Record<string, unknown>,
   manifestFile: string,
@@ -1505,23 +1508,22 @@ async function handleToolCall(
   // must come back as a tool error the authoring agent can read, not a vacuous empty search
   // that looks like the engine having no such capability.
   if (name === "engine_search_capabilities") {
-    if (typeof argumentsValue.situation !== "string")
-      throw new Error("engine_search_capabilities requires a string 'situation' argument.");
+    const situation = searchSituation(name, argumentsValue);
     const scope = argumentsValue.scope === undefined ? "mechanic" : argumentsValue.scope;
     if (scope !== "request" && scope !== "mechanic")
       throw new Error("engine_search_capabilities scope must be 'request' or 'mechanic'.");
-    const response = searchCapabilities(argumentsValue.situation, manifestFile, scope);
+    const response = searchCapabilities(situation, manifestFile, scope);
     logToolCall({
       results: response.results.map((result) => result.symbol),
       scope,
-      situation: argumentsValue.situation,
+      situation,
       tool: name,
       verdict: response.verdict,
     });
     // Up to three reference stubs on every search; an offline host still gets its capability hits.
     return toolText({
       ...response,
-      references: await searchReferences(argumentsValue.situation, 3).catch((error: unknown) => ({
+      references: await searchReferences(situation, 3).catch((error: unknown) => ({
         results: [],
         guidance: `references unavailable: ${String(error)}`,
       })),
@@ -1554,12 +1556,11 @@ async function handleToolCall(
     return toolText(detail);
   }
   if (name === "engine_search_references") {
-    if (typeof argumentsValue.situation !== "string" || !argumentsValue.situation.trim())
-      throw new Error("engine_search_references requires a non-empty string 'situation'.");
-    const response = await searchReferences(argumentsValue.situation);
+    const situation = searchSituation(name, argumentsValue);
+    const response = await searchReferences(situation);
     logToolCall({
       tool: name,
-      situation: argumentsValue.situation,
+      situation,
       results: response.results.map((entry) => entry.id),
     });
     return toolText(response);
@@ -1570,7 +1571,9 @@ async function handleToolCall(
       typeof argumentsValue.id !== "string" ||
       (argumentsValue.kind !== "node" && argumentsValue.kind !== "card")
     )
-      throw new Error("engine_reference_detail requires game, id and kind (node or card).");
+      throw new Error(
+        'engine_reference_detail requires "game" and "id" strings and "kind":"node" or "kind":"card".',
+      );
     let game = await loadReferenceGame(argumentsValue.game);
     const { id, kind } = argumentsValue;
     let entry =

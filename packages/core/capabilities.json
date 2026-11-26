@@ -905,6 +905,7 @@
       "signature": "export class AnimationComposer { … }",
       "situations": [
         "synchronize walk/run/strafe clips with different durations",
+        "blend walking and running clips smoothly on a rigged character skeleton",
         "reload with the upper body while locomotion continues",
         "apply an additive recoil clip with an explicit reference pose",
         "route root motion through collision-aware character movement"
@@ -1040,6 +1041,8 @@
       "situations": [
         "play a sound effect with a volume bus",
         "mute or adjust a category of game audio",
+        "fade background music volume while a pause menu is open",
+        "play a different looping music track when the scene or quest changes",
         "keep a gunshot audible at 20 metres by tuning positional falloff",
         "hold a loud mix below clipping with a compressor on the bus",
         "play cannon, wave, and ship sound effects"
@@ -1503,6 +1506,7 @@
       "situations": [
         "preload models, textures, or audio before a scene enters",
         "keep downloaded web assets on disk between visits",
+        "load and cache a PNG image or texture and assign it to a material map or UI marker",
         "download the next scene before the player gets there",
         "free the disk cache from a settings menu",
         "prefetch assets into the Cache Storage disk cache of a large web game",
@@ -1624,7 +1628,8 @@
       "situations": [
         "daytime sky, sun and shadows for a large outdoor map",
         "distant terrain should fade into the sky instead of a coloured wall",
-        "match a Blender look-dev scene's sun, sky and exposure in the game"
+        "match a Blender look-dev scene's sun, sky and exposure in the game",
+        "keep distance fog consistent across an outdoor map"
       ],
       "summary": "An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.",
       "supersedes": [],
@@ -1690,8 +1695,11 @@
       "situations": [
         "start a ThreeNative game from src/game.ts",
         "register physics and gameplay plugins",
+        "bind a reload input action for a game's magazine and reserve ammo",
         "let the player zoom the camera with a wheel, pinch, or gamepad axis",
-        "frame a camera behind the player"
+        "frame a camera behind the player",
+        "use chase camera framing behind a race car",
+        "make the player readable with an angled arena camera"
       ],
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
@@ -2279,6 +2287,7 @@
       "situations": [
         "emit sparks, smoke, or other transient effects",
         "update many small visual particles",
+        "emit floating fireflies or drifting dust motes",
         "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
         "fire a cannonball projectile with cannon smoke particles",
@@ -3076,7 +3085,8 @@
         "let the player click on a thing in the world",
         "show a 3D object while a pointer hovers over it",
         "handle touch and mouse taps on a loaded model without naming its child meshes",
-        "drag a crate or prop with the mouse or a finger"
+        "drag a crate or prop with the mouse or a finger",
+        "click points of interest to inspect them as the player explores"
       ],
       "summary": "Dispatch portable pointer events from the game surface to registered Three.js objects.",
       "supersedes": [],
@@ -3657,8 +3667,10 @@
       "signature": "export class ScatterField3D extends Group { … }",
       "situations": [
         "scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor",
-        "stream instanced props of any baked mesh round the player without one draw per prop",
-        "place rocks, debris or plants on a heightfield with distance thinning and level of detail"
+        "scatter fallen logs, twigs and leaf litter on the forest floor",
+        "stream instanced props around the player without one draw per prop",
+        "place rocks, debris or plants on a heightfield with distance thinning and level of detail",
+        "stream instanced props of any baked mesh round the player without one draw per prop"
       ],
       "summary": "Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels of detail, from the game's own placement rule.",
       "supersedes": [],
@@ -3676,7 +3688,8 @@
       "situations": [
         "add a playable level or menu scene",
         "move scene setup and per-frame gameplay out of the entry point",
-        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs"
+        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs",
+        "interpolate transforms in Scene.render using ctx.alpha after the fixed update"
       ],
       "summary": "Implement a portable Godot-shaped game scene lifecycle.",
       "supersedes": [],
@@ -3737,7 +3750,8 @@
         "delay an enemy patrol transition",
         "run a callback every simulation tick",
         "tween a numeric property with a game-owned curve",
-        "a countdown timer: end the level when its time limit runs out"
+        "a countdown timer: end the level when its time limit runs out",
+        "tick a race start countdown and unlock the controls on GO"
       ],
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
@@ -4588,6 +4602,8 @@
         "shadow map too coarse over a big terrain",
         "one directional light shadow for a whole open world",
         "shadows shimmer when the camera moves",
+        "cache static casters in the shadow map and update moving casters separately",
+        "cast shadows from streamed instanced trees onto nearby terrain as the player moves",
         "shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero"
       ],
       "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels after the one refresh caused by tracking or untracking them. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
@@ -4659,6 +4675,7 @@
       "situations": [
         "float a boat on waves",
         "make water move",
+        "animate open ocean waves with analytic displacement and use domain warp to break repeating patterns",
         "find the water surface height at a point"
       ],
       "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped",
@@ -4732,7 +4749,8 @@
       "signature": "export class WorldEnvironment { … }",
       "situations": [
         "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
-        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look",
+        "set night scene lighting and exposure for a foggy city with emissive signs"
       ],
       "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
       "supersedes": [],
@@ -5516,6 +5534,7 @@
       "signature": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
       "situations": [
         "show score or health in a UI rendered over the game surface",
+        "update a health bar after the player takes damage",
         "keep a HUD in step with the game without re-rendering on the loop",
         "publish game state to a HUD in another realm",
         "keep a web and native UI mirror on the same coalesced state stream"
@@ -6841,6 +6860,7 @@
       "signature": "export class SnowField { … }",
       "situations": [
         "leave footprints, tracks and tyre ruts in snow that persist and fill in over time",
+        "deform snowy terrain under the walking character and keep the footprints visible",
         "let a fresh snowfall slowly fill older tracks back in as the field recovers",
         "let a pushed sphere carve a connected track and a dropped one settle into a crater",
         "store snow deformation that rendered geometry and collision both read",
@@ -7156,7 +7176,10 @@
       "signature": "export class Area3D { … }",
       "situations": [
         "detect when an enemy enters a trigger area",
-        "react to a player entering a zone"
+        "react to a player entering a zone",
+        "detect when a ball or moving body rolls into a goal zone",
+        "trigger a pickup when the player overlaps an item without blocking movement",
+        "apply damage when an enemy projectile overlaps the player"
       ],
       "summary": "Detect overlaps without turning the body into a moving collider.",
       "supersedes": [],
@@ -7223,6 +7246,7 @@
       "signature": "export function buildStaticColliders( context: IStaticColliderContext, root: Object3D, filter?: StaticColliderFilter, ): readonly RigidBody3D[] { … }",
       "situations": [
         "make the level I built stop the player",
+        "keep the player from walking through a landmark mesh or solid scenery prop",
         "turn a cathedral or map scene into static collision"
       ],
       "summary": "Build fixed trimesh bodies from the meshes a game authored in a scene root.",
@@ -7373,6 +7397,7 @@
       "signature": "export class PhysicsDirectSpaceState3D { … }",
       "situations": [
         "raycast for visibility or aiming",
+        "cast a hitscan ray for each pellet in a shotgun spread",
         "find bodies inside a shape or point query"
       ],
       "summary": "Query the physics world without creating a body.",
@@ -7419,6 +7444,7 @@
         "give a crate or prop physical motion",
         "a ball rolls across the floor",
         "create a body that collides with a character",
+        "push an object to a destination through simulated contact with a character or another body",
         "fire physical cannonballs that collide with ships or scenery",
         "fire a cannonball projectile with cannon smoke particles",
         "a bullet passes through a wall"
@@ -9266,7 +9292,10 @@
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }",
-      "situations": ["write a custom browser capture without owning Xvfb or Chromium cleanup"],
+      "situations": [
+        "write a custom browser capture without owning Xvfb or Chromium cleanup",
+        "capture a headed WebGPU screenshot from a settled camera pose"
+      ],
       "summary": "Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.",
       "supersedes": [],
       "symbol": "withBrowserCapture"
@@ -9350,6 +9379,7 @@
       "signature": "export function adviseThreeRenderWorkload(input: IRenderAdvisorInput): IRenderAdvisorReport { … }",
       "situations": [
         "diagnose a slow Three.js scene",
+        "diagnose a running game's rendering performance from playtest workload measurements",
         "choose a render optimization from observed workload data"
       ],
       "summary": "Explain which render workloads should be collapsed or retained.",
@@ -9790,11 +9820,14 @@
         "trees",
         "palm trees",
         "street trees along a road",
+        "bushes",
+        "shrubs",
         "bushes and shrubs",
         "grass, flowers and ferns as ground cover",
         "dead trees, fallen logs and stumps",
         "low poly tree with level of detail",
         "realistic textured tree model",
+        "foliage",
         "foliage and vegetation models",
         "pine, oak or spruce forest trees",
         "grass tufts and clumps"
@@ -9819,7 +9852,8 @@
         "procedural oak tree GLB with level of detail for a game forest",
         "tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute",
         "a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders",
-        "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover"
+        "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover",
+        "bake swaying trees to GLB props for the scene"
       ],
       "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures: Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.",
       "supersedes": [],
@@ -9896,7 +9930,8 @@
       "situations": [
         "what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island",
         "list the rocks, cliffs and mountains for a biome, or every plant that grows there",
-        "find a tree or plant by name or latin name, such as pine, palm, cactus or fern"
+        "find a tree or plant by name or latin name, such as pine, palm, cactus or fern",
+        "find tropical island vegetation by habitat and species"
       ],
       "summary": "Find the nature elements to bake, by biome, kind or words: trees, ground cover, forest-floor debris and rock forms (boulders, cliffs, sea stacks, mesas, arches, mountains), each with the exact bake call.",
       "supersedes": [],
@@ -11074,7 +11109,10 @@
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function scatterProps( data: IOrderedScatterField, focus: { … }",
-      "situations": ["bake a biome that says `\"stream\": \"ordered\"`"],
+      "situations": [
+        "bake a biome that says `\"stream\": \"ordered\"`",
+        "place procedural foliage by altitude, terrain slope, water and clearings"
+      ],
       "summary": "Every placement, for one world, from one seed: the game's own rule set, in its own draw order.",
       "supersedes": [],
       "symbol": "scatterProps"
@@ -13445,7 +13483,7 @@
     {
       "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-environment, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
       "id": "procedural-environment",
-      "situations": ["foliage wind sway shader", "wind animation render system for leaves"]
+      "situations": ["runtime wind sway shader", "wind animation render system for leaves"]
     },
     {
       "guidance": "The framework owns no IK system. Copy the MIT source in examples/integrations/ik/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/ik) into your src/ and follow its README: it needs the closed-chain-ik/core dependency its own package.json pins, three keeps the only rendered pose, and new ConstrainedIK({root, joints: [{bone, axes, min, max}], effectors: [{bone, orientation?}], iterations, positionTolerance, rotationTolerance}) admits direct Bone hierarchies under rigid or positive-uniform-scale parents (shear, reflection, non-uniform or singular scale throws before the pose is touched). Call ik.update(targets) once per frame after AnimationPlayer/mixer and before render, with one world-space metre position per effector in order plus an optional quaternion only where the effector declared orientation: true; it never starts a loop, never moves the root and installs no bone translation or root-motion controller. Joint limits are X/Y/Z offsets relative to the animation pose supplied that call, so reapply the animation pose before solving to avoid accumulation, and the solver only rotates: bone lengths hold to under 1e-15 m. Iterations are 1-128; an unreachable goal returns converged false with finite residuals and never throws, a solver failure restores the original pose, and dispose() at scene teardown. Worked demo: the rifle grip game in examples/constrained-ik/, which plays on web, desktop native and Android.",

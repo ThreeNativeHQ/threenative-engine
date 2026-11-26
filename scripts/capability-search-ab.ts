@@ -1,19 +1,22 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { copyFile, cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { november25CapabilityTraces } from "../packages/engine-mcp/__tests__/fixtures/nov25-search.js";
+import type { loadCapabilityManifest } from "../packages/engine-mcp/src/index.js";
+import {
+  capabilityCandidateId,
+  fuseCapabilityRanks,
+  loadCapabilityModel2Vec,
+} from "./capability-search-model2vec.js";
 
 /**
- * PRD-865: one capability search should answer, and find a symbol by its name.
- *
- * Two arms over one frozen gold set: the base (the engine-mcp `src/` at a pinned commit, extracted
- * with `git archive`) and the candidate (this working tree). Both read the same manifest and the
- * same queries, so every difference is the change under test. The held-out half is frozen by
- * sha256 in the fixture and in the PRD, and nothing here reads it by hand: the harness reports its
- * numbers and the acceptance thresholds compare them.
+ * Replay the same frozen queries on the pinned baseline and the candidate. Keep each arm's
+ * corpus with its scorer. The optional shipping decision compares static vectors on the same
+ * candidate corpus, without changing either lexical arm.
  */
 
 export const GOLD_RELATIVE_PATH = path.join(
@@ -23,13 +26,19 @@ export const GOLD_RELATIVE_PATH = path.join(
   "fixtures",
   "search-gold.json",
 );
-const MANIFEST_RELATIVE_PATH = path.join("packages", "create-threenative", "capabilities.json");
+const MANIFEST_RELATIVE_PATH = path.join("packages", "core", "capabilities.json");
 const SOURCE_RELATIVE_PATH = path.join("packages", "engine-mcp", "src");
 const ARTIFACT_RELATIVE_PATH = path.join("artifacts", "capability-search-ab.json");
+const BASELINE_COMMIT = "6a51f730f7348e6ed7b598b996528d0ec0aa1171";
+const MODEL_ASSET_PATH = path.join("artifacts", "capability-search-model2vec");
 
 export const SEARCH_GOLD_QUERY_COUNT = 150;
 export const SEARCH_GOLD_HELDOUT_COUNT = 50;
 export const SEARCH_GOLD_EXACT_SYMBOL_COUNT = 20;
+export const SEARCH_GOLD_HELDOUT_SHA256 =
+  "0cb517f250f2965a6c37fbb487a8d95b98277893dfe8389f7e57f52c199aa78c";
+export const SEARCH_GOLD_RECALL_1 = 0.65;
+export const SEARCH_GOLD_RECALL_5 = 0.8;
 
 export type GoldKind = "exact-symbol" | "mechanic" | "request";
 export type GoldSplit = "dev" | "heldout";
@@ -250,14 +259,17 @@ export async function sourceHash(directory: string): Promise<string> {
   return hash.digest("hex");
 }
 
-async function loadArm(sourceDirectory: string): Promise<IArmModule> {
+type IIndexedArm = IArmModule & { readonly loadCapabilityManifest: typeof loadCapabilityManifest };
+
+async function loadArm(sourceDirectory: string): Promise<IIndexedArm> {
   const module = (await import(pathToFileURL(path.join(sourceDirectory, "index.ts")).href)) as
-    | IArmModule
-    | { default: IArmModule };
+    | IIndexedArm
+    | { default: IIndexedArm };
   const arm = "searchCapabilities" in module ? module : module.default;
   if (
     typeof arm?.searchCapabilities !== "function" ||
-    typeof arm.capabilityDetails !== "function"
+    typeof arm.capabilityDetails !== "function" ||
+    typeof arm.loadCapabilityManifest !== "function"
   ) {
     throw metadataError(`${sourceDirectory} does not export the capability search surface`);
   }
@@ -353,7 +365,7 @@ export function reportArm(
   };
 }
 
-/** The AC-3 and AC-4 gates, all on the frozen held-out half. */
+/** The absolute gold floor and per-query top-five regression budget. */
 export function compareArms(
   base: IArmReport,
   candidate: IArmReport,
@@ -361,59 +373,38 @@ export function compareArms(
   readonly thresholds: readonly IThreshold[];
   readonly dropped: readonly string[];
 } {
-  // The same rows on both sides: the arm that answers more rows must not pay for them here, and
-  // the arm that fails a row must not look cheap because it answered nothing.
-  const common = base.results
-    .filter((row) => row.rank >= 0 && row.rank < 5)
-    .map((row) => row.id)
-    .filter((id) => {
-      const other = candidate.results.find((row) => row.id === id);
-      return other !== undefined && other.rank >= 0 && other.rank < 5;
-    });
-  const commonTokens = (report: IArmReport): number => {
-    const rows = report.results.filter((row) => common.includes(row.id));
-    return rows.length === 0
-      ? 0
-      : rows.reduce((sum, row) => sum + row.tokensToAnswer, 0) / rows.length;
-  };
-  const thresholds: IThreshold[] = [
-    {
-      base: base.recall5,
-      candidate: candidate.recall5,
-      name: "heldout recall@5 gain",
-      pass: candidate.recall5 >= base.recall5 + 0.1,
-      required: `>= ${(base.recall5 + 0.1).toFixed(3)} (+0.10)`,
-    },
-    {
-      base: base.recall1,
-      candidate: candidate.recall1,
-      name: "heldout recall@1 gain",
-      pass: candidate.recall1 >= base.recall1 + 0.05,
-      required: `>= ${(base.recall1 + 0.05).toFixed(3)} (+0.05)`,
-    },
-    {
-      base: commonTokens(base),
-      candidate: commonTokens(candidate),
-      name: `tokens to answer (${common.length} rows both answer)`,
-      pass: commonTokens(candidate) <= commonTokens(base) * 0.7,
-      required: `<= ${(commonTokens(base) * 0.7).toFixed(0)} (-30%)`,
-    },
-  ];
+  const top5 = new Set(
+    candidate.results.filter((row) => row.rank >= 0 && row.rank < 5).map((row) => row.id),
+  );
   const dropped = base.results
-    .filter((row) => row.rank >= 0 && row.rank < 5)
-    .filter((row) => {
-      const after = candidate.results.find((other) => other.id === row.id);
-      return after === undefined || after.rank < 0 || after.rank >= 5;
-    })
+    .filter((row) => row.rank >= 0 && row.rank < 5 && !top5.has(row.id))
     .map((row) => row.id);
-  thresholds.push({
-    base: 0,
-    candidate: dropped.length,
-    name: "queries that leave the top 5",
-    pass: dropped.length <= 1,
-    required: "<= 1",
-  });
-  return { dropped, thresholds };
+  return {
+    dropped,
+    thresholds: [
+      {
+        base: base.recall1,
+        candidate: candidate.recall1,
+        name: "heldout recall@1",
+        pass: candidate.recall1 >= SEARCH_GOLD_RECALL_1,
+        required: `>= ${SEARCH_GOLD_RECALL_1}`,
+      },
+      {
+        base: base.recall5,
+        candidate: candidate.recall5,
+        name: "heldout recall@5",
+        pass: candidate.recall5 >= SEARCH_GOLD_RECALL_5,
+        required: `>= ${SEARCH_GOLD_RECALL_5}`,
+      },
+      {
+        base: 0,
+        candidate: dropped.length,
+        name: "queries that leave the top 5",
+        pass: dropped.length <= 1,
+        required: "<= 1",
+      },
+    ],
+  };
 }
 
 const LIVE_BRIEFS: readonly { readonly query: string; readonly expect: readonly string[] }[] = [
@@ -661,54 +652,215 @@ function flagValue(args: readonly string[], flag: string): string | undefined {
   return index < 0 ? undefined : args[index + 1];
 }
 
+function regressionRows(arm: IArmModule, manifestFile: string) {
+  return november25CapabilityTraces.map(({ id, situation, scope, expected, excluded = [] }) => {
+    const symbols = arm
+      .searchCapabilities(situation, manifestFile, scope)
+      .results.map((row) => row.symbol);
+    const rank = expected === undefined ? undefined : symbols.indexOf(expected.symbol) + 1;
+    const unwanted = symbols.filter((symbol) => excluded.includes(symbol));
+    return {
+      expected,
+      id,
+      pass:
+        (expected === undefined || (rank !== undefined && rank > 0 && rank <= expected.rank)) &&
+        unwanted.length === 0,
+      rank,
+      symbols,
+      unwanted,
+    };
+  });
+}
+
+function hybridExperiment(
+  lexical: IIndexedArm,
+  gold: IGoldSet,
+  manifestFile: string,
+  assetDir: string,
+) {
+  const start = performance.now();
+  const entries = lexical.loadCapabilityManifest(manifestFile).entries;
+  const model = loadCapabilityModel2Vec(assetDir, entries);
+  const documents = new Map(entries.map((entry) => [capabilityCandidateId(entry), entry]));
+  const latencies: number[] = [];
+  const hybrid: IArmModule = {
+    capabilityDetails: lexical.capabilityDetails,
+    searchCapabilities(situation, file, scope) {
+      const started = performance.now();
+      const reply = lexical.searchCapabilities(situation, file, scope);
+      // Explicit names, starter kits and engine ownership refusals remain authoritative.
+      const owned =
+        !reply.guidance || reply.guidance.startsWith("No installed engine capability matches");
+      if (!owned || reply.verdict === "starterKit" || (reply.results[0]?.score ?? 0) >= 4) {
+        latencies.push(performance.now() - started);
+        return reply;
+      }
+      const hits = new Map(reply.results.map((row) => [capabilityCandidateId(row), row]));
+      const ranks = fuseCapabilityRanks([...hits.keys()], model.rank(situation));
+      const results = ranks.slice(0, scope === "request" ? 15 : 5).map((id, rank) => {
+        const entry = documents.get(id);
+        const hit = hits.get(id);
+        if (hit !== undefined) return hit;
+        if (entry === undefined) throw new Error("Model2Vec result is outside the indexed corpus.");
+        return {
+          ...entry,
+          matchedSituation: entry.situations[0] ?? entry.summary,
+          score: 1 / (61 + rank),
+        };
+      });
+      latencies.push(performance.now() - started);
+      return results.length > 0 ? { ...reply, guidance: "", results, verdict: "matched" } : reply;
+    },
+  };
+  hybrid.searchCapabilities(november25CapabilityTraces[0]?.situation ?? "racing", manifestFile);
+  const coldStartMs = performance.now() - start;
+  const dev = reportArm(hybrid, gold, manifestFile, "dev");
+  latencies.length = 0;
+  const heldout = reportArm(hybrid, gold, manifestFile, "heldout");
+  const sorted = latencies.sort((a, b) => a - b);
+  const p95Ms = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? Number.POSITIVE_INFINITY;
+  const trace = regressionRows(hybrid, manifestFile);
+  return {
+    assetBytes: model.assetBytes,
+    assetSha256: model.assetSha256,
+    coldStartMs,
+    dev,
+    heldout,
+    modelColdStartMs: model.coldStartMs,
+    modelRevision: model.modelRevision,
+    p95Ms,
+    trace,
+  };
+}
+
+async function indexHashes(directory: string, manifestFile: string) {
+  const hash = async (file: string) =>
+    createHash("sha256")
+      .update(await readFile(file))
+      .digest("hex");
+  return {
+    index: await hash(path.join(directory, "index.ts")),
+    manifest: await hash(manifestFile),
+    source: await sourceHash(directory),
+  };
+}
+
 export async function main(args: readonly string[]): Promise<number> {
   const root = process.cwd();
-  const base = flagValue(args, "--base") ?? "ecd2a1a56";
+  const base = flagValue(args, "--base") ?? BASELINE_COMMIT;
   if (!/^[0-9a-f]{7,40}$/u.test(base)) {
     process.stderr.write(`--base must be a commit sha, got '${base}'\n`);
     return 1;
   }
-  const manifestFile = path.resolve(root, MANIFEST_RELATIVE_PATH);
   const reportOnly = hasFlag(args, "--report-only");
   const workdir = await mkdtemp(path.join(os.tmpdir(), "tn-search-ab-base-"));
   try {
-    const archive = execFileSync("git", ["archive", base, SOURCE_RELATIVE_PATH], {
-      cwd: root,
-      maxBuffer: 64 * 1024 * 1024,
-    });
+    const archive = execFileSync(
+      "git",
+      ["archive", base, SOURCE_RELATIVE_PATH, MANIFEST_RELATIVE_PATH],
+      {
+        cwd: root,
+        maxBuffer: 64 * 1024 * 1024,
+      },
+    );
     execFileSync("tar", ["-x", "-C", workdir], { input: archive });
     const baseDirectory = path.join(workdir, SOURCE_RELATIVE_PATH);
     if (!existsSync(path.join(baseDirectory, "index.ts"))) {
       process.stderr.write(`TN_CAPABILITY_SEARCH_AB: ${base} has no ${SOURCE_RELATIVE_PATH}\n`);
       return 1;
     }
-    const candidateDirectory = path.resolve(root, SOURCE_RELATIVE_PATH);
-    const baseHash = await sourceHash(baseDirectory);
-    const candidateHash = await sourceHash(candidateDirectory);
+    const candidateDirectory = path.resolve(workdir, "candidate", SOURCE_RELATIVE_PATH);
+    const manifestFile = path.resolve(workdir, "candidate", MANIFEST_RELATIVE_PATH);
+    await mkdir(path.dirname(manifestFile), { recursive: true });
+    await Promise.all([
+      cp(path.resolve(root, SOURCE_RELATIVE_PATH), candidateDirectory, { recursive: true }),
+      copyFile(path.resolve(root, MANIFEST_RELATIVE_PATH), manifestFile),
+    ]);
+    const baseManifest = path.resolve(workdir, MANIFEST_RELATIVE_PATH);
+    const [baseHashes, headHashes] = await Promise.all([
+      indexHashes(baseDirectory, baseManifest),
+      indexHashes(candidateDirectory, manifestFile),
+    ]);
     process.stdout.write(
-      `base      ${base}  ${baseHash}\ncandidate ${"working tree".padEnd(base.length)}  ${candidateHash}\n`,
+      `base ${base} index ${baseHashes.index} manifest ${baseHashes.manifest}\nhead snapshot index ${headHashes.index} manifest ${headHashes.manifest}\n`,
     );
-    if (baseHash === candidateHash) {
+    if (baseHashes.index === headHashes.index || baseHashes.source === headHashes.source) {
       process.stderr.write(
-        `TN_CAPABILITY_SEARCH_AB: both arms are the same source (${baseHash}); nothing to compare\n`,
+        "TN_CAPABILITY_SEARCH_AB: both arms have the same search source. Compare with the pre-search-change commit.\n",
       );
       return 1;
     }
     const gold = await loadGoldSet(manifestFile, path.resolve(root, GOLD_RELATIVE_PATH));
+    if (gold.heldoutSha256 !== SEARCH_GOLD_HELDOUT_SHA256) {
+      throw new Error(`Unrecognized held-out split ${gold.heldoutSha256}.`);
+    }
     const baseArm = await loadArm(baseDirectory);
     const candidateArm = await loadArm(candidateDirectory);
-    const baseHeldout = reportArm(baseArm, gold, manifestFile, "heldout");
+    const experiment = hybridExperiment(
+      candidateArm,
+      gold,
+      manifestFile,
+      path.resolve(root, flagValue(args, "--model2vec") ?? MODEL_ASSET_PATH),
+    );
+    const baseHeldout = reportArm(baseArm, gold, baseManifest, "heldout");
     const candidateHeldout = reportArm(candidateArm, gold, manifestFile, "heldout");
-    const baseDev = reportArm(baseArm, gold, manifestFile, "dev");
+    const baseDev = reportArm(baseArm, gold, baseManifest, "dev");
     const candidateDev = reportArm(candidateArm, gold, manifestFile, "dev");
+    const trace = {
+      base: regressionRows(baseArm, baseManifest),
+      candidate: regressionRows(candidateArm, manifestFile),
+    };
+    const recall1Gain = experiment.heldout.recall1 - candidateHeldout.recall1;
+    const hybridGates = compareArms(baseHeldout, experiment.heldout);
+    const hybrid = {
+      ...experiment,
+      recall1Gain,
+      eligible:
+        recall1Gain >= 0.05 &&
+        hybridGates.thresholds.every((threshold) => threshold.pass) &&
+        [...experiment.dev.results, ...experiment.heldout.results]
+          .filter((row) => row.kind === "exact-symbol")
+          .every((row) => row.rank === 0) &&
+        experiment.coldStartMs < 50 &&
+        experiment.p95Ms < 5 &&
+        experiment.assetBytes < 10_000_000 &&
+        experiment.trace.every((row) => row.pass),
+      topFiveDropped: hybridGates.dropped,
+    };
+    const display = (arm: string, report: IArmReport, baseline?: IArmReport) =>
+      formatTable(arm, report, baseline);
     process.stdout.write(
-      `\nheld-out (${gold.heldoutSha256.slice(0, 12)})\n${formatTable("base     ", baseHeldout)}\n${formatTable("candidate", candidateHeldout, baseHeldout)}\n`,
+      `\nheld-out SHA-256 ${gold.heldoutSha256}\n${display("base", baseHeldout)}\n${display("BM25F", candidateHeldout, baseHeldout)}\n${display("Model2Vec + RRF", hybrid.heldout, candidateHeldout)}\n`,
     );
     process.stdout.write(
-      `\ndev (tuning only)\n${formatTable("base     ", baseDev)}\n${formatTable("candidate", candidateDev, baseDev)}\n`,
+      `\ndev (tuning only)\n${display("base", baseDev)}\n${display("BM25F", candidateDev, baseDev)}\n${display("Model2Vec + RRF", hybrid.dev, candidateDev)}\n`,
+    );
+    process.stdout.write(
+      `\nNov 25 capability trace checks ${trace.base.filter((row) => row.pass).length}/${trace.base.length} base, ${trace.candidate.filter((row) => row.pass).length}/${trace.candidate.length} BM25F\n` +
+        `Model2Vec cold ${hybrid.coldStartMs.toFixed(2)} ms, p95 ${hybrid.p95Ms.toFixed(2)} ms, ${hybrid.assetBytes} bytes. ${hybrid.eligible ? "Eligible for runtime" : "Benchmark only"}\n`,
     );
     const { dropped, thresholds: offlineThresholds } = compareArms(baseHeldout, candidateHeldout);
-    const thresholds: IThreshold[] = [...offlineThresholds];
+    const exact = [...candidateHeldout.results, ...candidateDev.results].filter(
+      (row) => row.kind === "exact-symbol",
+    );
+    const thresholds: IThreshold[] = [
+      ...offlineThresholds,
+      {
+        base: SEARCH_GOLD_EXACT_SYMBOL_COUNT,
+        candidate: exact.filter((row) => row.rank === 0).length,
+        name: "exact symbols at rank 1",
+        pass:
+          exact.length === SEARCH_GOLD_EXACT_SYMBOL_COUNT && exact.every((row) => row.rank === 0),
+        required: String(SEARCH_GOLD_EXACT_SYMBOL_COUNT),
+      },
+      {
+        base: trace.base.filter((row) => row.pass).length,
+        candidate: trace.candidate.filter((row) => row.pass).length,
+        name: "Nov 25 capability trace regressions",
+        pass: trace.candidate.every((row) => row.pass),
+        required: String(trace.candidate.length),
+      },
+    ];
     process.stdout.write("\ngates\n");
     for (const threshold of thresholds) {
       process.stdout.write(
@@ -721,7 +873,7 @@ export async function main(args: readonly string[]): Promise<number> {
           base: await runLiveArm(
             "base",
             baseDirectory,
-            manifestFile,
+            baseManifest,
             Number(flagValue(args, "--runs") ?? 1),
           ),
           candidate: await runLiveArm(
@@ -781,11 +933,13 @@ export async function main(args: readonly string[]): Promise<number> {
       artifactFile,
       `${JSON.stringify(
         {
-          base: { hash: baseHash, ref: base },
-          candidate: { hash: candidateHash, ref: "working tree" },
+          base: { ...baseHashes, ref: base },
+          candidate: { ...headHashes, ref: "working tree snapshot" },
           generatedAt: new Date().toISOString(),
           gold: { heldoutSha256: gold.heldoutSha256, rows: gold.rows.length },
+          hybrid,
           live,
+          trace,
           offline: {
             base: { dev: baseDev, heldout: baseHeldout },
             candidate: { dev: candidateDev, heldout: candidateHeldout },

@@ -1,6 +1,7 @@
 /**
  * Explain which render workloads should be collapsed or retained.
  * @situation diagnose a slow Three.js scene
+ * @situation diagnose a running game's rendering performance from playtest workload measurements
  * @situation choose a render optimization from observed workload data
  * @constraint use measured input rather than visual guesses
  * @example const advice = adviseThreeRenderWorkload(input);
