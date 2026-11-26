@@ -47,7 +47,7 @@ pnpm create threenative my-game
 | | Plain Three.js | ThreeNative |
 | --- | --- | --- |
 | **First commit** | ❌ An empty canvas. Rewrite the loop, resize, input and physics glue in every project | ✅ 19 playable starter kits. The ~170 lines (42%) of plumbing every game repeats are already written. [Kits](packages/create-threenative/templates) · [audit](docs/architecture/CHARTER.md) |
-| **AI agent cost** | ❌ The agent works from memory: it reinvents the loop, input and physics glue, and guesses APIs, every session | ✅ The agent starts from a kit and searches 696 shipped capabilities over MCP before it writes a line, so fewer tokens go to plumbing. [Manifest](packages/core/capabilities.json) · [engine MCP](packages/engine-mcp/src/index.ts) |
+| **AI agent cost** | ❌ The agent works from memory: it reinvents the loop, input and physics glue, and guesses APIs, every session | ✅ When your game matches one of the 19 kits, the agent starts from working code and searches 696 shipped capabilities over MCP before it writes a line. Your tokens go to your game, not to plumbing. [Manifest](packages/core/capabilities.json) · [engine MCP](packages/engine-mcp/src/index.ts) |
 | **Physics** | ⚠️ Pick a library, write the bridge | ✅ Rapier (Rust, compiled to WebAssembly) built in, with Godot-style `RigidBody3D`, `CharacterBody3D`, `Area3D` and navigation. [RigidBody3D](packages/physics/src/RigidBody3D.ts) · [CharacterBody3D](packages/physics/src/CharacterBody3D.ts) · [navigation](packages/physics/src/navigation) |
 | **Engine** | ⚠️ JavaScript issues every draw call | ✅ An owned C++ engine behind the same Three.js API: WebAssembly in the browser (multithreaded on cross-origin-isolated pages), native code on desktop. [Engine source](packages/runtime-native/src/engine) · [`wasm-threads` preset](packages/runtime-native/CMakePresets.json) · [decision](docs/architecture/NATIVE-ENGINE-DECISION.md) |
 | **Draw calls** | ⚠️ One per mesh, unless you batch by hand | ✅ Fewer draws, more frames, on the same workload-equal stress scene: **57 draws vs 1,109**, **96.7 vs 75.3 fps** uncapped on an RTX 2080 (2026-11-11, both arms in ABBA order in one clean browser). [Data](docs/stress-loop/ledger.json) · [method](scripts/stress-fair.mjs) |
@@ -264,14 +264,13 @@ Run `pnpm asset-library` to browse and customize **200+ bake-ready procedural 3D
 | Web | Owned C++ engine (WebAssembly), WebGPU | ✅ Verified every CI run |
 | Linux, macOS, Windows | Owned C++ engine, native player (no WebView) | ✅ Verified: 300 native frames and a non-blank capture |
 | Android | Native host (no WebView) | ✅ Emulator lane runs · 60 fps sustained on a Pixel 8 (fox platformer) |
-| iOS | Native host | ⚠️ Simulator only, unsigned. No iOS hardware is qualified yet |
 
 Measured results, each with its source:
 - **Same stress scene, ThreeNative vs plain Three.js (2026-11-11, RTX 2080, uncapped):** 96.7 vs 75.3 fps, 57 vs 1,109 draws. On an Intel Gen12 laptop GPU (2026-11-07): 64.3 vs 53.5 fps. [Ledger](docs/stress-loop/ledger.json) · [method](scripts/stress-fair.mjs)
 - **4,096 cubes (native desktop, RTX 2080, 1280×720):** 2.28 ms vs 4.17 ms in Godot 4.7.1, 1.8× faster, median of 3 runs. [Data](docs/verification/runtime-perf-state.md) · [bench](docs/PRDs/done/PRD-449-cross-engine-benchmarks-and-html-report.md)
 - **512 skinned characters:** 1,026 → 4 draw calls and frame p50 47.05 → 24.45 ms against stock Three.js skinning, faster in 6 of 6 paired runs. [Data](docs/verification/runtime-perf-state.md) · [code](packages/core/src/projection-skinned.ts)
 
-ThreeNative is **alpha** (`0.x`). Every claim links to a real run: [current numbers](docs/verification/runtime-perf-state.md) · [what is not good yet](docs/CURRENT-CHALLENGES.md). You sign your own desktop and Android releases. See [`docs/RELEASE-SIGNING.md`](docs/RELEASE-SIGNING.md).
+Every number here links to the run that produced it: [current numbers](docs/verification/runtime-perf-state.md). You sign your own desktop and Android releases. See [`docs/RELEASE-SIGNING.md`](docs/RELEASE-SIGNING.md).
 
 ## Packages
 
@@ -319,6 +318,25 @@ Native compilation is opt-in; the default gate needs no CMake, NDK, or Xcode. Th
 **Questions** → [Discussions](https://github.com/ThreeNativeHQ/threenative/discussions) ·
 **Bugs** → [Issues](https://github.com/ThreeNativeHQ/threenative/issues) ·
 **Security** → [`SECURITY.md`](SECURITY.md)
+
+## Privacy
+
+> **Why it matters:** you ship a game, not a tracker. The engine reports its own faults so we can
+> fix them for every game, and you can turn that off with one line.
+
+- **What we collect:** when the engine logs a `TN_` error or warning, the game sends one small
+  event: the code, the level, a scrubbed message (at most 200 characters, with URLs, file paths
+  and emails removed), the game name, the engine version, the platform, the renderer and a random
+  id for that run. No stack trace, no IP address, nothing about the player. The CLI sends the same
+  fault reports and no usage analytics.
+- **Why:** to find and fix engine faults fast, so every ThreeNative game gets more stable.
+- **Where it goes:** to our own Cloudflare account only, kept for about three months. Never sold,
+  never used for ads.
+- **Turn it off:** `defineGame({ telemetry: false })` in your game, `TN_TELEMETRY=0` or
+  `DO_NOT_TRACK=1` in the environment, or `?tnTelemetry=0` on a browser URL.
+
+Full terms: [threenative.com/privacy](https://threenative.com/privacy/) · Code:
+[`packages/core/src/telemetry.ts`](packages/core/src/telemetry.ts)
 
 ## License
 
