@@ -39,6 +39,8 @@ pnpm create threenative my-game
 
 ## ThreeNative vs plain Three.js
 
+> **Why it matters:** Every hour your agent spends rebuilding a game loop is an hour, and a pile of tokens, that does not go into your game. ThreeNative removes that work.
+
 **ThreeNative is Three.js, plus the game engine around it.** `ctx.scene` is a real
 `THREE.Scene`, so every tutorial still works. You just stop writing the other half of the game.
 
@@ -58,6 +60,8 @@ pnpm create threenative my-game
 | **Lock-in** | ✅ None | ✅ None either. Materials, lights and post are plain code in your `src/render/`, and `engine: "threejs"` runs stock Three.js. [Generated look code](packages/create-threenative/templates/starter/src/render) · [override](docs/architecture/NATIVE-ENGINE-DECISION.md) |
 
 ### Unreal-class visuals, without the Unreal install
+
+> **Why it matters:** Players judge a game by its first frame. You get a look that holds up, and players still reach it by clicking a link: no tens-of-gigabytes engine, no installer.
 
 <img src="docs/media/readme/vs-unreal.webp" alt="Four calibration scenes side by side: ThreeNative in the browser on the left, stock Unreal Engine 5.8.3 on the right: an exterior with sky and clouds, chrome and matte spheres, a palm with grass shadows, and a sunlit room" width="100%">
 
@@ -85,6 +89,8 @@ Three.js draws the frame. A real game still needs a fixed-timestep loop, input, 
 
 ## Quickstart
 
+> **Why it matters:** One command gives you a running game with physics, a HUD and a passing playtest. Your first prompt changes a game instead of filling a blank page.
+
 ```sh
 pnpm create threenative my-game                 # or: --template kart, --genre mario
 cd my-game
@@ -109,6 +115,8 @@ const game = defineGame<GameState, IPhysicsContext>({
 
 ## Built with ThreeNative
 
+> **Why it matters:** With Midway above, these are full games, not tech demos: a shooter, exploration, platforming, open terrain. The engine carries the whole game, not only a pretty scene.
+
 <table>
   <tr>
     <td width="33%"><a href="docs/media/readme/snow.webp"><img src="docs/media/readme/snow.webp" alt="A character walks through snowfall leaving footprints, with a weather control panel"></a><br><sub><b>Snow kit</b>: deformable snow that keeps every footprint</sub></td>
@@ -125,6 +133,8 @@ const game = defineGame<GameState, IPhysicsContext>({
 Every image is a real engine or device capture. No mockups.
 
 ## Starter kits
+
+> **Why it matters:** A kit jumpstarts your game. Your agent does not burn tokens building plumbing from scratch. It tweaks a game that already works and steers it in the direction you point.
 
 Run `pnpm create threenative my-game --template <name>`, or ask your agent for "a game like Mario Kart" and it starts from the matching kit.
 
@@ -149,6 +159,8 @@ Full kit guide in [`create-threenative`](packages/create-threenative/README.md).
 
 ## Built for AI agents
 
+> **Why it matters:** An agent with the right tools stops guessing. It looks up what already exists, pulls real assets, and checks its own work, so you spend your prompts on the game, not on fixing what it broke.
+
 AI prototypes break fast when the next prompt ruins collisions or the HUD. Every new project wires
 six MCP servers into Claude Code, Codex, Cursor, Gemini CLI, VS Code, opencode and Zed. No setup:
 `pnpm create threenative` writes the config.
@@ -163,6 +175,8 @@ six MCP servers into Claude Code, Codex, Cursor, Gemini CLI, VS Code, opencode a
 | 📈 **DevTools** (`chrome-devtools-mcp`) | Drive a real WebGPU Chrome: screenshots, performance traces, console errors, heap snapshots | The agent sees and profiles the actual frame. Together with playtests, it plays the game and proves it works |
 
 ### How the pieces work together
+
+> **Why it matters:** The plain Three.js loop ends when you find the bugs. The ThreeNative loop ends when the playtest passes.
 
 ```mermaid
 flowchart TB
@@ -198,9 +212,13 @@ flowchart TB
 
 ## Procedural asset library
 
+> **Why it matters:** Placeholder cubes kill a prototype. Real trees, rocks, cities and dungeons are one bake call away, with no download and no license hunt.
+
 Run `pnpm asset-library` to browse and customize **200+ bake-ready procedural 3D assets** in a Storybook-style viewer: 28 tree species with CC0 scanned bark and leaves (3 LODs), cliffs across 12 biomes, 75 snap-fit city modules, 51 modular dungeon pieces in three themes with animated fire, and the 53-piece Stylized Biome Kit. Tweak a seed, orbit the result, and copy the bake call into your game. [Browse guide](packages/procedural-environment/README.md#browse-everything-pnpm-asset-library)
 
 ## Platforms
+
+> **Why it matters:** Your game reaches players where they are: a web link, a desktop download or an Android build, from one codebase, with no rewrite and no WebView.
 
 | Platform | Renderer | Status |
 | --- | --- | --- |
@@ -217,6 +235,8 @@ Measured results, each with its source:
 ThreeNative is **alpha** (`0.x`). Every claim links to a real run: [current numbers](docs/verification/runtime-perf-state.md) · [what is not good yet](docs/CURRENT-CHALLENGES.md). You sign your own desktop and Android releases. See [`docs/RELEASE-SIGNING.md`](docs/RELEASE-SIGNING.md).
 
 ## The ecosystem
+
+> **Why it matters:** Start however you like and never get stuck: build in the browser or in your editor, play and publish in the store, and ask the team on Discord.
 
 Start in your browser with Studio or work locally with the CLI. Both produce the exact same plain Three.js and TypeScript project with zero lock-in.
 
