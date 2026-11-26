@@ -13,6 +13,8 @@ const FOV = 38; // gmcamera.c:636
 const FRONT_MARGIN = 1000 * UNIT; // gmcamera.c:356
 const REAR_MARGIN = 700 * UNIT; // gmcamera.c:357
 const VERTICAL_MARGIN = 700 * UNIT; // gmcamera.c:372
+/** Extra room under the fighters so the stage top stays clear of the HUD plates. Tuned, not from the card. */
+const FLOOR_ROOM = 1.6;
 /** Closest and farthest the camera sits from the fight, metres. Card minimum 2500 units. */
 const MIN_DISTANCE = 2500 * UNIT + 2;
 const MAX_DISTANCE = 45;
@@ -40,7 +42,7 @@ export function createFightCamera(camera: PerspectiveCamera): IFightCamera {
         if (f.mode === "dead") continue;
         x0 = Math.min(x0, f.x - (f.facing === -1 ? FRONT_MARGIN : REAR_MARGIN));
         x1 = Math.max(x1, f.x + (f.facing === 1 ? FRONT_MARGIN : REAR_MARGIN));
-        y0 = Math.min(y0, f.y - VERTICAL_MARGIN);
+        y0 = Math.min(y0, f.y - VERTICAL_MARGIN - FLOOR_ROOM);
         y1 = Math.max(y1, f.y + 1.8 + VERTICAL_MARGIN);
       }
       if (x0 === Number.POSITIVE_INFINITY) return;
