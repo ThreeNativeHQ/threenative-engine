@@ -1,0 +1,117 @@
+{
+  "name": "duel-answers-in-the-same-round",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "duel",
+      "press": [
+        "F6",
+        "F10",
+        "KeyF"
+      ],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "early",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "label": "half",
+      "waitForResource": {
+        "id": "state",
+        "path": "roundTime",
+        "gte": 1.52
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "label": "end",
+      "waitForResource": {
+        "id": "state",
+        "path": "roundTime",
+        "equals": 0
+      },
+      "release": false,
+      "timeoutMs": 8000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "inCombat",
+        "atSteps": [
+          {
+            "label": "early",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "hero",
+        "component": "attacks",
+        "atSteps": [
+          {
+            "label": "early",
+            "equals": 0
+          },
+          {
+            "label": "half",
+            "equals": 1
+          },
+          {
+            "label": "end",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "raider.1",
+        "component": "attacks",
+        "atSteps": [
+          {
+            "label": "early",
+            "equals": 0
+          },
+          {
+            "label": "half",
+            "equals": 0
+          },
+          {
+            "label": "end",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

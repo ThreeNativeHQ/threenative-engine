@@ -1,0 +1,82 @@
+{
+  "name": "athletics-rises-with-running",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "wait",
+      "label": "before",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowUp",
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "runSpeed",
+        "atSteps": [
+          {
+            "label": "before",
+            "lte": 4.96
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "runSpeed",
+        "gte": 5.0
+      }
+    ],
+    "components": [
+      {
+        "entity": "hero",
+        "component": "athletics",
+        "atSteps": [
+          {
+            "label": "before",
+            "equals": 10
+          },
+          {
+            "label": "after",
+            "equals": 11
+          }
+        ]
+      }
+    ]
+  }
+}

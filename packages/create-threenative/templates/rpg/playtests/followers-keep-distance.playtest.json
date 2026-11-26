@@ -1,0 +1,88 @@
+{
+  "name": "followers-keep-distance",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "run-north",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ran",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stopped",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "followGap",
+        "atSteps": [
+          {
+            "label": "stopped",
+            "lte": 5.8
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "atSteps": [
+          {
+            "label": "stopped",
+            "lte": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "followGap",
+        "gte": 4.5
+      }
+    ],
+    "components": [
+      {
+        "entity": "ally",
+        "component": "queued",
+        "atSteps": [
+          {
+            "label": "ran",
+            "equals": "follow"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -12,7 +12,7 @@
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
 /** Where the camera sits relative to the leader's body centre: high and south. */
-const OFFSET = new Vector3(0, 12, 8.5);
+const OFFSET = new Vector3(0, 9, 7);
 const AIM = new Vector3(0, 0, -1);
 const FOLLOW_RATE = 6;
 const CUT_RATE = 8;

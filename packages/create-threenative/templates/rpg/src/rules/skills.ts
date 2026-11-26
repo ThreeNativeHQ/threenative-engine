@@ -20,7 +20,13 @@ export const SKILL_LABEL: Readonly<Record<SkillId, string>> = {
 };
 
 /** Use points a skill earns. Melee: a swing counts 1 and a hit 1 more. Athletics: per metre run. */
-export const SKILL_GAIN = { athleticsPerMetre: 0.5, meleeHit: 1, meleeSwing: 1, persuadeFail: 1, persuadeWin: 2 } as const;
+export const SKILL_GAIN = {
+  athleticsPerMetre: 0.5,
+  meleeHit: 1,
+  meleeSwing: 1,
+  persuadeFail: 1,
+  persuadeWin: 2,
+} as const;
 
 /** Points needed for the next level: slower as the skill climbs. */
 export function pointsToRise(level: number): number {

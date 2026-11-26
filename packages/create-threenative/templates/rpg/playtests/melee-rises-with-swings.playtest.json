@@ -1,0 +1,121 @@
+{
+  "name": "melee-rises-with-swings",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "at-post",
+      "press": "F1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-1",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-2",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-3",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a3",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "before",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "label": "swung",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 10
+      },
+      "release": false,
+      "timeoutMs": 20000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "hero",
+        "component": "melee",
+        "atSteps": [
+          {
+            "label": "before",
+            "equals": 10
+          },
+          {
+            "label": "swung",
+            "equals": 11
+          }
+        ]
+      },
+      {
+        "entity": "hero",
+        "component": "attacks",
+        "atSteps": [
+          {
+            "label": "swung",
+            "equals": 3
+          }
+        ]
+      }
+    ]
+  }
+}

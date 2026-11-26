@@ -15,7 +15,7 @@ export class Dice {
 
   /** Queue exact results for one owner. Each is used once, in order, then the seeded source resumes. */
   rig(owner: string, values: readonly number[]): void {
-    this.#rigs.set(owner, [...values]);
+    this.#rigs.set(owner, [...(this.#rigs.get(owner) ?? []), ...values]);
   }
 
   /** A die for one owner: rigged results first, then the seeded source. */

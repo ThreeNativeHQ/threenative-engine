@@ -79,5 +79,9 @@ export function followStep(
   const remaining = distance - stand;
   if (remaining <= 0.25) return undefined;
   const k = stand / distance;
-  return { run: remaining * remaining > WALK_THRESHOLD_SQ, x: leader.x + dx * k, z: leader.z + dz * k };
+  return {
+    run: remaining * remaining > WALK_THRESHOLD_SQ,
+    x: leader.x + dx * k,
+    z: leader.z + dz * k,
+  };
 }

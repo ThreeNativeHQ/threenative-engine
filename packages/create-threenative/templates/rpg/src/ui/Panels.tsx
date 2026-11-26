@@ -6,7 +6,10 @@ const ROUND = 3;
 export function PartyPanel() {
   const party = useField("party") ?? [];
   return (
-    <section id="party-panel" className="pointer-events-none absolute left-6 top-5 w-64 space-y-2 text-[10px] uppercase tracking-[0.16em]">
+    <section
+      id="party-panel"
+      className="pointer-events-none absolute left-6 top-5 w-64 space-y-2 text-[10px] uppercase tracking-[0.16em]"
+    >
       {party.map((member) => (
         <div
           key={member.id}
@@ -27,7 +30,9 @@ export function PartyPanel() {
               style={{ width: `${Math.round((member.hp / member.maxHp) * 100)}%` }}
             />
           </div>
-          <div className="mt-1 min-h-3 text-amber">{member.down ? "down" : member.queue.join("  >  ")}</div>
+          <div className="mt-1 min-h-3 text-amber">
+            {member.down ? "down" : member.queue.join("  >  ")}
+          </div>
         </div>
       ))}
     </section>
@@ -46,7 +51,10 @@ export function RoundBar() {
     >
       combat
       <div className="mt-1 h-1.5 w-full bg-panel">
-        <div className="h-1.5 bg-red" style={{ width: `${Math.round((roundTime / ROUND) * 100)}%` }} />
+        <div
+          className="h-1.5 bg-red"
+          style={{ width: `${Math.round((roundTime / ROUND) * 100)}%` }}
+        />
       </div>
     </div>
   );

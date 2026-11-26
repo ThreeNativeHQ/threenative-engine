@@ -900,6 +900,31 @@
       }
     }
   },
+  "rpg": {
+    "subject": "hero",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyF", "KeyG", "KeyT", "KeyE", "Digit1", "Escape", "KeyJ"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "leader", "equals": "hero" },
+        { "id": "state", "path": "partySize", "equals": 2 },
+        { "id": "state", "path": "kills", "equals": 0 },
+        { "id": "state", "path": "coins", "equals": 0 },
+        { "id": "state", "path": "questStage", "equals": 0 },
+        { "id": "state", "path": "medpacks", "equals": 3 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "an attack first walks to its target and then waits for the 3 s round, so no key plays a clip from a standstill; roll-vs-defense and combat-round-timing prove the swing",
+      "effect-follows-contact": "damage lands at the half mark of a 3 s round, not at a clip contact frame; combat-round-timing proves the timing",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "stealth": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

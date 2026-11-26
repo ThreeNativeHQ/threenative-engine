@@ -107,7 +107,10 @@ export function createPost(): Group {
 
 /** A tent: a four-sided cone on a flat base. */
 export function createTent(radius: number): Mesh {
-  const tent = new Mesh(new ConeGeometry(radius, radius * 1.1, 4, 1, false, Math.PI / 4), structureMaterial);
+  const tent = new Mesh(
+    new ConeGeometry(radius, radius * 1.1, 4, 1, false, Math.PI / 4),
+    structureMaterial,
+  );
   tent.position.y = (radius * 1.1) / 2;
   tent.castShadow = true;
   tent.receiveShadow = true;

@@ -1,0 +1,161 @@
+{
+  "name": "party-holds-three",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "to-wren",
+      "press": "F3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "talk-wren",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "talking",
+      "waitForResource": {
+        "id": "state",
+        "path": "shot",
+        "equals": "dialogue"
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "join",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "joined",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "farewell",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "left",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "to-brask",
+      "press": "F4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "talk-brask",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "talking-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "shot",
+        "equals": "dialogue"
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "ask",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "refused",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "partySize",
+        "atSteps": [
+          {
+            "label": "talking",
+            "equals": 2
+          },
+          {
+            "label": "joined",
+            "equals": 3
+          },
+          {
+            "label": "refused",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "message",
+        "atSteps": [
+          {
+            "label": "refused",
+            "equals": "Party full"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "shot",
+        "atSteps": [
+          {
+            "label": "talking",
+            "equals": "dialogue"
+          },
+          {
+            "label": "left",
+            "equals": "overhead"
+          }
+        ]
+      }
+    ]
+  }
+}

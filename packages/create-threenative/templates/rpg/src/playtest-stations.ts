@@ -32,8 +32,12 @@ export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
   station4: (world) => leadTo(world, 5, 13.5, Math.PI / 2),
   // On the road, a step short of the raiders' notice.
   station5: (world) => leadTo(world, 0, -2.5, Math.PI),
-  // At the ruin gate, inside the notice radius: the fight starts.
-  station6: (world) => leadTo(world, 0, -6, Math.PI),
+  // Inside the ruin, 1.7 m from the first raider: both sides are in reach and a round starts at once.
+  station6: (world) => {
+    place(world.leader, -4.5, -11.3, Math.PI);
+    for (const member of world.members)
+      if (member !== world.leader) place(member, -2, -10.5, Math.PI);
+  },
   // Rigged dice for the leader's next attack (d20, then the confirming d20, then damage dice).
   // The hero's attack bonus is +4 and a raider or the post defends at 10.
   station7: (world) => world.dice.rig(world.leader.id, [20, 20, 8]),
@@ -44,4 +48,10 @@ export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
   // The next skill check: a 12 passes the elder's DC 12, a 2 fails it.
   station12: (world) => world.dice.rig(world.leader.id, [12]),
   station13: (world) => world.dice.rig(world.leader.id, [2]),
+  // A wound of 10 on the leader, then the ruin cleared, then the leader down.
+  station14: (world) => world.leader.receiveDamage(10),
+  station15: (world) => {
+    for (const raider of world.raiders) world.defeat(raider);
+  },
+  station16: (world) => world.defeat(world.leader),
 };

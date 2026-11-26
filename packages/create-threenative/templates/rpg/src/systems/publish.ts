@@ -47,7 +47,7 @@ export function publish(world: World): {
             speaker: world.conversation.node()?.speaker ?? "",
             text: world.conversation.node()?.text ?? "",
           }
-        : undefined;
+        : null;
       const skills: SkillView[] = (["melee", "athletics", "persuasion"] as SkillId[]).map((id) => ({
         id,
         label: SKILL_LABEL[id],
@@ -56,6 +56,10 @@ export function publish(world: World): {
         progress: round(leader.skills[id].progress),
       }));
       const party = world.members.map((member) => memberView(world, member));
+      const gaps = world.members
+        .filter((member) => member !== leader && member.alive)
+        .map((member) => member.position.distanceTo(leader.position));
+      const followGap = gaps.length === 0 ? 0 : Math.min(...gaps);
       if (changed("party", party)) patch.party = party;
       if (changed("skills", skills)) patch.skills = skills;
       const quests = world.quests.view();
@@ -79,7 +83,11 @@ export function publish(world: World): {
         medpacks: world.medpacks,
         message: world.message,
         missionTime: round(extra.missionTime, 10),
+        followGap: round(followGap),
+        journalLines: quests.reduce((total, quest) => total + quest.lines.length, 0),
+        partySize: world.members.length,
         phase: world.phase,
+        questStage: world.quests.stage("ruin"),
         playerX: round(leader.position.x),
         playerZ: round(leader.position.z),
         prompt:

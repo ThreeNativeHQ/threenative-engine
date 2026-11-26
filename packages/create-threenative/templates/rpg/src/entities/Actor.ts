@@ -8,6 +8,8 @@ import { ActionQueue } from "../rules/queue.js";
 import { type Skills, meleeBonus, newSkills, runSpeed, walkSpeed } from "../rules/skills.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
+const round2 = (value: number): number => Math.round(value * 100) / 100;
+
 export const WORLD_LAYER = 1;
 export const ACTOR_LAYER = 2;
 
@@ -54,6 +56,20 @@ export class Actor extends Fighter implements ICombatant {
   readonly body: CharacterBody3D;
   hp: number;
   state: ActorState = "idle";
+  /**
+   * Plain fields the playtest bridge reads off the registered entity (it reads own fields, not
+   * getters). `sync()` refreshes them once a tick.
+   */
+  px = 0;
+  pz = 0;
+  melee: number;
+  athletics: number;
+  persuasion: number;
+  /** The first queued action as a short word, and how many are queued. */
+  queued = "";
+  queueLength = 0;
+  /** Attacks this actor has resolved, hit or miss; the playtests count rounds with it. */
+  attacks = 0;
   /** Metres run since the last Athletics gain was collected. */
   runMetres = 0;
   /** What the actor is doing this tick; "running" when it moves at run speed. */
@@ -62,7 +78,8 @@ export class Actor extends Fighter implements ICombatant {
   acted = false;
   /** True from the moment a round holds the actor in place until it ends. */
   locked = false;
-  readonly #from = new Vector3();
+  /** Where the actor stood at the last `sync()`, to measure the metres it ran. */
+  readonly #last = new Vector3();
 
   constructor(ctx: GameCtx, model: IMannequin, spec: IActorSpec, stats: IStats) {
     super(ctx, model, CLIPS, {
@@ -77,6 +94,9 @@ export class Actor extends Fighter implements ICombatant {
     this.stats = stats;
     this.skills = newSkills(stats.skills);
     this.hp = stats.maxHp;
+    this.melee = this.skills.melee.level;
+    this.athletics = this.skills.athletics.level;
+    this.persuasion = this.skills.persuasion.level;
     dress(this.character.root, spec.tint);
     this.mesh.position.set(spec.x, HALF_HEIGHT + RADIUS, spec.z);
     this.body = new CharacterBody3D({
@@ -128,28 +148,6 @@ export class Actor extends Fighter implements ICombatant {
     return walkSpeed(this.stats.speed);
   }
 
-  /** Skill levels, read by the playtests by name. */
-  get melee(): number {
-    return this.skills.melee.level;
-  }
-
-  get athletics(): number {
-    return this.skills.athletics.level;
-  }
-
-  get persuasion(): number {
-    return this.skills.persuasion.level;
-  }
-
-  /** The first queued action, as a short word, for the playtest. */
-  get queued(): string {
-    return this.queue.labels[0] ?? "";
-  }
-
-  get queueLength(): number {
-    return this.queue.length;
-  }
-
   /** The clip family the rig idles in: weapons up while a fight is on. */
   setStance(inCombat: boolean): void {
     this.idleAction = inCombat && this.team !== "villager" ? "ready" : "idle";
@@ -178,17 +176,11 @@ export class Actor extends Fighter implements ICombatant {
       return distance;
     }
     const speed = Math.min(run ? this.runSpeed : this.walkSpeed, distance / dt);
-    this.#from.copy(this.mesh.position);
     this.body.velocity.set((dx / distance) * speed, 0, (dz / distance) * speed);
     this.body.moveAndSlide(dt);
     this.conventions.applyGrounding(0, dt);
-    const moved = Math.hypot(
-      this.mesh.position.x - this.#from.x,
-      this.mesh.position.z - this.#from.z,
-    );
     this.running = run;
     this.state = "move";
-    if (run) this.runMetres += moved;
     this.walkAction = run ? "run" : "walk";
     this.animateRig(dt, Math.atan2(dx, dz), speed);
     return distance;
@@ -216,6 +208,24 @@ export class Actor extends Fighter implements ICombatant {
 
   heal(): void {
     this.play("heal", { fade: 0.1, hold: 1 });
+  }
+
+  /** Refresh the plain fields the playtests read. */
+  sync(): void {
+    // The body moves in the physics step, so the metres run are measured here, between ticks.
+    if (this.running)
+      this.runMetres += Math.hypot(
+        this.mesh.position.x - this.#last.x,
+        this.mesh.position.z - this.#last.z,
+      );
+    this.#last.copy(this.mesh.position);
+    this.px = round2(this.mesh.position.x);
+    this.pz = round2(this.mesh.position.z);
+    this.melee = this.skills.melee.level;
+    this.athletics = this.skills.athletics.level;
+    this.persuasion = this.skills.persuasion.level;
+    this.queued = this.queue.labels[0] ?? "";
+    this.queueLength = this.queue.length;
   }
 
   /** Called once per tick before locomotion: a finished swing returns the actor to idle. */

@@ -123,7 +123,9 @@ export function directRaiders(world: World): void {
   const raiders = world.raiders.filter((raider) => raider.alive);
   if (!world.alerted) {
     const seen = raiders.some((raider) =>
-      alive.some((member) => distance(raider, member.position.x, member.position.z) <= AGGRO_RADIUS),
+      alive.some(
+        (member) => distance(raider, member.position.x, member.position.z) <= AGGRO_RADIUS,
+      ),
     );
     if (!seen) return;
     world.alerted = true;
@@ -153,6 +155,7 @@ export function collectRunning(world: World): void {
     if (actor.runMetres < 1) continue;
     const metres = Math.floor(actor.runMetres);
     actor.runMetres -= metres;
-    if (actor.team === "party") world.gain(actor, "athletics", metres * SKILL_GAIN.athleticsPerMetre);
+    if (actor.team === "party")
+      world.gain(actor, "athletics", metres * SKILL_GAIN.athleticsPerMetre);
   }
 }

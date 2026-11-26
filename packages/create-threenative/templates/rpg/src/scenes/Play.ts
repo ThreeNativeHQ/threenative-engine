@@ -15,7 +15,7 @@ import {
   buildStaticColliders,
 } from "@threenative/physics";
 import { type PerspectiveCamera, Vector3 } from "three";
-import { STATS } from "../content.js";
+import { type IStats, STATS } from "../content.js";
 import { ACTOR_LAYER, Actor, WORLD_LAYER } from "../entities/Actor.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import { ACTORS, FIELD, POST } from "../level.js";
@@ -52,15 +52,18 @@ const UNDER_PLAYTEST =
 const STATION_NAMES = Object.keys(STATIONS);
 const CHOICE_KEYS = ["choice1", "choice2", "choice3", "choice4"] as const;
 
-function statsFor(id: string, team: string) {
-  return STATS[id] ?? STATS[id.split(".")[0] ?? ""] ?? STATS[team] ?? STATS.villager;
+/** An actor's own entry, then its group's ("raider.2" is a raider), then its team's. */
+function statsFor(id: string, team: string): IStats {
+  const stats = STATS[id] ?? STATS[id.split(".")[0] ?? ""] ?? STATS[team];
+  if (stats === undefined) throw new Error(`No stats for actor '${id}'.`);
+  return stats;
 }
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = {
     attackBonus: 0,
     coins: 0,
-    dialogue: undefined,
+    dialogue: null,
     inCombat: 0,
     journalOpen: 0,
     kills: 0,
@@ -76,6 +79,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     message: "",
     missionTime: 0,
     party: [],
+    partySize: 0,
+    followGap: 0,
+    questStage: 0,
+    journalLines: 0,
     paused: false,
     phase: "playing",
     playerX: 0,
@@ -242,8 +249,10 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           }
         } else {
           // Commands that queue work on the leader. They queue; the queue runs below.
-          const attackKey = input.justPressed("attack") || (touch?.attackPressed === true && !touchAttack);
-          const healKey = input.justPressed("heal") || (touch?.abilityPressed === true && !touchHeal);
+          const attackKey =
+            input.justPressed("attack") || (touch?.attackPressed === true && !touchAttack);
+          const healKey =
+            input.justPressed("heal") || (touch?.abilityPressed === true && !touchHeal);
           touchAttack = touch?.attackPressed === true;
           touchHeal = touch?.abilityPressed === true;
           if (attackKey && world.targetId !== "")
@@ -296,6 +305,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         actor.setStance(inCombat);
         if (!actor.acted) actor.rest(dt);
         actor.acted = false;
+        actor.sync();
       }
 
       leaderRing.position.set(leader.position.x, 0.04, leader.position.z);

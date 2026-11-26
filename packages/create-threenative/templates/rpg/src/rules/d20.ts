@@ -80,7 +80,8 @@ export function resolveAttack(
   damageModifier: number,
 ): IAttackResult {
   const roll = die(ATTACK_DIE);
-  const automatic = roll === ATTACK_DIE ? "hit" : roll === 1 ? "miss" : undefined;
+  const automatic: "hit" | "miss" | undefined =
+    roll === ATTACK_DIE ? "hit" : roll === 1 ? "miss" : undefined;
   const hits = automatic === "hit" || (automatic === undefined && roll + attackBonus >= defense);
   const base = { automatic, bonus: attackBonus, defense, roll };
   if (!hits) return { ...base, confirm: 0, damage: 0, outcome: "miss", threat: false };

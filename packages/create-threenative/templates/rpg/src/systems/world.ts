@@ -10,7 +10,13 @@ import { Conversation, type IWorld } from "../rules/dialogue.js";
 import { Party } from "../rules/party.js";
 import { QuestLog } from "../rules/quests.js";
 import { CombatRounds } from "../rules/rounds.js";
-import { SKILL_GAIN, SKILL_LABEL, type SkillId, persuasionBonus, useSkill } from "../rules/skills.js";
+import {
+  SKILL_GAIN,
+  SKILL_LABEL,
+  type SkillId,
+  persuasionBonus,
+  useSkill,
+} from "../rules/skills.js";
 import type { GamePhase } from "../state.js";
 
 /** Metres within which a raider notices the party and the whole ruin turns on it. */
@@ -169,6 +175,13 @@ export class World implements IWorld {
     emitPlaytestEvent({ entity: this.leader.id, name: "leader" });
   }
 
+  /** Take an actor out of the fight at once. The playtest stations use it, and so can a trap or a script. */
+  defeat(actor: Actor): void {
+    if (!actor.alive) return;
+    actor.receiveDamage(actor.hp);
+    this.#down(actor);
+  }
+
   /** Advance the rounds one tick and apply what they decide. */
   update(dt: number): void {
     this.messageTimer = Math.max(0, this.messageTimer - dt);
@@ -215,8 +228,13 @@ export class World implements IWorld {
       this.last.damage = result.damage;
       this.last.automatic = result.automatic ?? "";
     }
+    attacker.attacks += 1;
     emitPlaytestEvent({ entity: attacker.id, name: `attack-${result.outcome}`, roll: result.roll });
-    this.gain(attacker, "melee", SKILL_GAIN.meleeSwing + (result.damage > 0 ? SKILL_GAIN.meleeHit : 0));
+    this.gain(
+      attacker,
+      "melee",
+      SKILL_GAIN.meleeSwing + (result.damage > 0 ? SKILL_GAIN.meleeHit : 0),
+    );
     if (result.damage === 0) return;
     target.receiveDamage(result.damage);
     if ((target as Actor).team === "raider") this.alerted = true;
@@ -233,7 +251,8 @@ export class World implements IWorld {
       this.kills += 1;
       this.note(`${fallen.name} falls.`);
       emitPlaytestEvent({ entity: fallen.id, name: "kill" });
-      if (this.kills >= RUIN_RAIDERS && this.quests.stage(RUIN_QUEST) === 1) this.#stage(RUIN_QUEST, 2);
+      if (this.kills >= RUIN_RAIDERS && this.quests.stage(RUIN_QUEST) === 1)
+        this.#stage(RUIN_QUEST, 2);
       return;
     }
     this.note(`${fallen.name} is down.`);
@@ -280,7 +299,11 @@ export class World implements IWorld {
       this.lastCheckPassed = check.passed ? 1 : 0;
       this.note(`${check.passed ? "Pass" : "Fail"}: ${this.lastCheck}`);
       emitPlaytestEvent({ entity: leader.id, name: check.passed ? "check-pass" : "check-fail" });
-      this.gain(leader, "persuasion", check.passed ? SKILL_GAIN.persuadeWin : SKILL_GAIN.persuadeFail);
+      this.gain(
+        leader,
+        "persuasion",
+        check.passed ? SKILL_GAIN.persuadeWin : SKILL_GAIN.persuadeFail,
+      );
     }
     for (const effect of result.effects) this.#apply(effect);
     if (result.ended) this.npc = "";

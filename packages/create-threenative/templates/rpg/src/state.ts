@@ -36,6 +36,13 @@ export type GameState = {
   phase: GamePhase;
   leader: string;
   party: MemberView[];
+  partySize: number;
+  /** Metres from the leader to the nearest follower; 0 when the leader walks alone. */
+  followGap: number;
+  /** Stage of the ruin quest: 0 not started, 3 done. */
+  questStage: number;
+  /** Journal lines written so far, over all quests. */
+  journalLines: number;
   /** 1 while combat rounds are running or ran in the last eight seconds. */
   inCombat: number;
   /** Seconds into the leader's current round, 0 to 3; 0 when it has none. */
@@ -57,7 +64,7 @@ export type GameState = {
   skills: SkillView[];
   /** Metres per second the leader runs at, from Speed and Athletics. */
   runSpeed: number;
-  dialogue: DialogueView | undefined;
+  dialogue: DialogueView | null;
   /** The last skill check: "Persuasion 12 + 1 vs 12". */
   lastCheck: string;
   lastCheckPassed: number;

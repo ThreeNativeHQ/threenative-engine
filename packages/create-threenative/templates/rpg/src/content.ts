@@ -20,7 +20,7 @@ export interface IStats {
 const blade: IWeapon = { dice: 1, multiplier: 2, name: "blade", sides: 8, threat: 2 };
 const staff: IWeapon = { dice: 1, multiplier: 2, name: "staff", sides: 6, threat: 1 };
 const axe: IWeapon = { dice: 1, multiplier: 3, name: "axe", sides: 10, threat: 1 };
-const cleaver: IWeapon = { dice: 1, multiplier: 2, name: "cleaver", sides: 6, threat: 1 };
+const cleaver: IWeapon = { dice: 1, multiplier: 2, name: "cleaver", sides: 4, threat: 1 };
 
 export const STATS: Readonly<Record<string, IStats>> = {
   ally: {
@@ -34,7 +34,7 @@ export const STATS: Readonly<Record<string, IStats>> = {
   hero: {
     abilities: { cha: 12, dex: 12, str: 14 },
     level: 1,
-    maxHp: 30,
+    maxHp: 36,
     skills: { athletics: 10, melee: 10, persuasion: 5 },
     speed: 50,
     weapon: blade,
@@ -42,7 +42,7 @@ export const STATS: Readonly<Record<string, IStats>> = {
   raider: {
     abilities: { cha: 8, dex: 10, str: 12 },
     level: 1,
-    maxHp: 16,
+    maxHp: 14,
     skills: { athletics: 10, melee: 5, persuasion: 0 },
     speed: 50,
     weapon: cleaver,
@@ -103,14 +103,19 @@ const FAREWELL = { text: "Farewell." } as const;
 
 export const TREES: Readonly<Record<string, ITree>> = {
   elder: {
-    start: (world: IWorld) => (world.stage(RUIN_QUEST) === 0 ? "offer" : `stage${world.stage(RUIN_QUEST)}`),
+    start: (world: IWorld) =>
+      world.stage(RUIN_QUEST) === 0 ? "offer" : `stage${world.stage(RUIN_QUEST)}`,
     nodes: {
       offer: {
         speaker: "Oska",
         text: "Raiders took the old ruin to the north. They watch our road. Will you clear them out?",
         choices: [
           { text: "I will clear the ruin.", next: "thanks" },
-          { check: { dc: 12, fail: "refused", label: "Persuasion", pass: "paid" }, text: "Pay me first.", when: (w) => w.stage(RUIN_QUEST) === 0 },
+          {
+            check: { dc: 12, fail: "refused", label: "Persuasion", pass: "paid" },
+            text: "Pay me first.",
+            when: (w) => w.stage(RUIN_QUEST) === 0,
+          },
           { ...FAREWELL },
         ],
       },
