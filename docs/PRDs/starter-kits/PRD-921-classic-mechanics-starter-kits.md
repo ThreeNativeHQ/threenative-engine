@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-921 — Three classic-mechanics starter kits: survival horror, open-world crime, stealth
 
-**Status:** PARTIAL — Phase 0 in progress
+**Status:** PARTIAL — survival-horror and stealth done; open-world and Phase 4 integration in progress
 **Priority:** P1 — owner goal, 2026-11-26
 **Complexity:** 8 (HIGH) — three new kits in `packages/create-threenative/templates/`, their contract rows, kit notes and pins
 **Owner:** João
@@ -41,14 +41,14 @@ code, names, levels or art.
 
 ### Phase 0 — base and plan
 
-- [ ] PRD filed, worktree `.claude/worktrees/classic-kits` on `feat/classic-starter-kits` from `origin/develop`, draft PR open
-- [ ] Baseline: `TN_TEMPLATE_ONLY=minimal TN_KIT_CONTRACT=0 pnpm test:templates` green in the worktree
+- [x] PRD filed, worktree `.claude/worktrees/classic-kits` on `feat/classic-starter-kits` from `origin/develop`, draft PR open — evidence: draft PR #748.
+- [x] Baseline: `TN_TEMPLATE_ONLY=minimal TN_KIT_CONTRACT=0 pnpm test:templates` green in the worktree — evidence: exit 0, "minimal: scaffolded playtests passed" (after rebuilding the Wasm engine).
 
 ### Phase 1 — survival-horror kit
 
-- [ ] `templates/survival-horror/` builds, typechecks, lints; only mannequin + grid materials
-- [ ] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=survival-horror pnpm test:templates`
-- [ ] Kit contract row in `template-playtests/contract.json`, kit notes `agent-docs/references/kit-survival-horror.md`
+- [x] `templates/survival-horror/` builds, typechecks, lints; only mannequin + grid materials — evidence: scaffold run 2026-11-26 typecheck, eslint, biome format clean; template structure check clean (fog colour routed through `palette.ts`).
+- [x] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=survival-horror pnpm test:templates` — evidence: 19 of 19 scenarios pass on headed WebGPU (NVIDIA), run 2026-11-26 after the playtest-key gate (`verify-template-playtests.ts`, the script `test:templates` wraps).
+- [x] Kit contract row in `template-playtests/contract.json`, kit notes `agent-docs/references/kit-survival-horror.md` — evidence: contract run green (explore-clean, camera-sees-subject, hud-clean, no-hitch, restart-resets, action-clip-completes; 3 opt-outs with reasons). no-hitch is flaky on Xvfb (`TN_PLAYTEST_PERF_FEW_GPU_SAMPLES`, 2 of 4 runs; GPU p95 2.4 ms).
 
 ### Phase 2 — open-world kit
 
@@ -58,9 +58,9 @@ code, names, levels or art.
 
 ### Phase 3 — stealth kit
 
-- [ ] `templates/stealth/` builds, typechecks, lints; only mannequin + grid materials
-- [ ] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=stealth pnpm test:templates`
-- [ ] Kit contract row, kit notes `agent-docs/references/kit-stealth.md`
+- [x] `templates/stealth/` builds, typechecks, lints; only mannequin + grid materials — evidence: typecheck, eslint, biome clean on every run of the review loop.
+- [x] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=stealth pnpm test:templates` — evidence: 9 of 9 scenarios (camera alarm, choke break-free, run/crouch noise, drag + body found once, keycard/door/extract, cone to alert, survives, takedown, wall knock) pass on headed WebGPU after review round 4. Red-green: the drag scenario failed on the dropped director events before the `director.changes` fix.
+- [x] Kit contract row, kit notes `agent-docs/references/kit-stealth.md` — evidence: contract green (explore-clean, camera-sees-subject, hud-clean, no-hitch, restart-resets; 4 opt-outs with reasons). camera-sees-subject went from 20.5% blocked to 0% with the steeper camera.
 
 ### Phase 4 — integration and review
 
