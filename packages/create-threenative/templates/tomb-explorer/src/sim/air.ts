@@ -1,5 +1,5 @@
 // Airborne: gravity, steering, wall deflection, the mid-air ledge grab, landing and fall damage.
-import { cellCeiling, cellFloor, ceilingAt, floorAt, SOLID, waterAt } from "../level.js";
+import { SOLID, ceilingAt, cellCeiling, cellFloor, floorAt, waterAt } from "../level.js";
 import {
   BODY_HEIGHT,
   BODY_RADIUS,
@@ -24,12 +24,12 @@ import {
   TERMINAL_SPEED,
 } from "../tuning.js";
 import {
+  type IBody,
+  type IInput,
   addTurn,
   cardinal,
   cellOf,
   forward,
-  type IBody,
-  type IInput,
   nearestCardinal,
 } from "./body.js";
 import { die } from "./death.js";

@@ -1,6 +1,6 @@
 import { useUiState } from "@threenative/ui";
-import { AIR_SUPPLY, HEALTH_POOL } from "../tuning.js";
 import type { GameState } from "../state.js";
+import { AIR_SUPPLY, HEALTH_POOL } from "../tuning.js";
 
 /** One field of the published state; each read re-renders only when its own value changes. */
 function useField<K extends keyof GameState>(key: K): GameState[K] | undefined {

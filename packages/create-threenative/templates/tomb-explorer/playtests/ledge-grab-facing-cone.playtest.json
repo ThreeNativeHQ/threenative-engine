@@ -42,10 +42,7 @@
     {
       "kind": "input",
       "label": "reach",
-      "press": [
-        "KeyE",
-        "Space"
-      ],
+      "press": ["KeyE", "Space"],
       "holdTicks": 6,
       "release": false
     },
@@ -62,9 +59,7 @@
     {
       "kind": "input",
       "label": "let-go",
-      "press": [
-        "KeyP"
-      ],
+      "press": ["KeyP"],
       "holdTicks": 2,
       "release": true
     },
@@ -97,10 +92,7 @@
     {
       "kind": "input",
       "label": "reach-again",
-      "press": [
-        "KeyE",
-        "Space"
-      ],
+      "press": ["KeyE", "Space"],
       "holdTicks": 6,
       "release": false
     },

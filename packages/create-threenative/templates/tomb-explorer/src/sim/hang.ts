@@ -1,6 +1,6 @@
 // Hanging from a ledge: shimmy along it, pull up onto it, let go. The ledge is re-tested at every
 // step, so a corner or an end stops her (climb-shimmy card).
-import { ceilingAt, floorAt, SOLID } from "../level.js";
+import { SOLID, ceilingAt, floorAt } from "../level.js";
 import {
   BODY_RADIUS,
   CLIMB_DEPTH,
@@ -11,12 +11,15 @@ import {
   SHIMMY_SPEED,
   SLOPE_TOLERANCE,
 } from "../tuning.js";
-import { cardinal, cellOf, type IBody, type IInput, rightOf } from "./body.js";
 import { fall } from "./air.js";
+import { type IBody, type IInput, cardinal, cellOf, rightOf } from "./body.js";
 
 export function stepHang(body: IBody, input: IInput): void {
   const hang = body.hang;
-  if (hang === undefined) return fall(body);
+  if (hang === undefined) {
+    fall(body);
+    return;
+  }
   // Letting go of the action key drops her.
   if (!input.action) {
     body.hang = undefined;
@@ -75,7 +78,10 @@ export function stepHang(body: IBody, input: IInput): void {
 /** The pull-up and the vault: blend from where she started to standing on the ledge. */
 export function stepClimb(body: IBody): void {
   const hang = body.hang;
-  if (hang === undefined) return fall(body);
+  if (hang === undefined) {
+    fall(body);
+    return;
+  }
   body.timer -= 1;
   const t = 1 - Math.max(0, body.timer) / CLIMB_UPDATES;
   const along = cardinal(hang.dir);

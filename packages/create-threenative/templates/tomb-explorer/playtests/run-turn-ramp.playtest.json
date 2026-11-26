@@ -22,30 +22,21 @@
     {
       "kind": "input",
       "label": "start",
-      "press": [
-        "ArrowUp",
-        "ArrowRight"
-      ],
+      "press": ["ArrowUp", "ArrowRight"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "ramping",
-      "press": [
-        "ArrowUp",
-        "ArrowRight"
-      ],
+      "press": ["ArrowUp", "ArrowRight"],
       "holdTicks": 38,
       "release": false
     },
     {
       "kind": "input",
       "label": "run-cap",
-      "press": [
-        "ArrowUp",
-        "ArrowRight"
-      ],
+      "press": ["ArrowUp", "ArrowRight"],
       "holdTicks": 4,
       "release": true
     },
@@ -58,22 +49,14 @@
     {
       "kind": "input",
       "label": "walking",
-      "press": [
-        "ArrowUp",
-        "ArrowRight",
-        "ShiftLeft"
-      ],
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
       "holdTicks": 50,
       "release": false
     },
     {
       "kind": "input",
       "label": "walk-cap",
-      "press": [
-        "ArrowUp",
-        "ArrowRight",
-        "ShiftLeft"
-      ],
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
       "holdTicks": 4,
       "release": true
     }

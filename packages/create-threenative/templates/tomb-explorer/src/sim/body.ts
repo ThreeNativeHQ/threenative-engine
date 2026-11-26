@@ -1,6 +1,6 @@
 // The state of the climber, and the few helpers every movement module shares. No engine imports:
 // the whole simulation is plain numbers so it runs the same on every target and under any test.
-import { ceilingAt, floorAt, SOLID, waterAt } from "../level.js";
+import { SOLID, ceilingAt, floorAt, waterAt } from "../level.js";
 import {
   ANGLE,
   BODY_HEIGHT,

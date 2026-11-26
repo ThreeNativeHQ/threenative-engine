@@ -1,5 +1,5 @@
 // On her feet: the turn ramp, the three gaits, steps, edges, and the two ways a jump starts.
-import { floorAt, SOLID, waterAt } from "../level.js";
+import { SOLID, floorAt, waterAt } from "../level.js";
 import {
   BACK_SPEED,
   BODY_RADIUS,
@@ -16,8 +16,8 @@ import {
   WALK_SPEED,
   WALK_TURN_CAP,
 } from "../tuning.js";
-import { addTurn, forward, type IBody, type IInput, passable } from "./body.js";
 import { fall, launch } from "./air.js";
+import { type IBody, type IInput, addTurn, forward, passable } from "./body.js";
 import { enterWater } from "./swim.js";
 
 /** Three probe points across her width: a wall catches her whichever edge meets it first. */

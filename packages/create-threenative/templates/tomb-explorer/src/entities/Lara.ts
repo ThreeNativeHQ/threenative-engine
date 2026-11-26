@@ -1,10 +1,10 @@
 import { type ICtx, SkeletalMesh3D } from "@threenative/core";
 import { type AnimationClip, Box3, Group, MathUtils, type Object3D } from "three";
 import { type IRigConventions, prepareRigConventions } from "../conventions.js";
-import { dress, climberMaterial } from "../render/props.js";
-import { toWorld } from "../render/temple.js";
 import { SPAWN } from "../level.js";
-import { createBody, type IBody, type IInput, type LaraState } from "../sim/body.js";
+import { climberMaterial, dress } from "../render/props.js";
+import { toWorld } from "../render/temple.js";
+import { type IBody, type IInput, type LaraState, createBody } from "../sim/body.js";
 import { stepLara } from "../sim/step.js";
 import type { GameState } from "../state.js";
 import { ANGLE, BODY_HEIGHT, TICK, UNIT } from "../tuning.js";

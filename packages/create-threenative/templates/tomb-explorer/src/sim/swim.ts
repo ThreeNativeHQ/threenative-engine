@@ -18,7 +18,7 @@ import {
   TREAD_FRACTION,
   UNDERWATER_SPEED_CAP,
 } from "../tuning.js";
-import { addTurn, forward, type IBody, type IInput } from "./body.js";
+import { type IBody, type IInput, addTurn, forward } from "./body.js";
 
 /**
  * She goes under: the swim state replaces the ground or the air. From the air the fall speed turns

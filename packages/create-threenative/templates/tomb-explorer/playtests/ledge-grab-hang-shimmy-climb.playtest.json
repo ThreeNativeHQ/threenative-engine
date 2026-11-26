@@ -29,11 +29,7 @@
     {
       "kind": "input",
       "label": "reach",
-      "press": [
-        "KeyE",
-        "ArrowUp",
-        "Space"
-      ],
+      "press": ["KeyE", "ArrowUp", "Space"],
       "holdTicks": 6,
       "release": false
     },
@@ -56,20 +52,14 @@
     {
       "kind": "input",
       "label": "try-climb",
-      "press": [
-        "KeyE",
-        "ArrowUp"
-      ],
+      "press": ["KeyE", "ArrowUp"],
       "holdTicks": 12,
       "release": false
     },
     {
       "kind": "input",
       "label": "shimmy",
-      "press": [
-        "KeyE",
-        "ArrowRight"
-      ],
+      "press": ["KeyE", "ArrowRight"],
       "holdTicks": 2,
       "release": false
     },
@@ -86,10 +76,7 @@
     {
       "kind": "input",
       "label": "pull-up",
-      "press": [
-        "KeyE",
-        "ArrowUp"
-      ],
+      "press": ["KeyE", "ArrowUp"],
       "holdTicks": 2,
       "release": true
     },

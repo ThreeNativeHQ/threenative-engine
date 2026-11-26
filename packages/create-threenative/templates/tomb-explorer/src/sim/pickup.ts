@@ -11,7 +11,7 @@ import {
   PICKUP_STAND_DISTANCE,
   PICKUP_UPDATES,
 } from "../tuning.js";
-import { forward, type IBody, type IInput, rightOf } from "./body.js";
+import { type IBody, type IInput, forward, rightOf } from "./body.js";
 
 /** Her offset from the item, in the item's frame: across it, and out in front of it. */
 export function itemFrame(body: IBody): { across: number; front: number } {

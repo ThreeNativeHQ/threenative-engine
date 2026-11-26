@@ -1,8 +1,8 @@
-import { Group } from "three";
+import type { Group } from "three";
 import { BLADE } from "../level.js";
 import { createBlade } from "../render/props.js";
 import { toWorld } from "../render/temple.js";
-import { bladeLift, BLADE_THICK } from "../sim/blade.js";
+import { BLADE_THICK, bladeLift } from "../sim/blade.js";
 import { CLICK, UNIT } from "../tuning.js";
 import type { GameCtx } from "./Lara.js";
 

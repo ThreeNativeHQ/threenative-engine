@@ -46,10 +46,7 @@
     {
       "kind": "input",
       "label": "jump",
-      "press": [
-        "ArrowUp",
-        "Space"
-      ],
+      "press": ["ArrowUp", "Space"],
       "holdTicks": 2,
       "release": true
     },

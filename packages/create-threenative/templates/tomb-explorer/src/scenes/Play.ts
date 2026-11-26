@@ -3,7 +3,7 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { PerspectiveCamera } from "three";
 import { Blade } from "../entities/Blade.js";
-import { type GameCtx, Lara, type IMannequin } from "../entities/Lara.js";
+import { type GameCtx, type IMannequin, Lara } from "../entities/Lara.js";
 import { RELIC, SPAWN, STATIONS } from "../level.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createChaseCamera } from "../render/camera.js";
@@ -12,12 +12,12 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
+import { createRelic } from "../render/props.js";
 import {
   type QualityTier,
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { createRelic } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { createTemple, toWorld } from "../render/temple.js";
 import { inPickupBox } from "../sim/pickup.js";

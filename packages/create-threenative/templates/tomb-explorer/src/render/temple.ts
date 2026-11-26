@@ -4,7 +4,7 @@
 // four merged meshes: floors, walls, the water plane, nothing else. The simulation never touches
 // these meshes: it reads the grid. Edit the grid, not this builder.
 import { BufferGeometry, Float32BufferAttribute, Group, Mesh, MeshStandardMaterial } from "three";
-import { cellCeiling, cellFloor, COLUMNS, OPEN, ROWS, SOLID, WATER } from "../level.js";
+import { COLUMNS, OPEN, ROWS, SOLID, WATER, cellCeiling, cellFloor } from "../level.js";
 import { CLICK, SECTOR, UNIT } from "../tuning.js";
 import { floorMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 

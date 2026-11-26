@@ -1,11 +1,11 @@
 // One 30 Hz update of the whole body: the state's own step, then the air supply, the blade and
 // the checks every state shares. Everything the reference engine does per update happens here.
-import { AIR_SUPPLY, AIR_REFILL_SURFACE, DROWN_DAMAGE } from "../tuning.js";
+import { AIR_REFILL_SURFACE, AIR_SUPPLY, DROWN_DAMAGE } from "../tuning.js";
 import { stepAir } from "./air.js";
 import { stepBlade } from "./blade.js";
 import type { IBody, IInput } from "./body.js";
 import { die } from "./death.js";
-import { stepGround, stepCompress } from "./ground.js";
+import { stepCompress, stepGround } from "./ground.js";
 import { stepClimb, stepHang } from "./hang.js";
 import { stepPickup, tryPickup } from "./pickup.js";
 import { stepSwim } from "./swim.js";

@@ -8,8 +8,8 @@ import {
   OctahedronGeometry,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import { BLADE_RAISED, BLADE_THICK } from "../sim/blade.js";
 import { BLADE } from "../level.js";
+import { BLADE_RAISED, BLADE_THICK } from "../sim/blade.js";
 import { UNIT } from "../tuning.js";
 import { propMaterial, structureMaterial } from "./materials.js";
 

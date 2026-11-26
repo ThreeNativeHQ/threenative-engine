@@ -36,9 +36,7 @@
     {
       "kind": "input",
       "label": "dive",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 30,
       "release": false
     },
@@ -55,19 +53,14 @@
     {
       "kind": "input",
       "label": "stroke",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "rise",
-      "press": [
-        "Space",
-        "ArrowDown"
-      ],
+      "press": ["Space", "ArrowDown"],
       "holdTicks": 80,
       "release": true
     },
