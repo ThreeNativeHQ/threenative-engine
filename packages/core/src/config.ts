@@ -600,4 +600,11 @@ export interface IThreeNativeConfig {
      */
     readonly renderer?: ThreeNativeUiRenderer;
   };
+  /**
+   * Telemetry runs on dev runs only; a production build never reports (PRD-918).
+   * `crashReports: false` stops the dev-run `TN_*` crash and engine-error reports (default true),
+   * the same switch as the Dev Dashboard's Settings -> Telemetry. Sharing procedurals or AI
+   * session traces is machine-local consent, never a project setting.
+   */
+  readonly telemetry?: { readonly crashReports?: boolean };
 }

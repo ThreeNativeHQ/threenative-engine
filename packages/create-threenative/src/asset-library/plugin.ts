@@ -7,6 +7,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
+import { type IDashboardApi, createDashboardApi } from "../dashboard/api.js";
 import { WEB_ENGINE_ID } from "../web-engine.js";
 import { cloudflareCatalogSource } from "./cloudflare-source.js";
 import { projectSource } from "./project-source.js";
@@ -21,8 +22,13 @@ export interface IAssetLibraryOptions {
   readonly sources?: readonly IAssetLibrarySource[];
   /** List the project's `assets/`, `src/**\/*.story.ts` and the Scene Bundler. Default true. */
   readonly project?: boolean;
-  /** The `Game | Asset Library` switcher on the game page in `pnpm dev`. Default true. */
+  /** The `Game | Dashboard` switcher on the game page in `pnpm dev`. Default true. */
   readonly devShell?: boolean;
+  /**
+   * Where the Dev Dashboard is served (PRD-918), with leading and trailing slashes. Default
+   * `/__dashboard/`. The Asset Library is its first section; `mountPath` keeps working.
+   */
+  readonly dashboardPath?: string;
   /** Attach `@threenative/procedural-environment`'s bake catalog when the project has it. Default true. */
   readonly procedural?: boolean;
   /** List every `@threenative/core/vfx` effect as a story when the project's core has them. Default true. */
@@ -65,7 +71,7 @@ export interface IAssetLibraryVitePlugin {
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 interface IViteServer extends IAssetLibraryServer {
   readonly config: { readonly root: string; readonly logger?: { info(message: string): void } };
-  readonly httpServer?: { once(event: "listening", listener: () => void): unknown } | null;
+  readonly httpServer?: { once(event: "listening" | "close", listener: () => void): unknown } | null;
   readonly resolvedUrls?: { readonly local?: readonly string[] } | null;
   readonly middlewares: { use(handler: Middleware): void };
   transformIndexHtml(url: string, html: string): Promise<string>;
@@ -204,42 +210,81 @@ const json = (res: ServerResponse, status: number, body: unknown): true => {
   return true;
 };
 
+/** The `TN_*` markers the dev shell keeps for Performance & Health (PRD-923). */
+export const DEV_SHELL_MARKERS = [
+  "TN_FRAME_BUDGET",
+  "TN_FRAME_SPANS",
+  "TN_SCENE_WARNING",
+  "TN_RENDER_PROJECTION",
+  "TN_HOT_CALL",
+  "TN_ASSET_UNUSED",
+  "TN_ALPHA_ANTIALIASING",
+] as const;
+
 /**
- * The `Game | Asset Library` switcher: a script on the game page, in `pnpm dev` only. It mounts
- * nothing until the user picks Asset Library (no iframe, no fetch, no context, no timer); then it
- * holds the page's animation frames while the library shows and pauses the library on the way
- * back. It never runs in an iframe (Studio), under automation (playtests), or with `?noDevShell=1`.
+ * The `Game | Dashboard` switcher (PRD-918): a script on the game page, in `pnpm dev` only. It
+ * mounts nothing until the user picks Dashboard (no iframe, no fetch, no context, no timer); then it
+ * holds the page's animation frames while the Dashboard shows and pauses it on the way back. It
+ * never runs in an iframe (Studio), under automation (playtests), or with `?noDevShell=1`.
+ *
+ * It also keeps the last 60 s (600 lines at most) of the game's own `TN_*` performance markers in a
+ * ring buffer (PRD-923): an array push per marker line and no DOM work, handed to the Dashboard's
+ * Performance & Health view when it opens. "Dock live strip" returns to the game with a small
+ * readout that updates once per `TN_FRAME_BUDGET` window.
  */
-export function devShellScript(mount: string): string {
+export function devShellScript(mount: string, dashboard = mount): string {
   return `(() => {
-  const mount = ${JSON.stringify(mount)};
+  const dashboard = ${JSON.stringify(dashboard)};
   if (window.self !== window.top || navigator.webdriver || new URLSearchParams(location.search).get("noDevShell") === "1") return;
+  // ── passive TN_* ring buffer: one push per marker line, nothing else while the Dashboard is closed ──
+  const codes = new Set(${JSON.stringify(DEV_SHELL_MARKERS)});
+  const ring = [];
+  let docked;
+  const keep = (level, args) => {
+    const first = args[0];
+    if (typeof first !== "string" || first.charCodeAt(0) !== 84 || !first.startsWith("TN_")) return;
+    const code = /^TN_[A-Z0-9_]+/.exec(first)?.[0];
+    if (!code || !codes.has(code)) return;
+    const t = performance.now();
+    ring.push({ t, level, code, text: first.length > 8000 ? first.slice(0, 8000) : first });
+    while (ring.length > 600 || ring[0].t < t - 60000) ring.shift();
+    if (docked && (code === "TN_FRAME_BUDGET" || code === "TN_SCENE_WARNING" || code === "TN_HOT_CALL")) docked(code, first);
+  };
+  for (const level of ["log", "info", "debug", "warn", "error"]) {
+    const original = console[level];
+    console[level] = function (...args) {
+      keep(level, args);
+      return original.apply(this, args);
+    };
+  }
+  window.__tnDevMarkers = ring;
   let frame, held = [], holding = false;
   const raf = window.requestAnimationFrame.bind(window);
   const hold = (on) => {
     if (!holding) {
       holding = true;
-      // The game's own loop asks for each frame; while the library shows, the ask waits.
+      // The game's own loop asks for each frame; while the Dashboard shows, the ask waits.
       window.requestAnimationFrame = (cb) => (window.__tnAssetShellHold ? (held.push(cb), 0) : raf(cb));
     }
     window.__tnAssetShellHold = on;
     if (!on) for (const cb of held.splice(0)) raf(cb);
   };
+  const font = "Inter,ui-sans-serif,system-ui,sans-serif";
   const bar = document.createElement("div");
   bar.id = "tn-dev-shell";
   bar.setAttribute("role", "tablist");
   bar.setAttribute("aria-label", "Dev view");
   // A faint DEV pill in the bottom-right corner, out of the game's view; it opens into the two tabs
-  // when pointed at or focused, and stays open while the library shows.
-  bar.style.cssText = "position:fixed;right:8px;bottom:8px;z-index:2147483647;display:flex;gap:2px;padding:2px;border-radius:999px;background:#020407e6;border:1px solid #2e3438;font:600 12px system-ui,sans-serif;transition:opacity .15s";
-  const tab = (label, library) => {
+  // when pointed at or focused, and stays open while the Dashboard shows.
+  bar.style.cssText = "position:fixed;right:8px;bottom:8px;z-index:2147483647;display:flex;gap:2px;padding:2px;border-radius:999px;background:#08090ce6;border:1px solid #24262c;font:600 12px " + font + ";transition:opacity .15s";
+  const tab = (label, open) => {
     const b = document.createElement("button");
     b.type = "button";
     b.textContent = label;
     b.setAttribute("role", "tab");
-    b.dataset.view = library ? "assets" : "game";
-    b.style.cssText = "cursor:pointer;border:0;border-radius:999px;padding:4px 12px;background:transparent;color:#c9cdcf";
-    b.onclick = () => show(library);
+    b.dataset.view = open ? "dashboard" : "game";
+    b.style.cssText = "cursor:pointer;border:0;border-radius:999px;padding:4px 12px;background:transparent;color:#a9abb0;font:inherit";
+    b.onclick = () => show(open);
     bar.append(b);
     return b;
   };
@@ -248,14 +293,14 @@ export function devShellScript(mount: string): string {
   const badge = document.createElement("span");
   badge.textContent = "DEV";
   badge.tabIndex = 0;
-  badge.style.cssText = "align-self:center;padding:2px 6px 2px 8px;color:#e0fb50;font:700 10px system-ui,sans-serif;letter-spacing:.08em";
+  badge.style.cssText = "align-self:center;padding:2px 6px 2px 8px;color:#e0fb50;font:700 10px " + font + ";letter-spacing:.08em";
   bar.append(badge);
   const game = tab("Game", false);
-  const library = tab("Asset Library", true);
+  const panel = tab("Dashboard", true);
   let open = false, pointed = false;
   const fold = () => {
     const shown = open || pointed || !!bar.querySelector(":focus-visible");
-    for (const b of [game, library]) b.style.display = shown ? "" : "none";
+    for (const b of [game, panel]) b.style.display = shown ? "" : "none";
     badge.style.padding = shown ? "2px 6px 2px 8px" : "4px 10px";
     bar.style.opacity = shown ? "1" : ".55";
   };
@@ -263,31 +308,90 @@ export function devShellScript(mount: string): string {
   bar.onmouseleave = () => { pointed = false; fold(); };
   bar.addEventListener("focusin", fold);
   bar.addEventListener("focusout", () => setTimeout(fold));
-  const mark = (lib) => {
-    for (const [b, on] of [[game, !lib], [library, lib]]) {
-      b.setAttribute("aria-selected", String(on));
-      b.style.background = on ? "#e0fb50" : "transparent";
-      b.style.color = on ? "#020407" : "#c9cdcf";
+  const mark = (on) => {
+    for (const [b, selected] of [[game, !on], [panel, on]]) {
+      b.setAttribute("aria-selected", String(selected));
+      b.style.background = selected ? "#e0fb50" : "transparent";
+      b.style.color = selected ? "#05070a" : "#a9abb0";
     }
   };
-  const show = (lib) => {
-    if (lib && !frame) {
+  const post = (message) => frame?.contentWindow?.postMessage(message, location.origin);
+  const markers = () => post({ type: "tn-dashboard:markers", events: ring.slice() });
+  const show = (on) => {
+    if (on && !frame) {
       frame = document.createElement("iframe");
-      frame.id = "tn-asset-library-frame";
-      frame.title = "Asset Library";
-      frame.src = mount;
-      frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483646;background:#222425";
+      frame.id = "tn-dev-dashboard-frame";
+      frame.title = "ThreeNative Dev Dashboard";
+      frame.src = dashboard;
+      frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483646;background:#08090c";
+      frame.addEventListener("load", markers);
       document.body.append(frame);
     }
     if (frame) {
-      frame.style.display = lib ? "block" : "none";
-      frame.contentWindow?.postMessage({ type: lib ? "tn-asset-library:resume" : "tn-asset-library:pause" }, "*");
+      frame.style.display = on ? "block" : "none";
+      post({ type: on ? "tn-asset-library:resume" : "tn-asset-library:pause" });
+      if (on) markers();
     }
-    hold(lib);
-    mark(lib);
-    open = lib;
+    if (on) undock();
+    hold(on);
+    mark(on);
+    open = on;
     fold();
   };
+  // ── the optional live dock strip (PRD-923): Studio-themed, beside the pill, one write per window ──
+  let strip;
+  const undock = () => { strip?.remove(); strip = undefined; docked = undefined; };
+  const dock = () => {
+    show(false);
+    if (strip) return;
+    strip = document.createElement("div");
+    strip.id = "tn-dev-dock";
+    strip.setAttribute("role", "status");
+    strip.style.cssText = "position:fixed;left:8px;bottom:8px;z-index:2147483647;display:flex;gap:12px;align-items:center;padding:5px 6px 5px 12px;border-radius:10px;background:#101115ee;border:1px solid #24262c;color:#f4f5f6;font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace";
+    const cell = (label) => {
+      const wrap = document.createElement("span");
+      const name = document.createElement("span");
+      name.textContent = label + " ";
+      name.style.color = "#868991";
+      const value = document.createElement("b");
+      value.textContent = "–";
+      wrap.append(name, value);
+      strip.append(wrap);
+      return value;
+    };
+    const fps = cell("FPS"), p95 = cell("p95"), draws = cell("draws"), warn = cell("warn");
+    const close = document.createElement("button");
+    close.type = "button";
+    close.textContent = "×";
+    close.title = "Close the live strip";
+    close.style.cssText = "cursor:pointer;border:0;border-radius:6px;padding:0 6px;background:#17181d;color:#a9abb0;font:inherit";
+    close.onclick = undock;
+    strip.append(close);
+    let warnings = 0;
+    docked = (code, text) => {
+      if (code !== "TN_FRAME_BUDGET") { warnings += 1; warn.textContent = String(warnings); warn.style.color = "#fbbf24"; return; }
+      try {
+        const w = JSON.parse(text.slice(text.indexOf("{")));
+        const f = w.presentedFps ?? w.fps;
+        fps.textContent = f === undefined ? "–" : Math.round(f).toString();
+        fps.style.color = f !== undefined && w.targetFps && f < w.targetFps * 0.9 ? "#fbbf24" : "#4ade80";
+        const ms = w.presented?.p95 ?? w.frame?.p95;
+        p95.textContent = ms === undefined ? "–" : ms.toFixed(1) + " ms";
+        const d = w.passes?.main?.draws?.mean;
+        draws.textContent = d === undefined ? "–" : Math.round(d).toString();
+      } catch {}
+    };
+    for (const event of ring) if (event.code === "TN_FRAME_BUDGET") docked(event.code, event.text);
+    document.body.append(strip);
+  };
+  window.addEventListener("message", (event) => {
+    if (event.origin !== location.origin || event.source !== frame?.contentWindow) return;
+    const type = event.data?.type;
+    if (type === "tn-dashboard:request-markers") markers();
+    else if (type === "tn-dashboard:dock") dock();
+    else if (type === "tn-dashboard:game") show(false);
+    else if (type === "tn-dashboard:clear-markers") ring.length = 0;
+  });
   mark(false);
   fold();
   const add = () => document.body.append(bar);
@@ -299,10 +403,16 @@ export function createAssetLibraryPlugin(
   options: IAssetLibraryOptions = {},
 ): IAssetLibraryVitePlugin {
   const mount = options.mountPath ?? "/__assets/";
-  if (!mount.startsWith("/") || !mount.endsWith("/"))
-    throw new Error(
-      `createAssetLibraryPlugin: mountPath must start and end with "/", got ${JSON.stringify(mount)}`,
-    );
+  const dashboard = options.dashboardPath ?? "/__dashboard/";
+  for (const [name, value] of [
+    ["mountPath", mount],
+    ["dashboardPath", dashboard],
+  ] as const)
+    if (!value.startsWith("/") || !value.endsWith("/"))
+      throw new Error(
+        `createAssetLibraryPlugin: ${name} must start and end with "/", got ${JSON.stringify(value)}`,
+      );
+  let api: IDashboardApi | undefined;
   let root = process.cwd();
   let dir = "";
   const sources: IAssetLibrarySource[] = [...(options.sources ?? [])];
@@ -360,7 +470,12 @@ export function createAssetLibraryPlugin(
       if (id === `${RESOLVED}entry`) {
         await attached;
         const clients = sources.filter((source) => source.client);
-        const config = { base: mount, title: options.title ?? "Asset Library" };
+        const config = {
+          base: mount,
+          title: options.title ?? "Asset Library",
+          dashboard,
+          project: options.project !== false,
+        };
         return [
           ...clients.map(
             (source, i) =>
@@ -430,10 +545,29 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
           .replaceAll("%BASE%", mount)
           .replace("%STYLE%", () => readFileSync(path.join(dir, "client.css"), "utf8"))
           .replace("%ENTRY%", entry);
+      if (options.project !== false) {
+        api = createDashboardApi({
+          root: server.config.root,
+          url: () => server.resolvedUrls?.local?.[0],
+        });
+        server.httpServer?.once("close", () => api?.close());
+      }
       server.middlewares.use((req, res, next) => {
         const url = new URL(req.url ?? "/", "http://library");
-        if (!url.pathname.startsWith(mount)) return next();
-        const rest = url.pathname.slice(mount.length);
+        // The Dashboard (PRD-918) is the same page as the library, plus its own API.
+        const onDashboard = url.pathname.startsWith(dashboard);
+        if (!onDashboard && !url.pathname.startsWith(mount)) return next();
+        const rest = url.pathname.slice((onDashboard ? dashboard : mount).length);
+        if (onDashboard && rest.startsWith("api/")) {
+          if (!api) return next();
+          api
+            .handle(rest.slice("api/".length), url, req, res)
+            .then((handled) => {
+              if (!handled) json(res, 404, { error: `no dashboard route ${req.method} ${rest}` });
+            })
+            .catch((error: Error) => json(res, 500, { error: error.message }));
+          return;
+        }
         const answer = async (): Promise<boolean> => {
           const pose = await ready;
           if (rest === "" || rest === "index.html") {
@@ -498,15 +632,27 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
       });
       const banner = () => {
         const local = server.resolvedUrls?.local?.[0];
-        if (local) server.config.logger?.info(`  ➜  Asset Library: ${new URL(mount, local).href}`);
+        if (!local) return;
+        if (options.project !== false)
+          server.config.logger?.info(`  ➜  Dashboard: ${new URL(dashboard, local).href}`);
+        server.config.logger?.info(`  ➜  Asset Library: ${new URL(mount, local).href}`);
       };
       server.httpServer?.once("listening", () => setTimeout(banner, 0));
     },
     transformIndexHtml: {
       order: "post",
       handler(html, context) {
-        if (options.devShell === false || context.path.startsWith(mount)) return html;
-        return html.replace(/<head([^>]*)>/u, `<head$1><script>${devShellScript(mount)}</script>`);
+        if (
+          options.devShell === false ||
+          context.path.startsWith(mount) ||
+          context.path.startsWith(dashboard)
+        )
+          return html;
+        const target = options.project === false ? mount : dashboard;
+        return html.replace(
+          /<head([^>]*)>/u,
+          `<head$1><script>${devShellScript(mount, target)}</script>`,
+        );
       },
     },
   };
