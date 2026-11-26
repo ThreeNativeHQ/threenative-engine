@@ -8,8 +8,9 @@ import type { ICapabilityEntry, ICapabilityManifest } from "../packages/engine-m
 
 const MODEL = "minishlab/potion-base-2M";
 const REVISION = "389b9f64be5aa4ae7a6bc6fe95ef20ce485ae5da";
+// SHA-256 digests of the public files at the pinned model revision.
 const SOURCE_HASHES = {
-  "tokenizer.json": "e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50",
+  "tokenizer.json": "e67e803f624fb4d67dea1c730d06e1067e1b14d830e2c2202569e3ef0f70bb50", // gitleaks:allow
   "model.safetensors": "f95ffde02ad06f63ae38eb9d400038cd5ccaf8411ec3cb650c6025113f96cbb8",
 } as const;
 const MAGIC = Buffer.from(`TN-MODEL2VEC-1:${REVISION}\n`);
