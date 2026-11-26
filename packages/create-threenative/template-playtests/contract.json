@@ -296,6 +296,34 @@
       }
     }
   },
+  "open-world": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": { "actions": ["ShiftLeft", "Space", "KeyQ", "KeyE"] },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "stars", "equals": 0 },
+        { "id": "state", "path": "money", "equals": 1200 },
+        { "id": "state", "path": "health", "equals": 100 },
+        { "id": "state", "path": "mode", "equals": "foot" }
+      ]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Punch_Jab",
+        "ticks": 36,
+        "contactTicks": 9,
+        "effect": { "signal": "punch" }
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "platformer": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
@@ -870,6 +898,79 @@
         },
         "windows": 1
       }
+    }
+  },
+  "stealth": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["ShiftLeft", "KeyC", "KeyQ", "KeyF", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "alertPhase", "equals": "infiltration" },
+        { "id": "state", "path": "alerts", "equals": 0 },
+        { "id": "state", "path": "takedowns", "equals": 0 },
+        { "id": "state", "path": "keycard", "equals": 0 },
+        { "id": "state", "path": "health", "equals": 100 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "no key plays a clip from a standstill: a knock needs a wall press and a grab needs a guard's back, each proven by its own scenario (wall-knock-lures, takedown)",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a takedown is a choke hold counted in pumps",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "survival-horror": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyE", "KeyJ", "ShiftLeft", "KeyR"]
+    },
+    "restart": {
+      "key": "KeyN",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "shots",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "doorsOpened",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyR",
+        "clip": "Pistol_Reload",
+        "ticks": 110
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: the only attack is a handgun round, which needs the aim key held, and aim-fire-auto-target proves each shot reaches its target",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "tower-defense": {

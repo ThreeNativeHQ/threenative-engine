@@ -747,6 +747,44 @@ describe("playtest plugin", () => {
     }
   });
 
+  it("walks entity graphs once per tick when no contact needs naming", async () => {
+    const canvas = testCanvas();
+    let graphReads = 0;
+    const visual = {};
+    Object.defineProperty(visual, "paint", {
+      enumerable: true,
+      get: () => {
+        graphReads += 1;
+        return {};
+      },
+    });
+    class TestScene extends Scene {
+      override enter(ctx: ICtx): void {
+        ctx.entities.add("car", { visual });
+        ctx.entities.add("trigger", { physics: { area: { drainContacts: () => [] } } });
+      }
+    }
+    const game = defineGame({
+      initialState: {},
+      plugins: [playtest()],
+      renderer: stubRenderer(canvas),
+      scenes: { test: TestScene },
+      start: "test",
+    });
+
+    await game.start();
+    try {
+      await bridge().advance?.(1);
+      const before = graphReads;
+      await bridge().advance?.(5);
+      // One walk a tick finds the contact sources (an area can be added at any time). The
+      // value-to-id index is a second walk, built only when a contact needs naming.
+      expect(graphReads - before).toBe(5);
+    } finally {
+      game.stop();
+    }
+  });
+
   it("should re-register only the active scene entities after goto", async () => {
     const canvas = testCanvas();
     let navigate: ((name: string) => Promise<void>) | undefined;

@@ -1,0 +1,164 @@
+{
+  "name": "pistol-lock-on",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "draw",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "drawn",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim",
+      "press": "KeyE",
+      "holdTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "fire",
+      "press": ["KeyE", "Space"],
+      "holdTicks": 50,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "let-go",
+      "press": ["KeyE", "Space"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "weapon",
+        "atSteps": [
+          {
+            "label": "drawn",
+            "equals": "pistol"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "targetLocked",
+        "atSteps": [
+          {
+            "label": "aim",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "shots",
+        "gte": 2
+      },
+      {
+        "entity": "player",
+        "component": "clip",
+        "lte": 10
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "pedsDown",
+        "atSteps": [
+          {
+            "label": "drawn",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "pedsDown",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crimes",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "aiming",
+        "atSteps": [
+          {
+            "label": "drawn",
+            "equals": false
+          },
+          {
+            "label": "aim",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "locked",
+        "atSteps": [
+          {
+            "label": "aim",
+            "equals": true
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "shot",
+        "entity": "player",
+        "minCount": 2
+      }
+    ]
+  }
+}

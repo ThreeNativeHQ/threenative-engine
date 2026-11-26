@@ -1,0 +1,143 @@
+{
+  "name": "busted-respawns-at-police",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "cuffed",
+      "waitTicks": 180,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "respawned",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "cuffed",
+            "equals": "busted"
+          },
+          {
+            "label": "respawned",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 1100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stars",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "busted",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "weapon",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": "fist"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "ammo",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "playerX",
+        "gte": 40
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "gte": 24
+      }
+    ],
+    "signals": [
+      {
+        "name": "busted",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "respawned",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

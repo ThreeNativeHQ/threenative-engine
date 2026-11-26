@@ -1,0 +1,81 @@
+{
+  "name": "car-knocks-down-ped",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": "KeyW",
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "pedsDown",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "pedsDown",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "crimes",
+        "gte": 1
+      }
+    ],
+    "signals": [
+      {
+        "name": "knocked-down",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

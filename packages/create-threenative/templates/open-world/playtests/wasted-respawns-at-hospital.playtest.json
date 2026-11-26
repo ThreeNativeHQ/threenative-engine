@@ -1,0 +1,189 @@
+{
+  "name": "wasted-respawns-at-hospital",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "draw",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "drawn",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "burnt",
+      "waitTicks": 300,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "respawned",
+      "waitTicks": 240,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "burnt",
+            "equals": "wasted"
+          },
+          {
+            "label": "respawned",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 1100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "wasted",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "mode",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": "foot"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stars",
+        "atSteps": [
+          {
+            "label": "burnt",
+            "equals": 1
+          },
+          {
+            "label": "respawned",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "weapon",
+        "atSteps": [
+          {
+            "label": "burnt",
+            "equals": "pistol"
+          },
+          {
+            "label": "respawned",
+            "equals": "fist"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "ammo",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "playerX",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "lte": -40
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "lte": -24
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "explosion",
+        "entity": "world",
+        "minCount": 1
+      },
+      {
+        "name": "wasted",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "respawned",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

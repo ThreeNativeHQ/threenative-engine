@@ -1,0 +1,85 @@
+{
+  "name": "job-fails-when-car-burns",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "phone",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "offered",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "failed",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "job",
+        "atSteps": [
+          {
+            "label": "offered",
+            "equals": "pickup"
+          },
+          {
+            "label": "failed",
+            "equals": "failed"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "jobsDone",
+        "atSteps": [
+          {
+            "label": "failed",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "job-failed",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}
