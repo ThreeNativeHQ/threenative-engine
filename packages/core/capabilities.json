@@ -578,6 +578,151 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "const levels = createBackend().db.collection(\"levels\");\nawait levels.put(\"canyon\", { blocks: 12, title: \"Canyon run\" }, \"public\");\nconst shared = await levels.get(\"canyon\");",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendCollection { … }",
+      "situations": [
+        "publish a player-built level that other players of the same game can load",
+        "list the documents other players have made public in this game"
+      ],
+      "summary": "Documents shared inside one game: published levels, shared builds, public profiles.",
+      "supersedes": [],
+      "symbol": "BackendCollection"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nawait backend.db.set(\"save\", { level: 4, gold: 20 });\nconst save = await backend.db.get(\"save\");",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendDb { … }",
+      "situations": [
+        "save game progress in the cloud so clearing the browser cache does not lose it",
+        "keep the player's last write when the network fails, because it lands locally first"
+      ],
+      "summary": "The caller's own key/value store: private per player, per game.",
+      "supersedes": [],
+      "symbol": "BackendDb"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nbackend.db.set(\"save\", next).catch((error) => { if (error.code === \"version_conflict\") merge(error.value); });",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendError extends Error { … }",
+      "situations": [
+        "branch on a failed save without parsing an error message",
+        "recover from a stale write by settling on `error.value` and saving again"
+      ],
+      "summary": "The one failure shape a game handles: the code, plus the server's copy on a conflict.",
+      "supersedes": [],
+      "symbol": "BackendError"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const rooms = createBackend().rooms;\nconst room = await rooms.quickJoin();\nconst open = await rooms.list();",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendRooms { … }",
+      "situations": [
+        "add online multiplayer to a published game without writing a server",
+        "run a lobby where players join a room by a six-character code",
+        "find someone to play with by joining the fullest public room",
+        "send messages between the players of one room, peer to peer when it connects"
+      ],
+      "summary": "The game's rooms: one call to open one, join one or list what is open.",
+      "supersedes": [],
+      "symbol": "BackendRooms"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nawait backend.db.set(\"save\", { level: 3 });\nconst shared = await backend.db.collection(\"levels\").list();",
+      "importPath": "@threenative/backend",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export function createBackend(options: IBackendOptions = { … }",
+      "situations": [
+        "save player progress in the cloud on a published game so it survives a cache clear",
+        "share documents between the players of one game",
+        "keep working in a preview build that has no backend"
+      ],
+      "summary": "The cloud store a published game saves into. With no host, no `fetch` and no `localStorage` every call still resolves, so a preview build runs the same game code.",
+      "supersedes": [],
+      "symbol": "createBackend"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const room = await createBackend().rooms.create({ max: 4 });\nroom.send({ move: \"e4\" }, room.peers[0]);\nroom.transport(room.peers[0]); // \"p2p\" or \"relay\"",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class Room { … }",
+      "situations": [
+        "play a match with another player in the same room",
+        "carry room messages over a peer-to-peer data channel, with the relay as the fallback",
+        "check whether a message to a player went peer to peer or through the relay"
+      ],
+      "summary": "One live room: a socket, its members and the shared state the room has confirmed.",
+      "supersedes": [],
+      "symbol": "Room"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "await deleteGameData(env.BACKEND_DB, projectId);",
+      "importPath": "@threenative/backend/cloudflare",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export async function deleteGameData(db: IBackendD1, gameId: string): Promise<void> { … }",
+      "situations": ["delete a published game and all of its players' data in one call"],
+      "summary": "Removes every row a game owns, in all three tables, and nothing else — what a game or account deletion calls, while revoking a share link keeps the players' saves.",
+      "supersedes": [],
+      "symbol": "deleteGameData"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "export default { async fetch(request, env) { return handleBackend(request, { db: env.BACKEND_DB, gameId, playerId }); } }; // gameId and playerId are the host's, never the client's",
+      "importPath": "@threenative/backend/cloudflare",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export async function handleBackend( request: Request, options: IBackendHandlerOptions, ): Promise<Response> { … }",
+      "situations": [
+        "mount cloud saves and shared documents on a Cloudflare Worker",
+        "run the ThreeNative backend on your own Cloudflare account"
+      ],
+      "summary": "Answers one `/_backend` request: `200` with the body, or `{ error }` with 400/403/404/409/413. Every response carries the marker header, errors included, because the client decides whether a host exists at all by looking for it — an SPA fallback HTML 200 is not a backend.",
+      "supersedes": [],
+      "symbol": "handleBackend"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material",
         "the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material"
@@ -1442,6 +1587,24 @@
       "summary": "Record or replay deterministic game input and state.",
       "supersedes": [],
       "symbol": "createReplayDriver"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "add each object with ctx.add for GPU dispatch; use replay for bursts and dispose when finished"
+      ],
+      "example": "const effect = createVfxPreset(\"fire\", { scale: 1.5 }); for (const layer of effect.objects) ctx.add(layer);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["scale, intensity and tint match the catalog controls"],
+      "package": "@threenative/core",
+      "signature": "export function createVfxPreset(id: string, overrides: IVfxPresetOverrides = { … }",
+      "situations": [
+        "apply a shared engine VFX preset from its catalog ID and tune its size, speed or tint"
+      ],
+      "summary": "Build the renderable layers of a catalog preset.",
+      "supersedes": [],
+      "symbol": "createVfxPreset"
     },
     {
       "aliases": [],
@@ -13077,15 +13240,6 @@
   ],
   "notOwned": [
     {
-      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
-      "id": "save-load",
-      "situations": [
-        "persist a player's progress between sessions",
-        "save player progress between sessions",
-        "load a saved game state"
-      ]
-    },
-    {
       "guidance": "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "inventory",
       "situations": ["inventory system", "manage inventory contents"]
@@ -13096,7 +13250,7 @@
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
     {
-      "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
+      "guidance": "The framework runs hosted rooms in @threenative/backend: createBackend().rooms.create(), .join(code) or .quickJoin() open a lobby, room.send() reaches everybody or one peer and room.state is ordered by the room's Durable Object, and a pair of players upgrades those messages to an ordered WebRTC data channel when both can reach each other (the relay is the fallback, and rtc: { iceServers: [] } forces it). The authenticated transport seam stays at @threenative/core/net: import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Not owned: authoritative replication, snapshots, prediction, interpolation and rejoin policy, which stay game rules in your project's src/ on either transport.",
       "id": "networked-multiplayer",
       "situations": ["authoritative replication", "client prediction"]
     },

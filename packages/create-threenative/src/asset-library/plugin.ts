@@ -374,8 +374,9 @@ export function createAssetLibraryPlugin(
           const symbol = file.slice("vfx:".length);
           return `import { mountStory } from ${JSON.stringify(`/@fs${path.join(dir, "story-frame.js")}`)};
 import { vfxStory } from ${JSON.stringify(`/@fs${path.join(dir, "vfx-story.js")}`)};
+import { GPUParticles3D } from "@threenative/core";
 import { ${symbol} } from ${JSON.stringify(VFX_IMPORT)};
-await mountStory(vfxStory(${JSON.stringify(vfxTitle(symbol))}, ${symbol}));`;
+await mountStory(vfxStory(${JSON.stringify(vfxTitle(symbol))}, ${symbol}, GPUParticles3D));`;
         }
         const spec = JSON.stringify(`/${file}`);
         // The story module is this entry's HMR boundary: an edit to it (or to anything it imports)

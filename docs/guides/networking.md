@@ -58,3 +58,11 @@ host's WebTransport bridge, and iOS is unverified.
 
 - [net.ts](../../packages/core/src/net.ts)
 - [net-session.ts](../../packages/core/src/net-session.ts)
+
+## Hosted saves and rooms
+
+A published game that needs no server of its own uses `@threenative/backend` instead.
+`createBackend()` gives `db` (per-player saves), `db.collection(name)` (shared documents) and
+`rooms` (relay rooms that upgrade `room.send` to peer-to-peer). Studio share links host it; the
+package ships the Cloudflare handler and its D1 schema for any other host. See
+`packages/backend/README.md`.

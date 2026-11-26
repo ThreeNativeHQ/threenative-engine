@@ -2204,3 +2204,12 @@ export { InputMap } from "./input.js";
  * @example canvas.addEventListener("click", () => captureMouse(canvas));
  */
 export { captureMouse } from "./input.js";
+
+export { PARTICLE_KINDS } from "./particle-kinds.js";
+export { VFX_PRESETS, createVfxPreset } from "./vfx/catalog.js";
+export type {
+  IVfxPreset,
+  IVfxPresetEffect,
+  IVfxPresetOverrides,
+  VfxPresetCategory,
+} from "./vfx/catalog.js";

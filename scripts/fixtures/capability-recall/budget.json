@@ -300,7 +300,6 @@
   "unresolvedResultRate": 0,
   "notOwnedRows": {
     "request.inventory-system": "inventory",
-    "request.save-progress": "save-load",
     "request.dialogue-npc": "dialogue",
     "request.multiplayer-replication": "networked-multiplayer",
     "request.multiplayer-prediction": "networked-multiplayer"
