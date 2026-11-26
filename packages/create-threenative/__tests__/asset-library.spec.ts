@@ -290,7 +290,9 @@ describe("asset library server", () => {
     expect(script).toContain("window.self !== window.top");
     expect(script).toContain('"noDevShell"');
     expect(script).toContain('const dashboard = "/__dashboard/"');
-    expect(script.indexOf("frame.src = dashboard")).toBeGreaterThan(script.indexOf("const show"));
+    expect(script.indexOf("frame.src = reopen ?? dashboard")).toBeGreaterThan(
+      script.indexOf("const show"),
+    );
     expect(script).toContain('tab("Dashboard", true)');
     // A worker game's markers reach the ring through core's dev relay (PRD-923).
     expect(script).toContain('new BroadcastChannel("threenative-dev-markers")');

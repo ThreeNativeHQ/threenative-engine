@@ -319,6 +319,9 @@ export function devShellScript(mount: string, dashboard = mount): string {
       b.style.color = selected ? "#05070a" : "#a9abb0";
     }
   };
+  // A Settings save reloads this page (Vite full-reload); the Dashboard comes back on the same section.
+  const RESTORE = "tn-dev-dashboard-restore";
+  let reopen;
   const post = (message) => frame?.contentWindow?.postMessage(message, location.origin);
   const markers = () => post({ type: "tn-dashboard:markers", events: ring.slice() });
   const show = (on) => {
@@ -326,7 +329,7 @@ export function devShellScript(mount: string, dashboard = mount): string {
       frame = document.createElement("iframe");
       frame.id = "tn-dev-dashboard-frame";
       frame.title = "ThreeNative Dev Dashboard";
-      frame.src = dashboard;
+      frame.src = reopen ?? dashboard;
       frame.style.cssText = "position:fixed;inset:0;width:100%;height:100%;border:0;z-index:2147483646;background:#08090c";
       frame.addEventListener("load", markers);
       document.body.append(frame);
@@ -395,10 +398,22 @@ export function devShellScript(mount: string, dashboard = mount): string {
     else if (type === "tn-dashboard:dock") dock();
     else if (type === "tn-dashboard:game") show(false);
     else if (type === "tn-dashboard:clear-markers") ring.length = 0;
+    else if (type === "tn-dashboard:config-updated") {
+      const at = frame.contentWindow.location;
+      try { sessionStorage.setItem(RESTORE, JSON.stringify({ src: at.pathname + at.search, until: Date.now() + 10000 })); } catch {}
+    }
   });
   mark(false);
   fold();
-  const add = () => document.body.append(bar);
+  const add = () => {
+    document.body.append(bar);
+    let saved;
+    try { saved = JSON.parse(sessionStorage.getItem(RESTORE) ?? "null"); sessionStorage.removeItem(RESTORE); } catch {}
+    if (saved && saved.until > Date.now() && typeof saved.src === "string" && saved.src.startsWith(dashboard)) {
+      reopen = saved.src;
+      show(true);
+    }
+  };
   if (document.body) add(); else document.addEventListener("DOMContentLoaded", add);
 })();`;
 }

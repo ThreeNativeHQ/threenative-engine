@@ -205,8 +205,9 @@ function editFor(
       if (source[end] === ",") end += 1;
       const lineEnd = source.indexOf("\n", end);
       const tail = lineEnd === -1 ? "" : source.slice(end, lineEnd);
-      if (/^\s*(\/\/.*)?$/u.test(tail)) end = lineEnd;
-      const start = source.lastIndexOf("\n", property.getStart());
+      if (lineEnd !== -1 && /^\s*(\/\/.*)?$/u.test(tail)) end = lineEnd;
+      // A property on the file's first line has no newline before it.
+      const start = Math.max(0, source.lastIndexOf("\n", property.getStart()));
       const lead = source.slice(start + 1, property.getStart());
       return /^\s*$/u.test(lead)
         ? { start, end, text: "" }
@@ -240,10 +241,11 @@ function editFor(
   // Keep a trailing `// comment` on the previous line with that line.
   const lineEnd = source.indexOf("\n", at);
   if (lineEnd !== -1 && /^[ \t]*\/\/.*$/u.test(source.slice(at, lineEnd))) at = lineEnd;
+  // The missing comma goes right after the last property, never after its trailing comment.
   return {
-    start: at,
+    start: hasComma ? at : last.end,
     end: at,
-    text: `${hasComma ? "" : ","}\n${indent}${nestedText(keys, value, indent, step)},`,
+    text: `${hasComma ? "" : `,${source.slice(last.end, at)}`}\n${indent}${nestedText(keys, value, indent, step)},`,
   };
 }
 
@@ -281,15 +283,34 @@ export async function applyConfigChanges(
  * first: an invalid value throws `ConfigEditError` naming the loader's message and writes nothing.
  * Returns the new view and whether the engine changed (the dev server must restart for that).
  */
-export async function patchConfig(
+export function patchConfig(
+  root: string,
+  changes: Readonly<Record<string, unknown>>,
+): Promise<{ view: IConfigView; engineChanged: boolean }> {
+  // One save at a time per project: two quick edits would both read the old file, and the second
+  // rename would drop the first edit.
+  const key = path.resolve(root);
+  const run = (saving.get(key) ?? Promise.resolve()).then(() => patchNow(root, changes));
+  const tail = run.catch(() => undefined);
+  saving.set(key, tail);
+  void tail.then(() => {
+    if (saving.get(key) === tail) saving.delete(key);
+  });
+  return run;
+}
+
+const saving = new Map<string, Promise<unknown>>();
+
+async function patchNow(
   root: string,
   changes: Readonly<Record<string, unknown>>,
 ): Promise<{ view: IConfigView; engineChanged: boolean }> {
   const file = path.join(root, CONFIG_FILE);
-  const source = await readFile(file, "utf8").catch(
-    () =>
-      'import type { IThreeNativeConfig } from "@threenative/core";\n\nconst config: IThreeNativeConfig = {};\n\nexport default config;\n',
-  );
+  // Only a missing file starts from the stub; any other read error must not overwrite the config.
+  const source = await readFile(file, "utf8").catch((error: NodeJS.ErrnoException) => {
+    if (error.code !== "ENOENT") throw error;
+    return 'import type { IThreeNativeConfig } from "@threenative/core";\n\nconst config: IThreeNativeConfig = {};\n\nexport default config;\n';
+  });
   const before = await loadConfig(root, undefined, { source });
   const next = await applyConfigChanges(source, changes);
   let after: Awaited<ReturnType<typeof loadConfig>>;

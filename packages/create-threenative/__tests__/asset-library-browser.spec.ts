@@ -241,6 +241,19 @@ describe("asset library in a browser", () => {
     await frame.locator("text=TN_SCENE_WARNING").first().waitFor({ timeout: 30_000 });
     await frame.locator('#rail [data-section="settings"]').click();
     await frame.locator("#settings-tab-config").waitFor({ timeout: 30_000 });
+    // A Settings save reloads the game page; the Dashboard comes back on Settings.
+    await page
+      .frame({ url: /__dashboard/u })
+      ?.evaluate(() =>
+        window.parent.postMessage({ type: "tn-dashboard:config-updated" }, location.origin),
+      );
+    await page.waitForFunction(() => sessionStorage.getItem("tn-dev-dashboard-restore") !== null);
+    await page.reload();
+    await page.locator("#tn-dev-dashboard-frame").waitFor({ state: "visible", timeout: 30_000 });
+    expect(
+      await page.locator("#tn-dev-dashboard-frame").evaluate((f) => (f as HTMLIFrameElement).src),
+    ).toContain("section=settings");
+    await page.hover("#tn-dev-shell");
     await page.click('#tn-dev-shell [data-view="game"]');
     expect(await page.locator("#tn-dev-dashboard-frame").isVisible()).toBe(false);
     await page.mouse.move(0, 0);

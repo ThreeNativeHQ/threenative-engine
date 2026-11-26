@@ -51,17 +51,17 @@ const SECRET_SHAPES: readonly [string, RegExp][] = [
     "authorization header",
     /\b(?:Proxy-)?Authorization\b["']?\s*[:=]\s*["']?(?:Bearer|Basic|Token|Digest)\s+(?!\[redacted)[^\s"'\\,;]+/giu,
   ],
-  ["bearer token", /\bBearer\s+(?!\[redacted)[A-Za-z0-9._~+/=-]{16,}/gu],
+  ["bearer token", /\bBearer\s+(?!\[redacted)[A-Za-z0-9._~+/=-]{16,}/giu],
   ["URL credentials", /\b[a-z][a-z0-9+.-]*:\/\/(?!\[redacted)[^\s:/@"'\\]+:[^\s@/"'\\]+@/giu],
   [
     "secret assignment",
-    /\b(?:[A-Za-z0-9_]*(?:_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PAT|APIKEY|API_KEY)|DATABASE_URL|PASSWORD|SECRET)\b["']?\s*[:=]\s*["']?(?!\[redacted)(?=[^\s"'\\,;}]{6,})[^\s"'\\,;}]+/gu,
+    /\b(?:[A-Za-z0-9_]*(?:_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PAT|APIKEY|API_KEY)|DATABASE_URL|PASSWORD|SECRET)\b["']?\s*[:=]\s*["']?(?!\[redacted)(?=[^\s"'\\,;}]{6,})[^\s"'\\,;}]+/giu,
   ],
   ["cookie header", /\b(?:Set-)?Cookie\b["']?\s*:\s*(?!\[redacted)[^\n"\\]{4,}/giu],
 ];
 
 const SENSITIVE_FILE =
-  /(?:^|[\\/\s"'`=])(?:\.env(?:\.[\w.-]+)?|[\w.-]+\.(?:pem|p12|pfx|key)|id_rsa[\w.-]*|id_ed25519[\w.-]*|id_ecdsa[\w.-]*|auth\.json|\.npmrc|\.netrc|\.pgpass|credentials(?:\.json)?|\.ssh[\\/][^\s"']*)(?=$|[\s"'`;|)&]|$)/u;
+  /(?:^|[\\/\s"'`=])(?:\.env(?:\.[\w.-]+)?|[\w.-]+\.(?:pem|p12|pfx|key)|id_rsa[\w.-]*|id_ed25519[\w.-]*|id_ecdsa[\w.-]*|auth\.json|\.npmrc|\.netrc|\.pgpass|credentials(?:\.json)?|\.ssh[\\/][^\s"']*)(?=$|[\s"'`;|)&\\,:])/iu;
 
 /** True when a path or command names a file whose body must never leave the machine. */
 export function isSensitiveFile(text: string): boolean {
@@ -142,6 +142,14 @@ export function residualFinding(
   if (USER_PATH.test(text)) return "user path";
   EMAIL.lastIndex = 0;
   if (EMAIL.test(text)) return "email address";
+  for (const [name, shape] of [
+    ["IP address", IPV4],
+    ["IP address", IPV6],
+    ["URL query secret", QUERY_SECRET],
+  ] as const) {
+    shape.lastIndex = 0;
+    if (shape.test(text)) return name;
+  }
   return undefined;
 }
 
@@ -171,6 +179,34 @@ const PATH_KEYS = new Set([
   "cmd",
 ]);
 
+/** The keys each agent uses to link a tool result to its call (Codex, Claude Code, pi, OpenAI). */
+const LINK_KEYS = ["tool_use_id", "call_id", "tool_call_id", "toolCallId"] as const;
+
+/** Every string inside a tool input, with JSON-encoded strings (Codex `arguments`) decoded. */
+function inputStrings(input: Json, out: string[] = []): string[] {
+  if (typeof input === "string") {
+    out.push(input);
+    if (/^\s*[[{]/u.test(input))
+      try {
+        inputStrings(JSON.parse(input) as Json, out);
+      } catch {
+        // Not JSON: the raw string above is already tested.
+      }
+  } else if (Array.isArray(input)) for (const child of input) inputStrings(child, out);
+  else if (input && typeof input === "object")
+    for (const value of Object.values(input)) inputStrings(value, out);
+  return out;
+}
+
+/** True when this record answers a private call anywhere inside it. */
+function answersPrivate(node: Json, privateIds: Set<string>): boolean {
+  if (Array.isArray(node)) return node.some((child) => answersPrivate(child, privateIds));
+  if (node === null || typeof node !== "object") return false;
+  if (LINK_KEYS.some((key) => typeof node[key] === "string" && privateIds.has(node[key] as string)))
+    return true;
+  return Object.values(node).some((child) => answersPrivate(child, privateIds));
+}
+
 /** Tool calls that read or print a private file: their results are dropped whole. */
 function privateToolIds(records: Json[]): Set<string> {
   const ids = new Set<string>();
@@ -180,10 +216,11 @@ function privateToolIds(records: Json[]): Set<string> {
       return;
     }
     if (node === null || typeof node !== "object") return;
-    const id = node.id ?? node.call_id ?? node.tool_call_id;
     const input = node.input ?? node.arguments ?? node.args;
-    if (typeof id === "string" && input !== undefined && isSensitiveFile(JSON.stringify(input)))
-      ids.add(id);
+    if (input !== undefined && inputStrings(input).some(isSensitiveFile))
+      // A Codex call carries both `id` and `call_id`; its output links by `call_id`.
+      for (const key of ["id", ...LINK_KEYS])
+        if (typeof node[key] === "string") ids.add(node[key] as string);
     for (const value of Object.values(node)) visit(value);
   };
   records.forEach(visit);
@@ -194,10 +231,9 @@ function scrubNode(node: Json, identity: IScrubIdentity, privateIds: Set<string>
   if (typeof node === "string") return scrubText(node, identity);
   if (Array.isArray(node)) return node.map((child) => scrubNode(child, identity, privateIds));
   if (node === null || typeof node !== "object") return node;
-  const linked = [node.tool_use_id, node.call_id, node.tool_call_id].some(
-    (id) =>
-      typeof id === "string" && privateIds.has(id) && !("input" in node || "arguments" in node),
-  );
+  const linked =
+    !("input" in node || "arguments" in node) &&
+    LINK_KEYS.some((key) => typeof node[key] === "string" && privateIds.has(node[key] as string));
   const namesPrivate = Object.entries(node).some(
     ([key, value]) => PATH_KEYS.has(key) && typeof value === "string" && isSensitiveFile(value),
   );
@@ -237,7 +273,19 @@ export function scrubTrace(
     }
   }
   const privateIds = privateToolIds(records);
-  const lines = records.map((record) => JSON.stringify(scrubNode(record, identity, privateIds)));
+  const lines = records.map((record) => {
+    const scrubbed = scrubNode(record, identity, privateIds);
+    // Claude Code copies a tool's stdout into a sibling `toolUseResult` that carries no id.
+    if (
+      scrubbed &&
+      typeof scrubbed === "object" &&
+      !Array.isArray(scrubbed) &&
+      "toolUseResult" in scrubbed &&
+      answersPrivate(record, privateIds)
+    )
+      scrubbed.toolUseResult = PRIVATE_FILE;
+    return JSON.stringify(scrubbed);
+  });
   const out = lines.join("\n");
   // The re-scan reads both the serialized text and every decoded string, so neither a JSON escape
   // nor a value split across escapes hides a survivor.

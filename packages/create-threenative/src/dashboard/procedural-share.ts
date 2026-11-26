@@ -43,11 +43,13 @@ export function validateGlb(bytes: Uint8Array): { readonly json: Record<string, 
   } catch {
     throw new Error("GLB JSON chunk does not parse");
   }
+  if (typeof json !== "object" || json === null || Array.isArray(json))
+    throw new Error("GLB JSON chunk is not an object");
   for (const key of ["buffers", "images"] as const) {
     const list = json[key];
     if (!Array.isArray(list)) continue;
     for (const item of list as { uri?: unknown }[])
-      if (typeof item.uri === "string")
+      if (typeof item?.uri === "string")
         throw new Error(`${key} reference an external or inline URI; not self-contained`);
   }
   return { json };

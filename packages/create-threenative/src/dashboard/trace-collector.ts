@@ -298,7 +298,8 @@ export async function shareTraces(
         },
         body: new Uint8Array(body),
       });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // 409: the site already holds this exact trace, so it counts as shared.
+      if (!response.ok && response.status !== 409) throw new Error(`HTTP ${response.status}`);
       done.add(candidate.id);
       report.sent.push(candidate.id);
     } catch (error) {

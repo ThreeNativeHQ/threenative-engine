@@ -1,6 +1,6 @@
 // The Dev Dashboard's server half (PRD-918, PRD-923): live config edits, the machine-local sharing
 // consent, the trace scrubber and both upload gates, procedural GLB checks, health and playtests.
-import { mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { chmod, mkdir, mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -89,6 +89,43 @@ describe("config editor", () => {
   });
 });
 
+describe("config editor edge cases", () => {
+  it("removes a key on a last line without a newline and inserts after a commented last key", async () => {
+    const oneLine = 'export default { app: { name: "Fox" }, engine: "threejs" }';
+    const removed = await applyConfigChanges(oneLine, { engine: null });
+    expect(removed).toMatch(/^export default \{ app: \{ name: "Fox" \},\s*\}$/u);
+    const commented =
+      'const config = {\n  app: { name: "Fox" } // note\n};\nexport default config;\n';
+    const next = await applyConfigChanges(commented, { engine: "threejs" });
+    expect(next).toContain("}, // note");
+    expect(next).not.toContain("// note,");
+  });
+
+  it("keeps both of two overlapping saves", async () => {
+    const file = path.join(root, "threenative.config.ts");
+    await writeFile(file, CONFIG);
+    await Promise.all([
+      patchConfig(root, { "app.name": "Fox Two" }),
+      patchConfig(root, { "display.maxFps": 90 }),
+    ]);
+    const text = await readFile(file, "utf8");
+    expect(text).toContain('name: "Fox Two"');
+    expect(text).toMatch(/maxFps:\s*90/u);
+  });
+
+  it.skipIf(process.platform === "win32" || process.getuid?.() === 0)(
+    "refuses to write when the config cannot be read for a reason other than absence",
+    async () => {
+      const file = path.join(root, "threenative.config.ts");
+      await writeFile(file, CONFIG);
+      await chmod(file, 0o000);
+      await expect(patchConfig(root, { "app.name": "X" })).rejects.toThrow(/EACCES/u);
+      await chmod(file, 0o644);
+      expect(await readFile(file, "utf8")).toBe(CONFIG);
+    },
+  );
+});
+
 describe("sharing consent", () => {
   it("defaults both switches off and keeps the file on this machine, never in the project", async () => {
     expect(await readPrefs()).toEqual({ shareProcedurals: false, shareSessionTraces: false });
@@ -160,6 +197,48 @@ describe("trace scrubber", () => {
     const { jsonl } = scrubTrace(lines.map((line) => JSON.stringify(line)).join("\n"), identity);
     expect(jsonl).toContain("[redacted: private file]");
     expect(jsonl).not.toContain("postgres://");
+  });
+
+  it("drops private-file output in Codex, pi and Claude Code record shapes", () => {
+    const secret = "DB_PASSWORD_VALUE_9f8e7d";
+    const lines = [
+      // Codex: arguments is a JSON string, and the call has both id and call_id.
+      {
+        type: "function_call",
+        id: "fc_1",
+        call_id: "c1",
+        name: "shell",
+        arguments: '{"cmd":"cat .env"}',
+      },
+      { type: "function_call_output", call_id: "c1", output: secret },
+      // pi: camelCase toolCallId.
+      { type: "toolCall", id: "p1", name: "read", arguments: { path: "config/.ENV.local" } },
+      { type: "toolResult", toolCallId: "p1", content: [{ type: "text", text: secret }] },
+      // Claude Code: stdout copied into a sibling toolUseResult with no id.
+      {
+        type: "assistant",
+        message: {
+          content: [
+            { type: "tool_use", id: "t9", name: "Bash", input: { command: "cat ~/.npmrc" } },
+          ],
+        },
+      },
+      {
+        type: "user",
+        message: { content: [{ type: "tool_result", tool_use_id: "t9", content: secret }] },
+        toolUseResult: { stdout: secret, stderr: "" },
+      },
+    ];
+    const { jsonl } = scrubTrace(lines.map((line) => JSON.stringify(line)).join("\n"), identity);
+    expect(jsonl).not.toContain(secret);
+  });
+
+  it("catches lowercase secret assignments and bearer tokens", () => {
+    const text = 'api_key: "abcdef123456" password=hunter2hunter bearer abcdefghijklmnop1234';
+    const out = scrubText(text, identity);
+    for (const leaked of ["abcdef123456", "hunter2hunter", "abcdefghijklmnop1234"])
+      expect(out).not.toContain(leaked);
+    expect(residualFinding("ping 10.1.2.3", identity)).toBeDefined();
   });
 
   it("allows only the opus, astra, neon and fable families", () => {

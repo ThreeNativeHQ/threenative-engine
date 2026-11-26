@@ -211,7 +211,9 @@ export function createDashboardApi(options: {
       if (!file) return send(res, 404, { error: "no such artifact in that run" });
       res.setHeader("content-type", file.endsWith(".png") ? "image/png" : "application/json");
       res.setHeader("cache-control", "no-store");
-      createReadStream(file).pipe(res);
+      createReadStream(file)
+        .on("error", () => res.destroy())
+        .pipe(res);
       return true;
     },
   };

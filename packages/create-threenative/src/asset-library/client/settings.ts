@@ -157,7 +157,9 @@ function control(field: IField, value: unknown, commit: (next: unknown) => void)
     if (raw === "") return commit(null);
     const literal = field.options?.find((option) => String(option) === raw);
     if (literal !== undefined) return commit(literal);
-    commit(numeric ? Number(raw) : raw);
+    // "abc" in a number field goes to the server as text, which rejects it; NaN would serialize
+    // as null, and null means "remove this setting".
+    commit(numeric && Number.isFinite(Number(raw)) ? Number(raw) : raw);
   };
   return input;
 }
