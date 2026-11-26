@@ -1,0 +1,115 @@
+{
+  "name": "carjack",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stopped",
+      "waitTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "approach",
+      "press": "KeyW",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jack",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "pulled-out",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "mode",
+        "atSteps": [
+          {
+            "label": "pulled-out",
+            "equals": "driving"
+          }
+        ]
+      },
+      {
+        "entity": "world",
+        "component": "fleeing",
+        "gte": 1
+      },
+      {
+        "entity": "car.0",
+        "component": "role",
+        "atSteps": [
+          {
+            "label": "pulled-out",
+            "equals": "player"
+          }
+        ]
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "carjacks",
+        "atSteps": [
+          {
+            "label": "pulled-out",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "crimes",
+        "gte": 1
+      }
+    ],
+    "signals": [
+      {
+        "name": "carjack",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "entered-car",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

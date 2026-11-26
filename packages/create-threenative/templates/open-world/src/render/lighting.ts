@@ -42,15 +42,15 @@ export function setupLighting(
   const key = SKY_OPTIONS.sky === "photo" ? new DirectionalLight(0xfff1e0, 4.5) : atmosphereSun();
   key.position.copy(SUN_DIRECTION).multiplyScalar(30);
   key.castShadow = true;
-  // One map fitted to the 36 m arena: 4096² is under a centimetre a texel, so every shadow has the
-  // same softness. Camera-centred cascades (`VirtualShadowNode`) are for open worlds; here their
-  // level boundaries showed as shadows that turned sharp halfway along. Phones take 2048².
+  // One map, 80 m across, that `scenes/Play.ts` re-centres on the player every tick: the street
+  // around you has crisp shadows, and the city past it is far enough that nobody counts them.
+  // Phones take 2048².
   const size = mobile ? 2048 : 4096;
   key.shadow.mapSize.set(size, size);
   key.shadow.radius = 2;
   key.shadow.camera.near = 1;
-  key.shadow.camera.far = 80;
-  const extent = 18;
+  key.shadow.camera.far = 160;
+  const extent = 40;
   key.shadow.camera.left = -extent;
   key.shadow.camera.right = extent;
   key.shadow.camera.top = extent;

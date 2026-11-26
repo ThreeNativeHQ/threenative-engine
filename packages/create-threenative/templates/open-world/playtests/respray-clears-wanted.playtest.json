@@ -1,0 +1,102 @@
+{
+  "name": "respray-clears-wanted",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive-in",
+      "press": "KeyW",
+      "holdTicks": 110,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brake",
+      "press": "KeyS",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "resprayed",
+      "waitTicks": 60,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stars",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 1
+          },
+          {
+            "label": "resprayed",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "resprayed",
+            "equals": 200
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "resprays",
+        "atSteps": [
+          {
+            "label": "resprayed",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "respray",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

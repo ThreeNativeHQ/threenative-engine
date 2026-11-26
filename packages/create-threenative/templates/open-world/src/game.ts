@@ -9,52 +9,58 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
   input: {
-    // The four directions of `input.vector("move")`. Declared rather than inherited from the
-    // default binding, so the axis every scene reads is visible where the game is defined.
+    // On foot the stick walks camera-relative; in a car W/S are the pedals and A/D the wheel.
     move: {
       down: ["ArrowDown", "KeyS"],
       left: ["ArrowLeft", "KeyA"],
       right: ["ArrowRight", "KeyD"],
       up: ["ArrowUp", "KeyW"],
     },
-    ability: { buttons: [1], keys: ["KeyE"] },
-    attack: { buttons: [0], keys: ["Space", "KeyF"] },
-    damage: { keys: ["KeyH"] },
-    dodge: { keys: ["ShiftLeft", "ShiftRight"] },
-    dropProbe: { keys: ["KeyT"] },
-    equip: { keys: ["KeyQ"] },
-    fill: { keys: ["KeyP"] },
-    lethal: { keys: ["KeyX"] },
-    loot: { keys: ["KeyL"] },
+    // Mouse motion turns the camera; a click on the canvas captures the pointer.
+    look: { pointerRelative: true },
+    sprint: { buttons: [1], keys: ["ShiftLeft", "ShiftRight"] },
+    // Fire punches bare-handed and shoots with the pistol out; in a car, Space is the handbrake.
+    fire: { buttons: [7], keys: ["Space", "KeyJ"], mouseButtons: [0] },
+    // Hold to lock on to the nearest target ahead (the pistol must be out).
+    aim: { buttons: [6], keys: ["KeyE"], mouseButtons: [2] },
+    weapon: { buttons: [3], keys: ["KeyQ"] },
+    enter: { buttons: [2], keys: ["KeyF", "Enter"] },
+    handbrake: { buttons: [0], keys: ["Space"] },
     restart: { keys: ["KeyR"] },
-    spell: { keys: ["KeyG"] },
-    save: { keys: ["KeyC"] },
-    unequip: { keys: ["KeyU"] },
+    // Playtest stations: each key sets up one mechanic (see `STATIONS` in systems/World.ts).
+    // They answer only under a playtest runner, never in a real build; delete them with the playtests.
+    station1: { keys: ["Digit1"] },
+    station2: { keys: ["Digit2"] },
+    station3: { keys: ["Digit3"] },
+    station4: { keys: ["Digit4"] },
+    station5: { keys: ["Digit5"] },
+    station6: { keys: ["Digit6"] },
+    station7: { keys: ["Digit7"] },
+    station8: { keys: ["Digit8"] },
+    station9: { keys: ["Digit9"] },
+    station10: { keys: ["Digit0"] },
+    station11: { keys: ["Minus"] },
+    station12: { keys: ["Equal"] },
   },
-  plugins: [rapier({ gravity: { x: 0, y: 0, z: 0 } }), playtest({ events: drainPlaytestEvents })],
+  plugins: [rapier(), playtest({ events: drainPlaytestEvents })],
   display: config.display,
   renderer: config.renderer,
   scenes: { play: Play },
-  seed: 93093,
+  seed: 30_301,
   start: "play",
 });
 
 export default game;
 
 /**
- * What the UI can ask the game to do.
- *
- * Intents are one-way and named by the game: the UI sends `restart`, `pause` or `resume` and the
- * game decides what each means. Nothing comes back this way — the UI reads the game's published
- * state instead, which keeps one source of truth on the side that owns the simulation.
+ * What the UI can ask the game to do. Intents are one-way: the UI sends `restart`, `pause` or
+ * `resume` and reads the game's published state back, so the simulation stays the one truth.
  */
 game.ui.onIntent((intent) => {
   if (intent === "restart") void game.goto("play");
   if (intent === "pause") game.pause();
   if (intent === "resume") game.resume();
   game.state.set({
-    // `game.ui.connected` is true only once the UI announced itself, which is what tells an
-    // overlay that never came up apart from a game whose HUD is simply empty.
     uiReady: game.ui.connected,
     ...(intent === "pause" || intent === "resume" ? { paused: intent === "pause" } : {}),
   });

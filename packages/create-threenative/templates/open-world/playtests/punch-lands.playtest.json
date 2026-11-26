@@ -1,0 +1,120 @@
+{
+  "name": "punch-lands",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jab",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "first",
+      "waitTicks": 36,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cross",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "landed",
+      "waitTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "action",
+        "atSteps": [
+          {
+            "label": "jab",
+            "equals": "punch"
+          },
+          {
+            "label": "cross",
+            "equals": "punch2"
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "punches",
+        "gte": 2
+      },
+      {
+        "entity": "world",
+        "component": "fleeing",
+        "gte": 1
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "crimes",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "crimes",
+        "gte": 1
+      }
+    ],
+    "signals": [
+      {
+        "name": "station",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "punch-hit",
+        "entity": "player",
+        "minCount": 2
+      }
+    ]
+  }
+}

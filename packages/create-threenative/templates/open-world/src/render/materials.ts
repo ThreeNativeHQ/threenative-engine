@@ -180,7 +180,7 @@ export const propMaterial = new MeshStandardMaterial({
 
 /** Asphalt: the same metre grid, darker, so a road reads as a road from the chase camera. */
 export const roadMaterial = new MeshStandardMaterial({
-  map: gridTexture(palette.road, palette.gridLine),
+  map: gridTexture(palette.structure, palette.gridLine),
   normalMap: grain,
   normalScale: new Vector2(0.12, 0.12),
   roughness: 0.82,
@@ -200,13 +200,21 @@ export const burntPaint = new MeshStandardMaterial({ color: 0x1c1a19, roughness:
 export const civilianMaterials = [0x8a6a52, 0x5f7f8f, 0x9a8f6a, 0x7a5f7a, 0x6a7a5a].map(
   (color) => new MeshStandardMaterial({ color, roughness: 0.6 }),
 );
-export const copMaterial = new MeshStandardMaterial({ color: 0x223a6a, roughness: 0.5, metalness: 0.1 });
-export const playerMaterial = new MeshStandardMaterial({ color: 0xd8d4cc, roughness: 0.45, metalness: 0.05 });
+export const copMaterial = new MeshStandardMaterial({
+  color: 0x223a6a,
+  roughness: 0.5,
+  metalness: 0.1,
+});
+export const playerMaterial = new MeshStandardMaterial({
+  color: 0xd8d4cc,
+  roughness: 0.45,
+  metalness: 0.05,
+});
 
 /** Job and pickup markers glow, so they read against grey streets at any exposure. */
 export const markerMaterial = new MeshStandardMaterial({
-  color: palette.marker,
-  emissive: palette.marker,
+  color: palette.prop,
+  emissive: palette.prop,
   emissiveIntensity: 1.6,
   transparent: true,
   opacity: 0.55,
@@ -217,4 +225,8 @@ export const moneyMaterial = new MeshStandardMaterial({
   emissive: 0x2fae4a,
   emissiveIntensity: 1.2,
 });
-export const pistolMaterial = new MeshStandardMaterial({ color: 0x2a2a2c, metalness: 0.6, roughness: 0.4 });
+export const pistolMaterial = new MeshStandardMaterial({
+  color: 0x2a2a2c,
+  metalness: 0.6,
+  roughness: 0.4,
+});

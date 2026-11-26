@@ -78,11 +78,21 @@ export class Wanted {
       return;
     }
     this.unseen = seen ? 0 : this.unseen + dt;
-    if (stars === 1 && !seen) this.chaos = Math.max(0, this.chaos - ONE_STAR_BLEED * dt);
+    if (stars === 1 && !seen) {
+      this.chaos = Math.max(0, this.chaos - ONE_STAR_BLEED * dt);
+      // The bleed cleared the last star: that is an escape too.
+      if (this.stars === 0) {
+        this.unseen = 0;
+        this.evasions += 1;
+        return;
+      }
+    }
     if (this.unseen >= EVADE_HIDDEN + EVADE_FLASH) {
-      // Drop to the floor of the band below, then start the search again from that level.
-      this.chaos = STAR_CHAOS[stars - 1] as number;
-      if (stars - 1 > 0) this.chaos += 1;
+      // Drop to the middle of the band below (not its floor, where the one-star bleed would clear
+      // it in a second), then start the search again from that level.
+      const lower = stars - 1;
+      this.chaos =
+        lower === 0 ? 0 : ((STAR_CHAOS[lower] as number) + (STAR_CHAOS[lower + 1] as number)) / 2;
       this.unseen = 0;
       this.evasions += 1;
     }

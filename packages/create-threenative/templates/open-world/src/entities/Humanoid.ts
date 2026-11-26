@@ -108,7 +108,11 @@ export abstract class Humanoid {
       const mesh = object as { isSkinnedMesh?: boolean; material?: unknown };
       if (material !== undefined && mesh.isSkinnedMesh === true) mesh.material = material;
     });
-    this.root.position.set(options.position.x, options.position.y + CENTRE + 0.05, options.position.z);
+    this.root.position.set(
+      options.position.x,
+      options.position.y + CENTRE + 0.05,
+      options.position.z,
+    );
     this.character.play(CLIPS.idle);
     ctx.add(this.root);
     this.body = new CharacterBody3D({
@@ -182,7 +186,10 @@ export abstract class Humanoid {
     this.#remaining = options.hold ?? 0;
     const duration = this.#durations.get(clip) ?? 0;
     const speed =
-      options.fit === true && Number.isFinite(this.#remaining) && this.#remaining > 0 && duration > 0
+      options.fit === true &&
+      Number.isFinite(this.#remaining) &&
+      this.#remaining > 0 &&
+      duration > 0
         ? duration / this.#remaining
         : undefined;
     this.character.play(clip, {
@@ -204,19 +211,36 @@ export abstract class Humanoid {
    * measured ground speed, so stride sync re-times the legs to the ground actually covered.
    * `aiming` holds the pistol stance instead of the idle.
    */
-  protected animateRig(dt: number, heading: number | undefined, speed: number, aiming = false, turnRate = 12): void {
+  protected animateRig(
+    dt: number,
+    heading: number | undefined,
+    speed: number,
+    aiming = false,
+    turnRate = 12,
+  ): void {
     if (this.#remaining > 0 && this.#action !== "hit" && Number.isFinite(this.#remaining)) {
       this.#oneShot.frames += 1;
       this.#oneShot.ran += Math.min(dt, this.#remaining);
     }
     this.#remaining = Math.max(0, this.#remaining - dt);
     if (heading !== undefined) {
-      const turn = MathUtils.euclideanModulo(heading - this.figure.rotation.y + Math.PI, Math.PI * 2);
+      const turn = MathUtils.euclideanModulo(
+        heading - this.figure.rotation.y + Math.PI,
+        Math.PI * 2,
+      );
       this.figure.rotation.y += (turn - Math.PI) * Math.min(1, dt * turnRate);
     }
     if (this.#remaining === 0) {
       const next: Loop =
-        speed < 0.05 ? (aiming ? "aim" : "idle") : speed < WALK_BELOW ? "walk" : speed < RUN_BELOW ? "run" : "sprint";
+        speed < 0.05
+          ? aiming
+            ? "aim"
+            : "idle"
+          : speed < WALK_BELOW
+            ? "walk"
+            : speed < RUN_BELOW
+              ? "run"
+              : "sprint";
       if (this.#action !== next) {
         this.#action = next;
         this.character.play(CLIPS[next], { fade: 0.2 });

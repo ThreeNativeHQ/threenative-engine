@@ -4,15 +4,7 @@
 // lane paint, and the landmark blocks (hospital, police, respray garage, the job's drop-off lot).
 // Every solid is also returned as a box, so the colliders `Play` builds are exactly what is drawn.
 import { BoxGeometry, CylinderGeometry, Group, Mesh, PlaneGeometry, Vector3 } from "three";
-import {
-  BLOCKS,
-  BOUNDARY,
-  CITY_HALF,
-  KERB,
-  LANES,
-  PLACES,
-  SIDEWALK,
-} from "../city/layout.js";
+import { BLOCKS, BOUNDARY, CITY_HALF, KERB, LANES, PLACES, SIDEWALK } from "../city/layout.js";
 import {
   copMaterial,
   floorMaterial,

@@ -296,6 +296,28 @@
       }
     }
   },
+  "open-world": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": { "actions": ["ShiftLeft", "Space", "KeyQ", "KeyE"] },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "stars", "equals": 0 },
+        { "id": "state", "path": "money", "equals": 1200 },
+        { "id": "state", "path": "health", "equals": 100 },
+        { "id": "state", "path": "mode", "equals": "foot" }
+      ]
+    },
+    "actions": [
+      { "key": "Space", "clip": "Punch_Jab", "ticks": 36, "contactTicks": 9, "effect": { "signal": "punch" } }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "platformer": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

@@ -37,14 +37,14 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 ## This kit
 
 <!-- shared: kit-files -->
-Source in `src/`: `abilities/`, `conventions.ts`, `entities/`, `game.ts`, `items/`, `loot/`, `main.ts`, `playtest-events.ts`, `progress.ts`, `render/`, `scenes/`, `state.ts`, `stats/`, `ui/`.
-11 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+Source in `src/`: `city/`, `conventions.ts`, `entities/`, `game.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `systems/`, `ui/`.
+16 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
-Kit notes: `node_modules/create-threenative/agent-docs/references/kit-action-rpg.md`.
+Kit notes: `node_modules/create-threenative/agent-docs/references/kit-open-world.md`.
 <!-- /shared -->
 
-This game owns dungeon, combat, stats, inventory, persistence and look; `src/game.ts` is portable, `src/main.ts` the web React mount.
-Keys: WASD/arrows move; Space/F attack; E Arcane Surge; Shift roll; Q/U equip toggle; C/R checkpoint.
+This game owns the city (`src/city/layout.ts` tables), cars, traffic, pedestrians, police, the wanted level, the job and the look; `src/game.ts` is portable, `src/main.ts` the web React mount.
+Keys: WASD/arrows move or drive; mouse looks; Shift sprint; Space/J/click punch or fire (handbrake in a car); hold E/right-click lock on; Q fist/pistol; F enter, carjack or exit; R restart. Digits 1-0, Minus and Equal are playtest stations.
 
 <!-- shared: kit-commands -->
 ## Commands

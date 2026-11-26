@@ -1,10 +1,13 @@
-import {
-  CollisionShape3D,
-  type IVehicleWheel3D,
-  VehicleBody3D,
-} from "@threenative/physics";
+import { CollisionShape3D, type IVehicleWheel3D, VehicleBody3D } from "@threenative/physics";
 import { Group, MathUtils, Vector3 } from "three";
-import { CAR_SIZE, type ICarVisual, WHEEL_RADIUS, WHEEL_SPOTS, carVisual } from "../render/car.js";
+import {
+  CAR_SIZE,
+  type ICarVisual,
+  WHEEL_RADIUS,
+  WHEEL_SPOTS,
+  carVisual,
+  paintOf,
+} from "../render/car.js";
 import { burntPaint } from "../render/materials.js";
 import { CAR_LAYER, type GameCtx, PED_LAYER, PLAYER_LAYER, WORLD_LAYER } from "./layers.js";
 
@@ -43,19 +46,19 @@ export const HANDLING = {
   reverseEnterSpeed: 0.6,
   maxSteer: 0.6,
   /** The lateral acceleration the lock curve aims for, in m/s². */
-  lateral: 14,
+  lateral: 20,
   /**
    * Seconds the raw steering takes to chase the stick: a first-order lag of five steps at 50 Hz
    * (MCP card grand-theft-auto-san-andreas-reversed/vehicle-steering-ramp).
    */
-  steerLag: 0.1,
+  steerLag: 0.06,
   handbrakeGrip: 0.2,
-  handbrakeBrake: 8,
+  handbrakeBrake: 4,
 } as const;
 
 /** Body damage. A hit loses `(Δv - DAMAGE_FREE) * DAMAGE_PER_MS` health; 1000 is a new car. */
-const DAMAGE_FREE = 3;
-const DAMAGE_PER_MS = 40;
+const DAMAGE_FREE = 5;
+const DAMAGE_PER_MS = 28;
 export const CAR_HEALTH = 1000;
 /** Seconds a wrecked car burns before it explodes. */
 const BURN = 4;
@@ -77,6 +80,8 @@ export class Car {
   readonly visual: ICarVisual;
   readonly id: number;
   role: CarRole;
+  /** A cruiser (light bar, shooting it is a crime against the police), whatever its role now. */
+  readonly police: boolean;
   /** An AI driver sits inside: entering this car is a carjack. */
   occupied: boolean;
   health = CAR_HEALTH;
@@ -98,15 +103,18 @@ export class Car {
       readonly yaw: number;
       readonly role: CarRole;
       readonly occupied: boolean;
+      /** A police cruiser (light bar) whatever its role: a parked one at the station. */
+      readonly police?: boolean;
     },
   ) {
     this.id = options.id;
     this.role = options.role;
+    this.police = options.police ?? options.role === "police";
     this.occupied = options.occupied;
     this.mesh = new Group();
     this.mesh.position.set(options.position.x, RIDE_HEIGHT + 0.05, options.position.z);
     this.mesh.rotation.y = options.yaw;
-    this.visual = carVisual(options.colour, RIDE_HEIGHT, options.role === "police");
+    this.visual = carVisual(options.colour, RIDE_HEIGHT, this.police);
     this.mesh.add(this.visual.root);
     ctx.add(this.mesh);
     for (const wheel of this.visual.wheels) wheel.rotation.order = "YXZ";
@@ -156,7 +164,11 @@ export class Car {
   /** The steering lock at a speed: full on the spot, falling as `1 / v²` to hold a radius. */
   lockAt(speed: number): number {
     const fast = Math.max(Math.abs(speed), 4);
-    return Math.min(HANDLING.maxSteer, (HANDLING.lateral * WHEELBASE) / (fast * fast));
+    // A floor keeps a 90-degree city corner possible at speed, with a slide.
+    return Math.min(
+      HANDLING.maxSteer,
+      Math.max(0.12, (HANDLING.lateral * WHEELBASE) / (fast * fast)),
+    );
   }
 
   /**
@@ -181,7 +193,8 @@ export class Car {
       else engine = HANDLING.engineForce * pedal * torque(-speed, HANDLING.reverseTopSpeed);
     }
     if (handbrake) {
-      engine = 0;
+      // Some throttle survives the handbrake, so a slide can be powered out of.
+      engine *= 0.4;
       brake = Math.max(brake, HANDLING.handbrakeBrake);
     }
     if (handbrake !== this.#handbrake) {
@@ -190,12 +203,32 @@ export class Car {
       this.body.setWheelFrictionSlip(2, grip);
       this.body.setWheelFrictionSlip(3, grip);
     }
-    this.#rawSteer = MathUtils.damp(this.#rawSteer, MathUtils.clamp(steer, -1, 1), 1 / HANDLING.steerLag, dt);
+    this.#rawSteer = MathUtils.damp(
+      this.#rawSteer,
+      MathUtils.clamp(steer, -1, 1),
+      1 / HANDLING.steerLag,
+      dt,
+    );
     // The card squares the raw value with its sign kept: half a stick is a quarter of the lock.
-    // Rapier steers left for a positive angle, so "right" is negative.
+    this.#apply(engine, brake, this.lockAt(speed) * this.#rawSteer * Math.abs(this.#rawSteer));
+  }
+
+  /**
+   * The AI's controls: the same pedal arbitration, but a wheel angle in radians (+ right) instead
+   * of a stick, because a path follower computes the angle it wants. It is still clamped to lock.
+   */
+  driveAngle(pedal: number, angle: number, dt: number): void {
+    this.drive(pedal, 0, false, dt);
+    if (this.wrecked) return;
+    const lock = HANDLING.maxSteer;
+    this.#apply(this.body.engineForce, this.body.brake, MathUtils.clamp(angle, -lock, lock));
+  }
+
+  /** Rapier steers left for a positive angle, so "right" is negated here, once. */
+  #apply(engine: number, brake: number, rightAngle: number): void {
     this.body.engineForce = engine;
     this.body.brake = brake;
-    this.body.steering = -this.lockAt(speed) * this.#rawSteer * Math.abs(this.#rawSteer);
+    this.body.steering = -rightAngle;
   }
 
   /** Hold still: no engine, a firm brake. Parked cars and stopped AI sit on this. */
@@ -245,21 +278,24 @@ export class Car {
     this.health = CAR_HEALTH;
     this.wrecked = false;
     this.burning = 0;
-    this.visual.paint.color.setHex(colour);
+    const paint = paintOf(colour);
     this.visual.root.traverse((object) => {
       const mesh = object as { isMesh?: boolean; name: string; material?: unknown };
-      if (mesh.isMesh === true && mesh.name === "body") mesh.material = this.visual.paint;
+      if (mesh.isMesh === true && mesh.name === "body") mesh.material = paint;
     });
   }
 
   debug(): Record<string, unknown> {
     return {
+      handbrake: this.#handbrake,
       health: Math.round(this.health),
+      moving: Math.abs(this.body.speed) > 3,
       occupied: this.occupied,
       position: this.mesh.position.toArray(),
       role: this.role,
       speed: this.body.speed,
       steering: this.body.steering,
+      stopped: Math.abs(this.body.speed) < 0.5,
       wrecked: this.wrecked,
     };
   }

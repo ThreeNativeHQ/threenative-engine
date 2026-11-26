@@ -49,7 +49,11 @@ export const BLOCKS: readonly IBlock[] = (() => {
   for (let i = 0; i < ROADS - 1; i += 1)
     for (let j = 0; j < ROADS - 1; j += 1)
       out.push({
-        center: new Vector3((roadLine(i) + roadLine(i + 1)) / 2, 0, (roadLine(j) + roadLine(j + 1)) / 2),
+        center: new Vector3(
+          (roadLine(i) + roadLine(i + 1)) / 2,
+          0,
+          (roadLine(j) + roadLine(j + 1)) / 2,
+        ),
         i,
         j,
         kind: SPECIAL[`${i},${j}`] ?? "buildings",
@@ -69,12 +73,26 @@ export function block(kind: IBlock["kind"]): IBlock {
  * a building. `respray` is the drive-in pad on the respray block's road edge.
  */
 export const PLACES = {
-  hospital: block("hospital").center.clone().add(new Vector3(0, 0, block("hospital").size / 2 - 1.5)),
-  police: block("police").center.clone().add(new Vector3(0, 0, -block("police").size / 2 + 1.5)),
-  respray: new Vector3(block("respray").center.x, 0, block("respray").center.z + block("respray").size / 2 - 4),
-  phone: block("plaza").center.clone().add(new Vector3(-6, 0, 6)),
-  dropoff: block("dropoff").center.clone().add(new Vector3(0, 0, -block("dropoff").size / 2 + 5)),
-  playerSpawn: block("plaza").center.clone().add(new Vector3(0, 0, block("plaza").size / 2 - 1.5)),
+  hospital: block("hospital")
+    .center.clone()
+    .add(new Vector3(0, 0, block("hospital").size / 2 - 1.5)),
+  police: block("police")
+    .center.clone()
+    .add(new Vector3(0, 0, -block("police").size / 2 + 1.5)),
+  respray: new Vector3(
+    block("respray").center.x,
+    0,
+    block("respray").center.z + block("respray").size / 2 - 4,
+  ),
+  phone: block("plaza")
+    .center.clone()
+    .add(new Vector3(-2.5, 0, 2.5)),
+  dropoff: block("dropoff")
+    .center.clone()
+    .add(new Vector3(0, 0, -block("dropoff").size / 2 + 5)),
+  playerSpawn: block("plaza")
+    .center.clone()
+    .add(new Vector3(0, 0, block("plaza").size / 2 - 1.5)),
 } as const;
 
 /** An intersection: where two road centre lines cross. */
@@ -185,7 +203,10 @@ export function nearestLane(point: Vector3): { lane: ILane; along: number; dista
     const length = lane.start.distanceTo(lane.end);
     const along = Math.min(
       length,
-      Math.max(0, (point.x - lane.start.x) * lane.direction.x + (point.z - lane.start.z) * lane.direction.z),
+      Math.max(
+        0,
+        (point.x - lane.start.x) * lane.direction.x + (point.z - lane.start.z) * lane.direction.z,
+      ),
     );
     const x = lane.start.x + lane.direction.x * along - point.x;
     const z = lane.start.z + lane.direction.z * along - point.z;
@@ -214,7 +235,8 @@ export function routeToward(start: ILane, goal: Vector3): ILane[] {
   }
   if (!previous.has(target)) return [start];
   const route: ILane[] = [];
-  for (let id = target; id !== -1; id = previous.get(id) as number) route.unshift(LANES[id] as ILane);
+  for (let id = target; id !== -1; id = previous.get(id) as number)
+    route.unshift(LANES[id] as ILane);
   return route;
 }
 

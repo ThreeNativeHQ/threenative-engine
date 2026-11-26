@@ -16,7 +16,7 @@ export const ON_FOOT = {
   sprint: 6.8,
   /** Moving while aiming is a strafe at walking pace. */
   aimWalk: 1.6,
-  accel: 7.4,
+  accel: 14,
   staminaMax: 150,
   staminaFloor: -150,
   staminaDrain: 50,
@@ -86,6 +86,7 @@ export class Player extends Humanoid {
   #reload = 0;
   #punchTimer = -1;
   #combo = 0;
+  #sincePunch = 0;
   #exhausted = false;
   #wasAiming = false;
   readonly pistol: Object3D;
@@ -113,7 +114,8 @@ export class Player extends Humanoid {
 
   /** Where the player is, in or out of a car. */
   get where(): Vector3 {
-    return this.mode === "driving" && this.car !== undefined ? this.car.position : this.position;
+    // In a car (driving, or dead at the wheel) the player is where the car is.
+    return this.car !== undefined && !this.inWorld ? this.car.position : this.position;
   }
 
   /** True while the pistol is up: what draws the lock-on reticle and makes peds flee. */
@@ -137,7 +139,10 @@ export class Player extends Humanoid {
   ): { punchLanded: boolean; shot: boolean } {
     let punchLanded = false;
     let shot = false;
-    if (input.weaponPressed) this.weapon = this.weapon === "fist" ? "pistol" : "fist";
+    if (input.weaponPressed && (this.weapon === "pistol" || this.ammo > 0)) {
+      this.weapon = this.weapon === "fist" ? "pistol" : "fist";
+      this.#punchTimer = -1;
+    }
     this.pistol.visible = this.weapon === "pistol";
     this.#cooldown = Math.max(0, this.#cooldown - dt);
     if (this.#reload > 0) {
@@ -165,7 +170,10 @@ export class Player extends Humanoid {
 
     // Lock-on: hold aim with the pistol out to pick the nearest live target ahead.
     const aiming = input.aim && this.weapon === "pistol";
-    if (aiming && (this.target === undefined || !this.#valid(this.target)))
+    if (
+      aiming &&
+      (this.target === undefined || !this.#valid(this.target) || !targets.includes(this.target))
+    )
       this.target = this.#pick(targets, _forward);
     if (!aiming) this.target = undefined;
     this.#wasAiming = aiming;
@@ -179,12 +187,20 @@ export class Player extends Humanoid {
     if (this.target !== undefined) {
       _to.copy(this.target.position).sub(this.position);
       this.face(Math.atan2(_to.x, _to.z));
-    } else if (amount > 0.05) heading = Math.atan2(_wish.x, _wish.z);
+    } else if (aiming) this.face(cameraYaw + Math.PI);
+    else if (amount > 0.05) heading = Math.atan2(_wish.x, _wish.z);
 
     // Fire: a punch combo bare-handed, a pistol round with the gun out.
     if (this.weapon === "fist") {
+      // A second jab more than a second after the first starts the combo over.
+      if (this.#sincePunch > 1) this.#combo = 0;
+      this.#sincePunch += dt;
       if (input.firePressed && !this.busy) {
-        this.play(this.#combo % 2 === 0 ? "punch" : "punch2", { fit: true, hold: COMBAT.punchHold });
+        this.#sincePunch = 0;
+        this.play(this.#combo % 2 === 0 ? "punch" : "punch2", {
+          fit: true,
+          hold: COMBAT.punchHold,
+        });
         this.#combo += 1;
         this.#punchTimer = COMBAT.punchContact / 60;
         this.punches += 1;
@@ -210,6 +226,10 @@ export class Player extends Humanoid {
 
   /** The tick while inside a car, or getting in or out: the rig keeps advancing. */
   updateIdle(dt: number): void {
+    // In a car beat: no punch lands later and no aim or lock-on carries over.
+    this.#punchTimer = -1;
+    this.#wasAiming = false;
+    this.target = undefined;
     this.transition = Math.max(0, this.transition - dt);
     this.animateStill(dt);
   }
@@ -237,6 +257,9 @@ export class Player extends Humanoid {
     this.transition = 0;
     this.#speed = 0;
     this.#reload = 0;
+    this.#punchTimer = -1;
+    this.#combo = 0;
+    this.#cooldown = 0;
     if (!keepWeapons) {
       this.weapon = "fist";
       this.ammo = 0;
@@ -252,7 +275,11 @@ export class Player extends Humanoid {
   }
 
   #valid(target: ITarget): boolean {
-    return target.alive && target.inWorld && target.position.distanceTo(this.position) <= COMBAT.lockRange;
+    return (
+      target.alive &&
+      target.inWorld &&
+      target.position.distanceTo(this.position) <= COMBAT.lockRange
+    );
   }
 
   #pick(targets: readonly ITarget[], forward: Vector3): ITarget | undefined {
@@ -278,7 +305,10 @@ export class Player extends Humanoid {
   /** The point a shot starts from: chest height, a little ahead (MCP card …re3/weapon-fire-offset). */
   muzzle(out: Vector3): Vector3 {
     this.facing(out);
-    return out.multiplyScalar(0.4).add(this.position).setY(this.position.y + 0.6);
+    return out
+      .multiplyScalar(0.4)
+      .add(this.position)
+      .setY(this.position.y + 0.6);
   }
 
   debug(): Record<string, unknown> {

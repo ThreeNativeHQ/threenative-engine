@@ -1,0 +1,85 @@
+{
+  "name": "money-pickup",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Minus",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "short",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk",
+      "press": "KeyW",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "collected",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "short",
+            "equals": 1200
+          },
+          {
+            "label": "collected",
+            "equals": 1300
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "pickups",
+        "atSteps": [
+          {
+            "label": "collected",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "pickup",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

@@ -17,7 +17,10 @@ export interface IOpenWorldConventions {
  * The conventions a rigged character owes its city, in the order they depend on each other.
  * `model` is the cloned rig; `weapon` is a small mesh the right hand holds.
  */
-export function preparePlayerConventions(model: Object3D, weapon?: Object3D): IOpenWorldConventions {
+export function preparePlayerConventions(
+  model: Object3D,
+  weapon?: Object3D,
+): IOpenWorldConventions {
   // On this Unreal-style skeleton the crown joint is `Head`, the base of the skull: 1.545 m there
   // puts the top of the head at 1.8 m, the height the capsule in `Humanoid.ts` is built for.
   const normaliseFactor = normaliseToMetres(model, { axis: "height", metres: 1.545 });
