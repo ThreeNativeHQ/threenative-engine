@@ -23,7 +23,12 @@ delivery. The five creature tools are `creature_status`, `creature_guide`, `crea
 `creature_preview` and `creature_check`; call `creature_status` first because compile can work
 without optional preview dependencies while a complete preview/check loop may not.
 
-1. `asset_search_sources` — start here, never at a provider. It returns every catalogued
+0. `asset_search` — start here for a model, texture, HDRI or animation. Skipping it is a defect.
+   Pass `providers: ["threenative"]` first: ThreeNative's own CC0 catalog (for
+   example a rigged grey wolf). Then call `asset_get` with the `assetId` for the terms and an
+   expiring file plan, and `asset_download` with its `planToken` and `acceptLicense: true`.
+   Steps 1-3 below are for sound and anything else `asset_search` does not cover.
+1. `asset_search_sources` — start here for those, never at a provider. It returns every catalogued
    source with its license summary, attribution requirement, browse URL, and whether an agent
    can complete a download from it. **That output is the authority on what is reachable** —
    not your memory of some other project.
