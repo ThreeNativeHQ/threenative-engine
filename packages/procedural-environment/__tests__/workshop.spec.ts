@@ -60,6 +60,9 @@ const anchors = {
     "wardrobe-hanger-rail",
   ],
   trunk: ["trunk-lid", "trunk-content", "trunk-latch"],
+  "floor-lamp": ["light-emitter"],
+  "desk-lamp": ["lamp-head", "light-emitter"],
+  "wall-sconce": ["lamp-wall", "light-emitter"],
 } as const;
 const options = { accent: workshopAccent, seed: 1, scale: 1 };
 const down = new Vector3(0, -1, 0);
@@ -92,8 +95,18 @@ describe("Workshop furniture", () => {
     };
     expect(json.nodes.map(({ name }) => name)).toEqual(expect.arrayContaining([...nodes]));
     expect(entry.bounds.min[1]).toBeCloseTo(0, 5);
+    if (id === "wall-sconce") expect(entry.bounds.min[2]).toBeCloseTo(0, 5);
     expect(entry.triangles).toBeLessThan(6500);
-    if (["bath-tub", "bath-toilet", "office-chair", "office-monitor"].includes(id)) {
+    if (
+      [
+        "bath-tub",
+        "bath-toilet",
+        "office-chair",
+        "office-monitor",
+        "desk-lamp",
+        "wall-sconce",
+      ].includes(id)
+    ) {
       expect(json.images ?? []).toHaveLength(0);
       return;
     }
@@ -504,6 +517,78 @@ describe("Workshop furniture", () => {
     expect(railRay.intersectObject(wardrobe)[0]?.point.y).toBeCloseTo(point.y);
   });
 
+  it.each([1.28, 1.86])(
+    "sets the floor lamp height to %s m while keeping its base and shade dimensions",
+    (height) => {
+      const lamp = buildWorkshop("floor-lamp", { ...options, height });
+      lamp.updateMatrixWorld(true);
+      const bounds = new Box3().setFromObject(lamp, true);
+      expect(bounds.min.y).toBeCloseTo(0, 5);
+      expect(bounds.max.y).toBeCloseTo(height, 5);
+      expect(bounds.getSize(new Vector3()).x).toBeCloseTo(0.424);
+      const emitter = lamp.getObjectByName("light-emitter");
+      if (!emitter) throw new Error("Missing floor lamp emitter");
+      const point = emitter.getWorldPosition(new Vector3());
+      const direction = emitter.getWorldDirection(new Vector3());
+      expect(direction.y).toBeCloseTo(-1, 5);
+      expect(height - point.y).toBeCloseTo(0.307, 5);
+    },
+  );
+
+  it.each([-30, 35])("aims the desk lamp and emitter together at %s degrees", (tilt) => {
+    const lamp = buildWorkshop("desk-lamp", { ...options, tilt });
+    lamp.updateMatrixWorld(true);
+    const head = lamp.getObjectByName("lamp-head");
+    const emitter = lamp.getObjectByName("light-emitter");
+    if (!head || !emitter) throw new Error("Missing desk lamp moving parts");
+    const radians = (tilt * Math.PI) / 180;
+    expect(head.rotation.x).toBeCloseTo(radians);
+    expect(emitter.parent).toBe(head);
+    const direction = emitter.getWorldDirection(new Vector3());
+    const point = emitter.getWorldPosition(new Vector3());
+    expect(direction.z).toBeCloseTo(-Math.sin(radians));
+    const face = new Raycaster(point, direction.negate(), 0, 0.025);
+    expect(face.intersectObject(head)[0]?.object.name).toBe("Workshop lamp diffuser");
+  });
+
+  it("mounts the sconce flush to the wall and aims out into the room", () => {
+    const lamp = buildWorkshop("wall-sconce", options);
+    lamp.updateMatrixWorld(true);
+    const wall = lamp.getObjectByName("lamp-wall");
+    const emitter = lamp.getObjectByName("light-emitter");
+    if (!wall || !emitter) throw new Error("Missing wall sconce mounts");
+    const bounds = new Box3().setFromObject(lamp, true);
+    expect(wall.position.x).toBe(0);
+    expect(wall.position.y).toBeCloseTo(bounds.max.y / 2);
+    expect(wall.position.z).toBe(0);
+    expect(wall.getWorldDirection(new Vector3()).z).toBeCloseTo(-1);
+    expect(emitter.getWorldDirection(new Vector3()).z).toBeCloseTo(1);
+    expect(emitter.position.z).toBeGreaterThan(bounds.max.z);
+  });
+
+  it.each(["floor-lamp", "desk-lamp", "wall-sconce"])(
+    "exports separate lit and unlit %s materials",
+    async (module) => {
+      const out = await makeTempDir("tn-workshop-fixtures-");
+      for (const lit of [true, false]) {
+        const [entry] = await bakeWorkshop({ module: `workshop-${module}`, out, lit });
+        if (!entry) throw new Error("Missing lamp GLB");
+        expect(entry.path.endsWith("-lit.glb")).toBe(lit);
+        const bytes = await readFile(entry.path);
+        const data = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {
+          materials: { name: string; emissiveFactor?: number[] }[];
+          extensionsUsed: string[];
+        };
+        const diffuser = data.materials.find(
+          (material) => material.name === "Workshop lamp diffuser",
+        );
+        expect(diffuser).toBeDefined();
+        expect(diffuser?.emissiveFactor?.some((part) => part > 0) ?? false).toBe(lit);
+        expect(data.extensionsUsed ?? []).not.toContain("KHR_lights_punctual");
+      }
+    },
+  );
+
   it.each([0.66, 1.35])(
     "keeps the %s m trunk closed over its cavity and open for placement",
     (width) => {
@@ -570,6 +655,12 @@ describe("Workshop furniture", () => {
     );
     await expect(bakeWorkshop({ module: "workshop-wardrobe", out, shelves: 3 })).rejects.toThrow(
       /shelves/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-bookcase", out, lit: true })).rejects.toThrow(
+      /lit/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-desk-lamp", out, tilt: 36 })).rejects.toThrow(
+      /tilt/u,
     );
     if (!wideDining) throw new Error("Missing six-seat dining GLB");
     const bytes = await readFile(wideDining.path);

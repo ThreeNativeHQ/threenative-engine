@@ -17,8 +17,10 @@ import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { stylizedAssets } from "./stylized.js";
 import {
+  deskLampTilt,
   workshopAccent,
   workshopHeights,
+  workshopLitModules,
   workshopOpeningModules,
   workshopSeatCounts,
   workshopShelfCount,
@@ -126,7 +128,7 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         Object.entries(ranges).map(
           ([id, range]): IControl => ({
             key,
-            label,
+            label: id === "floor-lamp" ? "Height" : label,
             type: "range",
             step: 0.01,
             ...range,
@@ -158,6 +160,21 @@ function controls(biomes: string[]): Record<string, IControl[]> {
         ...workshopShelfCount,
         step: 1,
         only: ["workshop-bookcase"],
+      },
+      {
+        key: "tilt",
+        label: "Tilt",
+        type: "range",
+        ...deskLampTilt,
+        step: 1,
+        only: ["workshop-desk-lamp"],
+      },
+      {
+        key: "lit",
+        label: "Lit",
+        type: "toggle",
+        default: false,
+        only: workshopLitModules.map((id) => `workshop-${id}`),
       },
     ],
     logistics: [
@@ -443,6 +460,8 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("open", toggle(q, "open")),
         ...opt("seats", num(q, "seats")),
         ...opt("shelves", num(q, "shelves")),
+        ...opt("tilt", num(q, "tilt")),
+        ...opt("lit", toggle(q, "lit")),
       });
     case "logistics":
       return pkg.bakeLogistics({

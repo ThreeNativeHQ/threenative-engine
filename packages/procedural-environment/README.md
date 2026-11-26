@@ -70,6 +70,11 @@ and finish variants.
 | Swivel chair and monitor | Turn `chair-swivel` around local Y. `chair-seat` follows its cushion. Rotate `monitor-panel` around local X to tilt it. Attach a 16:9 UI at `monitor-display`, facing local +Z. The screen corner nodes mark its 0.48 × 0.27 m area before scaling. |
 | Bookcase | Set **Width** independently of **Shelf levels** (3–5). Use `bookcase-shelf-1` upward for item placement, starting at the bottom shelf. `bookcase-wall` faces the wall (local −Z of the bookcase). |
 | Wardrobe and trunk | Set **Width** to fit the alcove or room. Rotate `wardrobe-door-left` around local −Y, `wardrobe-door-right` around +Y and `trunk-lid` around −X. Place props at `wardrobe-floor`, `wardrobe-shelf`, `wardrobe-hanger-rail` or `trunk-content`. `trunk-latch` marks the stationary front clasp. |
+| Lamps | Set **Height** on the floor lamp (1.28–1.86 m) or **Tilt** on the desk lamp (−30° to 35°). Rotate `lamp-head` about local X to animate the desk lamp. Place the sconce's `lamp-wall` at the wall surface, pointing into the wall. |
+
+**Lit** switches the lamp materials to emissive. To illuminate the scene, attach a game light at
+`light-emitter` and aim its beam along the marker's local +Z. The desk lamp's emitter follows the
+tilting head.
 
 The assembled kitchen run includes prep, sink and cooktop cabinets. Changing **Width** resizes
 the prep section while the sink and cooktop remain 0.6 m wide.

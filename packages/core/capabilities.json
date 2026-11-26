@@ -8824,7 +8824,8 @@
       "aliases": [],
       "constraints": [
         "the workbench width changes while the matching stool and cabinet keep their sizes",
-        "open previews supported drawers, doors or lids; moving groups remain available for animation"
+        "open previews supported drawers, doors or lids; moving groups remain available for animation",
+        "lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z"
       ],
       "example": "await bakeWorkshop({ module: \"workshop-drawer\", open: true, out: \"assets/furniture\" });",
       "importPath": "@threenative/procedural-environment",
@@ -8841,7 +8842,8 @@
         "bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors",
         "furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid",
         "bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI",
-        "furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk"
+        "furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk",
+        "bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point"
       ],
       "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
       "supersedes": [],

@@ -52,9 +52,11 @@ import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
 import {
   type IBakeWorkshopOptions,
   buildWorkshop,
+  deskLampTilt,
   loadWorkshopVeneer,
   workshopAccent,
   workshopHeights,
+  workshopLitModules,
   workshopModules,
   workshopOpeningModules,
   workshopSeatCounts,
@@ -1363,8 +1365,10 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @situation furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid
  * @situation bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI
  * @situation furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk
+ * @situation bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
  * @constraint open previews supported drawers, doors or lids; moving groups remain available for animation
+ * @constraint lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
  */
@@ -1378,8 +1382,14 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
   );
   const widthSuffix = workshopDimension("width", options.width, workshopWidths[kit.id], kit.id);
   const heightSuffix = workshopDimension("height", options.height, workshopHeights[kit.id], kit.id);
+  const tiltSuffix = workshopDimension(
+    "tilt",
+    options.tilt,
+    kit.id === "desk-lamp" ? deskLampTilt : undefined,
+    kit.id,
+  );
   const seatRange = workshopSeatCounts[kit.id];
-  const { open, seats = seatRange?.default, shelves } = options;
+  const { open, seats = seatRange?.default, shelves, lit } = options;
   const shelfCount = workshopShelfCount;
   if (
     shelves !== undefined &&
@@ -1392,14 +1402,9 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
       `bakeWorkshop: shelves must be an integer from ${shelfCount.min} to ${shelfCount.max} for the bookcase`,
     );
   }
-  if (
-    open !== undefined &&
-    (!workshopOpeningModules.includes(kit.id) || typeof open !== "boolean")
-  ) {
-    throw new Error(
-      `bakeWorkshop: open must be a boolean on a supported module (workshop-${kit.id})`,
-    );
-  }
+  const stateSuffix =
+    workshopState("open", open, workshopOpeningModules, kit.id) +
+    workshopState("lit", lit, workshopLitModules, kit.id);
   if (![undefined, seatRange?.min, seatRange?.max].includes(seats)) {
     throw new Error(
       seatRange
@@ -1412,14 +1417,28 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
     shelves === undefined || shelves === shelfCount.default ? "" : `-${shelves}-shelves`;
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${widthSuffix}${heightSuffix}${seatSuffix}${shelfSuffix}${open ? "-open" : ""}.glb`,
+    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}.glb`,
   );
   const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
   return writeStaticKit(group, options.out, filename, true);
 }
 
+function workshopState(
+  key: "open" | "lit",
+  value: boolean | undefined,
+  modules: readonly string[],
+  module: string,
+): string {
+  if (value !== undefined && (typeof value !== "boolean" || !modules.includes(module))) {
+    throw new Error(
+      `bakeWorkshop: ${key} must be a boolean on a supported module (workshop-${module})`,
+    );
+  }
+  return value ? `-${key}` : "";
+}
+
 function workshopDimension(
-  key: "width" | "height",
+  key: "width" | "height" | "tilt",
   value: number | undefined,
   range: { min: number; max: number; default: number } | undefined,
   module: string,

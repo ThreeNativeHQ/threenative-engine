@@ -11,6 +11,7 @@ import {
   Object3D,
   RepeatWrapping,
   SRGBColorSpace,
+  SphereGeometry,
   Texture,
   TorusGeometry,
   TubeGeometry,
@@ -32,7 +33,7 @@ export interface IBakeWorkshopOptions {
   readonly scale?: number;
   /** Width in metres before scale for selected work surfaces and furniture. */
   readonly width?: number;
-  /** Swivel chair seat height in metres for the chair or office workstation. */
+  /** Swivel chair seat height or floor lamp height in metres before scale. */
   readonly height?: number;
   /** Bake the supported drawers, doors or lids in their open pose. */
   readonly open?: boolean;
@@ -40,6 +41,10 @@ export interface IBakeWorkshopOptions {
   readonly seats?: number;
   /** Usable bookcase shelf levels, including the bottom shelf (3–5). */
   readonly shelves?: number;
+  /** Desk lamp head tilt in degrees around local X, from −30 to 35. */
+  readonly tilt?: number;
+  /** Make a lamp's diffuser emissive. */
+  readonly lit?: boolean;
 }
 
 export const workshopAccent = "#4d7779";
@@ -74,10 +79,23 @@ export const workshopModules = [
   { id: "bookcase", name: "Open timber bookcase", category: "Storage" },
   { id: "wardrobe", name: "Double-door wardrobe", category: "Storage" },
   { id: "trunk", name: "Hinged storage trunk", category: "Storage" },
+  { id: "floor-lamp", name: "Timber floor lamp", category: "Lighting" },
+  { id: "desk-lamp", name: "Tilting desk lamp", category: "Lighting" },
+  { id: "wall-sconce", name: "Opal wall sconce", category: "Lighting" },
 ] as const;
 
 type Module = (typeof workshopModules)[number]["id"];
-type Finish = "wood" | "accent" | "dark" | "linen" | "steel" | "insert" | "ceramic" | "screen";
+type Finish =
+  | "wood"
+  | "accent"
+  | "dark"
+  | "linen"
+  | "steel"
+  | "insert"
+  | "ceramic"
+  | "screen"
+  | "shade"
+  | "diffuser";
 type Palette = Record<Finish, MeshStandardMaterial>;
 type Part = StaticKitMesh<Finish>;
 
@@ -110,7 +128,10 @@ export const workshopWidths: Partial<Record<Module, typeof workbenchWidth>> = {
 export const workshopHeights: Partial<Record<Module, typeof chairHeight>> = {
   "office-chair": chairHeight,
   "office-set": chairHeight,
+  "floor-lamp": { min: 1.28, max: 1.86, default: 1.56 },
 };
+export const deskLampTilt = { min: -30, max: 35, default: 0 };
+export const workshopLitModules = ["floor-lamp", "desk-lamp", "wall-sconce"];
 export const workshopOpeningModules = [
   "drawer",
   "locker",
@@ -156,7 +177,7 @@ export async function loadWorkshopVeneer(): Promise<IVeneer> {
   return { color, normal };
 }
 
-function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
+function materials(seed: number, accent: string, veneer?: IVeneer, lit = false): Palette {
   const rng = new RNG(seed);
   const tone = rng.range(0.88, 1);
   const paint = new Color(accent).multiplyScalar(rng.range(0.94, 1.04));
@@ -172,6 +193,14 @@ function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
     wood.normalMap = veneer.normal;
     wood.normalScale = new Vector2(0.5, 0.5);
   }
+  const shade = finish("Workshop fabric lamp shade", 0x928d82, 0.86);
+  const diffuser = finish("Workshop lamp diffuser", 0x929a9c, 0.74);
+  if (lit) {
+    shade.emissive.setHex(0xff7626);
+    shade.emissiveIntensity = 0.94;
+    diffuser.emissive.setHex(0xffa351);
+    diffuser.emissiveIntensity = 1.45;
+  }
   return {
     wood,
     accent: finish("Workshop painted finish", paint, 0.62, 0.08),
@@ -181,6 +210,8 @@ function materials(seed: number, accent: string, veneer?: IVeneer): Palette {
     insert: finish("Workshop accent inset", paint.clone().multiplyScalar(0.67), 0.77),
     ceramic: finish("Workshop glazed ceramic", 0xf4f0e9, 0.29),
     screen: finish("Workshop matte display", 0x15232d, 0.72),
+    shade,
+    diffuser,
   };
 }
 
@@ -1177,15 +1208,136 @@ function trunk(palette: Palette, width: number, open: boolean): Group {
   return group;
 }
 
+function downlight(group: Group, y: number): void {
+  const emitter = new Object3D();
+  emitter.name = "light-emitter";
+  emitter.position.y = y;
+  emitter.rotation.x = Math.PI / 2;
+  group.add(emitter);
+}
+
+function floorLamp(palette: Palette, height: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const stemTop = height - 0.146;
+  const shadeBottom = height - 0.32;
+  mesh.add("dark", new CylinderGeometry(0.179, 0.194, 0.045, 40).translate(0, 0.0225, 0));
+  mesh.add("insert", new CylinderGeometry(0.17, 0.176, 0.015, 36).translate(0, 0.052, 0));
+  timber(mesh, [0.043, stemTop - 0.047, 0.043], [0, (stemTop + 0.047) / 2, 0], 0.015, "vertical");
+  mesh.add("steel", new CylinderGeometry(0.031, 0.031, 0.06, 20).translate(0, 0.082, 0));
+  oval(
+    mesh,
+    "shade",
+    [
+      [0.205, 0],
+      [0.212, 0],
+      [0.146, 0.32],
+      [0.14, 0.32],
+      [0.205, 0],
+    ],
+    1,
+    1,
+    [0, shadeBottom, 0],
+  );
+  for (const [radius, y] of [
+    [0.2095, shadeBottom + 0.006],
+    [0.145, height - 0.006],
+  ] as const) {
+    mesh.add(
+      "accent",
+      new TorusGeometry(radius - 0.002, 0.0033, 8, 36).rotateX(Math.PI / 2).translate(0, y, 0),
+    );
+  }
+  mesh.add(
+    "diffuser",
+    new CylinderGeometry(0.185, 0.185, 0.018, 36).translate(0, shadeBottom + 0.024, 0),
+  );
+  const group = mesh.finish("floor-lamp", palette);
+  downlight(group, shadeBottom + 0.013);
+  return group;
+}
+
+function deskLamp(palette: Palette, tilt: number): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const hinge = new Vector3(0, 0.405, 0.098);
+  const arm = new CatmullRomCurve3([
+    new Vector3(0, 0.025, -0.042),
+    new Vector3(0, 0.12, -0.063),
+    new Vector3(0, 0.27, -0.073),
+    new Vector3(0, 0.388, -0.017),
+    hinge,
+  ]);
+  mesh.add("dark", new CylinderGeometry(0.084, 0.092, 0.022, 32).translate(0, 0.011, 0));
+  mesh.add("accent", new CylinderGeometry(0.077, 0.083, 0.017, 32).translate(0, 0.028, 0));
+  mesh.add("steel", new TubeGeometry(arm, 24, 0.0125, 10, false));
+  mesh.add("steel", new SphereGeometry(0.022, 16, 12).translate(hinge.x, hinge.y, hinge.z));
+  mesh.block("insert", [0.019, 0.011, 0.028], [0.023, 0.04, 0.026], 0.005);
+  const group = mesh.finish("desk-lamp", palette);
+
+  const cap = new StaticKitMesh<Finish>();
+  oval(
+    cap,
+    "accent",
+    [
+      [0.065, -0.112],
+      [0.074, -0.112],
+      [0.071, -0.099],
+      [0.032, -0.028],
+      [0.027, -0.02],
+      [0.019, -0.02],
+      [0.023, -0.032],
+      [0.065, -0.112],
+    ],
+    1,
+    1,
+    [0, 0, 0],
+  );
+  cap.add("dark", new CylinderGeometry(0.024, 0.026, 0.037, 18).translate(0, -0.012, 0));
+  cap.add("diffuser", new CylinderGeometry(0.064, 0.064, 0.008, 32).translate(0, -0.102, 0));
+  cap.add(
+    "diffuser",
+    new TorusGeometry(0.069, 0.0045, 8, 36).rotateX(Math.PI / 2).translate(0, -0.112, 0),
+  );
+  const head = cap.finish("lamp-head", palette);
+  head.position.copy(hinge);
+  head.rotation.x = (tilt * Math.PI) / 180;
+  downlight(head, -0.114);
+  group.add(head);
+  return group;
+}
+
+function wallSconce(palette: Palette): Group {
+  const mesh = new StaticKitMesh<Finish>();
+  const height = 0.369;
+  const centerY = height / 2;
+  mesh.add(
+    "dark",
+    new RoundedBoxGeometry(0.139, height, 0.034, 2, 0.014).translate(0, centerY, 0.017),
+  );
+  mesh.add(
+    "diffuser",
+    new RoundedBoxGeometry(0.107, 0.284, 0.065, 3, 0.028).translate(0, centerY, 0.062),
+  );
+  for (const y of [-0.147, 0.147]) {
+    mesh.add(
+      "accent",
+      new RoundedBoxGeometry(0.116, 0.041, 0.077, 2, 0.015).translate(0, centerY + y, 0.051),
+    );
+  }
+  const group = mesh.finish("wall-sconce", palette);
+  anchor(group, "lamp-wall", [0, centerY, 0], Math.PI);
+  anchor(group, "light-emitter", [0, centerY, 0.097]);
+  return group;
+}
+
 export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
-    Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats" | "shelves">,
+    Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats" | "shelves" | "tilt" | "lit">,
   veneer?: IVeneer,
 ): Group {
-  const palette = materials(options.seed, options.accent, veneer);
+  const palette = materials(options.seed, options.accent, veneer, options.lit);
   const width = options.width ?? workshopWidths[id]?.default ?? workbenchWidth.default;
-  const height = options.height ?? chairHeight.default;
+  const height = options.height ?? workshopHeights[id]?.default ?? chairHeight.default;
   const seats = options.seats ?? workshopSeatCounts[id]?.default ?? loungeSeats.default;
   const builders = {
     workbench: () => workbench(palette, width),
@@ -1230,6 +1382,9 @@ export function buildWorkshop(
     bookcase: () => bookcase(palette, width, options.shelves ?? workshopShelfCount.default),
     wardrobe: () => wardrobe(palette, width, options.open ?? false),
     trunk: () => trunk(palette, width, options.open ?? false),
+    "floor-lamp": () => floorLamp(palette, height),
+    "desk-lamp": () => deskLamp(palette, options.tilt ?? deskLampTilt.default),
+    "wall-sconce": () => wallSconce(palette),
   };
   const group = builders[id]();
   group.name = `workshop-${id}`;
