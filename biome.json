@@ -105,10 +105,6 @@
   },
   "overrides": [
     {
-      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
-      "javascript": { "formatter": { "quoteProperties": "preserve" } }
-    },
-    {
       "include": ["**/*.ts", "**/*.tsx"],
       "linter": { "rules": { "style": { "useNamingConvention": "off" } } }
     },
@@ -229,37 +225,6 @@
       ],
       "formatter": {
         "enabled": false
-      }
-    },
-    {
-      "include": ["examples/procedural-animals/src/render/donor/core/motion/quadruped.js"],
-      "linter": {
-        "rules": {
-          "style": {
-            "useNamingConvention": {
-              "level": "error",
-              "options": {
-                "conventions": [
-                  {
-                    "selector": {
-                      "kind": "interface"
-                    },
-                    "match": "I(.*)"
-                  },
-                  {
-                    "selector": {
-                      "kind": "objectLiteralProperty"
-                    },
-                    "match": "(?:D|DL|T|F|H|W|U|Lf|(.+))",
-                    "formats": ["camelCase"]
-                  }
-                ],
-                "strictCase": false,
-                "requireAscii": false
-              }
-            }
-          }
-        }
       }
     },
     {

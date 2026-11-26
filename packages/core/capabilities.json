@@ -578,6 +578,151 @@
     },
     {
       "aliases": [],
+      "constraints": [],
+      "example": "const levels = createBackend().db.collection(\"levels\");\nawait levels.put(\"canyon\", { blocks: 12, title: \"Canyon run\" }, \"public\");\nconst shared = await levels.get(\"canyon\");",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendCollection { … }",
+      "situations": [
+        "publish a player-built level that other players of the same game can load",
+        "list the documents other players have made public in this game"
+      ],
+      "summary": "Documents shared inside one game: published levels, shared builds, public profiles.",
+      "supersedes": [],
+      "symbol": "BackendCollection"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nawait backend.db.set(\"save\", { level: 4, gold: 20 });\nconst save = await backend.db.get(\"save\");",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendDb { … }",
+      "situations": [
+        "save game progress in the cloud so clearing the browser cache does not lose it",
+        "keep the player's last write when the network fails, because it lands locally first"
+      ],
+      "summary": "The caller's own key/value store: private per player, per game.",
+      "supersedes": [],
+      "symbol": "BackendDb"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nbackend.db.set(\"save\", next).catch((error) => { if (error.code === \"version_conflict\") merge(error.value); });",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendError extends Error { … }",
+      "situations": [
+        "branch on a failed save without parsing an error message",
+        "recover from a stale write by settling on `error.value` and saving again"
+      ],
+      "summary": "The one failure shape a game handles: the code, plus the server's copy on a conflict.",
+      "supersedes": [],
+      "symbol": "BackendError"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const rooms = createBackend().rooms;\nconst room = await rooms.quickJoin();\nconst open = await rooms.list();",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class BackendRooms { … }",
+      "situations": [
+        "add online multiplayer to a published game without writing a server",
+        "run a lobby where players join a room by a six-character code",
+        "find someone to play with by joining the fullest public room",
+        "send messages between the players of one room, peer to peer when it connects"
+      ],
+      "summary": "The game's rooms: one call to open one, join one or list what is open.",
+      "supersedes": [],
+      "symbol": "BackendRooms"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const backend = createBackend();\nawait backend.db.set(\"save\", { level: 3 });\nconst shared = await backend.db.collection(\"levels\").list();",
+      "importPath": "@threenative/backend",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export function createBackend(options: IBackendOptions = { … }",
+      "situations": [
+        "save player progress in the cloud on a published game so it survives a cache clear",
+        "share documents between the players of one game",
+        "keep working in a preview build that has no backend"
+      ],
+      "summary": "The cloud store a published game saves into. With no host, no `fetch` and no `localStorage` every call still resolves, so a preview build runs the same game code.",
+      "supersedes": [],
+      "symbol": "createBackend"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "const room = await createBackend().rooms.create({ max: 4 });\nroom.send({ move: \"e4\" }, room.peers[0]);\nroom.transport(room.peers[0]); // \"p2p\" or \"relay\"",
+      "importPath": "@threenative/backend",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export class Room { … }",
+      "situations": [
+        "play a match with another player in the same room",
+        "carry room messages over a peer-to-peer data channel, with the relay as the fallback",
+        "check whether a message to a player went peer to peer or through the relay"
+      ],
+      "summary": "One live room: a socket, its members and the shared state the room has confirmed.",
+      "supersedes": [],
+      "symbol": "Room"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "await deleteGameData(env.BACKEND_DB, projectId);",
+      "importPath": "@threenative/backend/cloudflare",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export async function deleteGameData(db: IBackendD1, gameId: string): Promise<void> { … }",
+      "situations": ["delete a published game and all of its players' data in one call"],
+      "summary": "Removes every row a game owns, in all three tables, and nothing else — what a game or account deletion calls, while revoking a share link keeps the players' saves.",
+      "supersedes": [],
+      "symbol": "deleteGameData"
+    },
+    {
+      "aliases": [],
+      "constraints": [],
+      "example": "export default { async fetch(request, env) { return handleBackend(request, { db: env.BACKEND_DB, gameId, playerId }); } }; // gameId and playerId are the host's, never the client's",
+      "importPath": "@threenative/backend/cloudflare",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/backend",
+      "requires": ["npm i @threenative/backend"],
+      "signature": "export async function handleBackend( request: Request, options: IBackendHandlerOptions, ): Promise<Response> { … }",
+      "situations": [
+        "mount cloud saves and shared documents on a Cloudflare Worker",
+        "run the ThreeNative backend on your own Cloudflare account"
+      ],
+      "summary": "Answers one `/_backend` request: `200` with the body, or `{ error }` with 400/403/404/409/413. Every response carries the marker header, errors included, because the client decides whether a host exists at all by looking for it — an SPA fallback HTML 200 is not a backend.",
+      "supersedes": [],
+      "symbol": "handleBackend"
+    },
+    {
+      "aliases": [],
       "constraints": [
         "the material needs the foliage marker and subsurfaceColor, else nothing is added and false is returned; call once per material",
         "the material needs `twoSidedFoliage = true` and a `subsurfaceColor`, or nothing is added and false is returned; backIrradiance is a vec3 node in the unit of `irradianceNode`; call once per material"
@@ -760,6 +905,7 @@
       "signature": "export class AnimationComposer { … }",
       "situations": [
         "synchronize walk/run/strafe clips with different durations",
+        "blend walking and running clips smoothly on a rigged character skeleton",
         "reload with the upper body while locomotion continues",
         "apply an additive recoil clip with an explicit reference pose",
         "route root motion through collision-aware character movement"
@@ -895,6 +1041,8 @@
       "situations": [
         "play a sound effect with a volume bus",
         "mute or adjust a category of game audio",
+        "fade background music volume while a pause menu is open",
+        "play a different looping music track when the scene or quest changes",
         "keep a gunshot audible at 20 metres by tuning positional falloff",
         "hold a loud mix below clipping with a compressor on the bus",
         "play cannon, wave, and ship sound effects"
@@ -1358,6 +1506,7 @@
       "situations": [
         "preload models, textures, or audio before a scene enters",
         "keep downloaded web assets on disk between visits",
+        "load and cache a PNG image or texture and assign it to a material map or UI marker",
         "download the next scene before the player gets there",
         "free the disk cache from a settings menu",
         "prefetch assets into the Cache Storage disk cache of a large web game",
@@ -1446,6 +1595,24 @@
     {
       "aliases": [],
       "constraints": [
+        "add each object with ctx.add for GPU dispatch; use replay for bursts and dispose when finished"
+      ],
+      "example": "const effect = createVfxPreset(\"fire\", { scale: 1.5 }); for (const layer of effect.objects) ctx.add(layer);",
+      "importPath": "@threenative/core",
+      "kind": "function",
+      "overrides": ["scale, intensity and tint match the catalog controls"],
+      "package": "@threenative/core",
+      "signature": "export function createVfxPreset(id: string, overrides: IVfxPresetOverrides = { … }",
+      "situations": [
+        "apply a shared engine VFX preset from its catalog ID and tune its size, speed or tint"
+      ],
+      "summary": "Build the renderable layers of a catalog preset.",
+      "supersedes": [],
+      "symbol": "createVfxPreset"
+    },
+    {
+      "aliases": [],
+      "constraints": [
         "every value is required; there is no default sun, sky, haze or exposure",
         "`skySize` must keep the sky box's corners inside the camera's far plane",
         "shadowExtents follow `VirtualShadowNode`: half-widths, finest first, strictly increasing"
@@ -1461,7 +1628,8 @@
       "situations": [
         "daytime sky, sun and shadows for a large outdoor map",
         "distant terrain should fade into the sky instead of a coloured wall",
-        "match a Blender look-dev scene's sun, sky and exposure in the game"
+        "match a Blender look-dev scene's sun, sky and exposure in the game",
+        "keep distance fog consistent across an outdoor map"
       ],
       "summary": "An outdoor daylight rig: physical sky, one sun with open-world shadows that follow the eye, hemisphere fill, sky-coloured haze and the AgX tone curve. Every value is the game's.",
       "supersedes": [],
@@ -1527,8 +1695,11 @@
       "situations": [
         "start a ThreeNative game from src/game.ts",
         "register physics and gameplay plugins",
+        "bind a reload input action for a game's magazine and reserve ammo",
         "let the player zoom the camera with a wheel, pinch, or gamepad axis",
-        "frame a camera behind the player"
+        "frame a camera behind the player",
+        "use chase camera framing behind a race car",
+        "make the player readable with an angled arena camera"
       ],
       "summary": "Define the portable game entry shared by web and native.",
       "supersedes": [],
@@ -2116,6 +2287,7 @@
       "situations": [
         "emit sparks, smoke, or other transient effects",
         "update many small visual particles",
+        "emit floating fireflies or drifting dust motes",
         "trail dust, exhaust, or spray behind a moving object",
         "emit cannon smoke and muzzle flash particles",
         "fire a cannonball projectile with cannon smoke particles",
@@ -2913,7 +3085,8 @@
         "let the player click on a thing in the world",
         "show a 3D object while a pointer hovers over it",
         "handle touch and mouse taps on a loaded model without naming its child meshes",
-        "drag a crate or prop with the mouse or a finger"
+        "drag a crate or prop with the mouse or a finger",
+        "click points of interest to inspect them as the player explores"
       ],
       "summary": "Dispatch portable pointer events from the game surface to registered Three.js objects.",
       "supersedes": [],
@@ -3494,8 +3667,10 @@
       "signature": "export class ScatterField3D extends Group { … }",
       "situations": [
         "scatter fallen logs, twigs, leaf litter, stones and ferns over a forest floor",
-        "stream instanced props of any baked mesh round the player without one draw per prop",
-        "place rocks, debris or plants on a heightfield with distance thinning and level of detail"
+        "scatter fallen logs, twigs and leaf litter on the forest floor",
+        "stream instanced props around the player without one draw per prop",
+        "place rocks, debris or plants on a heightfield with distance thinning and level of detail",
+        "stream instanced props of any baked mesh round the player without one draw per prop"
       ],
       "summary": "Stream instanced copies of any baked mesh around a follow point, with distance thinning and levels of detail, from the game's own placement rule.",
       "supersedes": [],
@@ -3513,7 +3688,8 @@
       "situations": [
         "add a playable level or menu scene",
         "move scene setup and per-frame gameplay out of the entry point",
-        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs"
+        "run scene work once per actual world draw, after the frame's last fixed update and before the projection packs",
+        "interpolate transforms in Scene.render using ctx.alpha after the fixed update"
       ],
       "summary": "Implement a portable Godot-shaped game scene lifecycle.",
       "supersedes": [],
@@ -3530,7 +3706,8 @@
       "signature": "export class ScenePicker { … }",
       "situations": [
         "select an object under the pointer",
-        "interact with the first collider or mesh hit"
+        "interact with the first collider or mesh hit",
+        "find which target a shot hit, so the struck target can score and react"
       ],
       "summary": "Raycast the game scene using the framework's picker.",
       "supersedes": ["new Raycaster("],
@@ -3573,7 +3750,8 @@
         "delay an enemy patrol transition",
         "run a callback every simulation tick",
         "tween a numeric property with a game-owned curve",
-        "a countdown timer: end the level when its time limit runs out"
+        "a countdown timer: end the level when its time limit runs out",
+        "tick a race start countdown and unlock the controls on GO"
       ],
       "summary": "Schedule delayed and repeating callbacks or tween numeric properties with game-owned cleanup.",
       "supersedes": [],
@@ -4424,6 +4602,8 @@
         "shadow map too coarse over a big terrain",
         "one directional light shadow for a whole open world",
         "shadows shimmer when the camera moves",
+        "cache static casters in the shadow map and update moving casters separately",
+        "cast shadows from streamed instanced trees onto nearby terrain as the player moves",
         "shadow edges, tree lighting or level sharpness change while a third-person camera turns around its hero"
       ],
       "summary": "One directional shadow for a whole open world: camera-centred clip levels, each snapped to its own texel grid and re-rendered only when its window moves. Tracked casters draw into a per-level mover map every frame, so animated casters do not invalidate the cached levels after the one refresh caused by tracking or untracking them. Plugs into three's own `light.shadow.shadowNode` slot, so every material receives it.",
@@ -4495,6 +4675,7 @@
       "situations": [
         "float a boat on waves",
         "make water move",
+        "animate open ocean waves with analytic displacement and use domain warp to break repeating patterns",
         "find the water surface height at a point"
       ],
       "summary": "Evaluate analytic waves on CPU and displace game-owned vertices with the matching TSL graph. wanted, and the warp jacobian, every slope and both allocations are skipped",
@@ -4568,7 +4749,8 @@
       "signature": "export class WorldEnvironment { … }",
       "situations": [
         "a scene should light and tone map like a fresh Unreal level without wiring each post stage by hand",
-        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look"
+        "turn one lighting effect off, or pick a cheaper tier, for a weak GPU or a stylised look",
+        "set night scene lighting and exposure for a foggy city with emissive signs"
       ],
       "summary": "The node that says which lighting effects a scene runs and how strong they are, with a fresh Unreal 5.8.3 project's defaults: the filmic tone curve, Unreal-metered auto exposure, screen-space GI and ambient occlusion, SMAA, Unreal's bloom and local exposure. It builds the post chain through `renderer.createRenderChain()` and prints `TN_RENDER_CHAIN` naming every stage as applied or refused with a reason. Property names are Godot's `Environment` where it has one.",
       "supersedes": [],
@@ -5352,6 +5534,7 @@
       "signature": "export function publishUiState<T>( bridge: IUiBridge, store: IPublishableStore<T>, options: IPublishOptions = { … }",
       "situations": [
         "show score or health in a UI rendered over the game surface",
+        "update a health bar after the player takes damage",
         "keep a HUD in step with the game without re-rendering on the loop",
         "publish game state to a HUD in another realm",
         "keep a web and native UI mirror on the same coalesced state stream"
@@ -5396,6 +5579,822 @@
       "summary": "Mirror the game's published state on the UI side.",
       "supersedes": [],
       "symbol": "subscribeUiState"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createAshPlume()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createAshPlume(overrides: IVfxOverrides = { … }",
+      "situations": ["volcanic ash or a burnt-out building", "a dark smoke column"],
+      "summary": "A dark column of ash that billows upward.",
+      "supersedes": [],
+      "symbol": "createAshPlume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBloodSplash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBloodSplash(overrides: IVfxOverrides = { … }",
+      "situations": ["blood when a character takes damage", "a gore or hit splatter"],
+      "summary": "A splash of blood droplets on a hit.",
+      "supersedes": [],
+      "symbol": "createBloodSplash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBonfire()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBonfire(overrides: IVfxOverrides = { … }",
+      "situations": ["a bonfire or a large campfire", "a burning pile with smoke"],
+      "summary": "A big fire with flame, smoke and embers.",
+      "supersedes": [],
+      "symbol": "createBonfire"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBubbleStream()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBubbleStream(overrides: IVfxOverrides = { … }",
+      "situations": ["bubbles under water or from a diver", "a bubbling potion or a fish tank"],
+      "summary": "A stream of bubbles that rises.",
+      "supersedes": [],
+      "symbol": "createBubbleStream"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createBurstFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createBurstFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a flash when a grenade, pickup or spell goes off", "a bright pop on impact"],
+      "summary": "A short, bright flash that bursts outward once.",
+      "supersedes": [],
+      "symbol": "createBurstFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createCartoonSmokeBlast()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createCartoonSmokeBlast( overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a cartoon poof when something appears or vanishes",
+        "a stylised explosion puff"
+      ],
+      "summary": "A puffy cartoon smoke blast.",
+      "supersedes": [],
+      "symbol": "createCartoonSmokeBlast"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createConfettiBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createConfettiBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["confetti for a win, a level-up or a celebration", "a party popper"],
+      "summary": "Coloured confetti that bursts and flutters down.",
+      "supersedes": [],
+      "symbol": "createConfettiBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createCurlingFlame()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createCurlingFlame(overrides: IVfxOverrides = { … }",
+      "situations": ["a stylised, curling flame", "a magic fire"],
+      "summary": "A flame whose tongues curl as they rise.",
+      "supersedes": [],
+      "symbol": "createCurlingFlame"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createDustCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createDustCloud(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a dust cloud from a landing, a stomp or a vehicle",
+        "dust kicked up off dry ground"
+      ],
+      "summary": "A low cloud of tan dust that swells and settles.",
+      "supersedes": [],
+      "symbol": "createDustCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createEmberFountain()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createEmberFountain(overrides: IVfxOverrides = { … }",
+      "situations": ["embers rising from a fire", "a fountain of glowing sparks"],
+      "summary": "Glowing embers that shoot up and drift down.",
+      "supersedes": [],
+      "symbol": "createEmberFountain"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createExplosionCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createExplosionCloud(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "an explosion with a fire cloud",
+        "a barrel or a car that explodes in fire and smoke"
+      ],
+      "summary": "A fireball cloud that blooms and rolls into smoke.",
+      "supersedes": [],
+      "symbol": "createExplosionCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFire()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFire(overrides: IVfxOverrides = { … }",
+      "situations": ["a campfire, torch or brazier flame", "a burning object that keeps burning"],
+      "summary": "A steady flame that licks upward from one point.",
+      "supersedes": [],
+      "symbol": "createFire"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFireflies()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFireflies(overrides: IVfxOverrides = { … }",
+      "situations": ["fireflies in a forest at night", "glowing insects or floating lights"],
+      "summary": "Fireflies that blink and drift over an area.",
+      "supersedes": [],
+      "symbol": "createFireflies"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFlameWithEmbers()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFlameWithEmbers(overrides: IVfxOverrides = { … }",
+      "situations": ["a fire with flying embers", "a burning torch with sparks"],
+      "summary": "A flame that throws off embers.",
+      "supersedes": [],
+      "symbol": "createFlameWithEmbers"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFrostAura()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFrostAura(overrides: IVfxOverrides = { … }",
+      "situations": ["a frost aura around a character", "a cold, freezing area"],
+      "summary": "A slow swirl of frost around a point.",
+      "supersedes": [],
+      "symbol": "createFrostAura"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createFrostBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createFrostBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["a frost nova or an ice hit", "a freezing burst"],
+      "summary": "A burst of frost crystals out from a point.",
+      "supersedes": [],
+      "symbol": "createFrostBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createGroundMist()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createGroundMist(overrides: IVfxOverrides = { … }",
+      "situations": ["fog or mist creeping along the ground", "a swamp or graveyard haze"],
+      "summary": "Low mist that drifts along the floor.",
+      "supersedes": [],
+      "symbol": "createGroundMist"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createHealingAura()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createHealingAura(overrides: IVfxOverrides = { … }",
+      "situations": ["a healing aura around a character", "a regeneration or buff effect"],
+      "summary": "A soft green aura of rising motes around a point.",
+      "supersedes": [],
+      "symbol": "createHealingAura"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createHolyGlow()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createHolyGlow(overrides: IVfxOverrides = { … }",
+      "situations": ["a holy blessing, a shrine or a resurrection", "a divine light effect"],
+      "summary": "A golden glow with rays and orbiting light.",
+      "supersedes": [],
+      "symbol": "createHolyGlow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createIceShatter()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createIceShatter(overrides: IVfxOverrides = { … }",
+      "situations": ["ice shattering or a frozen enemy breaking", "ice shards on impact"],
+      "summary": "Ice shards that fly up and bounce on the floor.",
+      "supersedes": [],
+      "symbol": "createIceShatter"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["a heavy melee hit", "a punch or hammer impact"],
+      "summary": "Sparks and dust thrown out by a heavy hit.",
+      "supersedes": [],
+      "symbol": "createImpactBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactDust()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactDust(overrides: IVfxOverrides = { … }",
+      "situations": ["dust where a bullet or a heavy blow hits the ground", "a ground impact puff"],
+      "summary": "A puff of dust thrown out where something hits the ground.",
+      "supersedes": [],
+      "symbol": "createImpactDust"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a critical hit flash", "a hit confirm effect"],
+      "summary": "A bright flash with sparks on a hit.",
+      "supersedes": [],
+      "symbol": "createImpactFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createImpactSparks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createImpactSparks(overrides: IVfxOverrides = { … }",
+      "situations": ["sparks where a bullet hits metal", "a sword clash or a hit spark"],
+      "summary": "A spray of sparks where a hit lands.",
+      "supersedes": [],
+      "symbol": "createImpactSparks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createJetFlame()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createJetFlame(overrides: IVfxOverrides = { … }",
+      "situations": ["a rocket thruster or jet engine exhaust", "a flamethrower stream"],
+      "summary": "A fast, narrow jet of flame, like a thruster or a flamethrower.",
+      "supersedes": [],
+      "symbol": "createJetFlame"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLeafSwirl()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLeafSwirl(overrides: IVfxOverrides = { … }",
+      "situations": ["falling or swirling leaves", "an autumn wind effect"],
+      "summary": "Leaves that swirl in the wind.",
+      "supersedes": [],
+      "symbol": "createLeafSwirl"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningBurst()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningBurst(overrides: IVfxOverrides = { … }",
+      "situations": ["an electric discharge or a shock hit", "a spark gap or a taser zap"],
+      "summary": "A short burst of jagged electric arcs.",
+      "supersedes": [],
+      "symbol": "createLightningBurst"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningColumn()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningColumn(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "an electric pylon, a tesla coil or a charged weapon",
+        "a column of crackling lightning"
+      ],
+      "summary": "Electric arcs that crackle upward without stopping.",
+      "supersedes": [],
+      "symbol": "createLightningColumn"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createLightningSphere()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createLightningSphere(overrides: IVfxOverrides = { … }",
+      "situations": ["a ball of lightning or an electric shield", "a plasma globe"],
+      "summary": "Electric arcs that whirl around a sphere.",
+      "supersedes": [],
+      "symbol": "createLightningSphere"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicBeam()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicBeam(overrides: IVfxOverrides = { … }",
+      "situations": ["a magic beam or a laser spell", "a column of energy"],
+      "summary": "A straight beam of magic energy.",
+      "supersedes": [],
+      "symbol": "createMagicBeam"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicOrb()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicOrb(overrides: IVfxOverrides = { … }",
+      "situations": ["a magic orb, a charged spell or a power core", "a glowing energy ball"],
+      "summary": "A glowing orb of swirling magic.",
+      "supersedes": [],
+      "symbol": "createMagicOrb"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMagicWisp()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMagicWisp(overrides: IVfxOverrides = { … }",
+      "situations": ["a will-o'-the-wisp or a fairy light", "a floating magic mote"],
+      "summary": "A small floating wisp of magic light.",
+      "supersedes": [],
+      "symbol": "createMagicWisp"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createMuzzleFlash()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createMuzzleFlash(overrides: IVfxOverrides = { … }",
+      "situations": ["a muzzle flash when a gun fires", "a quick flare at a barrel tip"],
+      "summary": "The flash at the muzzle of a gun when it fires.",
+      "supersedes": [],
+      "symbol": "createMuzzleFlash"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createPoisonCloud()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createPoisonCloud(overrides: IVfxOverrides = { … }",
+      "situations": ["a poison or toxic gas cloud", "a damage-over-time area hazard"],
+      "summary": "A green toxic cloud that lingers in place.",
+      "supersedes": [],
+      "symbol": "createPoisonCloud"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "add `new GPUParticles3D(portal.ring)` and `portal.ribbons` with ctx.add; both are compute-driven"
+      ],
+      "example": "const portal = createPortalVortex();\nctx.add(new GPUParticles3D(portal.ring)).position.copy(gate);\nctx.add(portal.ribbons).position.copy(gate);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createPortalVortex(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a swirling magic portal",
+        "a warp gate or a summoning circle",
+        "a vortex that pulls particles into its centre"
+      ],
+      "summary": "The portal vortex: a particle ring plus a GPU ribbon field that spirals into its centre.",
+      "supersedes": [],
+      "symbol": "createPortalVortex"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createRain()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createRain(overrides: IVfxOverrides = { … }",
+      "situations": ["rain falling over the scene", "a rainy weather effect"],
+      "summary": "Falling rain streaks over an area.",
+      "supersedes": [],
+      "symbol": "createRain"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createShieldBreak()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createShieldBreak(overrides: IVfxOverrides = { … }",
+      "situations": ["a shield or barrier breaking", "a glass or crystal shatter"],
+      "summary": "A shield that cracks into flying shards.",
+      "supersedes": [],
+      "symbol": "createShieldBreak"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSlashArc()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSlashArc(overrides: IVfxOverrides = { … }",
+      "situations": ["a sword slash or a melee swing trail", "a claw swipe"],
+      "summary": "A curved arc that follows a weapon swing.",
+      "supersedes": [],
+      "symbol": "createSlashArc"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSmoke()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSmoke(overrides: IVfxOverrides = { … }",
+      "situations": [
+        "a smoke plume rising from a fire, a chimney or a burning building",
+        "a smoke plume over a battlefield"
+      ],
+      "summary": "Grey smoke that rises and spreads as it fades.",
+      "supersedes": [],
+      "symbol": "createSmoke"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSnow()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSnow(overrides: IVfxOverrides = { … }",
+      "situations": ["snow falling over the scene", "a snowy weather effect"],
+      "summary": "Snowflakes that drift down over an area.",
+      "supersedes": [],
+      "symbol": "createSnow"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSparkStreaks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSparkStreaks(overrides: IVfxOverrides = { … }",
+      "situations": ["sparks from grinding metal or a short circuit", "welding sparks"],
+      "summary": "Bright spark streaks that fly out and fall.",
+      "supersedes": [],
+      "symbol": "createSparkStreaks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createSteamPlume()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createSteamPlume(overrides: IVfxOverrides = { … }",
+      "situations": ["steam from a vent, a pipe or a hot spring", "a white vapour plume"],
+      "summary": "A pale plume of steam that rises from a vent.",
+      "supersedes": [],
+      "symbol": "createSteamPlume"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWaterfallMist()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWaterfallMist(overrides: IVfxOverrides = { … }",
+      "situations": ["spray at the foot of a waterfall", "mist from a fountain or rapids"],
+      "summary": "Mist that rolls off falling water.",
+      "supersedes": [],
+      "symbol": "createWaterfallMist"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWhirlwind()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWhirlwind(overrides: IVfxOverrides = { … }",
+      "situations": ["a whirlwind, a tornado or a dust devil", "a spinning wind spell"],
+      "summary": "A whirlwind that spins around a point.",
+      "supersedes": [],
+      "symbol": "createWhirlwind"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWindGust()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWindGust(overrides: IVfxOverrides = { … }",
+      "situations": ["a gust of wind or a fan blast", "a push or knockback wind"],
+      "summary": "A gust of air that swirls as it blows.",
+      "supersedes": [],
+      "symbol": "createWindGust"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "every colour, size, count and timing is a named override on the call",
+        "add one GPUParticles3D per returned layer with ctx.add; move or scale those emitters to place the effect"
+      ],
+      "example": "for (const layer of createWindStreaks()) ctx.add(new GPUParticles3D(layer)).position.copy(at);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "function",
+      "overrides": ["seed, amount, color, size, lifetime"],
+      "package": "@threenative/core",
+      "signature": "export function createWindStreaks(overrides: IVfxOverrides = { … }",
+      "situations": ["wind lines blowing across the scene", "a speed or dash effect"],
+      "summary": "Streaks of wind that blow sideways.",
+      "supersedes": [],
+      "symbol": "createWindStreaks"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "build it with `createPortalVortex`, then add it with ctx.add; it is compute-driven"
+      ],
+      "example": "ctx.add(createPortalVortex().ribbons);",
+      "importPath": "@threenative/core/vfx",
+      "kind": "class",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export class RibbonField extends InstancedMesh implements IComputeDriven { … }",
+      "situations": ["the spiral ribbons of a portal or a warp gate"],
+      "summary": "The GPU ribbon field that spirals into a portal vortex; `createPortalVortex` builds it.",
+      "supersedes": [],
+      "symbol": "RibbonField"
     },
     {
       "aliases": [],
@@ -5861,6 +6860,7 @@
       "signature": "export class SnowField { … }",
       "situations": [
         "leave footprints, tracks and tyre ruts in snow that persist and fill in over time",
+        "deform snowy terrain under the walking character and keep the footprints visible",
         "let a fresh snowfall slowly fill older tracks back in as the field recovers",
         "let a pushed sphere carve a connected track and a dropped one settle into a crater",
         "store snow deformation that rendered geometry and collision both read",
@@ -6176,7 +7176,10 @@
       "signature": "export class Area3D { … }",
       "situations": [
         "detect when an enemy enters a trigger area",
-        "react to a player entering a zone"
+        "react to a player entering a zone",
+        "detect when a ball or moving body rolls into a goal zone",
+        "trigger a pickup when the player overlaps an item without blocking movement",
+        "apply damage when an enemy projectile overlaps the player"
       ],
       "summary": "Detect overlaps without turning the body into a moving collider.",
       "supersedes": [],
@@ -6243,6 +7246,7 @@
       "signature": "export function buildStaticColliders( context: IStaticColliderContext, root: Object3D, filter?: StaticColliderFilter, ): readonly RigidBody3D[] { … }",
       "situations": [
         "make the level I built stop the player",
+        "keep the player from walking through a landmark mesh or solid scenery prop",
         "turn a cathedral or map scene into static collision"
       ],
       "summary": "Build fixed trimesh bodies from the meshes a game authored in a scene root.",
@@ -6393,6 +7397,7 @@
       "signature": "export class PhysicsDirectSpaceState3D { … }",
       "situations": [
         "raycast for visibility or aiming",
+        "cast a hitscan ray for each pellet in a shotgun spread",
         "find bodies inside a shape or point query"
       ],
       "summary": "Query the physics world without creating a body.",
@@ -6439,6 +7444,7 @@
         "give a crate or prop physical motion",
         "a ball rolls across the floor",
         "create a body that collides with a character",
+        "push an object to a destination through simulated contact with a character or another body",
         "fire physical cannonballs that collide with ships or scenery",
         "fire a cannonball projectile with cannon smoke particles",
         "a bullet passes through a wall"
@@ -8286,7 +9292,10 @@
       "overrides": [],
       "package": "@threenative/playtest",
       "signature": "export async function withBrowserCapture<T>( config: IStandalonePlaytestConfig, capture: (session: IBrowserCaptureSession) => Promise<T>, signal?: AbortSignal, ): Promise<T> { … }",
-      "situations": ["write a custom browser capture without owning Xvfb or Chromium cleanup"],
+      "situations": [
+        "write a custom browser capture without owning Xvfb or Chromium cleanup",
+        "capture a headed WebGPU screenshot from a settled camera pose"
+      ],
       "summary": "Capture a ready ThreeNative game with the runner's display, lock, server and browser ownership.",
       "supersedes": [],
       "symbol": "withBrowserCapture"
@@ -8370,6 +9379,7 @@
       "signature": "export function adviseThreeRenderWorkload(input: IRenderAdvisorInput): IRenderAdvisorReport { … }",
       "situations": [
         "diagnose a slow Three.js scene",
+        "diagnose a running game's rendering performance from playtest workload measurements",
         "choose a render optimization from observed workload data"
       ],
       "summary": "Explain which render workloads should be collapsed or retained.",
@@ -8466,125 +9476,6 @@
       "symbol": "ThreePlaytestPhysicsRecorder"
     },
     {
-      "aliases": [],
-      "constraints": [
-        "identity parent required; material and motion are editable game source; no move/Mixer/composer writer exists"
-      ],
-      "example": "const wolf = createAnimalActor(bake, { motion, material, ground });",
-      "importPath": "@threenative/procedural-animals",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export function createAnimalActor(bake: IAnimalBake, options: IAnimalActorOptions) { … }",
-      "situations": ["follow a baked animal from accepted fixed-step Rapier state"],
-      "summary": "Own one actor's pose/lifetime, accepting the completed physics state as its only root writer.",
-      "supersedes": [],
-      "symbol": "createAnimalActor"
-    },
-    {
-      "aliases": [],
-      "constraints": [
-        "this creates bind geometry only; game-owned DQS material and animated bounds remain required"
-      ],
-      "example": "const { bake, geometry } = createAnimalGeometry(bytes);",
-      "importPath": "@threenative/procedural-animals",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export function createAnimalGeometry(buffer: ArrayBuffer): { … }",
-      "situations": ["construct a Three.js geometry from a validated procedural wolf bake"],
-      "summary": "Validates all bytes before constructing geometry with the bake's skin and rig attributes.",
-      "supersedes": [],
-      "symbol": "createAnimalGeometry"
-    },
-    {
-      "aliases": [],
-      "constraints": ["a corrupt served bake rejects rather than falling back to a different file"],
-      "example": "const bake = await loadAnimalBake(ctx.assets, \"wolf.animal\");",
-      "importPath": "@threenative/procedural-animals",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export async function loadAnimalBake( assets: IAnimalAssetResolver, logicalPath: string, options: { … }",
-      "situations": ["load a cooked animal from ctx.assets without runtime generation"],
-      "summary": "Resolves and loads a prebuilt wolf through the game's ordinary asset resolver.",
-      "supersedes": [],
-      "symbol": "loadAnimalBake"
-    },
-    {
-      "aliases": [],
-      "constraints": [
-        "unknown revisions, malformed sections, indices and skin weights throw by name"
-      ],
-      "example": "const bake = parseAnimalBake(bytes);",
-      "importPath": "@threenative/procedural-animals",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }",
-      "situations": ["validate a baked procedural animal before allocating geometry"],
-      "summary": "Validates a pinned wolf PANM bake before constructing any renderer resource.",
-      "supersedes": [],
-      "symbol": "parseAnimalBake"
-    },
-    {
-      "aliases": [],
-      "constraints": [
-        "only .animal inputs are interpreted; corruption fails the cook, without regeneration"
-      ],
-      "example": "await compileAssets({ passes: [animalBakePass()] });",
-      "importPath": "@threenative/procedural-animals/build",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export function animalBakePass() { … }",
-      "situations": ["cook staged animal bakes through the ordinary asset pipeline"],
-      "summary": "Validate staged PANM sources inside the existing asset compiler; it owns the hashed manifest.",
-      "supersedes": [],
-      "symbol": "animalBakePass"
-    },
-    {
-      "aliases": [],
-      "constraints": [
-        "exact pinned Node runtime, donor revision, options and generated bytes are validated; no worker is created"
-      ],
-      "example": "const bytes = await bakeWolf({ seed: 7, tier: \"crowd\" });",
-      "importPath": "@threenative/procedural-animals/build",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export async function bakeWolf(options: IWolfBakeOptions): Promise<ArrayBuffer> { … }",
-      "situations": ["bake high and crowd wolf geometry before the ordinary asset cook"],
-      "summary": "Bake the pinned wolf on the build machine, never on the portable runtime path.",
-      "supersedes": [],
-      "symbol": "bakeWolf"
-    },
-    {
-      "aliases": [],
-      "constraints": [
-        "validation and generation complete before the destination is touched; temporary files are removed on failure"
-      ],
-      "example": "await bakeWolfToFile({ seed: 7, tier: \"crowd\" }, \"assets/wolf-crowd.animal\");",
-      "importPath": "@threenative/procedural-animals/build",
-      "kind": "function",
-      "overrides": [],
-      "package": "@threenative/procedural-animals",
-      "requires": ["npm i @threenative/procedural-animals"],
-      "signature": "export async function bakeWolfToFile( options: IWolfBakeOptions, destination: string, ): Promise<string> { … }",
-      "situations": [
-        "publish a generated wolf without replacing the last valid bake on interruption"
-      ],
-      "summary": "Stage a validated source bake with a same-directory atomic rename, then use compileAssets.",
-      "supersedes": [],
-      "symbol": "bakeWolfToFile"
-    },
-    {
       "aliases": ["city kit", "modular road tiles", "low poly city buildings", "cars and vehicles"],
       "constraints": [
         "fails closed: an unknown module throws naming the nearest ids; seed is an integer 0 to 4294967295, detail 0 to 2, wet 0 to 100, floors an integer 2 to 12, text at most 24 characters, dressing a boolean",
@@ -8613,6 +9504,107 @@
       "symbol": "bakeCity"
     },
     {
+      "aliases": [],
+      "constraints": ["models use metres, +Y up and a ground-level origin; scale from 0.5 to 2"],
+      "example": "await bakeFrontier({ module: \"frontier-command\", accent: \"#628ac4\", scale: 1.5, out: \"assets/frontier\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular industrial headquarters, supply depots and ore processors for strategy, RTS and base-building games",
+        "generate a power generator, antenna relay, ore deposit or landing pad for a colony or factory outpost"
+      ],
+      "summary": "Bake Frontier Kit buildings, utility structures or a resource deposit as a grounded PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeFrontier"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "match scale across the pallet, crates, jack and rack; fork sockets point into the pallet",
+        "shelves applies to the rack and open applies to the shipping container"
+      ],
+      "example": "await bakeLogistics({ module: \"logistics-container\", open: true, out: \"assets/cargo\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a logistics warehouse set with a pallet, stacking tote, pallet jack, rack or walk-in shipping container",
+        "bake a shipping container with open swing doors and a clear cargo deck"
+      ],
+      "summary": "Bake compatible cargo, storage and handling props as grounded PBR GLBs.",
+      "supersedes": [],
+      "symbol": "bakeLogistics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "all pieces stand at y = 0; conveyor flow and signal faces point +Z",
+        "active lights the emitter, receiver and socket indicators"
+      ],
+      "example": "await bakeMechanism({ module: \"mechanism-emitter\", active: true, out: \"assets/mechanisms\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular conveyor belts, turntables and power cell sockets for a factory or puzzle game",
+        "build a signal puzzle with an emitter, reflector and receiver model"
+      ],
+      "summary": "Bake modular puzzle and transport props with named GLB attachment points.",
+      "supersedes": [],
+      "symbol": "bakeMechanism"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2"
+      ],
+      "example": "await bakePickup({ module: \"pickup-medkit\", accent: \"#ed5166\", scale: 1.5, out: \"assets/pickups\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "generate a medkit, potion bottle, access keycard, shield, vault key, scroll or repair wrench pickup model",
+        "recolor or scale a physical pickup model for a shooter, adventure, puzzle or racing game"
+      ],
+      "summary": "Bake a stylized pickup prop as an opaque PBR GLB with configurable accent and scale.",
+      "supersedes": [],
+      "symbol": "bakePickup"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "all pieces sit at y = 0; track sockets sit on the running surface and face along travel",
+        "use one scale across connected pieces and place the cart origin at rail height"
+      ],
+      "example": "await bakeRail({ module: \"rail-curve\", out: \"assets/rail\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake snap-together railroad or minecart track with a turn, ramp, trestle bridge and buffer stop",
+        "bake a minecart model with separate axle groups and a cargo attachment point"
+      ],
+      "summary": "Bake modular narrow-gauge railway GLBs with track endpoints and a matching minecart.",
+      "supersedes": [],
+      "symbol": "bakeRail"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",
@@ -8638,15 +9630,85 @@
       "symbol": "bakeRock"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "span and height are in metres before uniform scale; equipment faces +Z",
+        "span applies to the goal and court net, height to the goal, hoop and court net"
+      ],
+      "example": "await bakeSports({ module: \"sports-net\", span: 9.5, height: 2.24, out: \"assets/sports\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a soccer football goal, basketball hoop, tennis or volleyball net with configurable dimensions",
+        "bake a soccer ball, basketball or tennis ball with a named sphere center"
+      ],
+      "summary": "Bake grounded sports equipment and matching balls with named play surfaces and pivots.",
+      "supersedes": [],
+      "symbol": "bakeSports"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin",
+        "roof applies only to corridors and the assembled maintenance junction"
+      ],
+      "example": "await bakeStation({ module: \"station-elbow\", accent: \"#ee9955\", roof: true, out: \"assets/station\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "build a modular sci-fi spaceship or research station interior with snap-together corridor junctions, bulkheads and doors",
+        "generate a science-fiction control terminal, cargo case or glowing power cell for a shooter or puzzle game"
+      ],
+      "summary": "Bake modular science-fiction station corridors, architecture or props to a standard PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeStation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Width changes furniture length along local X or vessel diameter; body height stays fixed",
+        "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height",
+        "Set open on tavern-barrel to place its removable lid beside it",
+        "materials overrides apply by slot; missing properties inherit the chosen finish"
+      ],
+      "example": "await bakeTavern({ module: \"tavern-dining-set\", width: 2.2, out: \"assets/tavern\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter",
+        "assemble a tavern dining table with two matching benches and four seat anchors",
+        "bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard",
+        "restyle tavern furniture with a shared wood finish or custom wood and iron material maps"
+      ],
+      "summary": "Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.",
+      "supersedes": [],
+      "symbol": "bakeTavern"
+    },
+    {
       "aliases": [
         "trees",
         "palm trees",
         "street trees along a road",
+        "bushes",
+        "shrubs",
         "bushes and shrubs",
         "grass, flowers and ferns as ground cover",
         "dead trees, fallen logs and stumps",
         "low poly tree with level of detail",
         "realistic textured tree model",
+        "foliage",
         "foliage and vegetation models",
         "pine, oak or spruce forest trees",
         "grass tufts and clumps"
@@ -8671,11 +9733,42 @@
         "procedural oak tree GLB with level of detail for a game forest",
         "tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute",
         "a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders",
-        "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover"
+        "reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover",
+        "bake swaying trees to GLB props for the scene"
       ],
       "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures: Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.",
       "supersedes": [],
       "symbol": "bakeVegetation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the workbench width changes while the matching stool and cabinet keep their sizes",
+        "open previews supported drawers, doors or lids; moving groups remain available for animation",
+        "lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z"
+      ],
+      "example": "await bakeWorkshop({ module: \"workshop-drawer\", open: true, out: \"assets/furniture\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake configurable furniture for a workshop, apartment, safehouse or office",
+        "bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf",
+        "furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console",
+        "furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement",
+        "bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors",
+        "furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid",
+        "bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI",
+        "furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk",
+        "bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point",
+        "restyle workshop furniture with a shared wood finish or override color and texture maps by material slot"
+      ],
+      "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
+      "supersedes": [],
+      "symbol": "bakeWorkshop"
     },
     {
       "aliases": [],
@@ -8718,7 +9811,8 @@
       "situations": [
         "what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island",
         "list the rocks, cliffs and mountains for a biome, or every plant that grows there",
-        "find a tree or plant by name or latin name, such as pine, palm, cactus or fern"
+        "find a tree or plant by name or latin name, such as pine, palm, cactus or fern",
+        "find tropical island vegetation by habitat and species"
       ],
       "summary": "Find the nature elements to bake, by biome, kind or words: trees, ground cover, forest-floor debris and rock forms (boulders, cliffs, sea stacks, mesas, arches, mountains), each with the exact bake call.",
       "supersedes": [],
@@ -9896,7 +10990,10 @@
       "package": "@threenative/terrain",
       "requires": ["npm i -D @threenative/terrain"],
       "signature": "export function scatterProps( data: IOrderedScatterField, focus: { … }",
-      "situations": ["bake a biome that says `\"stream\": \"ordered\"`"],
+      "situations": [
+        "bake a biome that says `\"stream\": \"ordered\"`",
+        "place procedural foliage by altitude, terrain slope, water and clearings"
+      ],
       "summary": "Every placement, for one world, from one seed: the game's own rule set, in its own draw order.",
       "supersedes": [],
       "symbol": "scatterProps"
@@ -12250,15 +13347,6 @@
   ],
   "notOwned": [
     {
-      "guidance": "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
-      "id": "save-load",
-      "situations": [
-        "persist a player's progress between sessions",
-        "save player progress between sessions",
-        "load a saved game state"
-      ]
-    },
-    {
       "guidance": "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
       "id": "inventory",
       "situations": ["inventory system", "manage inventory contents"]
@@ -12269,14 +13357,14 @@
       "situations": ["NPC dialogue system", "write conversation choices for an NPC"]
     },
     {
-      "guidance": "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
+      "guidance": "The framework runs hosted rooms in @threenative/backend: createBackend().rooms.create(), .join(code) or .quickJoin() open a lobby, room.send() reaches everybody or one peer and room.state is ordered by the room's Durable Object, and a pair of players upgrades those messages to an ordered WebRTC data channel when both can reach each other (the relay is the fallback, and rtc: { iceServers: [] } forces it). The authenticated transport seam stays at @threenative/core/net: import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Not owned: authoritative replication, snapshots, prediction, interpolation and rejoin policy, which stay game rules in your project's src/ on either transport.",
       "id": "networked-multiplayer",
       "situations": ["authoritative replication", "client prediction"]
     },
     {
       "guidance": "The framework owns no vegetation render system: wind and materials are your look, in your project's src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-environment, then await bakeVegetation({ preset: \"oak\", seed: 7, lods: [0, 1], out: \"assets/trees\" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute(\"_wind\", \"vec4\") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].",
       "id": "procedural-environment",
-      "situations": ["foliage wind sway shader", "wind animation render system for leaves"]
+      "situations": ["runtime wind sway shader", "wind animation render system for leaves"]
     },
     {
       "guidance": "The framework owns no IK system. Copy the MIT source in examples/integrations/ik/src/ (https://github.com/ThreeNativeHQ/threenative/tree/develop/examples/integrations/ik) into your src/ and follow its README: it needs the closed-chain-ik/core dependency its own package.json pins, three keeps the only rendered pose, and new ConstrainedIK({root, joints: [{bone, axes, min, max}], effectors: [{bone, orientation?}], iterations, positionTolerance, rotationTolerance}) admits direct Bone hierarchies under rigid or positive-uniform-scale parents (shear, reflection, non-uniform or singular scale throws before the pose is touched). Call ik.update(targets) once per frame after AnimationPlayer/mixer and before render, with one world-space metre position per effector in order plus an optional quaternion only where the effector declared orientation: true; it never starts a loop, never moves the root and installs no bone translation or root-motion controller. Joint limits are X/Y/Z offsets relative to the animation pose supplied that call, so reapply the animation pose before solving to avoid accumulation, and the solver only rotates: bone lengths hold to under 1e-15 m. Iterations are 1-128; an unreachable goal returns converged false with finite residuals and never throws, a solver failure restores the original pose, and dispose() at scene teardown. Worked demo: the rifle grip game in examples/constrained-ik/, which plays on web, desktop native and Android.",

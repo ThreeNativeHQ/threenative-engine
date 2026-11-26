@@ -128,6 +128,7 @@
     "@types/three": "catalog:",
     "@vitest/coverage-v8": "catalog:",
     "draco3dgltf": "^1.5.7",
+    "procedural-animals": "catalog:",
     "es-module-lexer": "catalog:",
     "meshoptimizer": "1.1.1",
     "pngjs": "7.0.0",

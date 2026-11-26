@@ -119,6 +119,10 @@ let catalog: Required<Pick<IAssetCatalog, "elements" | "styles">> & IAssetCatalo
 const selectedStyles = new Set<string>();
 const styleNames = (element: IAssetElement) =>
   element.styleTags.map((tag) => catalog.styles[tag] ?? tag);
+const settingNames = (element: IAssetElement) =>
+  element.settingTags?.map((tag) => catalog.settings?.[tag] ?? tag) ?? [];
+const facetIds = ["setting", "category", "biome"] as const;
+const facet = (id: (typeof facetIds)[number]) => $<HTMLSelectElement>(id).value;
 /** A story: a kind overview (optionally one category of it) or one element. */
 let route: { kind: string; id?: string; category?: string; tiled?: string } = { kind: "" };
 let token = 0;
@@ -418,8 +422,14 @@ function renderDocs(element: IAssetElement, baked: IAssetReport, model: three.Ob
   const dl = rowsInto(el("dl", DL), [
     ["Id", element.id],
     ["Kind", kindName(element.kind)],
-    ["Style tags", styleNames(element).join(", ")],
+    ["Visual style", styleNames(element).join(", ")],
+    ...(element.settingTags?.length
+      ? [["Setting", settingNames(element).join(", ")] as [string, string]]
+      : []),
     ...(element.category ? [["Category", element.category] as [string, string]] : []),
+    ...(baked.materialSlots?.length
+      ? [["Material slots", baked.materialSlots.join(", ")] as [string, string]]
+      : []),
     ["Biomes", element.biomes?.join(", ") || "none listed"],
     ...(file ? [["File", file] as [string, string]] : []),
   ]);
@@ -763,14 +773,29 @@ async function show(): Promise<void> {
 // ── sidebar ──
 function visible(e: IAssetElement): boolean {
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
-  const biome = $<HTMLSelectElement>("biome").value;
-  const text =
-    `${e.id} ${e.name} ${e.latin ?? ""} ${e.kind} ${e.category ?? ""} ${styleNames(e).join(" ")} ${e.biomes?.join(" ") ?? ""}`.toLowerCase();
-  return (
-    (!biome || (e.biomes ?? []).includes(biome)) &&
-    (selectedStyles.size === 0 || e.styleTags.some((tag) => selectedStyles.has(tag))) &&
-    words.every((w) => text.includes(w))
-  );
+  const biome = facet("biome");
+  const setting = facet("setting");
+  const category = facet("category");
+  if (biome && !e.biomes?.includes(biome)) return false;
+  if (setting && !e.settingTags?.includes(setting)) return false;
+  if (category && e.category !== category) return false;
+  if (selectedStyles.size && !e.styleTags.some((tag) => selectedStyles.has(tag))) return false;
+  if (!words.length) return true;
+  const text = [
+    e.id,
+    e.name,
+    e.latin,
+    e.kind,
+    kindName(e.kind),
+    e.category,
+    ...styleNames(e),
+    ...settingNames(e),
+    ...(e.settingTags ?? []),
+    ...(e.biomes ?? []),
+  ]
+    .join(" ")
+    .toLowerCase();
+  return words.every((word) => text.includes(word));
 }
 
 function hashOf(kind: string, id?: string, category?: string, extra: [string, string][] = []) {
@@ -928,15 +953,14 @@ function kindSection(kind: string, rows: IAssetElement[], searching: boolean) {
 }
 
 function renderTree(): void {
-  const searching = $<HTMLInputElement>("search").value.trim() !== "";
+  const filtering = Boolean($<HTMLInputElement>("search").value.trim() || facetIds.some(facet));
+  const matching = catalog.elements.filter(visible);
   const nav = $("tree");
   nav.replaceChildren();
   // collections first, then one pack per kind inside each
   for (const [style, label] of Object.entries(catalog.styles)) {
     const packs = kinds()
-      .map((kind) =>
-        catalog.elements.filter((e) => e.kind === kind && e.styleTags[0] === style && visible(e)),
-      )
+      .map((kind) => matching.filter((e) => e.kind === kind && e.styleTags[0] === style))
       .filter((rows) => rows.length);
     if (!packs.length) continue;
     const summary = el(
@@ -953,7 +977,7 @@ function renderTree(): void {
       ),
     );
     const collection = folder(`style/${style}`, true, summary);
-    for (const rows of packs) collection.append(kindSection(rows[0]?.kind ?? "", rows, searching));
+    for (const rows of packs) collection.append(kindSection(rows[0]?.kind ?? "", rows, filtering));
     nav.append(collection);
   }
   if (!nav.childElementCount) nav.append(el("p", "px-1 py-3 text-muted", "No matching assets"));
@@ -1356,10 +1380,11 @@ for (const id of ["settings", "filter"])
   };
 $("search").addEventListener("input", renderTree);
 function refreshFilters(): void {
+  $("filter").setAttribute("data-active", String(facetIds.some(facet)));
   renderTree();
   if (!route.id) void show();
 }
-$("biome").addEventListener("change", refreshFilters);
+for (const id of facetIds) $(id).addEventListener("change", refreshFilters);
 document.addEventListener("keydown", (e) => {
   const target = e.target as HTMLElement;
   if (e.key !== "/" || /^(INPUT|SELECT|TEXTAREA)$/.test(target.tagName)) return;
@@ -1558,11 +1583,22 @@ try {
     };
     $("style-tags").append(button);
   }
-  $("filter").hidden = $("settings").hidden = !catalog.biomes?.length;
-  for (const biome of catalog.biomes ?? []) {
-    const option = el("option", "", biome.name);
-    option.value = biome.id;
-    $("biome").append(option);
+  const categories = [
+    ...new Set(catalog.elements.flatMap((entry) => (entry.category ? [entry.category] : []))),
+  ];
+  const facets: Record<(typeof facetIds)[number], [string, string][]> = {
+    setting: Object.entries(catalog.settings ?? {}),
+    category: categories.map((name) => [name, name]),
+    biome: (catalog.biomes ?? []).map(({ id, name }) => [id, name]),
+  };
+  $("filter").hidden = $("settings").hidden = facetIds.every((id) => !facets[id].length);
+  for (const id of facetIds) {
+    $(id).hidden = !facets[id].length;
+    for (const [value, name] of facets[id].sort((a, b) => a[1].localeCompare(b[1]))) {
+      const option = el("option", "", name);
+      option.value = value;
+      $(id).append(option);
+    }
   }
   viewerHost.ready(catalog);
   readHash();

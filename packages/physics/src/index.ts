@@ -4,6 +4,9 @@ import "./web.js";
  * Detect overlaps without turning the body into a moving collider.
  * @situation detect when an enemy enters a trigger area
  * @situation react to a player entering a zone
+ * @situation detect when a ball or moving body rolls into a goal zone
+ * @situation trigger a pickup when the player overlaps an item without blocking movement
+ * @situation apply damage when an enemy projectile overlaps the player
  * @alias pick up item
  * @constraint add the area to the physics context before stepping the world
  * @deprecatedOption Constructor option `world` is deprecated; pass an IPhysicsContext as `physics` instead. Area3D itself is not deprecated.
@@ -82,6 +85,7 @@ export type {
 /**
  * Query the physics world without creating a body.
  * @situation raycast for visibility or aiming
+ * @situation cast a hitscan ray for each pellet in a shotgun spread
  * @situation find bodies inside a shape or point query
  * @alias hitscan camera
  * @constraint query results are bounded by the configured result limit
@@ -94,6 +98,7 @@ export { PhysicsDirectSpaceState3D } from "./PhysicsDirectSpaceState3D.js";
 /**
  * Build fixed trimesh bodies from the meshes a game authored in a scene root.
  * @situation make the level I built stop the player
+ * @situation keep the player from walking through a landmark mesh or solid scenery prop
  * @situation turn a cathedral or map scene into static collision
  * @constraint supply the game-owned predicate for decorative meshes; the helper throws when it selects nothing
  * @constraint generated bodies use trimesh geometry and world-space instance transforms
@@ -168,6 +173,7 @@ export { interactionGroups } from "./collision.js";
  * @situation give a crate or prop physical motion
  * @situation a ball rolls across the floor
  * @situation create a body that collides with a character
+ * @situation push an object to a destination through simulated contact with a character or another body
  * @situation fire physical cannonballs that collide with ships or scenery
  * @situation fire a cannonball projectile with cannon smoke particles
  * @situation a bullet passes through a wall

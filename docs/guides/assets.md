@@ -54,13 +54,44 @@ several characters animate independently, create each one with `SkeletalMesh3D`.
 The build writes each distinct model image once, compresses model textures to KTX2/Basis and can
 simplify geometry. Check the compiled result from the gameplay camera before you keep it.
 
-Android and iOS hosts have no WebAssembly, so they have no Basis transcoder or Meshopt decoder.
-For those targets the build skips the texture and model passes and ships resized PNGs instead.
-KTX2 files that are already compressed in `assets/` still fail native preflight there.
+Android's default runtime is V8, and its packaged loader decodes KTX2 and Meshopt as the web does.
+A QuickJS Android build and iOS ship no WebAssembly, so they have no Basis transcoder and no
+Meshopt decoder: there the build wants `assets.textures: "none"` and refuses a compressed model
+with `TN_NATIVE_KTX2_UNSUPPORTED`. Draco is browser-only. `npx threenative doctor --text` reports
+which decoder a target you asked for is missing.
 
 A ready GLB loads directly. Converting `.fbx`, `.blend`, `.obj` or `.dae` needs Blender. If
 conversion fails, run `npx threenative doctor --text` and install Blender with the command it
 prints. Keep each asset's license and attribution with your project.
+
+Measure a model before you author against it. `inspect` reads a glTF and reports its bounds, a
+units heuristic, the axis it observed, clips with durations, bones, mesh, material and texture
+counts. It never modifies the file.
+
+```sh
+npx create-threenative inspect assets/models/robot.glb
+npx create-threenative inspect assets/models/robot.glb --json
+```
+
+## Browse the asset library while you develop
+
+`pnpm dev` serves the Asset Library at `/__assets/`. It lists the project's `assets/`, its
+`src/**/*.story.ts` pages and a Scene Bundler, so you can look at a model or tune a material
+without writing a scene. A project that turns it off answers 404 there and nothing else changes:
+the library is a dev-server route, never part of a build.
+
+A code story is one `src/**/*.story.ts` module whose default export is `defineAssetStory`. Its
+controls tune the props live, and `create` builds the object from them:
+
+```ts
+import { defineAssetStory } from "create-threenative";
+
+export default defineAssetStory({
+  title: "Crate",
+  controls: [{ key: "size", label: "Size (m)", type: "range", min: 0.2, max: 3, default: 1 }],
+  create: ({ size }) => new Mesh(new BoxGeometry(size, size, size), new MeshStandardMaterial()),
+});
+```
 
 ## Loading progress
 

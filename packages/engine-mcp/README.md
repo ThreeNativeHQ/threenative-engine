@@ -5,7 +5,8 @@ mechanics. Start with the installed `threenative-capabilities` skill, then `prd-
 owns the discovery order and plan record.
 
 The server exposes `engine_search_capabilities`, `engine_capability_detail`,
-`engine_search_references`, `engine_reference_detail`, and `engine_save_reference`.
+`engine_search_references`, `engine_reference_detail`, `engine_save_reference` and
+`engine_watch_reference`.
 Capability search works offline and finds a capability by an exact exported symbol name as well as
 by situation. Full requests use `scope: "request"` (up to 15 deduplicated
 matches); mechanic searches use `scope: "mechanic"` (up to five). A row carries the answer —

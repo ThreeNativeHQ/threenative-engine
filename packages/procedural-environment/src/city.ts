@@ -179,7 +179,7 @@ function pageImage(): Image {
  * A fresh run of the page script: its own three, caches and materials, with only what generation
  * and export touch (a canvas, an image, Blob and FileReader). Warnings stay quiet; an error fails.
  */
-function apex(errors: string[] = []): IApex {
+function apex(errors: string[] = [], hostArrays = false): IApex {
   script ??= new vm.Script(readFileSync(SOURCE, "utf8"), { filename: SOURCE });
   const quiet = (): void => {};
   const context = vm.createContext({
@@ -211,8 +211,21 @@ function apex(errors: string[] = []): IApex {
     ImageData,
     HTMLCanvasElement: Canvas,
     HTMLImageElement: Image,
+    ...(hostArrays
+      ? { Float32Array, Uint32Array, Uint16Array, Uint8Array, Int16Array, Int8Array }
+      : {}),
   });
   return script.runInContext(context) as IApex;
+}
+
+/** Export a static kit mesh with the isolated Node-compatible exporter, without loading city maps. */
+export async function exportStaticGlb(group: Object3D): Promise<Uint8Array> {
+  const errors: string[] = [];
+  // The exporter uses instanceof to choose the glTF accessor type.
+  const kit = apex(errors, true);
+  const bytes = await new kit.GLTFExporter().parseAsync(group, { binary: true });
+  if (errors.length) throw new Error(`Could not export "${group.name}": ${errors.join("; ")}`);
+  return new Uint8Array(bytes);
 }
 
 /** The 75 modules of the vendored Apex City Kit, in the page's order. */

@@ -20,6 +20,17 @@ import {
 import { WebGPURenderer } from "three/webgpu";
 import type { IAssetStory } from "./types.js";
 
+/** The slice of core's `IComputeDriven` the frame drives, matched by shape so core stays optional. */
+interface IDriven {
+  attachRenderer(renderer: unknown): void;
+  process(renderer: unknown, camera?: unknown): void;
+  detach(): void;
+}
+const isDriven = (node: unknown): node is IDriven =>
+  typeof (node as IDriven).attachRenderer === "function" &&
+  typeof (node as IDriven).process === "function" &&
+  typeof (node as IDriven).detach === "function";
+
 /** Estimated GPU bytes: geometry attributes plus each texture's base level and mips. */
 function gpuBytes(root: Object3D): number {
   let bytes = 0;
@@ -82,6 +93,9 @@ export async function mountStory(
   let story = first;
   let props: Record<string, unknown> = {};
   let object: Object3D | undefined;
+  // Compute-driven nodes (`GPUParticles3D`, a ribbon field): in a game `ctx.add` attaches them and
+  // the loop dispatches them; here the frame does both, or a GPU particle story draws nothing.
+  let driven: IDriven[] = [];
   let wire = false;
   let building = 0;
   let paused = false;
@@ -97,7 +111,12 @@ export async function mountStory(
   };
   const frameObject = () => {
     if (!object) return;
-    const sphere = new Box3().setFromObject(object).getBoundingSphere(new Sphere());
+    // A GPU simulation's geometry is one particle quad, so its box says nothing about the effect:
+    // frame the 4 m stage the VFX gallery gives each effect.
+    const sphere =
+      driven.length > 0
+        ? new Sphere(new Vector3(0, 1.2, 0), 1.8)
+        : new Box3().setFromObject(object).getBoundingSphere(new Sphere());
     target.copy(sphere.center);
     orbit.radius = Math.max(0.5, sphere.radius / Math.sin((camera.fov * Math.PI) / 360)) * 1.1;
     place();
@@ -117,10 +136,17 @@ export async function mountStory(
       const next = await story.create(props);
       if (mine !== building) return;
       if (object) scene.remove(object);
+      for (const node of driven) node.detach();
+      driven = [];
       story.dispose?.();
       const first = object === undefined;
       object = next;
       scene.add(next);
+      next.traverse((node) => {
+        if (!isDriven(node)) return;
+        node.attachRenderer(renderer);
+        driven.push(node);
+      });
       dress();
       if (first) frameObject();
       // The Wasm engine's `info` adds up until its caller resets it, once per frame.
@@ -234,6 +260,7 @@ export async function mountStory(
       camera.updateProjectionMatrix();
     }
     story.update?.(dt, props);
+    for (const node of driven) node.process(renderer, camera);
     renderer.info.reset();
     renderer.render(scene, camera);
   };

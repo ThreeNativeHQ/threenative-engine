@@ -12,16 +12,6 @@ export interface INotOwnedCapability {
 export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   {
     guidance:
-      "The framework owns no save/load system. Write a save module in your project's src/ using your own plain state shape (for example, ctx.state). Store it in localStorage: it is the portable store, persisted on the web, on desktop (a JSON file beside the game) and on Android, where a value survives a force-stop and relaunch (emulator-proven 2026-11-22; iOS not yet proven). Save in a scene's applicationPaused hook, because a phone may end a backgrounded game. Read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
-    id: "save-load",
-    situations: [
-      "persist a player's progress between sessions",
-      "save player progress between sessions",
-      "load a saved game state",
-    ],
-  },
-  {
-    guidance:
       "The framework owns no inventory system. Write inventory state in your project's src/ with plain objects under ctx.state, and read node_modules/create-threenative/agent-docs/references/gameplay-recipes.md for the template recipe.",
     id: "inventory",
     situations: ["inventory system", "manage inventory contents"],
@@ -34,7 +24,7 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
   },
   {
     guidance:
-      "The framework owns the optional authenticated transport seam at @threenative/core/net. Import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes, and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Write authoritative replication, snapshots, prediction, interpolation, and rejoin policy in your project's src/ and server code.",
+      "The framework runs hosted rooms in @threenative/backend: createBackend().rooms.create(), .join(code) or .quickJoin() open a lobby, room.send() reaches everybody or one peer and room.state is ordered by the room's Durable Object, and a pair of players upgrades those messages to an ordered WebRTC data channel when both can reach each other (the relay is the fallback, and rtc: { iceServers: [] } forces it). The authenticated transport seam stays at @threenative/core/net: import connect with an HTTPS endpoint and a game-issued credential; it validates channels, message sizes and bounded queues, but reliable overflow returns false and native qualification depends on the installed bridge (iOS remains unverified). Not owned: authoritative replication, snapshots, prediction, interpolation and rejoin policy, which stay game rules in your project's src/ on either transport.",
     id: "networked-multiplayer",
     situations: ["authoritative replication", "client prediction"],
   },
@@ -42,7 +32,7 @@ export const NOT_OWNED_CAPABILITIES: readonly INotOwnedCapability[] = [
     guidance:
       'The framework owns no vegetation render system: wind and materials are your look, in your project\'s src/render/. Trees come from the optional bake package: npm i -D @threenative/procedural-environment, then await bakeVegetation({ preset: "oak", seed: 7, lods: [0, 1], out: "assets/trees" }) writes one GLB per LOD (vegetationPresets() lists the 28 species). Each GLB carries COLOR_0, TEXCOORD_0, embedded bark and leaf textures, alpha-masked leaves and a per-vertex _WIND vec4 (x trunk sway m, y branch sway m, z leaf flutter m, w phase). Cook them with assets.models.passes.prune: false (prune strips the uv and _WIND your materials read), load with ctx.assets.model and re-material by glTF material name (bark, foliage). Write the sway as TSL in render/wind.ts: attribute("_wind", "vec4") scaled by a time uniform and a world wind direction, pushed through modelWorldMatrixInverse so it stays in world metres. A terrain world takes the same trees through the species prefix arbor:<preset>[@seed].',
     id: "procedural-environment",
-    situations: ["foliage wind sway shader", "wind animation render system for leaves"],
+    situations: ["runtime wind sway shader", "wind animation render system for leaves"],
   },
   {
     guidance:

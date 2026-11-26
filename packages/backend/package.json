@@ -1,0 +1,61 @@
+{
+  "name": "@threenative/backend",
+  "version": "0.2.1",
+  "license": "MIT",
+  "description": "Cloud saves, shared per-game documents and relay rooms: a local-first client, the Cloudflare Worker handler and the D1 schema behind them.",
+  "keywords": [
+    "threenative",
+    "backend",
+    "cloudflare",
+    "d1",
+    "saves",
+    "collections",
+    "rooms",
+    "multiplayer",
+    "gamedev"
+  ],
+  "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
+  "bugs": {
+    "url": "https://github.com/ThreeNativeHQ/threenative/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ThreeNativeHQ/threenative-engine.git",
+    "directory": "packages/backend"
+  },
+  "type": "module",
+  "files": ["dist", "migrations", "README.md"],
+  "main": "./dist/client.js",
+  "module": "./dist/client.js",
+  "types": "./dist/client.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/client.d.ts",
+      "import": "./dist/client.js"
+    },
+    "./cloudflare": {
+      "types": "./dist/cloudflare.d.ts",
+      "import": "./dist/cloudflare.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "sideEffects": false,
+  "scripts": {
+    "build": "tsup --config tsup.config.ts && publint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --root ../.. backend/__tests__ && pnpm run build && publint --strict"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "5.20261108.1",
+    "@typescript/native": "catalog:",
+    "miniflare": "5.20261104.0-beta",
+    "publint": "0.3.22",
+    "tsup": "8.5.1",
+    "typescript": "catalog:",
+    "vitest": "catalog:",
+    "ws": "8.21.0"
+  }
+}

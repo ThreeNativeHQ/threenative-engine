@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { spawnSync } from "node:child_process";
+import { copyFileSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
@@ -9,6 +10,57 @@ const manifestFile = path.resolve("packages/core/capabilities.json");
 function frame(id: unknown, method: string, params?: unknown): string {
   return JSON.stringify({ id, jsonrpc: "2.0", method, params });
 }
+
+describe("call.mjs bundled CLI", () => {
+  const mcp = path.resolve("packages/core/mcp");
+
+  function call(...args: string[]) {
+    const project = makeTempDirSync("engine-call-");
+    const cli = path.join(project, "call.mjs");
+    copyFileSync(path.join(mcp, "call.mjs"), cli);
+    writeFileSync(
+      path.join(project, ".mcp.json"),
+      JSON.stringify({
+        mcpServers: {
+          engine: {
+            args: [path.join(mcp, "engine.mjs")],
+            command: process.execPath,
+            env: {
+              THREENATIVE_CAPABILITIES_MANIFEST: manifestFile,
+              THREENATIVE_ENGINE_MCP_LOG: "off",
+            },
+          },
+        },
+      }),
+    );
+    return spawnSync(process.execPath, [cli, "engine", ...args], {
+      encoding: "utf8",
+      timeout: 3_000,
+    });
+  }
+
+  it("shows inline parameters and prints the same JSON schema as tools/list", async () => {
+    const list = call();
+    expect(list.status).toBe(0);
+    expect(list.stdout).toContain("engine_search_capabilities(situation, scope?)");
+    expect(list.stdout).toContain("engine_reference_detail(game, id, kind)");
+    const schema = call("engine_search_capabilities", "--schema");
+    expect(schema.status).toBe(0);
+    const response = JSON.parse((await handleLine(frame(1, "tools/list"), manifestFile)) ?? "");
+    expect(JSON.parse(schema.stdout)).toEqual(response.result.tools[0].inputSchema);
+  });
+
+  it.each([
+    ["engine_search_capabilities", { query: "driving" }, /'situation' instead of 'query'/u],
+    ["engine_search_references", { query: "driving" }, /'situation' instead of 'query'/u],
+    ["engine_reference_detail", { game: "sm64", id: "camera" }, /"kind":"node" or "kind":"card"/u],
+    ["engine_capability_detail", { symbol: "beforeRender" }, /Did you mean 'ctx\.beforeRender'/u],
+  ] as const)("exits 1 and gives the correction for %s", (tool, payload, expected) => {
+    const failed = call(tool, JSON.stringify(payload));
+    expect(failed.status).toBe(1);
+    expect(failed.stderr).toMatch(expected);
+  });
+});
 
 describe("threenative-engine-mcp stdio contract", async () => {
   // Every tools/call below would otherwise append to the launch directory's real log.
@@ -32,7 +84,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
         capabilities: { tools: { listChanged: false } },
         instructions: expect.stringContaining("threenative-capabilities"),
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.23" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.24" },
       },
     });
   });

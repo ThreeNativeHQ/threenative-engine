@@ -213,6 +213,7 @@ export function snowDiscFootprint(
  * recovery. It is a heightfield approximation — not granular snow, displaced-volume
  * conservation, avalanches, melting or a calibrated material law.
  * @situation leave footprints, tracks and tyre ruts in snow that persist and fill in over time
+ * @situation deform snowy terrain under the walking character and keep the footprints visible
  * @situation let a fresh snowfall slowly fill older tracks back in as the field recovers
  * @situation let a pushed sphere carve a connected track and a dropped one settle into a crater
  * @situation store snow deformation that rendered geometry and collision both read

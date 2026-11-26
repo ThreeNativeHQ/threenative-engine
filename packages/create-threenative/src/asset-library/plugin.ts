@@ -24,6 +24,8 @@ export interface IAssetLibraryOptions {
   readonly devShell?: boolean;
   /** Attach `@threenative/procedural-environment`'s bake catalog when the project has it. Default true. */
   readonly procedural?: boolean;
+  /** List every `@threenative/core/vfx` effect as a story when the project's core has them. Default true. */
+  readonly vfx?: boolean;
 }
 
 /** The slice of Vite's plugin surface this plugin uses, so the type needs no `vite` import. */
@@ -120,6 +122,58 @@ async function proceduralSource(root: string): Promise<IAssetLibrarySource | und
   }
 }
 
+const VFX_IMPORT = "@threenative/core/vfx";
+const VFX_PATH = /^vfx:create\w+$/u;
+
+/**
+ * The VFX bridge (PRD-917): one story per `@threenative/core/vfx` effect, listed from the project's
+ * core capability manifest, so the library and the capability search read the same rows.
+ */
+function vfxSource(root: string): IAssetLibrarySource | undefined {
+  try {
+    const require = createRequire(path.join(root, "package.json"));
+    const core = path.dirname(require.resolve("@threenative/core/package.json"));
+    const manifest = JSON.parse(readFileSync(path.join(core, "capabilities.json"), "utf8")) as {
+      readonly entries: readonly {
+        readonly symbol: string;
+        readonly importPath: string;
+        readonly kind: string;
+        readonly example?: string;
+      }[];
+    };
+    const effects = manifest.entries.filter(
+      (entry) =>
+        entry.importPath === VFX_IMPORT &&
+        entry.kind === "function" &&
+        VFX_PATH.test(`vfx:${entry.symbol}`),
+    );
+    if (effects.length === 0) return undefined;
+    return {
+      id: "vfx",
+      catalog: () => ({
+        elements: effects.map((entry) => ({
+          id: `vfx:${entry.symbol}`,
+          name: vfxTitle(entry.symbol),
+          kind: "story",
+          source: "vfx",
+          styleTags: ["vfx"],
+          path: `vfx:${entry.symbol}`,
+          ...(entry.example ? { bake: entry.example } : {}),
+        })),
+        styles: { vfx: "VFX" },
+        kinds: { story: { pack: "Code stories", name: "Code stories" } },
+      }),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+/** `createHealingAura` -> `Healing Aura`. */
+function vfxTitle(symbol: string): string {
+  return symbol.slice("create".length).replace(/([a-z])([A-Z])/gu, "$1 $2");
+}
+
 /** Merges every source's catalog; each element keeps the id of the source that listed it. */
 export async function mergedCatalog(
   sources: readonly IAssetLibrarySource[],
@@ -133,6 +187,7 @@ export async function mergedCatalog(
     ),
     biomes: parts.flatMap(({ catalog }) => catalog.biomes ?? []),
     styles: Object.assign({}, ...parts.map(({ catalog }) => catalog.styles)),
+    settings: Object.assign({}, ...parts.map(({ catalog }) => catalog.settings ?? {})),
     controls: Object.assign({}, ...parts.map(({ catalog }) => catalog.controls ?? {})),
     kinds: Object.assign({}, ...parts.map(({ catalog }) => catalog.kinds ?? {})),
   };
@@ -316,6 +371,14 @@ export function createAssetLibraryPlugin(
       }
       if (id.startsWith(`${RESOLVED}story/`)) {
         const file = decodeURIComponent(id.slice(`${RESOLVED}story/`.length).replace(/\.js$/u, ""));
+        if (VFX_PATH.test(file)) {
+          const symbol = file.slice("vfx:".length);
+          return `import { mountStory } from ${JSON.stringify(`/@fs${path.join(dir, "story-frame.js")}`)};
+import { vfxStory } from ${JSON.stringify(`/@fs${path.join(dir, "vfx-story.js")}`)};
+import { GPUParticles3D } from "@threenative/core";
+import { ${symbol} } from ${JSON.stringify(VFX_IMPORT)};
+await mountStory(vfxStory(${JSON.stringify(vfxTitle(symbol))}, ${symbol}, GPUParticles3D));`;
+        }
         const spec = JSON.stringify(`/${file}`);
         // The story module is this entry's HMR boundary: an edit to it (or to anything it imports)
         // swaps the story in place and keeps the props, without reloading the shell or the game.
@@ -337,6 +400,10 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
         if (options.procedural !== false && !sources.some((s) => s.id === "procedural")) {
           const procedural = await proceduralSource(server.config.root);
           if (procedural) sources.push(procedural);
+        }
+        if (options.vfx !== false && !sources.some((s) => s.id === "vfx")) {
+          const vfx = vfxSource(server.config.root);
+          if (vfx) sources.push(vfx);
         }
         for (const source of sources) source.configureServer?.(server);
         return handler;
@@ -365,8 +432,11 @@ if (import.meta.hot) import.meta.hot.accept(${spec}, (next) => next && handle.re
           }
           if (rest === "story.html") {
             const file = url.searchParams.get("path") ?? "";
-            if (!/^src\/[\w./-]+\.story\.ts$/u.test(file) || file.includes(".."))
-              return json(res, 400, { error: "story.html needs ?path=src/<name>.story.ts" });
+            const valid = /^src\/[\w./-]+\.story\.ts$/u.test(file) || VFX_PATH.test(file);
+            if (!valid || file.includes(".."))
+              return json(res, 400, {
+                error: "story.html needs ?path=src/<name>.story.ts or ?path=vfx:create<Effect>",
+              });
             const page = html("story.html", `/@id/${STORY}${encodeURIComponent(file)}.js`);
             res.setHeader("content-type", "text/html");
             res.end(await server.transformIndexHtml(url.pathname + url.search, page));

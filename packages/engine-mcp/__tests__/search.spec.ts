@@ -13,6 +13,7 @@ import {
   searchCapabilities,
   toolDefinitions,
 } from "../src/index.js";
+import { november25CapabilityTraces } from "./fixtures/nov25-search.js";
 
 const workspaceManifest = path.resolve("packages/core/capabilities.json");
 
@@ -25,6 +26,29 @@ function searchResults(
 }
 
 describe("threenative-engine-mcp", () => {
+  it.each(november25CapabilityTraces)(
+    "Nov 25 trace: $id",
+    ({ situation, scope, expected, excluded }) => {
+      const symbols = searchResults(situation, workspaceManifest, scope).map(
+        ({ symbol }) => symbol,
+      );
+
+      if (expected !== undefined) {
+        expect(symbols.slice(0, expected.rank)).toContain(expected.symbol);
+      }
+      expect(symbols.filter((symbol) => excluded?.includes(symbol))).toEqual([]);
+    },
+  );
+
+  it("keeps an explicit app quit in a complete request", () => {
+    const results = searchResults(
+      "Drive around the city and let the player close the app from the pause menu",
+      workspaceManifest,
+      "request",
+    );
+    expect(results.map(({ symbol }) => symbol)).toContain("ctx.quit");
+  });
+
   it("drops a stop word in every inflection, so 'keeps' cannot match a 'keep' situation", () => {
     expect(capabilitySituationTokens("keeps the arena readable")).not.toContain("keep");
     const symbols = searchResults(
@@ -117,15 +141,15 @@ describe("threenative-engine-mcp", () => {
     expect(response.results.every((result) => result.matchedSituation.length > 0)).toBe(true);
   });
 
-  it("returns no capability for a save-system request", () => {
+  // PRD-099 AC-9: the framework owns cloud saves now, so a save request is answered by the
+  // client instead of the "write it in src/" guidance that said no save system existed.
+  it("answers a save-system request with the cloud save client", () => {
     const response = searchCapabilities("save the player progress", workspaceManifest, "request");
 
-    expect(response.verdict).toBe("none");
-    expect(response.results).toEqual([]);
-    expect(response.guidance).toMatch(/write .*src\//iu);
-    expect(response.guidance).toContain("ctx.state");
-    expect(response.guidance).not.toContain("Area3D");
-    expect(response.guidance).not.toContain("Heightfield");
+    expect(response.verdict).toBe("matched");
+    expect(response.results.map((result) => result.symbol)).toContain("createBackend");
+    expect(response.results.map((result) => result.importPath)).toContain("@threenative/backend");
+    expect(response.guidance).not.toMatch(/owns no save system/iu);
   });
 
   it("shows near matches on a generic miss, and never a not-owned one (PRD-063)", () => {
@@ -149,7 +173,7 @@ describe("threenative-engine-mcp", () => {
       expect(row).not.toHaveProperty("constraints");
     }
     // "write it in src/" is the whole answer for a not-owned request; a near symbol there misleads.
-    for (const query of ["save the player progress", "make an inventory system"]) {
+    for (const query of ["make an inventory system", "dialogue with an NPC"]) {
       const notOwned = searchCapabilities(query, workspaceManifest, "request");
       expect(notOwned.verdict, query).toBe("none");
       expect(notOwned.nearMatches, query).toBeUndefined();
@@ -952,6 +976,14 @@ describe("threenative-engine-mcp", () => {
       expect(results.map((result) => result.symbol)).toContain("mergeParts");
     },
   );
+
+  it("finds an exported class when the request names one of its methods", () => {
+    const results = searchResults(
+      "track transforms in Scene.render using ctx.alpha for smooth between-step motion",
+      workspaceManifest,
+    );
+    expect(results[0]?.symbol).toBe("Scene");
+  });
 
   it("finds the joint and pointer capabilities a physics-puzzle request names outright", () => {
     const results = searchResults(

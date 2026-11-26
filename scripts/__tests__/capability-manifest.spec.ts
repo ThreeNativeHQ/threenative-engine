@@ -771,6 +771,7 @@ describe("capability manifest generator", () => {
         owners: ["CollisionShape3D"],
       },
       "hitscan camera": {
+        baselineAlreadyRecalled: true,
         ids: ["brief.fps.7"],
         owners: ["PhysicsDirectSpaceState3D"],
       },
@@ -796,6 +797,7 @@ describe("capability manifest generator", () => {
         owners: ["TracedReflections"],
       },
       "dedicated reflection rays": {
+        baselineAlreadyRecalled: true,
         ids: ["request.dedicated-reflection-rays"],
         owners: ["TracedReflections"],
       },
@@ -869,8 +871,16 @@ describe("capability manifest generator", () => {
         ids: ["request.lumen-radiance-cache"],
         owners: ["RadianceCache"],
       },
-      "dynamic probe gi": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
-      "irradiance field": { ids: ["request.dynamic-probe-gi"], owners: ["RadianceCache"] },
+      "dynamic probe gi": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.dynamic-probe-gi"],
+        owners: ["RadianceCache"],
+      },
+      "irradiance field": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.dynamic-probe-gi"],
+        owners: ["RadianceCache"],
+      },
       "mesh cards": { ids: ["request.mesh-cards"], owners: ["SurfaceCache"] },
       "lumen translucency volume": {
         ids: ["request.lumen-translucency-volume"],
@@ -943,14 +953,21 @@ describe("capability manifest generator", () => {
         ids: ["request.modular-road-tiles"],
         owners: ["bakeCity"],
       },
+      bushes: { ids: ["request.bushes-and-shrubs"], owners: ["bakeVegetation"] },
+      shrubs: { ids: ["request.bushes-and-shrubs"], owners: ["bakeVegetation"] },
       "bushes and shrubs": { ids: ["request.bushes-and-shrubs"], owners: ["bakeVegetation"] },
-      "cliffs and mountains": { ids: ["request.cliffs-and-mountains"], owners: ["bakeRock"] },
+      "cliffs and mountains": {
+        baselineAlreadyRecalled: true,
+        ids: ["request.cliffs-and-mountains"],
+        owners: ["bakeRock"],
+      },
       "dead trees, fallen logs and stumps": {
         baselineAlreadyRecalled: true,
         ids: ["request.dead-trees-fallen-logs-and-stumps"],
         owners: ["bakeVegetation"],
       },
       "desert cactus": { ids: ["request.desert-cactus"], owners: ["environmentElements"] },
+      foliage: { ids: ["request.foliage-and-vegetation-models"], owners: ["bakeVegetation"] },
       "foliage and vegetation models": {
         ids: ["request.foliage-and-vegetation-models"],
         owners: ["bakeVegetation"],
@@ -960,6 +977,7 @@ describe("capability manifest generator", () => {
         owners: ["bakeVegetation"],
       },
       "grass, flowers and ferns as ground cover": {
+        baselineAlreadyRecalled: true,
         ids: ["request.grass-flowers-and-ferns-as-ground-cover"],
         owners: ["bakeVegetation"],
       },
@@ -987,6 +1005,7 @@ describe("capability manifest generator", () => {
         owners: ["bakeVegetation"],
       },
       "realistic textured tree model": {
+        baselineAlreadyRecalled: true,
         ids: ["request.realistic-textured-tree-model"],
         owners: ["bakeVegetation"],
       },

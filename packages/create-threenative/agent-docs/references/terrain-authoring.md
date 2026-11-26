@@ -13,8 +13,8 @@ terrain operations rather than writing noise, erosion, masks, roads or rivers ag
 ## Asked for a ready world? Start from a starter kit
 
 A kit is a whole playable world as game source: recipe, bake script, CC0 art, terrain surface,
-sky, props and colliders. `@threenative/terrain` ships them under `starter/<world>/` (today:
-`forest`). Copy one into the game, bake, add it to a scene:
+sky, props and colliders. `@threenative/terrain` ships six under `starter/`: `alpine`, `arbor`,
+`coastal`, `desert`, `forest` and `tundra`. Copy one into the game, bake, add it to a scene:
 
 ```sh
 cp -r node_modules/@threenative/terrain/starter/forest src/terrain/forest

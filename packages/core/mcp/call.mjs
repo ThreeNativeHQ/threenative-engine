@@ -1,8 +1,6 @@
 #!/usr/bin/env node
 // Lists or calls the tools of one ThreeNative MCP server without an MCP host.
-//   node <game>/node_modules/@threenative/core/mcp/call.mjs                  servers
-//   node <game>/node_modules/@threenative/core/mcp/call.mjs <server>         its tools
-//   node <game>/node_modules/@threenative/core/mcp/call.mjs <server> <tool> '<json>'
+// Pass --help to see how to list servers, list tools, inspect schemas, and make calls.
 // A host loads a project's `.mcp.json` only when a session starts in that folder, so an agent that
 // scaffolded the game mid-session has none of its servers (PRD-750: five cold builds, zero engine
 // calls). This starts the server exactly as the host would — the same command, args, env and cwd
@@ -34,14 +32,16 @@ function request(server, root, method, params) {
   });
   const send = (message) =>
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", ...message })}\n`);
+  let timer;
   return new Promise((resolve, reject) => {
     // Asset downloads and Blender conversions are slow; a hung server still ends the call.
-    const timer = setTimeout(
+    timer = setTimeout(
       () => reject(new Error(`TN_MCP_CALL_TIMEOUT: ${method} took over 300 s`)),
       300_000,
     );
     child.on("error", reject);
-    child.on("exit", (code) =>
+    child.stdin.on("error", reject);
+    child.on("close", (code) =>
       reject(
         new Error(`TN_MCP_CALL_EXIT: the server exited (${code}) before it answered ${method}`),
       ),
@@ -54,7 +54,6 @@ function request(server, root, method, params) {
         send({ method: "notifications/initialized" });
         send({ id: 2, method, params });
       } else if (message.id === 2) {
-        clearTimeout(timer);
         if (message.error) reject(new Error(`${method}: ${message.error.message}`));
         else resolve(message.result);
       }
@@ -68,14 +67,33 @@ function request(server, root, method, params) {
         clientInfo: { name: "threenative-call", version: "1" },
       },
     });
-  }).finally(() => child.kill());
+  }).finally(() => {
+    clearTimeout(timer);
+    child.kill();
+  });
 }
 
 const [name, tool, args] = process.argv.slice(2);
+const command = "node node_modules/@threenative/core/mcp/call.mjs";
+const schemaCommand = `${command} <server> <tool> --schema`;
+if ([name, tool, args].some((argument) => argument === "--help" || argument === "-h")) {
+  const help = [
+    "Commands from the game directory",
+    `  ${command}                                  List servers`,
+    `  ${command} <server>                         List tools and parameters`,
+    `  ${schemaCommand}         Show a tool's JSON input schema`,
+    `  ${command} <server> <tool> '<json>'         Call a tool`,
+    "",
+  ].join("\n");
+  await new Promise((resolve) => process.stdout.write(help, resolve));
+  process.exit(0);
+}
+
 const root = projectRoot();
 const servers = JSON.parse(readFileSync(path.join(root, ".mcp.json"), "utf8")).mcpServers ?? {};
 if (name === undefined) {
   process.stdout.write(`${Object.keys(servers).join("\n")}\n`);
+  process.stderr.write(`List a server's tools with ${command} <server>. Pass --help for usage.\n`);
 } else if (servers[name] === undefined) {
   process.stderr.write(
     `TN_MCP_CALL_UNKNOWN_SERVER: ${name}; ${root}/.mcp.json has ${Object.keys(servers).join(", ")}\n`,
@@ -83,10 +101,26 @@ if (name === undefined) {
   process.exitCode = 2;
 } else {
   try {
-    if (tool === undefined) {
+    if (tool === undefined || args === "--schema") {
       const { tools } = await request(servers[name], root, "tools/list", {});
-      for (const { name: toolName, description = "" } of tools)
-        process.stdout.write(`${toolName}: ${description.split("\n")[0]}\n`);
+      if (tool !== undefined) {
+        const found = tools.find((entry) => entry.name === tool);
+        if (found === undefined)
+          throw new Error(`TN_MCP_CALL_UNKNOWN_TOOL: ${name} has no '${tool}'.`);
+        process.stdout.write(`${JSON.stringify(found.inputSchema, null, 2)}\n`);
+      } else {
+        for (const { name: toolName, description = "", inputSchema } of tools) {
+          const required = inputSchema?.required ?? [];
+          const optional = Object.keys(inputSchema?.properties ?? {}).filter(
+            (parameter) => !required.includes(parameter),
+          );
+          const parameters = [...required, ...optional.map((parameter) => `${parameter}?`)];
+          process.stdout.write(
+            `${toolName}(${parameters.join(", ")}): ${description.split("\n")[0]}\n`,
+          );
+        }
+        process.stderr.write(`Show a tool's JSON input schema with ${schemaCommand}\n`);
+      }
     } else {
       const result = await request(servers[name], root, "tools/call", {
         name: tool,

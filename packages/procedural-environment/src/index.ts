@@ -2,7 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { createCanvas } from "@napi-rs/canvas";
-import type { BufferGeometry } from "three";
+import { Box3, type BufferGeometry, type Group, type Mesh } from "three";
 import Arbor, { type IArborPart, type IArborPreset, type IArborTree } from "../vendor/arbor.js";
 import ForestKit, {
   type IForestKitMesh,
@@ -10,12 +10,83 @@ import ForestKit, {
 } from "../vendor/forest-kit/index.js";
 import Outcrop from "../vendor/outcrop.js";
 import { BIOMES, type IEnvironmentBiome } from "./biomes.js";
-import { type IBakeCityOptions, buildCity, cityModules } from "./city.js";
+import { type IBakeCityOptions, buildCity, cityModules, exportStaticGlb } from "./city.js";
+import {
+  type IBakeFrontierOptions,
+  buildFrontier,
+  frontierAccent,
+  frontierModules,
+} from "./frontier.js";
+import {
+  type IBakeLogisticsOptions,
+  buildLogistics,
+  logisticsAccent,
+  logisticsModules,
+  logisticsShelfCount,
+} from "./logistics.js";
+import {
+  type IBakeMechanismOptions,
+  buildMechanism,
+  litMechanismModules,
+  mechanismAccent,
+  mechanismModules,
+} from "./mechanisms.js";
+import {
+  type IBakePickupOptions,
+  buildPickup,
+  flatPickupModules,
+  pickupAccent,
+  pickupModules,
+} from "./pickups.js";
+import { type IBakeRailOptions, buildRail, railAccent, railModules } from "./rail.js";
 import { type IScan, barkScan, coverScan, detailScan, foliageHook } from "./scans.js";
+import { type IBakeSportsOptions, buildSports, sportsDimensions, sportsModules } from "./sports.js";
+import {
+  applyMaterialOverrides,
+  prepareMaterialOverrides,
+  resolveWoodFinish,
+} from "./static-kit-materials.js";
+import { staticKitMaterials } from "./static-kit-mesh.js";
+import {
+  type IBakeStationOptions,
+  buildStation,
+  stationAccent,
+  stationModules,
+  stationRoofModules,
+} from "./station.js";
+import { type IBakeTavernOptions, buildTavern, tavernAccent, tavernModules } from "./tavern.js";
 import { leafNormal, rgbaWebp, webpImages } from "./webp.js";
+import {
+  type IBakeWorkshopOptions,
+  buildWorkshop,
+  deskLampTilt,
+  workshopAccent,
+  workshopHeights,
+  workshopLitModules,
+  workshopModules,
+  workshopOpeningModules,
+  workshopSeatCounts,
+  workshopShelfCount,
+  workshopWidths,
+  workshopWoodless,
+} from "./workshop.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
+export type { IBakeFrontierOptions } from "./frontier.js";
+export type { IBakeLogisticsOptions } from "./logistics.js";
+export type { IBakeMechanismOptions } from "./mechanisms.js";
+export type { IBakePickupOptions } from "./pickups.js";
+export type { IBakeRailOptions } from "./rail.js";
+export type { IBakeSportsOptions } from "./sports.js";
+export type { IBakeStationOptions } from "./station.js";
+export type {
+  IProceduralMaterialOverride,
+  IStaticKitMaterialOptions,
+  WoodFinish,
+} from "./static-kit-materials.js";
+export type { IBakeTavernOptions } from "./tavern.js";
+export type { IBakeWorkshopOptions } from "./workshop.js";
 
 export interface IVegetationPreset {
   readonly id: string;
@@ -84,6 +155,8 @@ export interface IEnvironmentBake {
   readonly lod: number;
   readonly path: string;
   readonly triangles: number;
+  /** Material override keys used by a static kit module. */
+  readonly materialSlots?: readonly string[];
   /** The Poly Haven scan the bark or wood wears, absent when the texture is generated. */
   readonly scan?: string;
   /**
@@ -382,14 +455,18 @@ async function writeAtomic(file: string, bytes: Uint8Array): Promise<void> {
  * @situation tree GLB for Unity, Unreal or Godot, with wind weights in a _WIND attribute
  * @situation a fallen mossy log and leaf litter on the forest floor, with a stump, twigs and boulders
  * @situation reeds and cattails at a pond edge, or sedge tussocks, clover and seeding grass as cover
+ * @situation bake swaying trees to GLB props for the scene
  * @alias trees
  * @alias palm trees
  * @alias street trees along a road
+ * @alias bushes
+ * @alias shrubs
  * @alias bushes and shrubs
  * @alias grass, flowers and ferns as ground cover
  * @alias dead trees, fallen logs and stumps
  * @alias low poly tree with level of detail
  * @alias realistic textured tree model
+ * @alias foliage
  * @alias foliage and vegetation models
  * @alias pine, oak or spruce forest trees
  * @alias grass tufts and clumps
@@ -578,8 +655,22 @@ async function bakeForestKit(
   return baked;
 }
 
-/** What an element is: a tree, ground cover, floor debris, a rock form or an Apex city module. */
-export type EnvironmentKind = "tree" | "cover" | "debris" | "rock" | "city";
+/** A vegetation preset, rock form or a built asset module. */
+export type EnvironmentKind =
+  | "tree"
+  | "cover"
+  | "debris"
+  | "rock"
+  | "city"
+  | "station"
+  | "frontier"
+  | "pickup"
+  | "mechanism"
+  | "rail"
+  | "sports"
+  | "logistics"
+  | "workshop"
+  | "tavern";
 
 export interface IEnvironmentElement {
   readonly id: string;
@@ -588,7 +679,7 @@ export interface IEnvironmentElement {
   readonly kind: EnvironmentKind;
   /** Biome ids from `environmentBiomes()` this element belongs in. */
   readonly biomes: readonly string[];
-  /** A city module's Apex category: Roads, Buildings, Street Props, Vehicles, Race Kit ... */
+  /** The module's category within its kit. */
   readonly category?: string;
   /** The call that bakes it, ready to paste; a rock's names the filter's biome, else its first. */
   readonly bake: string;
@@ -602,7 +693,22 @@ export interface IEnvironmentFilter {
   readonly search?: string;
 }
 
-const KINDS: readonly EnvironmentKind[] = ["tree", "cover", "debris", "rock", "city"];
+const KINDS: readonly EnvironmentKind[] = [
+  "tree",
+  "cover",
+  "debris",
+  "rock",
+  "city",
+  "station",
+  "frontier",
+  "pickup",
+  "mechanism",
+  "rail",
+  "sports",
+  "logistics",
+  "workshop",
+  "tavern",
+];
 
 /**
  * Every biome: its id, name, the request words that mean it, the rock surface its rocks wear and
@@ -636,6 +742,7 @@ function biomeOf(caller: string, word: string): IEnvironmentBiome {
  * @situation what can I bake for a desert, a jungle, a coast, a tundra or a volcanic island
  * @situation list the rocks, cliffs and mountains for a biome, or every plant that grows there
  * @situation find a tree or plant by name or latin name, such as pine, palm, cactus or fern
+ * @situation find tropical island vegetation by habitat and species
  * @alias nature props for a level
  * @alias jungle and tropical plants
  * @alias desert cactus
@@ -681,7 +788,93 @@ export function environmentElements(filter: IEnvironmentFilter = {}): IEnvironme
     category,
     bake: `bakeCity({ module: "${id}", out: "assets/environment" })`,
   }));
-  return [...plants, ...rocks, ...city].filter((element) => {
+  const station = stationModules.map(({ id, name, category }) => ({
+    id: `station-${id}`,
+    name,
+    kind: "station" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeStation({ module: "station-${id}", out: "assets/environment" })`,
+  }));
+  const frontier = frontierModules.map(({ id, name, category }) => ({
+    id: `frontier-${id}`,
+    name,
+    kind: "frontier" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeFrontier({ module: "frontier-${id}", out: "assets/environment" })`,
+  }));
+  const pickups = pickupModules.map(({ id, name, category }) => ({
+    id: `pickup-${id}`,
+    name,
+    kind: "pickup" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakePickup({ module: "pickup-${id}", out: "assets/environment" })`,
+  }));
+  const mechanisms = mechanismModules.map(({ id, name, category }) => ({
+    id: `mechanism-${id}`,
+    name,
+    kind: "mechanism" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeMechanism({ module: "mechanism-${id}", out: "assets/environment" })`,
+  }));
+  const rails = railModules.map(({ id, name, category }) => ({
+    id: `rail-${id}`,
+    name,
+    kind: "rail" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeRail({ module: "rail-${id}", out: "assets/environment" })`,
+  }));
+  const sports = sportsModules.map(({ id, name, category }) => ({
+    id: `sports-${id}`,
+    name,
+    kind: "sports" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeSports({ module: "sports-${id}", out: "assets/environment" })`,
+  }));
+  const logistics = logisticsModules.map(({ id, name, category }) => ({
+    id: `logistics-${id}`,
+    name,
+    kind: "logistics" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeLogistics({ module: "logistics-${id}", out: "assets/environment" })`,
+  }));
+  const workshop = workshopModules.map(({ id, name, category }) => ({
+    id: `workshop-${id}`,
+    name,
+    kind: "workshop" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeWorkshop({ module: "workshop-${id}", out: "assets/environment" })`,
+  }));
+  const tavern = tavernModules.map(({ id, name, category }) => ({
+    id: `tavern-${id}`,
+    name,
+    kind: "tavern" as const,
+    biomes: [] as string[],
+    category,
+    bake: `bakeTavern({ module: "tavern-${id}", out: "assets/environment" })`,
+  }));
+  const elements = [
+    ...plants,
+    ...rocks,
+    ...city,
+    ...station,
+    ...frontier,
+    ...pickups,
+    ...mechanisms,
+    ...rails,
+    ...sports,
+    ...logistics,
+    ...workshop,
+    ...tavern,
+  ];
+  return elements.filter((element) => {
     if (biome !== undefined && !element.biomes.includes(biome.id)) return false;
     if (filter.kind !== undefined && element.kind !== filter.kind) return false;
     const text = [
@@ -1013,4 +1206,428 @@ export async function bakeCity(options: IBakeCityOptions): Promise<IEnvironmentB
   const file = path.join(options.out, city.file);
   await writeAtomic(file, await webpImages(city.glb));
   return [{ bounds: city.bounds, lod: 0, path: file, triangles: city.triangles }];
+}
+
+/**
+ * Bake modular science-fiction station corridors, architecture or props to a standard PBR GLB.
+ * @situation build a modular sci-fi spaceship or research station interior with snap-together corridor junctions, bulkheads and doors
+ * @situation generate a science-fiction control terminal, cargo case or glowing power cell for a shooter or puzzle game
+ * @constraint corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin
+ * @constraint roof applies only to corridors and the assembled maintenance junction
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeStation({ module: "station-elbow", accent: "#ee9955", roof: true, out: "assets/station" });
+ */
+export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> {
+  const { module, out, seed = 1, accent = stationAccent, roof = false } = options;
+  const entry = stationModules.find(({ id }) => module === `station-${id}`);
+  if (!entry) {
+    const ids = stationModules.map(({ id }) => `station-${id}`);
+    throw new Error(
+      `bakeStation: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
+    );
+  }
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
+    throw new Error("bakeStation: seed must be an unsigned 32-bit integer");
+  if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))
+    throw new Error("bakeStation: accent must be a six-digit hex color, such as #25b9c8");
+  if (typeof roof !== "boolean" || (roof && !stationRoofModules.includes(module)))
+    throw new Error("bakeStation: roof is a boolean for corridors and the layout");
+  const paint = accent.toLowerCase();
+  const group = buildStation(entry.id, { seed, accent: paint, roof });
+  const suffix = (paint === stationAccent ? "" : `-${paint.slice(1)}`) + (roof ? "-roof" : "");
+  return writeStaticKit(group, out, `${module}-${seed}${suffix}.glb`, options.materials);
+}
+
+/**
+ * Bake Frontier Kit buildings, utility structures or a resource deposit as a grounded PBR GLB.
+ * @situation create modular industrial headquarters, supply depots and ore processors for strategy, RTS and base-building games
+ * @situation generate a power generator, antenna relay, ore deposit or landing pad for a colony or factory outpost
+ * @constraint models use metres, +Y up and a ground-level origin; scale from 0.5 to 2
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeFrontier({ module: "frontier-command", accent: "#628ac4", scale: 1.5, out: "assets/frontier" });
+ */
+export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeFrontier",
+    "frontier",
+    frontierModules,
+    frontierAccent,
+  );
+  return writeStaticKit(buildFrontier(kit.id, kit), options.out, kit.filename, options.materials);
+}
+
+/**
+ * Bake a stylized pickup prop as an opaque PBR GLB with configurable accent and scale.
+ * @situation generate a medkit, potion bottle, access keycard, shield, vault key, scroll or repair wrench pickup model
+ * @situation recolor or scale a physical pickup model for a shooter, adventure, puzzle or racing game
+ * @constraint models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakePickup({ module: "pickup-medkit", accent: "#ed5166", scale: 1.5, out: "assets/pickups" });
+ */
+export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakePickup", "pickup", pickupModules, pickupAccent);
+  const { pose = "upright" } = options;
+  if (pose !== "upright" && (pose !== "flat" || !flatPickupModules.includes(kit.id)))
+    throw new Error(
+      "bakePickup: pose must be upright, or flat for a keycard, shield, vault key or wrench",
+    );
+  const file = pose === "flat" ? kit.filename.replace(/\.glb$/u, "-flat.glb") : kit.filename;
+  return writeStaticKit(
+    buildPickup(kit.id, { ...kit, pose }),
+    options.out,
+    file,
+    options.materials,
+  );
+}
+
+/**
+ * Bake modular puzzle and transport props with named GLB attachment points.
+ * @situation create modular conveyor belts, turntables and power cell sockets for a factory or puzzle game
+ * @situation build a signal puzzle with an emitter, reflector and receiver model
+ * @constraint all pieces stand at y = 0; conveyor flow and signal faces point +Z
+ * @constraint active lights the emitter, receiver and socket indicators
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeMechanism({ module: "mechanism-emitter", active: true, out: "assets/mechanisms" });
+ */
+export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeMechanism",
+    "mechanism",
+    mechanismModules,
+    mechanismAccent,
+  );
+  const { active = false } = options;
+  if (typeof active !== "boolean" || (active && !litMechanismModules.includes(kit.id)))
+    throw new Error(
+      "bakeMechanism: active is a boolean for an emitter, receiver or power cell socket",
+    );
+  const filename = active ? kit.filename.replace(/\.glb$/u, "-active.glb") : kit.filename;
+  return writeStaticKit(
+    buildMechanism(kit.id, { ...kit, active }),
+    options.out,
+    filename,
+    options.materials,
+  );
+}
+
+/**
+ * Bake modular narrow-gauge railway GLBs with track endpoints and a matching minecart.
+ * @situation bake snap-together railroad or minecart track with a turn, ramp, trestle bridge and buffer stop
+ * @situation bake a minecart model with separate axle groups and a cargo attachment point
+ * @constraint all pieces sit at y = 0; track sockets sit on the running surface and face along travel
+ * @constraint use one scale across connected pieces and place the cart origin at rail height
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeRail({ module: "rail-curve", out: "assets/rail" });
+ */
+export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakeRail", "rail", railModules, railAccent);
+  return writeStaticKit(buildRail(kit.id, kit), options.out, kit.filename, options.materials);
+}
+
+/**
+ * Bake grounded sports equipment and matching balls with named play surfaces and pivots.
+ * @situation bake a soccer football goal, basketball hoop, tennis or volleyball net with configurable dimensions
+ * @situation bake a soccer ball, basketball or tennis ball with a named sphere center
+ * @constraint span and height are in metres before uniform scale; equipment faces +Z
+ * @constraint span applies to the goal and court net, height to the goal, hoop and court net
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeSports({ module: "sports-net", span: 9.5, height: 2.24, out: "assets/sports" });
+ */
+export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeSports",
+    "sports",
+    sportsModules,
+    sportsModules[0].accent,
+  );
+  const rules = sportsDimensions[kit.id];
+  let suffix = "";
+  for (const key of ["span", "height"] as const) {
+    const value = options[key];
+    if (value === undefined) continue;
+    const rule = rules?.[key];
+    if (!rule) throw new Error(`bakeSports: ${key} does not apply to sports-${kit.id}`);
+    if (!Number.isFinite(value) || value < rule.min || value > rule.max) {
+      throw new Error(`bakeSports: ${key} must be between ${rule.min} and ${rule.max}`);
+    }
+    if (value !== rule.default) suffix += `-${key}${value}`;
+  }
+  const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
+  return writeStaticKit(
+    buildSports(kit.id, { ...options, ...kit }),
+    options.out,
+    filename,
+    options.materials,
+  );
+}
+
+/**
+ * Bake compatible cargo, storage and handling props as grounded PBR GLBs.
+ * @situation bake a logistics warehouse set with a pallet, stacking tote, pallet jack, rack or walk-in shipping container
+ * @situation bake a shipping container with open swing doors and a clear cargo deck
+ * @constraint match scale across the pallet, crates, jack and rack; fork sockets point into the pallet
+ * @constraint shelves applies to the rack and open applies to the shipping container
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeLogistics({ module: "logistics-container", open: true, out: "assets/cargo" });
+ */
+export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeLogistics",
+    "logistics",
+    logisticsModules,
+    logisticsAccent,
+  );
+  const { shelves, open } = options;
+  const { min, max, default: defaults } = logisticsShelfCount;
+  if (
+    shelves !== undefined &&
+    (kit.id !== "rack" || !Number.isInteger(shelves) || shelves < min || shelves > max)
+  ) {
+    throw new Error(`bakeLogistics: shelves must be an integer from ${min} to ${max} for the rack`);
+  }
+  if (open !== undefined && (kit.id !== "container" || typeof open !== "boolean")) {
+    throw new Error("bakeLogistics: open is a boolean for the shipping container");
+  }
+  const suffix = open
+    ? "-open"
+    : shelves !== undefined && shelves !== defaults
+      ? `-${shelves}-shelves`
+      : "";
+  const filename = kit.filename.replace(/\.glb$/u, `${suffix}.glb`);
+  return writeStaticKit(
+    buildLogistics(kit.id, { ...options, ...kit }),
+    options.out,
+    filename,
+    options.materials,
+  );
+}
+
+/**
+ * Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.
+ * @situation furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter
+ * @situation assemble a tavern dining table with two matching benches and four seat anchors
+ * @situation bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard
+ * @constraint Width changes furniture length along local X or vessel diameter; body height stays fixed
+ * @constraint Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height
+ * @constraint Set open on tavern-barrel to place its removable lid beside it
+ * @situation restyle tavern furniture with a shared wood finish or custom wood and iron material maps
+ * @constraint materials overrides apply by slot; missing properties inherit the chosen finish
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
+ */
+export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(options, "bakeTavern", "tavern", tavernModules, tavernAccent);
+  const range = tavernModules.find(({ id }) => id === kit.id)?.width;
+  const widthSuffix = furnitureDimension(
+    "bakeTavern",
+    "width",
+    options.width,
+    range,
+    options.module,
+  );
+  const width = options.width ?? range?.default;
+  if (width === undefined) throw new Error(`bakeTavern: no width for ${options.module}`);
+  const { open = false } = options;
+  if (options.open !== undefined && (typeof open !== "boolean" || kit.id !== "barrel")) {
+    throw new Error("bakeTavern: open is a boolean for tavern-barrel");
+  }
+  const finish = await resolveWoodFinish(options.woodFinish);
+  const filename = kit.filename.replace(
+    /\.glb$/u,
+    `${widthSuffix}${open ? "-open" : ""}${finish.suffix}.glb`,
+  );
+  const group = buildTavern(kit.id, { ...kit, width, open }, finish.maps);
+  return writeStaticKit(group, options.out, filename, options.materials, true);
+}
+
+/**
+ * Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.
+ * @situation bake configurable furniture for a workshop, apartment, safehouse or office
+ * @situation bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf
+ * @situation furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console
+ * @situation furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement
+ * @situation bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors
+ * @situation furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid
+ * @situation bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI
+ * @situation furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk
+ * @situation bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point
+ * @situation restyle workshop furniture with a shared wood finish or override color and texture maps by material slot
+ * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
+ * @constraint open previews supported drawers, doors or lids; moving groups remain available for animation
+ * @constraint lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z
+ * @requires npm i -D @threenative/procedural-environment
+ * @example await bakeWorkshop({ module: "workshop-drawer", open: true, out: "assets/furniture" });
+ */
+export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> {
+  const kit = resolvePaintedKit(
+    options,
+    "bakeWorkshop",
+    "workshop",
+    workshopModules,
+    workshopAccent,
+  );
+  const widthSuffix = furnitureDimension(
+    "bakeWorkshop",
+    "width",
+    options.width,
+    workshopWidths[kit.id],
+    options.module,
+  );
+  const heightSuffix = furnitureDimension(
+    "bakeWorkshop",
+    "height",
+    options.height,
+    workshopHeights[kit.id],
+    options.module,
+  );
+  const tiltSuffix = furnitureDimension(
+    "bakeWorkshop",
+    "tilt",
+    options.tilt,
+    kit.id === "desk-lamp" ? deskLampTilt : undefined,
+    options.module,
+  );
+  const seatRange = workshopSeatCounts[kit.id];
+  const { open, seats = seatRange?.default, shelves, lit } = options;
+  const shelfCount = workshopShelfCount;
+  if (
+    shelves !== undefined &&
+    (kit.id !== "bookcase" ||
+      !Number.isInteger(shelves) ||
+      shelves < shelfCount.min ||
+      shelves > shelfCount.max)
+  ) {
+    throw new Error(
+      `bakeWorkshop: shelves must be an integer from ${shelfCount.min} to ${shelfCount.max} for the bookcase`,
+    );
+  }
+  const stateSuffix =
+    workshopState("open", open, workshopOpeningModules, kit.id) +
+    workshopState("lit", lit, workshopLitModules, kit.id);
+  if (![undefined, seatRange?.min, seatRange?.max].includes(seats)) {
+    throw new Error(
+      seatRange
+        ? `bakeWorkshop: seats must be ${seatRange.min} or ${seatRange.max} for workshop-${kit.id}`
+        : `bakeWorkshop: seats does not apply to workshop-${kit.id}`,
+    );
+  }
+  const seatSuffix = seats === seatRange?.default ? "" : `-${seats}-seats`;
+  const shelfSuffix =
+    shelves === undefined || shelves === shelfCount.default ? "" : `-${shelves}-shelves`;
+  const woodless = workshopWoodless.has(kit.id);
+  if (woodless && options.woodFinish !== undefined) {
+    throw new Error(`bakeWorkshop: woodFinish does not apply to ${options.module}`);
+  }
+  const finish = woodless
+    ? { maps: undefined, suffix: "" }
+    : await resolveWoodFinish(options.woodFinish);
+  const filename = kit.filename.replace(
+    /\.glb$/u,
+    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}${finish.suffix}.glb`,
+  );
+  const group = buildWorkshop(kit.id, { ...options, ...kit }, finish.maps);
+  return writeStaticKit(group, options.out, filename, options.materials, true);
+}
+
+function workshopState(
+  key: "open" | "lit",
+  value: boolean | undefined,
+  modules: readonly string[],
+  module: string,
+): string {
+  if (value !== undefined && (typeof value !== "boolean" || !modules.includes(module))) {
+    throw new Error(
+      `bakeWorkshop: ${key} must be a boolean on a supported module (workshop-${module})`,
+    );
+  }
+  return value ? `-${key}` : "";
+}
+
+function furnitureDimension(
+  caller: string,
+  key: "width" | "height" | "tilt",
+  value: number | undefined,
+  range: { min: number; max: number; default: number } | undefined,
+  module: string,
+): string {
+  if (value === undefined) return "";
+  if (!range) throw new Error(`${caller}: ${key} does not apply to ${module}`);
+  if (!Number.isFinite(value) || value < range.min || value > range.max) {
+    throw new Error(`${caller}: ${key} must be between ${range.min} and ${range.max}`);
+  }
+  return value === range.default ? "" : `-${key[0]}${value}`;
+}
+
+function resolvePaintedKit<Id extends string>(
+  options: Pick<IBakeFrontierOptions, "module" | "seed" | "accent" | "scale">,
+  caller: string,
+  prefix: string,
+  modules: readonly { readonly id: Id; readonly accent?: string }[],
+  fallbackAccent: string,
+) {
+  const { module, seed = 1, scale = 1 } = options;
+  const entry = modules.find(({ id }) => module === `${prefix}-${id}`);
+  if (!entry) {
+    const ids = modules.map(({ id }) => `${prefix}-${id}`);
+    throw new Error(
+      `${caller}: unknown module "${module}". Nearest ids: ${nearestPresets(module, 3, ids).join(", ")}.`,
+    );
+  }
+  const defaultAccent = entry.accent ?? fallbackAccent;
+  const { accent = defaultAccent } = options;
+  if (!Number.isInteger(seed) || seed < 0 || seed > 0xffffffff)
+    throw new Error(`${caller}: seed must be an unsigned 32-bit integer`);
+  if (typeof accent !== "string" || !/^#[\da-f]{6}$/iu.test(accent))
+    throw new Error(`${caller}: accent must be a six-digit hex color, such as ${defaultAccent}`);
+  if (!Number.isFinite(scale) || scale < 0.5 || scale > 2)
+    throw new Error(`${caller}: scale must be between 0.5 and 2`);
+  const paint = accent.toLowerCase();
+  const tint = paint === defaultAccent ? "" : `-${paint.slice(1)}`;
+  const size = scale === 1 ? "" : `-s${scale}`;
+  return {
+    id: entry.id,
+    seed,
+    accent: paint,
+    scale,
+    filename: `${module}-${seed}${tint}${size}.glb`,
+  };
+}
+
+async function writeStaticKit(
+  group: Group,
+  out: string,
+  filename: string,
+  materials?: object,
+  compressTextures = false,
+): Promise<IEnvironmentBake[]> {
+  const surfaces = staticKitMaterials(group);
+  const overrides = await prepareMaterialOverrides(materials);
+  applyMaterialOverrides(group.name, surfaces, overrides.slots);
+  const box = new Box3().setFromObject(group);
+  let triangles = 0;
+  group.traverse((node) => {
+    const mesh = node as Mesh;
+    if (mesh.isMesh)
+      triangles += (mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position").count) / 3;
+  });
+  const file = path.join(out, filename.replace(/\.glb$/u, `${overrides.suffix}.glb`));
+  const bytes = await exportStaticGlb(group);
+  await mkdir(out, { recursive: true });
+  await writeAtomic(
+    file,
+    compressTextures || overrides.slots.size ? await webpImages(bytes) : bytes,
+  );
+  return [
+    {
+      bounds: { max: box.max.toArray(), min: box.min.toArray() },
+      lod: 0,
+      path: file,
+      triangles,
+      materialSlots: [...surfaces.keys()].sort(),
+    },
+  ];
 }

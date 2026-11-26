@@ -83,12 +83,12 @@ jobs:
       #
       # BEGIN GENERATED WORKSPACE PUBLISH SET
       #   @threenative/assets
+      #   @threenative/backend
       #   @threenative/blender-bridge
       #   @threenative/core
       #   @threenative/metahuman
       #   @threenative/physics
       #   @threenative/playtest
-      #   @threenative/procedural-animals
       #   @threenative/procedural-environment
       #   @threenative/raw-unreal
       #   @threenative/runtime-native

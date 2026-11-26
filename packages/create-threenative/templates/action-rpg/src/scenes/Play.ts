@@ -18,7 +18,7 @@ import { HOSTILE_LAYER, PLAYER_LAYER, Player, WORLD_LAYER } from "../entities/Pl
 import { ITEMS, Inventory, type ItemId, type ItemStack } from "../items/Inventory.js";
 import { describeDrops, rollDrops } from "../loot/drops.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { loadProgress, saveProgress } from "../progress.js";
+import { hydrateProgress, loadProgress, saveProgress } from "../progress.js";
 import { createDungeonCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { createDungeon, isSolid } from "../render/dungeon.js";
@@ -107,10 +107,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     // One rig, five instances. Quaternius' Universal Animation Library combat mannequin (CC0) is
     // the shared figure: the hero, the raiders and the boss are the same asset, so "add an enemy"
     // is a constructor call and never a second file to cook.
+    // Cloud progress is read beside the models and awaited here, so it is in place before enter()
+    // seeds ctx.state from the local cache hydrateProgress left behind.
     [this.#mannequin, this.#sky] = await Promise.all([
       ctx.assets.model<IMannequin>("mannequin-combat.glb"),
       // Only the photo-sky override reads the photograph; the atmosphere sky is computed.
       SKY_OPTIONS.sky === "photo" ? ctx.assets.texture("sky.jpg") : undefined,
+      hydrateProgress(Play.initialState),
     ]);
     // The cloud noise is the same every run of this build: generate it once, then read it back.
     primeCloudTextures(await ctx.assets.memo("clouds", () => cloudTextures()));

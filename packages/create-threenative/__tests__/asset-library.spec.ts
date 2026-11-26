@@ -4,7 +4,7 @@
  * code stories, and the Scene Bundler's two outputs (a TypeScript module that typechecks and a
  * merged GLB that decodes and passes `inspectAsset`). The browser half is asset-library-browser.spec.ts.
  */
-import { copyFile, mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
@@ -112,6 +112,9 @@ beforeAll(async () => {
     path.join(root, "package.json"),
     JSON.stringify({ name: "asset-library-fixture", type: "module" }),
   );
+  // The project's core, as a kit installs it: its capability manifest lists the VFX stories.
+  await mkdir(path.join(root, "node_modules/@threenative"), { recursive: true });
+  await symlink(path.resolve("packages/core"), path.join(root, "node_modules/@threenative/core"));
   await writeFile(
     path.join(root, "index.html"),
     "<!doctype html><html><head></head><body>game</body></html>",
@@ -120,7 +123,11 @@ beforeAll(async () => {
     root,
     configFile: false,
     logLevel: "silent",
-    server: { port: 0, host: "127.0.0.1" },
+    // `close()` waits for a running watcher scan and a running dep bundle. The stories pull in
+    // `three/webgpu` and TSL late, and bundling them on a cold, loaded runner outlived the 60 s
+    // afterAll hook. No test edits a file or needs a pre-bundled dependency.
+    server: { port: 0, host: "127.0.0.1", watch: null },
+    optimizeDeps: { noDiscovery: true },
     plugins: [
       // A kit's engine alias, listed first as in every kit: it claims every `three` import.
       {
@@ -225,6 +232,24 @@ describe("asset library server", () => {
     );
     const frame = /from "([^"]+story-frame\.js)"/u.exec(story.body)?.[1] ?? "";
     expect(await (await fetch(`${base}${frame}`)).text()).toContain("threenative:web-engine");
+  });
+
+  it("lists every @threenative/core/vfx effect as a story that imports it from the game's core", async () => {
+    const { body } = await json<{ elements: { id: string; kind: string; name: string }[] }>(
+      "api/catalog",
+    );
+    const vfx = body.elements.filter((e) => e.id.startsWith("vfx:"));
+    expect(vfx).toHaveLength(46);
+    expect(vfx.every((e) => e.kind === "story")).toBe(true);
+    expect(vfx.find((e) => e.id === "vfx:createHealingAura")?.name).toBe("Healing Aura");
+    const story = await get(
+      `../@id/virtual:tn-asset-library/story/${encodeURIComponent("vfx:createFire")}.js`,
+    );
+    expect(story.body).toMatch(/import \{ createFire \} from "[^"]*core\/dist\/vfx\/index\.js"/u);
+    expect(story.body).toMatch(/import \{ GPUParticles3D \} from "[^"]*core\/dist\/index\.js"/u);
+    expect(story.body).toContain('vfxStory("Fire", createFire, GPUParticles3D)');
+    expect((await get("story.html?path=vfx:createFire")).status).toBe(200);
+    expect((await get("story.html?path=vfx:create..%2Fx")).status).toBe(400);
   });
 
   it("pre-bundles what code stories import at startup, so the first story opens without a reload", () => {

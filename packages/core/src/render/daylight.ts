@@ -69,6 +69,7 @@ export interface IDaylightOptions {
  *
  * @situation daytime sky, sun and shadows for a large outdoor map
  * @situation distant terrain should fade into the sky instead of a coloured wall
+ * @situation keep distance fog consistent across an outdoor map
  * @situation match a Blender look-dev scene's sun, sky and exposure in the game
  * @constraint every value is required; there is no default sun, sky, haze or exposure
  * @constraint `skySize` must keep the sky box's corners inside the camera's far plane

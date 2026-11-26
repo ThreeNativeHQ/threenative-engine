@@ -19,10 +19,10 @@ themselves. It may not restate `source`, `output` or `exclude`: one project comp
 those are refused rather than quietly producing two answers.
 
 A `maxSize` cap is applied here, per asset kind, and never upscales. On a target whose runtime has
-no WebAssembly — Android and iOS, which have no Basis transcoder and no Meshopt decoder — the cap
-is applied by resizing during the compile and shipping a PNG, because a KTX2 nobody can decode is
-not a smaller texture, it is an unreadable one. The dimension requested is the dimension the file
-decodes to, alpha kept, and the source on disk is untouched.
+no WebAssembly — an Android QuickJS build and iOS, which have no Basis transcoder and no Meshopt
+decoder — the cap is applied by resizing during the compile and shipping a PNG, because a KTX2
+nobody can decode is not a smaller texture, it is an unreadable one. The dimension requested is the
+dimension the file decodes to, alpha kept, and the source on disk is untouched.
 
 Everything about appearance stays the game's: a profile decides which bytes reach the disk, never
 what they look like. `node_modules/create-threenative/agent-docs/references/build-profiles.md` carries the full

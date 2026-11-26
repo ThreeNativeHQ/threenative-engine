@@ -35,6 +35,10 @@ const allowedProductionCreators = new Map<string, string>([
     "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
   ],
   [
+    "scripts/check-budgets.ts",
+    "The procedural-environment tarball budget packs into one scratch folder and removes it in finally.",
+  ],
+  [
     "packages/assets/src/watch.ts",
     "The dev watcher stages each changed input through a scratch project removed in finally.",
   ],
