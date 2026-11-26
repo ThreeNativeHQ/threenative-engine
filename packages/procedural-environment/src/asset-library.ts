@@ -9,13 +9,14 @@ import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
+import type { EnvironmentKind } from "./index.js";
 import { logisticsAccent, logisticsModules, logisticsShelfCount } from "./logistics.js";
 import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
 import { flatPickupModules, pickupAccent } from "./pickups.js";
 import { railAccent, railModules } from "./rail.js";
 import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
-import { stylizedAssets } from "./stylized.js";
+import { type IStylizedAsset, stylizedAssets } from "./stylized.js";
 import {
   deskLampTilt,
   workshopAccent,
@@ -552,6 +553,49 @@ const KINDS = {
   toybox: { runtime: true, pack: "Toybox Kit" },
 };
 
+const STYLES = { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" };
+const SETTINGS = {
+  natural: "Natural",
+  medieval: "Medieval",
+  fantasy: "Fantasy",
+  modern: "Modern",
+  industrial: "Industrial",
+  "sci-fi": "Sci-fi",
+  toy: "Toy world",
+};
+type SettingTag = keyof typeof SETTINGS;
+type ProceduralKind = EnvironmentKind | IStylizedAsset["kind"];
+const CATALOG_TAGS: Record<
+  ProceduralKind,
+  { style: keyof typeof STYLES; settings: readonly SettingTag[]; category?: string }
+> = {
+  tree: { style: "realistic", settings: ["natural"], category: "Trees" },
+  cover: { style: "realistic", settings: ["natural"], category: "Ground cover" },
+  debris: { style: "realistic", settings: ["natural"], category: "Forest debris" },
+  rock: { style: "realistic", settings: ["natural"], category: "Rock formations" },
+  city: { style: "realistic", settings: ["modern"] },
+  station: { style: "stylized", settings: ["sci-fi"] },
+  frontier: { style: "stylized", settings: ["sci-fi", "industrial"] },
+  pickup: { style: "stylized", settings: ["modern"] },
+  mechanism: { style: "stylized", settings: ["industrial", "sci-fi"] },
+  rail: { style: "stylized", settings: ["industrial"] },
+  sports: { style: "stylized", settings: ["modern"] },
+  logistics: { style: "stylized", settings: ["industrial", "modern"] },
+  workshop: { style: "stylized", settings: ["modern"] },
+  stylized: { style: "stylized", settings: ["natural"] },
+  dungeon: { style: "stylized", settings: ["medieval", "fantasy"] },
+  village: { style: "stylized", settings: ["medieval"] },
+  toybox: { style: "hybrid", settings: ["toy"] },
+};
+const SETTING_OVERRIDES: Readonly<Partial<Record<string, readonly SettingTag[]>>> = {
+  "pickup-potion": ["medieval", "fantasy"],
+  "pickup-keycard": ["modern", "sci-fi"],
+  "pickup-shield": ["medieval", "fantasy"],
+  "pickup-vault-key": ["medieval", "fantasy"],
+  "pickup-scroll": ["medieval", "fantasy"],
+  "pickup-repair-tool": ["modern", "industrial"],
+};
+
 export interface IProceduralEnvironmentSourceOptions {
   /** The project root: bakes cache under `node_modules/.cache/`, saves land under `assets/`. */
   readonly root: string;
@@ -653,30 +697,17 @@ export function proceduralEnvironmentSource(
       const biomes = pkg.environmentBiomes();
       return {
         biomes,
-        styles: { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" },
-        elements: [
-          ...pkg.environmentElements().map((entry) => ({
+        styles: STYLES,
+        settings: SETTINGS,
+        elements: [...pkg.environmentElements(), ...stylizedAssets()].map((entry) => {
+          const tags = CATALOG_TAGS[entry.kind];
+          return {
             ...entry,
-            styleTags: [
-              [
-                "station",
-                "frontier",
-                "pickup",
-                "mechanism",
-                "rail",
-                "sports",
-                "logistics",
-                "workshop",
-              ].includes(entry.kind)
-                ? "stylized"
-                : "realistic",
-            ],
-          })),
-          ...stylizedAssets().map((entry) => ({
-            ...entry,
-            styleTags: [entry.kind === "toybox" ? "hybrid" : "stylized"],
-          })),
-        ],
+            category: entry.category ?? tags.category,
+            styleTags: [tags.style],
+            settingTags: SETTING_OVERRIDES[entry.id] ?? tags.settings,
+          };
+        }),
         controls: controls(biomes.map((biome) => biome.id)),
         kinds: KINDS,
       };

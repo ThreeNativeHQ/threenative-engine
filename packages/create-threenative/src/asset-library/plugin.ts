@@ -133,6 +133,7 @@ export async function mergedCatalog(
     ),
     biomes: parts.flatMap(({ catalog }) => catalog.biomes ?? []),
     styles: Object.assign({}, ...parts.map(({ catalog }) => catalog.styles)),
+    settings: Object.assign({}, ...parts.map(({ catalog }) => catalog.settings ?? {})),
     controls: Object.assign({}, ...parts.map(({ catalog }) => catalog.controls ?? {})),
     kinds: Object.assign({}, ...parts.map(({ catalog }) => catalog.kinds ?? {})),
   };

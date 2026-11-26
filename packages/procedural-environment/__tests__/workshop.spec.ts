@@ -80,6 +80,44 @@ describe("Workshop furniture", () => {
     );
   });
 
+  it("classifies every catalog asset by visual style, setting and category", async () => {
+    const root = await makeTempDir("tn-procedural-metadata-");
+    const catalog = (await proceduralEnvironmentSource({ root }).catalog()) as {
+      styles: Record<string, string>;
+      settings: Record<string, string>;
+      elements: {
+        id: string;
+        kind: string;
+        category: string;
+        styleTags: string[];
+        settingTags: string[];
+      }[];
+    };
+    expect(catalog.elements.length).toBeGreaterThan(0);
+    for (const asset of catalog.elements) {
+      expect(asset.category, asset.id).toBeTruthy();
+      expect(asset.styleTags, asset.id).toHaveLength(1);
+      expect(catalog.styles[asset.styleTags[0] ?? ""], asset.id).toBeTruthy();
+      expect(asset.settingTags.length, asset.id).toBeGreaterThan(0);
+      expect(
+        asset.settingTags.every((setting) => setting in catalog.settings),
+        asset.id,
+      ).toBe(true);
+    }
+    expect(catalog.elements.find(({ id }) => id === "village-tavern")).toMatchObject({
+      styleTags: ["stylized"],
+      settingTags: ["medieval"],
+    });
+    expect(catalog.elements.find(({ id }) => id === "workshop-dining-table")).toMatchObject({
+      category: "Dining",
+      styleTags: ["stylized"],
+      settingTags: ["modern"],
+    });
+    expect(catalog.elements.find(({ id }) => id === "pickup-potion")).toMatchObject({
+      settingTags: ["medieval", "fantasy"],
+    });
+  });
+
   it.each(Object.entries(anchors))("exports grounded %s with named nodes", async (id, nodes) => {
     const out = await makeTempDir("tn-workshop-");
     const [entry] = await bakeWorkshop({ module: `workshop-${id}`, out });

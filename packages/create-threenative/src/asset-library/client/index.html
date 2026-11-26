@@ -13,21 +13,25 @@
         <div class="flex items-center gap-2">
           <span id="logo" class="inline-flex size-6 items-center justify-center rounded bg-brand-ink text-brand" title="ThreeNative"></span>
           <h1 id="library-title" class="min-w-0 flex-1 text-base leading-tight font-extrabold text-balance text-white">Asset Library</h1>
-          <button id="settings" class="tool" data-icon="gear" title="Settings: biome filter" aria-pressed="false" aria-controls="filters"></button>
+          <button id="settings" class="tool" data-icon="gear" title="Browse settings" aria-pressed="false" aria-controls="filters"></button>
           <button id="close-tree" class="tool md:hidden" data-icon="close" title="Close the asset list"></button>
         </div>
         <div class="flex items-center gap-2 rounded border border-line bg-app px-2 focus-within:border-accent">
           <span data-icon="search" class="text-muted"></span>
           <input id="search" name="search" type="search" class="min-w-0 flex-1 bg-transparent py-1.5 text-ink outline-none placeholder:text-muted" placeholder="Find assets" aria-label="Find assets" />
           <kbd class="text-muted">/</kbd>
-          <button id="filter" class="tool size-6" data-icon="filter" title="Filter by biome" aria-pressed="false" aria-controls="filters"></button>
+          <button id="filter" class="tool size-6 data-[active=true]:text-accent" data-icon="filter" title="Filter assets" aria-pressed="false" aria-controls="filters"></button>
         </div>
         <fieldset>
-          <legend class="mb-1.5 text-muted">Style tags</legend>
+          <legend class="mb-1.5 text-muted">Visual style</legend>
           <div id="style-tags" class="flex flex-wrap gap-1"></div>
         </fieldset>
         <div id="filters" hidden>
-          <select id="biome" name="biome-filter" class="field" aria-label="Biome filter"><option value="">All biomes</option></select>
+          <div class="grid gap-1.5">
+            <select id="setting" name="setting-filter" class="field w-full" aria-label="Setting filter"><option value="">All settings</option></select>
+            <select id="category" name="category-filter" class="field w-full" aria-label="Category filter"><option value="">All categories</option></select>
+            <select id="biome" name="biome-filter" class="field w-full" aria-label="Biome filter"><option value="">All biomes</option></select>
+          </div>
         </div>
       </header>
       <nav id="tree" aria-label="Assets" class="min-h-0 flex-1 overflow-y-auto px-3 pb-4"></nav>
@@ -63,7 +67,7 @@
             <div class="grid gap-2 rounded border border-line bg-app/90 px-6 py-5">
               <h1 class="text-lg font-bold text-ink">Asset Library</h1>
               <p>Pick an asset in the list to inspect it, or open an overview to see a whole section.</p>
-              <p>Search by name, or filter by style and biome tags.</p>
+              <p>Search by name or filter by style, setting, category and biome.</p>
             </div>
           </div>
           <div id="status" role="status" class="absolute bottom-2 left-2 max-w-[calc(100%-1rem)] rounded border border-line bg-app/90 px-2 py-1 text-muted data-error:text-danger">
