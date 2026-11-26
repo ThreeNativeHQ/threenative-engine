@@ -8785,7 +8785,8 @@
       "constraints": [
         "Width changes furniture length along local X or vessel diameter; body height stays fixed",
         "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height",
-        "Set open on tavern-barrel to place its removable lid beside it"
+        "Set open on tavern-barrel to place its removable lid beside it",
+        "materials overrides apply by slot; missing properties inherit the chosen finish"
       ],
       "example": "await bakeTavern({ module: \"tavern-dining-set\", width: 2.2, out: \"assets/tavern\" });",
       "importPath": "@threenative/procedural-environment",
@@ -8797,7 +8798,8 @@
       "situations": [
         "furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter",
         "assemble a tavern dining table with two matching benches and four seat anchors",
-        "bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard"
+        "bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard",
+        "restyle tavern furniture with a shared wood finish or custom wood and iron material maps"
       ],
       "summary": "Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.",
       "supersedes": [],
@@ -8866,7 +8868,8 @@
         "furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid",
         "bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI",
         "furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk",
-        "bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point"
+        "bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point",
+        "restyle workshop furniture with a shared wood finish or override color and texture maps by material slot"
       ],
       "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
       "supersedes": [],

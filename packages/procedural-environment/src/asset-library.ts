@@ -9,6 +9,7 @@ import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
 import { frontierAccent, frontierModules } from "./frontier.js";
+import { type WoodFinish, defaultWoodFinish, woodFinishes } from "./furniture-materials.js";
 import type { EnvironmentKind } from "./index.js";
 import { logisticsAccent, logisticsModules, logisticsShelfCount } from "./logistics.js";
 import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
@@ -17,16 +18,20 @@ import { railAccent, railModules } from "./rail.js";
 import { sportsDimensions, sportsModules } from "./sports.js";
 import { stationAccent, stationRoofModules } from "./station.js";
 import { type IStylizedAsset, stylizedAssets } from "./stylized.js";
-import { tavernAccent, tavernModules } from "./tavern.js";
+import { tavernAccent, tavernIron, tavernModules, tavernWoodRoughness } from "./tavern.js";
 import {
   deskLampTilt,
   workshopAccent,
   workshopHeights,
   workshopLitModules,
+  workshopModules,
   workshopOpeningModules,
   workshopSeatCounts,
   workshopShelfCount,
   workshopWidths,
+  workshopWoodRoughness,
+  workshopWoodTint,
+  workshopWoodless,
 } from "./workshop.js";
 
 const frontierPaintable = frontierModules
@@ -45,6 +50,7 @@ interface IControl {
   max?: number;
   step?: number;
   options?: string[];
+  labels?: string[];
   default?: number | string | boolean;
   only?: string[];
 }
@@ -58,6 +64,18 @@ const unit = (key: string, label: string, group: string): IControl => ({
   max: 1,
   step: 0.01,
 });
+const WOOD_FINISH: IControl = {
+  key: "woodFinish",
+  label: "Wood finish",
+  group: "Materials",
+  type: "select",
+  options: Object.keys(woodFinishes),
+  labels: Object.values(woodFinishes),
+  default: defaultWoodFinish,
+};
+const workshopWood = workshopModules
+  .filter(({ id }) => !workshopWoodless.has(id))
+  .map(({ id }) => `workshop-${id}`);
 const ROCK_TRAITS: IControl[] = [
   unit("roughness", "Roughness", "Shape"),
   unit("chipping", "Chipping", "Shape"),
@@ -119,7 +137,22 @@ function controls(biomes: string[]): Record<string, IControl[]> {
       },
     ],
     tavern: [
-      { key: "accent", label: "Wood tint", type: "color", default: tavernAccent },
+      WOOD_FINISH,
+      {
+        key: "accent",
+        label: "Wood tint",
+        group: "Materials",
+        type: "color",
+        default: tavernAccent,
+      },
+      {
+        key: "ironTint",
+        label: "Iron tint",
+        group: "Materials",
+        type: "color",
+        default: tavernIron,
+      },
+      { ...unit("woodRoughness", "Wood roughness", "Materials"), default: tavernWoodRoughness },
       { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
       ...tavernModules.map(
         (entry): IControl => ({
@@ -135,6 +168,20 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     ],
     workshop: [
       { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
+      { ...WOOD_FINISH, only: workshopWood },
+      {
+        key: "woodTint",
+        label: "Wood tint",
+        group: "Materials",
+        type: "color",
+        default: workshopWoodTint,
+        only: workshopWood,
+      },
+      {
+        ...unit("woodRoughness", "Wood roughness", "Materials"),
+        default: workshopWoodRoughness,
+        only: workshopWood,
+      },
       { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
       ...(
         [
@@ -394,6 +441,22 @@ const pick = (q: URLSearchParams, list: IControl[]) => {
 };
 const opt = <T>(key: string, value: T | undefined) => (value === undefined ? {} : { [key]: value });
 
+function furnitureFinish(q: URLSearchParams) {
+  const finish = q.get("woodFinish") as WoodFinish | null;
+  const color = q.get("woodTint") ?? undefined;
+  const roughness = num(q, "woodRoughness");
+  const iron = q.get("ironTint") ?? undefined;
+  const wood = color === undefined && roughness === undefined ? undefined : { color, roughness };
+  const materials = {
+    ...opt("wood", wood),
+    ...opt("iron", iron === undefined ? undefined : { color: iron }),
+  };
+  return {
+    woodFinish: finish ?? undefined,
+    materials: Object.keys(materials).length ? materials : undefined,
+  };
+}
+
 function rockBake(
   pkg: Package,
   q: URLSearchParams,
@@ -474,6 +537,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("scale", num(q, "scale")),
         ...opt("width", num(q, "width")),
         ...opt("open", toggle(q, "open")),
+        ...furnitureFinish(q),
       });
     case "workshop":
       return pkg.bakeWorkshop({
@@ -489,6 +553,7 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
         ...opt("shelves", num(q, "shelves")),
         ...opt("tilt", num(q, "tilt")),
         ...opt("lit", toggle(q, "lit")),
+        ...furnitureFinish(q),
       });
     case "logistics":
       return pkg.bakeLogistics({

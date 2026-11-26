@@ -11,6 +11,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Tavern and Workshop models share selectable wood finishes and support custom color and
+  texture maps by material slot.
+
 - The Tavern Kit adds a storage barrel, wooden bucket, and tankard with adjustable diameters,
   named grips, and a removable barrel lid.
 

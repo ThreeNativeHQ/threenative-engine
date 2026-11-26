@@ -4,12 +4,18 @@ import {
   Group,
   MeshStandardMaterial,
   Object3D,
-  type Texture,
   Vector2,
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
 import { buildCooperage, cooperageModules } from "./cooperage.js";
+import {
+  type IFurnitureWoodMaps,
+  type IProceduralMaterialOverride,
+  type MaterialParams,
+  type WoodFinish,
+  applyMaterialOverrides,
+} from "./furniture-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
 export interface IBakeTavernOptions {
@@ -25,9 +31,13 @@ export interface IBakeTavernOptions {
   readonly width?: number;
   /** Set the storage barrel's removable lid beside it for inspection. */
   readonly open?: boolean;
+  readonly woodFinish?: WoodFinish;
+  readonly materials?: Readonly<Partial<Record<Finish, IProceduralMaterialOverride>>>;
 }
 
 export const tavernAccent = "#756957";
+export const tavernIron = "#37322d";
+export const tavernWoodRoughness = 0.88;
 const tableWidth = { min: 1.45, max: 2.4, default: 1.88 };
 export const tavernModules = [
   { id: "table", name: "Tavern trestle table", category: "Dining", width: tableWidth },
@@ -186,7 +196,8 @@ export function buildTavern(
   id: Module,
   options: Required<Pick<IBakeTavernOptions, "seed" | "accent" | "scale" | "width">> &
     Pick<IBakeTavernOptions, "open">,
-  scan?: { color: Texture; normal: Texture },
+  scan?: IFurnitureWoodMaps,
+  overrides?: MaterialParams,
 ): Group {
   const { accent, seed, scale, width } = options;
   const palette: Palette = {
@@ -194,14 +205,14 @@ export function buildTavern(
       name: "Tavern worn timber",
       color: accent,
       vertexColors: true,
-      roughness: 0.88,
+      roughness: tavernWoodRoughness,
       map: scan?.color ?? null,
       normalMap: scan?.normal ?? null,
       normalScale: new Vector2(0.88, 0.88),
     }),
     iron: new MeshStandardMaterial({
       name: "Tavern forged iron",
-      color: 0x37322d,
+      color: tavernIron,
       metalness: 0.56,
       roughness: 0.69,
     }),
@@ -225,5 +236,6 @@ export function buildTavern(
   const group = builders[id]();
   group.name = `tavern-${id}`;
   group.scale.setScalar(scale);
+  applyMaterialOverrides(group, palette, overrides);
   return group;
 }

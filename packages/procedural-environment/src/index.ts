@@ -17,6 +17,7 @@ import {
   frontierAccent,
   frontierModules,
 } from "./frontier.js";
+import { prepareMaterialOverrides, resolveWoodFinish } from "./furniture-materials.js";
 import {
   type IBakeLogisticsOptions,
   buildLogistics,
@@ -54,7 +55,6 @@ import {
   type IBakeWorkshopOptions,
   buildWorkshop,
   deskLampTilt,
-  loadWorkshopVeneer,
   workshopAccent,
   workshopHeights,
   workshopLitModules,
@@ -63,11 +63,13 @@ import {
   workshopSeatCounts,
   workshopShelfCount,
   workshopWidths,
+  workshopWoodless,
 } from "./workshop.js";
 
 export type { IEnvironmentBiome } from "./biomes.js";
 export type { IBakeCityOptions } from "./city.js";
 export type { IBakeFrontierOptions } from "./frontier.js";
+export type { IProceduralMaterialOverride, WoodFinish } from "./furniture-materials.js";
 export type { IBakeLogisticsOptions } from "./logistics.js";
 export type { IBakeMechanismOptions } from "./mechanisms.js";
 export type { IBakePickupOptions } from "./pickups.js";
@@ -1376,6 +1378,8 @@ export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEn
  * @constraint Width changes furniture length along local X or vessel diameter; body height stays fixed
  * @constraint Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height
  * @constraint Set open on tavern-barrel to place its removable lid beside it
+ * @situation restyle tavern furniture with a shared wood finish or custom wood and iron material maps
+ * @constraint materials overrides apply by slot; missing properties inherit the chosen finish
  * @requires npm i -D @threenative/procedural-environment
  * @example await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
  */
@@ -1395,8 +1399,15 @@ export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironm
   if (options.open !== undefined && (typeof open !== "boolean" || kit.id !== "barrel")) {
     throw new Error("bakeTavern: open is a boolean for tavern-barrel");
   }
-  const filename = kit.filename.replace(/\.glb$/u, `${widthSuffix}${open ? "-open" : ""}.glb`);
-  const group = buildTavern(kit.id, { ...kit, width, open }, await loadWorkshopVeneer());
+  const [finish, overrides] = await Promise.all([
+    resolveWoodFinish(options.woodFinish),
+    prepareMaterialOverrides(options.materials),
+  ]);
+  const filename = kit.filename.replace(
+    /\.glb$/u,
+    `${widthSuffix}${open ? "-open" : ""}${finish.suffix}${overrides.suffix}.glb`,
+  );
+  const group = buildTavern(kit.id, { ...kit, width, open }, finish.maps, overrides.slots);
   return writeStaticKit(group, options.out, filename, true);
 }
 
@@ -1411,6 +1422,7 @@ export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironm
  * @situation bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI
  * @situation furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk
  * @situation bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point
+ * @situation restyle workshop furniture with a shared wood finish or override color and texture maps by material slot
  * @constraint the workbench width changes while the matching stool and cabinet keep their sizes
  * @constraint open previews supported drawers, doors or lids; moving groups remain available for animation
  * @constraint lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z
@@ -1473,11 +1485,19 @@ export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvi
   const seatSuffix = seats === seatRange?.default ? "" : `-${seats}-seats`;
   const shelfSuffix =
     shelves === undefined || shelves === shelfCount.default ? "" : `-${shelves}-shelves`;
+  const woodless = workshopWoodless.has(kit.id);
+  if (woodless && options.woodFinish !== undefined) {
+    throw new Error(`bakeWorkshop: woodFinish does not apply to ${options.module}`);
+  }
+  const [finish, overrides] = await Promise.all([
+    woodless ? { maps: undefined, suffix: "" } : resolveWoodFinish(options.woodFinish),
+    prepareMaterialOverrides(options.materials),
+  ]);
   const filename = kit.filename.replace(
     /\.glb$/u,
-    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}.glb`,
+    `${widthSuffix}${heightSuffix}${tiltSuffix}${seatSuffix}${shelfSuffix}${stateSuffix}${finish.suffix}${overrides.suffix}.glb`,
   );
-  const group = buildWorkshop(kit.id, { ...options, ...kit }, await loadWorkshopVeneer());
+  const group = buildWorkshop(kit.id, { ...options, ...kit }, finish.maps, overrides.slots);
   return writeStaticKit(group, options.out, filename, true);
 }
 

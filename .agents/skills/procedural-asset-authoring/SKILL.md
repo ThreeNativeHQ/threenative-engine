@@ -16,3 +16,8 @@ comes from the finished appearance. A medieval asset may be realistic or stylize
 new kit's style and settings in `CATALOG_TAGS` in the procedural source, and put each asset in
 a useful category. Give individual assets setting overrides when they fit different settings
 from their kit. Verify the expected style, setting and category together in the browser.
+
+Treat dimensions, states and material finishes as independent controls. Use the furniture kits'
+shared wood finishes and named material-slot overrides as the reference for restyling. Keep
+common choices in the Controls panel, let bake callers supply custom PBR map bytes, and verify
+that changing a finish preserves the exported geometry, anchors and default appearance.

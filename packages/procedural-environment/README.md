@@ -43,6 +43,45 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Furniture finishes
+
+The Tavern and Workshop kits share **Cherry veneer**, **Rough wood**, and **Solid color**.
+Pick a **Wood finish** under **Materials**, then adjust tint and roughness. The Tavern Kit also
+exposes **Iron tint**. The Workshop Kit's **Accent color** controls its painted parts and fabrics
+separately from its timber. A finish changes the surface while preserving dimensions, anchors,
+pivots, and snap points.
+
+```ts
+import { readFile } from "node:fs/promises";
+import { bakeTavern } from "@threenative/procedural-environment";
+
+await bakeTavern({
+  module: "tavern-table",
+  width: 2.2,
+  woodFinish: "solid",
+  materials: {
+    wood: {
+      color: "#ffffff",
+      map: await readFile("textures/oak-color.webp"),
+      normalMap: await readFile("textures/oak-normal.webp"),
+      roughness: 0.72,
+    },
+    iron: { color: "#33383d", metalness: 0.65 },
+  },
+  out: "assets/tavern",
+});
+```
+
+The `materials` map accepts color, roughness, metalness, normal strength, and encoded color,
+OpenGL normal, roughness, or metalness maps. Pass `null` for a map to clear it. Maps accept PNG,
+JPEG, or WebP up to 16 MiB and 4096² pixels. Bakes resize them to at most 1024 px per side and
+embed compressed WebP. Roughness uses the green channel and metalness uses the blue channel.
+The numeric factors multiply their respective maps.
+
+Tavern slots are `wood` and `iron`. Workshop slots are `wood`, `accent`, `dark` (structural
+steel), `linen`, `steel` (hardware), `insert`, `ceramic`, `screen`, `shade`, and `diffuser`.
+Each model accepts its own slots. An invalid slot lists the slots available on that model.
+
 ### Tavern Kit
 
 Filter by **Realistic** and **Medieval** for the trestle table, plank bench, serving counter,

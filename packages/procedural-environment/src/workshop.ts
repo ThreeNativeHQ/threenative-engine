@@ -1,5 +1,3 @@
-import { readFile } from "node:fs/promises";
-import { loadImage } from "@napi-rs/canvas";
 import {
   BoxGeometry,
   CatmullRomCurve3,
@@ -9,10 +7,7 @@ import {
   LatheGeometry,
   MeshStandardMaterial,
   Object3D,
-  RepeatWrapping,
-  SRGBColorSpace,
   SphereGeometry,
-  Texture,
   TorusGeometry,
   TubeGeometry,
   Vector2,
@@ -20,6 +15,13 @@ import {
 } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
 import { RNG } from "../vendor/stylized-biome-kit/core.js";
+import {
+  type IFurnitureWoodMaps,
+  type IProceduralMaterialOverride,
+  type MaterialParams,
+  type WoodFinish,
+  applyMaterialOverrides,
+} from "./furniture-materials.js";
 import { StaticKitMesh, type XYZ } from "./static-kit-mesh.js";
 
 export interface IBakeWorkshopOptions {
@@ -45,9 +47,13 @@ export interface IBakeWorkshopOptions {
   readonly tilt?: number;
   /** Make a lamp's diffuser emissive. */
   readonly lit?: boolean;
+  readonly woodFinish?: WoodFinish;
+  readonly materials?: Readonly<Partial<Record<Finish, IProceduralMaterialOverride>>>;
 }
 
 export const workshopAccent = "#4d7779";
+export const workshopWoodTint = "#fff8ec";
+export const workshopWoodRoughness = 0.66;
 export const workshopModules = [
   { id: "workbench", name: "Modern workbench", category: "Work surfaces" },
   { id: "stool", name: "Workshop stool", category: "Seating" },
@@ -132,6 +138,14 @@ export const workshopHeights: Partial<Record<Module, typeof chairHeight>> = {
 };
 export const deskLampTilt = { min: -30, max: 35, default: 0 };
 export const workshopLitModules = ["floor-lamp", "desk-lamp", "wall-sconce"];
+export const workshopWoodless = new Set<Module>([
+  "bath-tub",
+  "bath-toilet",
+  "office-chair",
+  "office-monitor",
+  "desk-lamp",
+  "wall-sconce",
+]);
 export const workshopOpeningModules = [
   "drawer",
   "locker",
@@ -159,25 +173,12 @@ const drawerFloor = 0.027;
 const lockerFloor = 0.12;
 const lockerShelf = 1.28;
 
-interface IVeneer {
-  color: Texture;
-  normal: Texture;
-}
-
-export async function loadWorkshopVeneer(): Promise<IVeneer> {
-  const load = async (map: "color" | "normal") => {
-    const bytes = await readFile(new URL(`../scans/cherry_veneer-${map}.webp`, import.meta.url));
-    const texture = new Texture(await loadImage(bytes));
-    texture.name = `Cherry veneer ${map}`;
-    texture.wrapS = texture.wrapT = RepeatWrapping;
-    return texture;
-  };
-  const [color, normal] = await Promise.all([load("color"), load("normal")]);
-  color.colorSpace = SRGBColorSpace;
-  return { color, normal };
-}
-
-function materials(seed: number, accent: string, veneer?: IVeneer, lit = false): Palette {
+function materials(
+  seed: number,
+  accent: string,
+  veneer?: IFurnitureWoodMaps,
+  lit = false,
+): Palette {
   const rng = new RNG(seed);
   const tone = rng.range(0.88, 1);
   const paint = new Color(accent).multiplyScalar(rng.range(0.94, 1.04));
@@ -185,8 +186,8 @@ function materials(seed: number, accent: string, veneer?: IVeneer, lit = false):
     new MeshStandardMaterial({ name, color, roughness, metalness });
   const wood = finish(
     "Workshop cherry veneer",
-    new Color(veneer ? 0xfff8ec : 0xd3a676).multiplyScalar(tone),
-    0.66,
+    new Color(veneer ? workshopWoodTint : 0xd3a676).multiplyScalar(tone),
+    workshopWoodRoughness,
   );
   if (veneer) {
     wood.map = veneer.color;
@@ -1333,7 +1334,8 @@ export function buildWorkshop(
   id: Module,
   options: Required<Pick<IBakeWorkshopOptions, "seed" | "accent" | "scale">> &
     Pick<IBakeWorkshopOptions, "width" | "height" | "open" | "seats" | "shelves" | "tilt" | "lit">,
-  veneer?: IVeneer,
+  veneer?: IFurnitureWoodMaps,
+  overrides?: MaterialParams,
 ): Group {
   const palette = materials(options.seed, options.accent, veneer, options.lit);
   const width = options.width ?? workshopWidths[id]?.default ?? workbenchWidth.default;
@@ -1389,5 +1391,6 @@ export function buildWorkshop(
   const group = builders[id]();
   group.name = `workshop-${id}`;
   group.scale.setScalar(options.scale);
+  applyMaterialOverrides(group, palette, overrides);
   return group;
 }

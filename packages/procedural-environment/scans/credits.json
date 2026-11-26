@@ -26,6 +26,12 @@
       "author": "Jenelle van Heerden",
       "downloaded": "2026-11-25",
       "preprocessing": "Official 1K diffuse and nor_gl JPGs resized to 512 px square. Diffuse contrast tuned with RGB multipliers 2.25 and offsets -310/-245/-185. Vendored WebP q90 diffuse and q83 normal."
+    },
+    "rough_wood": {
+      "url": "https://polyhaven.com/a/rough_wood",
+      "author": "Rob Tuytel",
+      "downloaded": "2026-11-25",
+      "preprocessing": "Official 1K diffuse and OpenGL normal JPGs rotated 90 degrees clockwise to align the grain with the furniture UVs, with normal XY rotated to match. Resized to 512 px square, WebP q84 diffuse and q78 normal."
     }
   },
   "foliage": {
