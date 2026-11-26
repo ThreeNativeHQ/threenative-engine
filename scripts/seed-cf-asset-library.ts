@@ -32,7 +32,9 @@ import { createStylizedAsset } from "../packages/procedural-environment/dist/sty
 
 export const PUBLIC_ASSET_MAX_BYTES = 25 * 1024 * 1024;
 const COMPRESS_THRESHOLD_BYTES = 20 * 1024 * 1024;
-const ASSET_LIBRARY_LICENSE = "MIT";
+// PRD-120 / threenative-asset-mcp releases baked outputs of ThreeNative's MIT procedural
+// generators under CC0-1.0 so `asset_search(..., { commercialUse: true })` returns every seed.
+const ASSET_LIBRARY_LICENSE = "CC0-1.0";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const SLUG_RE = /^[a-z0-9][a-z0-9-]{0,63}$/u;
 

@@ -9,9 +9,13 @@ Use tools for conventional textures, materials, HDRIs, sounds, and models; write
 in `src/render/`. Start the session from the game root so the project-scoped MCP config is read.
 
 0. **Search first. Skipping `asset_search` is a defect.** For a model, texture, HDRI or animation,
-   call `asset_search` (`providers: ["threenative"]` first), then `asset_get` on the best result for
+   call `asset_search` with `providers: ["threenative"]` first — ThreeNative's hosted CC0 catalog of
+   458 ready GLBs (28 tree species, ground cover, forest debris, rocks, modular city, stylized biome,
+   dungeon, village, toybox, station/frontier/workshop/tavern/logistics/sports/rail/mechanism/pickup
+   kits, rigged wolf, forest floor; 0 credits, instant) — then `asset_get` on the best result for
    its terms and an expiring file plan, then `asset_download` with that `planToken` and
-   `acceptLicense: true`. Then go to step 4.
+   `acceptLicense: true`. Check ready catalog GLBs here before local `@threenative/procedural-environment`
+   bakes (`providers: ["procedural"]`) or external catalogs. Then go to step 4.
 1. For sound or another type, run `asset_search_sources` to learn what is reachable, then search
    with `audio_search_assets`, `polyhaven_search_assets`, or `ambientcg_search_assets`.
 2. List files with `polyhaven_list_files`/`ambientcg_list_files` before downloading; read the
@@ -20,7 +24,8 @@ in `src/render/`. Start the session from the game root so the project-scoped MCP
    write to the configured project directory.
 4. Add file, source, license, and URL to `CREDITS.md`. Never state a license not returned by a tool.
 
-Check every file before the game loads it. `pnpm dev` serves the Asset Library at `/__assets/`:
+Check every file before the game loads it. `pnpm dev` serves the Asset Library at `/__assets/` (which
+also browses ThreeNative's Cloudflare public catalog lazily on demand with `Save to assets/`):
 health badges (units, grounding, missing normals or UVs), Raw vs Cooked bytes, LOD switching,
 animation playback with `animation_verify` defects, textures and sounds. Open
 `/__assets/?sheet=turntable#/model/<path>` and wait for `__TN_ASSET_LIBRARY_READY__` to get a

@@ -24,10 +24,15 @@ delivery. The five creature tools are `creature_status`, `creature_guide`, `crea
 without optional preview dependencies while a complete preview/check loop may not.
 
 0. `asset_search` — start here for a model, texture, HDRI or animation. Skipping it is a defect.
-   Pass `providers: ["threenative"]` first: ThreeNative's own CC0 catalog (for
-   example a rigged grey wolf). Then call `asset_get` with the `assetId` for the terms and an
-   expiring file plan, and `asset_download` with its `planToken` and `acceptLicense: true`.
-   Steps 1-3 below are for sound and anything else `asset_search` does not cover.
+   Pass `providers: ["threenative"]` first: ThreeNative's hosted CC0 catalog of 458 ready
+   GLBs (28 tree species, ground cover, forest debris, rock formations, 75 modular city
+   buildings/roads/props, station/frontier/workshop/tavern/logistics/sports/rail/mechanism/pickup
+   kits, stylized biome, dungeon, village, and toybox kits, plus the rigged grey wolf and
+   forest-floor props — 0 credits, instant). Call `asset_get` with the `assetId` for the
+   terms and an expiring file plan, and `asset_download` with its `planToken` and
+   `acceptLicense: true` before baking custom parametric variants with
+   `@threenative/procedural-environment` (`providers: ["procedural"]`) or searching external
+   catalogs. Steps 1-3 below are for sound and anything else `asset_search` does not cover.
 1. `asset_search_sources` — start here for those, never at a provider. It returns every catalogued
    source with its license summary, attribution requirement, browse URL, and whether an agent
    can complete a download from it. **That output is the authority on what is reachable** —
@@ -267,8 +272,10 @@ switcher; it loads nothing until it is picked, and it is hidden under automation
 
 A red badge is a fix before the asset ships: "likely centimetres" needs a 0.01 scale, a non-zero
 `min.y` floats or sinks, "missing normals" renders black, "unbound animation tracks" never move.
-A project with `@threenative/procedural-environment` installed also lists its bakes, with
-"Save to assets/". Studio embeds the same page with `?embed=1` and drives it by `postMessage`
+`/__assets/` also browses ThreeNative's Cloudflare public catalog lazily on demand (fetching
+`catalog.json` on load and downloading each GLB only when selected, with "Save to assets/"). A
+project with `@threenative/procedural-environment` installed lists its local parametric bakes
+alongside it with "Save to assets/". Studio embeds the same page with `?embed=1` and drives it by `postMessage`
 (`tn-asset-library:select`, `:sheet`, `:theme`, `:pause`, `:resume`; it answers `:ready`).
 
 ## The narrower tools

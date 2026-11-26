@@ -95,7 +95,7 @@ describe("seed-cf-procedural-catalog", () => {
       expect(row.prompt.length).toBeGreaterThanOrEqual(1);
       expect(row.prompt.length).toBeLessThanOrEqual(600);
       expect(row.tags.length).toBeLessThanOrEqual(200);
-      expect(row.license.length).toBeGreaterThan(0);
+      expect(row.license).toBe("CC0-1.0");
     }
   });
 
