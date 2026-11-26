@@ -82,10 +82,7 @@
     {
       "kind": "input",
       "label": "go-north",
-      "press": [
-        "ShiftLeft",
-        "ArrowUp"
-      ],
+      "press": ["ShiftLeft", "ArrowUp"],
       "holdTicks": 150,
       "release": true
     },

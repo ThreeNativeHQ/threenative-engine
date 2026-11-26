@@ -57,22 +57,14 @@
     {
       "kind": "input",
       "label": "handbrake-turn",
-      "press": [
-        "KeyW",
-        "KeyD",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyD", "Space"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-go",
-      "press": [
-        "KeyW",
-        "KeyD",
-        "Space"
-      ],
+      "press": ["KeyW", "KeyD", "Space"],
       "holdTicks": 1,
       "release": true
     },

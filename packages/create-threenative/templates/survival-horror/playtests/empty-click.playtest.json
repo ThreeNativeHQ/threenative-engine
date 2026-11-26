@@ -22,10 +22,7 @@
     {
       "kind": "input",
       "label": "quick-turn",
-      "press": [
-        "KeyS",
-        "ShiftLeft"
-      ],
+      "press": ["KeyS", "ShiftLeft"],
       "holdTicks": 4,
       "release": true
     },
@@ -129,218 +126,161 @@
     {
       "kind": "input",
       "label": "raise",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-1",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-1-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-2",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-2-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-3",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-3-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-4",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-4-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-5",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-5-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-6",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-6-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-7",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-7-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-8",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-8-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-9",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-9-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-10",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-10-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-11",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "dry-11-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },

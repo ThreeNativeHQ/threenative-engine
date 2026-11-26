@@ -311,7 +311,13 @@
       ]
     },
     "actions": [
-      { "key": "Space", "clip": "Punch_Jab", "ticks": 36, "contactTicks": 9, "effect": { "signal": "punch" } }
+      {
+        "key": "Space",
+        "clip": "Punch_Jab",
+        "ticks": 36,
+        "contactTicks": 9,
+        "effect": { "signal": "punch" }
+      }
     ],
     "optOut": {
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",

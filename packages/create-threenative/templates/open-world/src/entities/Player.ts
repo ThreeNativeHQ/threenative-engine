@@ -1,7 +1,7 @@
-import { BoxGeometry, Mesh, type Object3D, Vector2, Vector3 } from "three";
+import { BoxGeometry, Mesh, type Object3D, type Vector2, Vector3 } from "three";
 import { pistolMaterial, playerMaterial } from "../render/materials.js";
 import type { Car } from "./Car.js";
-import { type IMannequin, Humanoid } from "./Humanoid.js";
+import { Humanoid, type IMannequin } from "./Humanoid.js";
 import { CAR_LAYER, type GameCtx, PED_LAYER, PLAYER_LAYER, WORLD_LAYER } from "./layers.js";
 
 /**

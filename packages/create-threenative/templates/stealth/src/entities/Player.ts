@@ -1,7 +1,7 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { MathUtils, Vector2, Vector3 } from "three";
-import type { AlertDirector } from "../ai/phase.js";
 import { KNOCK_NOISE, type NoiseBus, RUN_NOISE, angleBetween } from "../ai/perception.js";
+import type { AlertDirector } from "../ai/phase.js";
 import { dress, playerMaterial } from "../render/props.js";
 import type { ITouchInput } from "../render/touch-controls.js";
 import type { Stance } from "../state.js";

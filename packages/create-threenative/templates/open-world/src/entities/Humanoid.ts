@@ -4,8 +4,8 @@ import {
   type AnimationClip,
   Box3,
   Group,
-  MathUtils,
   type Material,
+  MathUtils,
   type Object3D,
   Vector3,
 } from "three";

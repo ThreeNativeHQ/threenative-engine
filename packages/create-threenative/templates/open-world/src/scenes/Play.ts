@@ -263,6 +263,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       patch.reticleX = onScreen ? Math.round((reticle.x + 1) * 50) : -1;
       patch.reticleY = onScreen ? Math.round((1 - reticle.y) * 50) : -1;
       if (tick % RADAR_EVERY === 0) patch.blips = world.blips();
+      // biome-ignore lint/performance/noDelete: an absent key leaves the published blips as they are.
       else delete patch.blips;
       tick += 1;
       frameCtx.state.set(patch);

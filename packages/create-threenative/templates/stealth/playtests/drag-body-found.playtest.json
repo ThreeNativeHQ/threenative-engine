@@ -96,28 +96,20 @@
     {
       "kind": "input",
       "label": "drag-east",
-      "press": [
-        "KeyE",
-        "ArrowRight"
-      ],
+      "press": ["KeyE", "ArrowRight"],
       "holdTicks": 170,
       "release": false
     },
     {
       "kind": "input",
-      "press": [
-        "ArrowRight"
-      ],
+      "press": ["ArrowRight"],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
       "label": "drag-north",
-      "press": [
-        "KeyE",
-        "ArrowUp"
-      ],
+      "press": ["KeyE", "ArrowUp"],
       "holdTicks": 200,
       "release": true
     },

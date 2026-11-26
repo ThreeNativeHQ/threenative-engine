@@ -6,6 +6,7 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import {
   CollisionShape3D,
@@ -14,8 +15,8 @@ import {
   buildStaticColliders,
 } from "@threenative/physics";
 import { type PerspectiveCamera, type Texture, Vector3 } from "three";
-import { AlertDirector } from "../ai/phase.js";
 import { type ClearLine, GUARD_RANGE, type ITarget, NoiseBus } from "../ai/perception.js";
+import { AlertDirector } from "../ai/phase.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import {
   GUARD_LAYER,
@@ -27,7 +28,6 @@ import {
 import { PICKUP_REACH, Player } from "../entities/Player.js";
 import { SecurityCamera } from "../entities/SecurityCamera.js";
 import { CAMERAS, COMPOUND, DOOR, EXTRACTION, KEYCARD, PATROLS, SPAWN } from "../level.js";
-import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createInfiltrationCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";

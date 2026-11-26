@@ -3,6 +3,14 @@
   "title": "Survival horror",
   "blurb": "A grey-grid mansion wing under fixed cameras: tank controls, aimed shots, scarce ammo, grabbing zombies, a six-slot case, herbs, keys and typewriter saves.",
   "genre": "survival-horror",
-  "aliases": ["resident-evil", "residentevil", "biohazard", "silent-hill", "survival-horror", "horror", "zombie"],
+  "aliases": [
+    "resident-evil",
+    "residentevil",
+    "biohazard",
+    "silent-hill",
+    "survival-horror",
+    "horror",
+    "zombie"
+  ],
   "kit": true
 }

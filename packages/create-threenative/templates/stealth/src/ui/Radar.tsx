@@ -17,6 +17,9 @@ const STRUCTURE: readonly Box[] = [
   ...CRATES.filter((crate) => crate[3] >= 1.5),
 ];
 
+/** The jamming static: fourteen scan lines 12 px apart, scrolled by the clock. */
+const SCAN_LINES = Array.from({ length: 14 }, (_, row) => row * 12);
+
 /** A view cone as an SVG wedge: centre (x, y) in radar pixels, facing `yaw`. */
 function wedge(contact: RadarContact, x: number, y: number): string {
   const reach = contact.range * SCALE;
@@ -65,14 +68,15 @@ export function Radar() {
       className="pointer-events-none absolute right-6 top-5 rounded border border-line bg-black/70 p-2"
     >
       <svg width={SIZE} height={SIZE} viewBox={`0 0 ${SIZE} ${SIZE}`} aria-label="radar">
+        <title>Radar</title>
         <rect width={SIZE} height={SIZE} fill="#0f1a14" />
         {jammed ? (
           <>
-            {Array.from({ length: 14 }, (_, row) => (
+            {SCAN_LINES.map((line) => (
               <rect
-                key={row}
+                key={line}
                 x={0}
-                y={row * 12 + ((tick * 7) % 12)}
+                y={line + ((tick * 7) % 12)}
                 width={SIZE}
                 height={3}
                 fill="#3a5a46"
@@ -85,9 +89,9 @@ export function Radar() {
           </>
         ) : (
           <>
-            {STRUCTURE.map(([x, z, width, , depth], index) => (
+            {STRUCTURE.map(([x, z, width, , depth]) => (
               <rect
-                key={index}
+                key={`${x}:${z}:${width}:${depth}`}
                 x={centre + (x - width / 2 - playerX) * SCALE}
                 y={centre + (z - depth / 2 - playerZ) * SCALE}
                 width={Math.max(1.5, width * SCALE)}
@@ -129,7 +133,7 @@ export function Radar() {
               );
             })}
             <path
-              d={`M0,-6 L4,4 L-4,4 Z`}
+              d="M0,-6 L4,4 L-4,4 Z"
               transform={`translate(${centre} ${centre}) rotate(${180 - (playerYaw * 180) / Math.PI})`}
               fill="#2a6cf0"
             />

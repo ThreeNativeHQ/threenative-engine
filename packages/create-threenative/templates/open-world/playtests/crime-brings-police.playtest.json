@@ -51,20 +51,14 @@
     {
       "kind": "input",
       "label": "fire",
-      "press": [
-        "KeyE",
-        "Space"
-      ],
+      "press": ["KeyE", "Space"],
       "holdTicks": 150,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-go",
-      "press": [
-        "KeyE",
-        "Space"
-      ],
+      "press": ["KeyE", "Space"],
       "holdTicks": 1,
       "release": true
     },

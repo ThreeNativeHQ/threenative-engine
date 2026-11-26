@@ -3,6 +3,16 @@
   "title": "Open-world crime",
   "blurb": "A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job.",
   "genre": "open-world",
-  "aliases": ["gta", "grand-theft-auto", "gta3", "vice-city", "san-andreas", "driver", "crime", "sandbox", "open-world"],
+  "aliases": [
+    "gta",
+    "grand-theft-auto",
+    "gta3",
+    "vice-city",
+    "san-andreas",
+    "driver",
+    "crime",
+    "sandbox",
+    "open-world"
+  ],
   "kit": true
 }

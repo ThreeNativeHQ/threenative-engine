@@ -114,10 +114,7 @@
     {
       "kind": "input",
       "label": "run",
-      "press": [
-        "KeyW",
-        "ShiftLeft"
-      ],
+      "press": ["KeyW", "ShiftLeft"],
       "holdTicks": 50,
       "release": true
     },

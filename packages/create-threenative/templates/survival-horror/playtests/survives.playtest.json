@@ -11,16 +11,42 @@
     { "kind": "wait", "label": "settle", "waitTicks": 10, "release": true }
   ],
   "assert": {
-    "diagnostics": { "noConsoleErrors": true, "noNetworkErrors": true, "noRuntimeDiagnostics": true, "runtimeReady": true },
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
     "components": [
-      { "allowTrivial": "GroundSnap settles the survivor before this observation; the finite near-zero clearance is the generated call-site proof.", "component": "groundClearance", "entity": "player", "lte": 0.01 },
-      { "allowTrivial": "The combat mannequin is authored 1.57 m to its Head joint, so normalising that joint to 1.545 m scales it just under one; either side of one proves normaliseToMetres ran in generated source.", "component": "normaliseFactor", "entity": "player", "lte": 0.99 },
-      { "allowTrivial": "Weapon attachment is construction-time; the resolved hand_r parent proves attachToBone ran in the generated survivor.", "component": "weaponBone", "entity": "player", "equals": "hand_r" }
+      {
+        "allowTrivial": "GroundSnap settles the survivor before this observation; the finite near-zero clearance is the generated call-site proof.",
+        "component": "groundClearance",
+        "entity": "player",
+        "lte": 0.01
+      },
+      {
+        "allowTrivial": "The combat mannequin is authored 1.57 m to its Head joint, so normalising that joint to 1.545 m scales it just under one; either side of one proves normaliseToMetres ran in generated source.",
+        "component": "normaliseFactor",
+        "entity": "player",
+        "lte": 0.99
+      },
+      {
+        "allowTrivial": "Weapon attachment is construction-time; the resolved hand_r parent proves attachToBone ran in the generated survivor.",
+        "component": "weaponBone",
+        "entity": "player",
+        "equals": "hand_r"
+      }
     ],
     "movement": { "entity": "player", "minDistance": 0.5 },
     "visibility": [
-      { "entity": "player", "minProjectedPixels": 200, "allowTrivial": "The save-room camera frames the spawn; the survivor must be on screen after walking." }
+      {
+        "entity": "player",
+        "minProjectedPixels": 200,
+        "allowTrivial": "The save-room camera frames the spawn; the survivor must be on screen after walking."
+      }
     ],
-    "visual": [ { "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.01 } } ]
+    "visual": [
+      { "region": { "x": 0, "y": 0, "width": 1280, "height": 720, "minNonblankPixelRatio": 0.01 } }
+    ]
   }
 }

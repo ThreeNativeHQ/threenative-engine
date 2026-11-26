@@ -1,6 +1,5 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { MathUtils, type Mesh, type Object3D, Vector3 } from "three";
-import type { AlertDirector } from "../ai/phase.js";
 import {
   CLOSE_SENSE,
   type ClearLine,
@@ -16,6 +15,7 @@ import {
   angleBetween,
   sightStrength,
 } from "../ai/perception.js";
+import type { AlertDirector } from "../ai/phase.js";
 import { COMPOUND, type Patrol } from "../level.js";
 import {
   RIFLE_HOLD,

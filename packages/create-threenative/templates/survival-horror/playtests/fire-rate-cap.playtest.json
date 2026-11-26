@@ -45,199 +45,147 @@
     {
       "kind": "input",
       "label": "raise",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-0",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-0",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-1",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-1",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-2",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-2",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-3",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-3",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-4",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-4",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-5",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-5",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-6",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-6",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-7",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-7",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-8",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-8",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },
     {
       "kind": "input",
       "label": "tap-9",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "gap-9",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": false
     },

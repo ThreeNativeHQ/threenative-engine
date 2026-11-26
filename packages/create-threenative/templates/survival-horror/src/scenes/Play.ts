@@ -6,6 +6,7 @@ import {
   isMobile,
   isTouchscreenAvailable,
 } from "@threenative/core";
+import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import {
   CollisionShape3D,
@@ -23,7 +24,7 @@ import {
 } from "../entities/Actor.js";
 import { type AimPitch, type ITarget, MAGAZINE, Survivor } from "../entities/Survivor.js";
 import { Zombie } from "../entities/Zombie.js";
-import { CASE_SLOTS, ITEMS, type IStack, Inventory } from "../items.js";
+import { CASE_SLOTS, type IStack, ITEMS, Inventory } from "../items.js";
 import {
   DOORS,
   FURNITURE,
@@ -54,7 +55,6 @@ import {
 import { setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import type { GameState, Menu, SlotView } from "../state.js";
-import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 
 /**
  * Playtest-only keys answer only when a playtest runner launched the page (the runner sets this
@@ -803,13 +803,16 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         frame.slots = view(carried);
         frame.box = view(itemBox);
       } else {
+        // biome-ignore lint/performance/noDelete: an absent key leaves the published value as it is; undefined would overwrite it.
         delete frame.slots;
+        // biome-ignore lint/performance/noDelete: as above.
         delete frame.box;
       }
       frame.prompt =
         playing && menu === "none" && survivor.state === "free" ? promptOf(nearest()) : "";
       frame.messageTime = Math.max(0, state.messageTime - dt);
       if (frame.messageTime === 0 && state.message !== "") frame.message = "";
+      // biome-ignore lint/performance/noDelete: an absent key leaves the published message as it is.
       else delete frame.message;
       frame.time = quantize(elapsed);
       Object.assign(frame, {

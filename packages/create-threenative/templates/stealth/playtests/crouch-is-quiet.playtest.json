@@ -22,19 +22,14 @@
     {
       "kind": "input",
       "label": "running",
-      "press": [
-        "ShiftLeft",
-        "ArrowLeft"
-      ],
+      "press": ["ShiftLeft", "ArrowLeft"],
       "holdTicks": 40,
       "release": false
     },
     {
       "kind": "input",
       "label": "stop",
-      "press": [
-        "ArrowLeft"
-      ],
+      "press": ["ArrowLeft"],
       "holdTicks": 1,
       "release": true
     },
@@ -48,10 +43,7 @@
     {
       "kind": "input",
       "label": "crouch-walk",
-      "press": [
-        "ShiftLeft",
-        "ArrowRight"
-      ],
+      "press": ["ShiftLeft", "ArrowRight"],
       "holdTicks": 40,
       "release": false
     }

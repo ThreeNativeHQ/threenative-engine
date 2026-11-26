@@ -5,21 +5,21 @@ import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import {
   BLOCKS,
   type IBlock,
+  type ILane,
   KERB,
   LANES,
-  type ILane,
   PLACES,
-  nearestLane,
   ROAD_WIDTH,
-  roadLine,
+  nearestLane,
   onSidewalk,
+  roadLine,
   sidewalkLoop,
 } from "../city/layout.js";
 import { Car } from "../entities/Car.js";
 import type { IMannequin } from "../entities/Humanoid.js";
-import { type GameCtx, WORLD_LAYER } from "../entities/layers.js";
 import { COP, Pedestrian } from "../entities/Pedestrian.js";
 import { COMBAT, type IPlayerInput, Player } from "../entities/Player.js";
+import { type GameCtx, WORLD_LAYER } from "../entities/layers.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { PAINTS, POLICE_PAINT } from "../render/car.js";
 import { civilianMaterials, moneyMaterial, pistolMaterial } from "../render/materials.js";

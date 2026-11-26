@@ -45,199 +45,147 @@
     {
       "kind": "input",
       "label": "raise",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-1",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-1-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-2",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-2-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-3",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-3-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-4",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-4-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-5",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-5-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-6",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-6-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-7",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-7-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-8",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-8-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-9",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-9-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-10",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-10-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },

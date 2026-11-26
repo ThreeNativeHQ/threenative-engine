@@ -25,20 +25,14 @@
     {
       "kind": "input",
       "label": "sprint",
-      "press": [
-        "KeyW",
-        "ShiftLeft"
-      ],
+      "press": ["KeyW", "ShiftLeft"],
       "holdTicks": 60,
       "release": false
     },
     {
       "kind": "input",
       "label": "let-go",
-      "press": [
-        "KeyW",
-        "ShiftLeft"
-      ],
+      "press": ["KeyW", "ShiftLeft"],
       "holdTicks": 1,
       "release": true
     },

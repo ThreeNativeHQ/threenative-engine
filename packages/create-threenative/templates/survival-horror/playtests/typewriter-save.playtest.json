@@ -55,10 +55,7 @@
     {
       "kind": "input",
       "label": "quick-turn",
-      "press": [
-        "KeyS",
-        "ShiftLeft"
-      ],
+      "press": ["KeyS", "ShiftLeft"],
       "holdTicks": 4,
       "release": true
     },

@@ -4,13 +4,13 @@ import type { IRandom } from "@threenative/core";
 import { MathUtils, Vector3 } from "three";
 import {
   type ILane,
+  type INode,
   LANES,
+  NODES,
   exitsOf,
   nearestLane,
   routeToward,
   turnPoints,
-  type INode,
-  NODES,
 } from "../city/layout.js";
 import type { Car } from "../entities/Car.js";
 

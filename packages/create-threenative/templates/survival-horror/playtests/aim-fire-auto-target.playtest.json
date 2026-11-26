@@ -45,28 +45,21 @@
     {
       "kind": "input",
       "label": "raise",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 20,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-1",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-1-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false,
       "screenshot": "aim-shot-1"
@@ -74,38 +67,28 @@
     {
       "kind": "input",
       "label": "shot-2",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-2-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-3",
-      "press": [
-        "KeyJ",
-        "KeyE"
-      ],
+      "press": ["KeyJ", "KeyE"],
       "holdTicks": 2,
       "release": false
     },
     {
       "kind": "input",
       "label": "shot-3-hold",
-      "press": [
-        "KeyJ"
-      ],
+      "press": ["KeyJ"],
       "holdTicks": 30,
       "release": false
     },
