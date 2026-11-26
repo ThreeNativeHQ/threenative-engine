@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Digit7",
+      "press": ["Digit7"],
       "holdTicks": 1,
       "release": true
     },
@@ -33,14 +33,15 @@
     },
     {
       "kind": "input",
-      "press": "ArrowLeft",
+      "press": ["ArrowLeft"],
       "holdTicks": 10,
       "label": "climb",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 1,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 1,
       "label": "climbing",
       "release": true
     },

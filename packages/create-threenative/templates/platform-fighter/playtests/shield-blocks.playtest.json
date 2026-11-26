@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 6,
       "label": "raise",
       "release": false
@@ -35,14 +35,15 @@
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 14,
       "label": "blocked",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 20,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 20,
       "release": true
     }
   ],

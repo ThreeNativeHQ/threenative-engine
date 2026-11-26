@@ -21,21 +21,22 @@
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 4,
       "label": "raised",
       "release": false
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 96,
       "label": "held",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 1,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 1,
       "label": "shrunk",
       "release": true
     },
@@ -100,6 +101,7 @@
       {
         "id": "state",
         "path": "p1.shieldSize",
+        "allowTrivial": "A shield bubble that never shrank also reads full size; the shrink is proven by the shield health sample above, and this row proves the bubble returns to full.",
         "equals": 1
       }
     ]

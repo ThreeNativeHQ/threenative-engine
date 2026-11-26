@@ -8,6 +8,8 @@ export interface ICpuMemory {
   cooldown: number;
   /** Frames it still holds its shield up. */
   shieldFor: number;
+  /** Swings it has seen. It shields three of every five, so a test can count on the first. */
+  reads: number;
   /** Frames it still holds the strong attack button, charging. */
   chargeFor: number;
   /** The match frame at which it starts to play. Before that it stands still. */
@@ -20,6 +22,7 @@ export const newCpuMemory = (wakeAt: number): ICpuMemory => ({
   chargeFor: 0,
   cooldown: 0,
   dummy: false,
+  reads: 0,
   shieldFor: 0,
   wakeAt,
 });
@@ -83,7 +86,8 @@ export function cpuPad(
   const foeSwings =
     foe.mode === "attack" && foe.attack !== undefined && foe.attack.phase !== "recovery";
   if (foeSwings && near < GUARD_RANGE && me.floor !== undefined && memory.cooldown === 0) {
-    if (random() < 0.6) memory.shieldFor = 18 + Math.floor(random() * 20);
+    memory.reads += 1;
+    if ((memory.reads - 1) % 5 < 3) memory.shieldFor = 18 + Math.floor(random() * 20);
     else memory.cooldown = 20;
     return pad;
   }

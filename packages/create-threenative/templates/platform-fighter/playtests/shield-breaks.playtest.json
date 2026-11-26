@@ -21,13 +21,13 @@
     },
     {
       "kind": "input",
-      "press": "Digit5",
+      "press": ["Digit5"],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 4,
       "label": "raise",
       "release": false
@@ -41,20 +41,21 @@
     },
     {
       "kind": "input",
-      "press": "KeyL",
+      "press": ["KeyL"],
       "holdTicks": 12,
       "label": "broken",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 60,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 60,
       "label": "helpless",
       "release": true
     },
     {
       "kind": "input",
-      "press": "Digit9",
+      "press": ["Digit9"],
       "holdTicks": 1,
       "release": true
     },

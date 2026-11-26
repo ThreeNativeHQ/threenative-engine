@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Digit8",
+      "press": ["Digit8"],
       "holdTicks": 1,
       "release": true
     },
@@ -32,7 +32,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -43,7 +43,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -54,7 +54,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -65,7 +65,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -76,7 +76,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -87,7 +87,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -98,7 +98,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -109,7 +109,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -120,7 +120,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },
@@ -131,7 +131,29 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyJ"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 32,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "release": true
     },

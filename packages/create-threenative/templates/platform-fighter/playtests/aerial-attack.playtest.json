@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Space",
+      "press": ["Space"],
       "holdTicks": 8,
       "label": "hop",
       "release": true
@@ -33,7 +33,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyJ",
+      "press": ["KeyJ"],
       "holdTicks": 1,
       "label": "swing",
       "release": true

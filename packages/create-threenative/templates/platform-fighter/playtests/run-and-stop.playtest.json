@@ -21,14 +21,15 @@
     },
     {
       "kind": "input",
-      "press": "ArrowRight",
+      "press": ["ArrowRight"],
       "holdTicks": 40,
       "label": "running",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 20,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 20,
       "label": "stopped",
       "release": true
     }

@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Space",
+      "press": ["Space"],
       "holdTicks": 1,
       "label": "tap",
       "release": true
@@ -34,7 +34,7 @@
     },
     {
       "kind": "input",
-      "press": "Space",
+      "press": ["Space"],
       "holdTicks": 8,
       "label": "hold",
       "release": true

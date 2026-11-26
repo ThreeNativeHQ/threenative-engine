@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Digit1",
+      "press": ["Digit1"],
       "holdTicks": 1,
       "release": true
     },
@@ -32,14 +32,15 @@
     },
     {
       "kind": "input",
-      "press": "KeyK",
+      "press": ["KeyK"],
       "holdTicks": 40,
       "label": "charging",
       "release": false
     },
     {
-      "kind": "wait",
-      "waitTicks": 60,
+      "kind": "input",
+      "press": [],
+      "holdTicks": 60,
       "label": "swung",
       "release": true
     }

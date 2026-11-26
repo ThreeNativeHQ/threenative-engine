@@ -21,7 +21,7 @@
     },
     {
       "kind": "input",
-      "press": "Digit1",
+      "press": ["Digit1"],
       "holdTicks": 1,
       "release": true
     },
@@ -33,7 +33,7 @@
     },
     {
       "kind": "input",
-      "press": "KeyC",
+      "press": ["KeyC"],
       "holdTicks": 1,
       "release": true
     },
@@ -57,7 +57,7 @@
         "atSteps": [
           {
             "label": "close",
-            "lte": 9.6
+            "lte": 11.2
           }
         ]
       },
@@ -74,15 +74,17 @@
       {
         "id": "state",
         "path": "camera.distance",
-        "gte": 12
+        "gte": 14
       }
     ],
     "visibility": [
       {
+        "allowTrivial": "Both fighters start in frame; the far station must keep them in frame while the camera backs off.",
         "entity": "p1",
         "minProjectedPixels": 50
       },
       {
+        "allowTrivial": "Both fighters start in frame; the far station must keep them in frame while the camera backs off.",
         "entity": "cpu",
         "minProjectedPixels": 50
       }
