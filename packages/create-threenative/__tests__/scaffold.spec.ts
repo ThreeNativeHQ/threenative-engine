@@ -376,47 +376,53 @@ describe("create-threenative", () => {
     },
   );
 
-  it("stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)", async () => {
-    const root = await makeTempDir("threenative-scaffold-stamp-");
-    try {
-      const { target } = await createProject(
-        { install: false, target: "stamped", template: "shooter" },
-        root,
-      );
-      const stamp = JSON.parse(
-        await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
-      ) as { createThreenative: string; kit: string; files: Record<string, string> };
-      const own = JSON.parse(
-        await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
-      ) as { version: string };
-      expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
-        version: own.version,
-        kit: "shooter",
-      });
-      for (const file of [
-        "AGENTS.md",
-        "CLAUDE.md",
-        ".claude/settings.json",
-        ".claude/hooks/discovery-gate.mjs",
-        ".agents/skills/threenative-capabilities/SKILL.md",
-      ])
-        expect(Object.keys(stamp.files)).toContain(file);
-      for (const [file, hash] of Object.entries(stamp.files))
-        expect(
-          createHash("sha256")
-            .update(await readFile(path.join(target, file)))
-            .digest("hex"),
-          file,
-        ).toBe(hash);
-      const { diagnoseProject, readProject } = await import("../src/doctor.js");
-      const report = diagnoseProject(await readProject(target));
-      expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
-        status: "ok",
-      });
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 60_000);
+  // Every kit, not one: a kit is usable only when its scaffold carries the whole authoring layer and
+  // doctor reads it back as ok (PRD-922).
+  it.each(ALL_TEMPLATES)(
+    "stamps the %s authoring layer it wrote, and doctor reports it ok (PRD-829)",
+    async (template) => {
+      const root = await makeTempDir("threenative-scaffold-stamp-");
+      try {
+        const { target } = await createProject(
+          { install: false, target: "stamped", template },
+          root,
+        );
+        const stamp = JSON.parse(
+          await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
+        ) as { createThreenative: string; kit: string; files: Record<string, string> };
+        const own = JSON.parse(
+          await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
+        ) as { version: string };
+        expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
+          version: own.version,
+          kit: template,
+        });
+        for (const file of [
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".claude/settings.json",
+          ".claude/hooks/discovery-gate.mjs",
+          ".agents/skills/threenative-capabilities/SKILL.md",
+        ])
+          expect(Object.keys(stamp.files)).toContain(file);
+        for (const [file, hash] of Object.entries(stamp.files))
+          expect(
+            createHash("sha256")
+              .update(await readFile(path.join(target, file)))
+              .digest("hex"),
+            file,
+          ).toBe(hash);
+        const { diagnoseProject, readProject } = await import("../src/doctor.js");
+        const report = diagnoseProject(await readProject(target));
+        expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
+          status: "ok",
+        });
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    60_000,
+  );
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");
