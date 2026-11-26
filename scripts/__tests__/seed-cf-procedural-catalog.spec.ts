@@ -1,5 +1,10 @@
 import { NodeIO } from "@gltf-transform/core";
 import { describe, expect, it } from "vitest";
+import {
+  assertValidSelfContainedGlb,
+  assetLibraryCatalog,
+  bakeDescriptorBytes,
+} from "../seed-cf-asset-library.js";
 
 import {
   OPS_PATH,
@@ -10,8 +15,9 @@ import {
   wolfGlb,
 } from "../seed-cf-procedural-catalog.js";
 
-/** PRD-120 (Studio) AC-4. The seeder bakes the wolf into a standard skinned GLB a glTF reader accepts,
- * keeps the floor props as they are, and posts each one to the operator route by slug. */
+/** PRD-120 (Studio) AC-4 & Asset Library extension. Bakes the wolf, keeps the floor props, validates
+ * every Asset Library descriptor (242 bakeable + 208 runtime kits), and proves representative GLBs
+ * export self-contained under 25 MB. */
 describe("seed-cf-procedural-catalog", () => {
   it("bakes the wolf into a skinned GLB with one joint per bone", async () => {
     const data = await bakeWolfData("crowd");
@@ -60,4 +66,83 @@ describe("seed-cf-procedural-catalog", () => {
     });
     expect(Buffer.from(String(sent[0]?.body.glbBase64), "base64")).toEqual(Buffer.from(fern.bytes));
   });
+
+  it("produces unique valid slugs, prompts, and tags across wolf, floor, and all 450 Asset Library items", async () => {
+    const core = await seeds();
+    const lib = await assetLibraryCatalog();
+    expect(lib.length).toBe(450);
+
+    const combined = [
+      ...core.map((s) => ({
+        license: s.license ?? "CC0-1.0",
+        prompt: s.prompt,
+        slug: s.slug,
+        tags: s.tags,
+      })),
+      ...lib.map((item) => ({
+        license: item.license,
+        prompt: item.prompt,
+        slug: item.slug,
+        tags: item.tags,
+      })),
+    ];
+    const slugRe = /^[a-z0-9][a-z0-9-]{0,63}$/u;
+    const seen = new Set<string>();
+    for (const row of combined) {
+      expect(row.slug).toMatch(slugRe);
+      expect(seen.has(row.slug)).toBe(false);
+      seen.add(row.slug);
+      expect(row.prompt.length).toBeGreaterThanOrEqual(1);
+      expect(row.prompt.length).toBeLessThanOrEqual(600);
+      expect(row.tags.length).toBeLessThanOrEqual(200);
+      expect(row.license.length).toBeGreaterThan(0);
+    }
+  });
+
+  it(
+    "bakes representative Asset Library items across bakeable kits into self-contained GLBs",
+    { timeout: 60_000 },
+    async () => {
+      const lib = await assetLibraryCatalog();
+      const samples = [
+        "tree-oak",
+        "rock-boulder",
+        "city-cross",
+        "station-floor",
+        "workshop-workbench",
+        "tavern-table",
+      ];
+      for (const slug of samples) {
+        const item = lib.find((entry) => entry.slug === slug);
+        expect(item).toBeDefined();
+        if (!item) continue;
+        const bytes = await bakeDescriptorBytes(item);
+        expect(validGlb(bytes)).toBe(true);
+        expect(() => assertValidSelfContainedGlb(slug, bytes)).not.toThrow();
+      }
+    },
+  );
+
+  it(
+    "exports and compresses representative runtime kits (stylized water/sky, dungeon, village, toybox) under 25 MB",
+    { timeout: 60_000 },
+    async () => {
+      const lib = await assetLibraryCatalog();
+      const sampleSlugs = [
+        "stylized-water",
+        "stylized-sky-dome",
+        "dungeon-courtyard",
+        lib.find((entry) => entry.kind === "village")?.slug ?? "",
+        lib.find((entry) => entry.kind === "toybox")?.slug ?? "",
+      ];
+      for (const slug of sampleSlugs) {
+        const item = lib.find((entry) => entry.slug === slug);
+        expect(item).toBeDefined();
+        if (!item) continue;
+        const bytes = await bakeDescriptorBytes(item);
+        expect(validGlb(bytes)).toBe(true);
+        expect(() => assertValidSelfContainedGlb(slug, bytes)).not.toThrow();
+      }
+    },
+  );
 });

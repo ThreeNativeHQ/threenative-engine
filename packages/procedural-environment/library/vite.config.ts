@@ -29,6 +29,8 @@ export default defineConfig({
       title: "Asset Library",
       project: false,
       devShell: false,
+      // Fetch Cloudflare's public catalog and lazy-load selected models on demand alongside local bakes.
+      cloudflare: true,
       sources: [
         {
           ...source,

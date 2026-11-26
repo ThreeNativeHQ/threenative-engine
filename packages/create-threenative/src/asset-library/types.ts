@@ -63,6 +63,8 @@ export interface IAssetKind {
   readonly seed?: boolean;
   /** Built in the browser by the source's client, not baked by the server. */
   readonly runtime?: boolean;
+  /** Remote asset catalog loaded lazily one row at a time rather than bulk-fetched on Overview. */
+  readonly lazy?: boolean;
 }
 
 export interface IAssetBiome {
