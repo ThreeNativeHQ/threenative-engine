@@ -75,7 +75,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
     const response = JSON.parse((await handleLine(frame(1, "initialize", {}), manifestFile)) ?? "");
     expect(response.result.instructions).not.toContain("scope");
     expect(response.result.instructions).toContain(
-      "no code, level layouts, character names or art",
+      "Keep upstream code, close translations, level layouts, character names, and distinctive audiovisual elements out of the game.",
     );
     expect(response).toEqual({
       id: 1,
@@ -96,6 +96,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
     expect(instructions).toContain("every change to an existing game");
     expect(instructions).toContain("subagents focused on specific areas");
     expect(instructions).toContain("coordinator integration before mechanics playtests");
+    expect(instructions).toContain("similar mechanics tuned to this game");
     expect(instructions).not.toMatch(/steps? \d/u);
     expect(instructions).not.toContain("Before planning or writing game source");
   });
