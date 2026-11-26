@@ -842,8 +842,11 @@ describe("template contracts", () => {
         expect(instructions, `${template}/${file}/explicit approval`).toMatch(
           /explicit approval/iu,
         );
-        expect(instructions, `${template}/${file}/borrow rule`).toContain(
-          "no code, level layouts, character names or art",
+        expect(instructions, `${template}/${file}/adaptation rule`).toContain(
+          "Build similar mechanics tuned to this game",
+        );
+        expect(instructions, `${template}/${file}/source rules`).toContain(
+          "Cite `file:line` per `threenative-capabilities`",
         );
         expect(instructions, `${template}/${file}/no-user route`).toContain("With no user");
       }

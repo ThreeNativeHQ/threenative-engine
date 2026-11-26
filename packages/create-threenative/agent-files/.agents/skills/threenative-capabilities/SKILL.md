@@ -36,9 +36,10 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
 2. **Mechanics** — threenative-reverse-engineer is the mechanics-reference role: the
    `threenative-engine` MCP serves it through `engine_search_references` and
    `engine_reference_detail`. Search named games and the implied mechanics, inspect relevant
-   matches, and record pinned sources and feel rules. For Tier-2 matches, read the pinned repo
-   and use `engine_save_reference` for the nodes/cards actually walked; unavailable references
-   remain `none: references unavailable`, not fabricated matches.
+   matches, and record pinned sources and feel rules in your own words. Start with the card. If a
+   detail is unclear, read only the relevant pinned lines when you are authorized to use the source.
+   For Tier-2 matches, apply the same source rule and use `engine_save_reference` for the actual
+   findings. Record `none: references unavailable` when you cannot verify a reference.
    A card states the numbers, never the arc. When the plan turns on how a mechanic looks moving
    (jump arc, parry window, camera lag, hit reaction), watch a reference instead of inventing the
    motion: `engine_watch_reference {query: "<game> <mechanic>", duration, frames}` returns a
@@ -79,8 +80,9 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    before step 7, resolving interfaces and failures rather than trusting worker reports. Use the
    chosen kit, discovered capabilities and downloaded textures. Keep appearance in game-owned
    `src/render/`; use stock `WorldEnvironment` defaults or explicitly report named overrides.
-   Borrow mechanics only: no code, level layouts, character names or art; cite pinned `file:line`
-   sources.
+   Build a similar mechanic with ThreeNative and adapt its timing, controls, and tuning to this game.
+   Cite pinned `file:line` sources. Keep upstream code, close translations, level layouts, character
+   names, and distinctive audiovisual elements out of the game.
 7. **Prove** — follow `.agents/skills/threenative-playtest/SKILL.md`. Execute a fail-closed
    scenario for each core mechanic with observable state, real input actions and assertions. An
    empty assertion set or missing observation fails; a screenshot is not mechanics proof. Repair

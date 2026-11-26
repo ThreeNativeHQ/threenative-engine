@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, rm } from "node:fs/promises";
 import { type Server as HttpServer, createServer as createHttpServer } from "node:http";
 import path from "node:path";
 import { type ViteDevServer, createServer } from "vite";
@@ -157,6 +157,9 @@ describe("asset library cloudflare source", () => {
   afterAll(async () => {
     await viteServer?.close();
     await cf?.close();
+    // A `beforeAll` directory is outside any test, so `makeTempDir` only removes it at process exit,
+    // which a Vitest worker may never reach: the suite's temp guard then counts it as a leak.
+    if (root) await rm(root, { recursive: true, force: true });
   });
 
   it("loads catalog.json lazily without downloading any GLB up front", async () => {
