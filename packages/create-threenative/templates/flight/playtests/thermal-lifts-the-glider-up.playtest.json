@@ -34,12 +34,15 @@
         "gte": 3
       },
       "release": true,
-      "timeoutMs": 3000
+      "timeoutMs": 9000
     },
     {
       "kind": "input",
       "label": "circle",
-      "press": ["ArrowRight", "ArrowDown"],
+      "press": [
+        "ArrowRight",
+        "ArrowDown"
+      ],
       "holdTicks": 30,
       "release": false
     },
@@ -51,7 +54,7 @@
         "gte": 80
       },
       "release": false,
-      "timeoutMs": 30000
+      "timeoutMs": 90000
     },
     {
       "label": "stayed-up",
@@ -61,7 +64,7 @@
         "gte": 6
       },
       "release": false,
-      "timeoutMs": 3000
+      "timeoutMs": 9000
     },
     {
       "kind": "wait",

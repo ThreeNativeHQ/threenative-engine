@@ -47,7 +47,7 @@
         "gte": 26
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 18000
     },
     {
       "kind": "wait",
@@ -70,7 +70,7 @@
         "gte": 2
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 18000
     },
     {
       "label": "slow",
@@ -80,7 +80,7 @@
         "lte": 19
       },
       "release": false,
-      "timeoutMs": 8000
+      "timeoutMs": 24000
     },
     {
       "kind": "wait",

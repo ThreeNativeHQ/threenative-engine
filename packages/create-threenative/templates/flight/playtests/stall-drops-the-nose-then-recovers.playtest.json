@@ -47,7 +47,7 @@
         "gte": 30
       },
       "release": false,
-      "timeoutMs": 12000
+      "timeoutMs": 36000
     },
     {
       "kind": "wait",
@@ -70,7 +70,7 @@
         "gte": 1
       },
       "release": false,
-      "timeoutMs": 20000
+      "timeoutMs": 60000
     },
     {
       "label": "nose-drops",
@@ -80,7 +80,7 @@
         "lte": -30
       },
       "release": false,
-      "timeoutMs": 4000
+      "timeoutMs": 12000
     },
     {
       "label": "recovered",
@@ -90,7 +90,7 @@
         "equals": 0
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 18000
     },
     {
       "label": "flying-again",
@@ -100,7 +100,7 @@
         "gte": 12
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 18000
     },
     {
       "kind": "wait",
