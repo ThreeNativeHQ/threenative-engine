@@ -554,18 +554,6 @@
         "@threenative/playtest#unknownPlaytestCapabilities": "export function unknownPlaytestCapabilities(capabilities: readonly string[]): string[] { … }"
       }
     },
-    "@threenative/procedural-animals": {
-      "exports": [".", "./build", "./package.json"],
-      "symbols": {
-        "@threenative/procedural-animals/build#animalBakePass": "export function animalBakePass() { … }",
-        "@threenative/procedural-animals/build#bakeWolf": "export async function bakeWolf(options: IWolfBakeOptions): Promise<ArrayBuffer> { … }",
-        "@threenative/procedural-animals/build#bakeWolfToFile": "export async function bakeWolfToFile( options: IWolfBakeOptions, destination: string, ): Promise<string> { … }",
-        "@threenative/procedural-animals#createAnimalActor": "export function createAnimalActor(bake: IAnimalBake, options: IAnimalActorOptions) { … }",
-        "@threenative/procedural-animals#createAnimalGeometry": "export function createAnimalGeometry(buffer: ArrayBuffer): { … }",
-        "@threenative/procedural-animals#loadAnimalBake": "export async function loadAnimalBake( assets: IAnimalAssetResolver, logicalPath: string, options: { … }",
-        "@threenative/procedural-animals#parseAnimalBake": "export function parseAnimalBake(buffer: ArrayBuffer): IAnimalBake { … }"
-      }
-    },
     "@threenative/procedural-environment": {
       "exports": [".", "./asset-library", "./package.json", "./stylized"],
       "symbols": {

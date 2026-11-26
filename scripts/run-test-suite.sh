@@ -231,7 +231,6 @@ if [[ "$suite_prebuilt" -eq 1 ]]; then
     @threenative/metahuman \
     @threenative/terrain \
     @threenative/procedural-environment \
-    @threenative/procedural-animals \
     @threenative/blender-bridge \
     strata-terrain-preview; do
     package_test_command+=(--filter "!$tn_prebuilt_package")
@@ -268,7 +267,7 @@ run_prebuilt_package_tests() {
   # `test-unit` shards, which `ci-structure.spec.ts` holds to the same partition), so only the
   # checks that config cannot make run here.
   for tn_prebuilt_package in assets ueformat raw-unreal metahuman terrain procedural-environment \
-    procedural-animals blender-bridge; do
+    blender-bridge; do
     pnpm --filter "@threenative/$tn_prebuilt_package" exec publint --strict || return $?
   done
   pnpm --filter strata-terrain-preview bake || return $?
