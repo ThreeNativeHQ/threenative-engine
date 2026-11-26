@@ -1,14 +1,14 @@
 import { MathUtils, type Mesh, type MeshStandardMaterial } from "three";
 import {
-  createShieldBubble,
   cpuMaterial,
+  createShieldBubble,
   dress,
   ghostMaterial,
   p1Material,
 } from "../render/fighters.js";
-import { shieldRadius } from "../sim/match.js";
 import { totalFrames } from "../sim/attacks.js";
 import { GETUP_FRAMES, ROLL_FRAMES, STEP } from "../sim/constants.js";
+import { shieldRadius } from "../sim/match.js";
 import type { FighterId, IAttackRun, IFighter } from "../sim/types.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
@@ -48,7 +48,10 @@ export class FighterView extends Fighter {
   #turn = Math.PI / 2;
 
   constructor(ctx: GameCtx, model: IMannequin, id: FighterId) {
-    super(ctx, model, [...new Set(Object.values(CLIPS)), ...["Punch_Jab", "Punch_Cross", "Sword_Attack"]]);
+    super(ctx, model, [
+      ...new Set(Object.values(CLIPS)),
+      ...["Punch_Jab", "Punch_Cross", "Sword_Attack"],
+    ]);
     this.#skin = id === "p1" ? p1Material : cpuMaterial;
     this.#bubble = createShieldBubble(id === "p1" ? 0x6aa8ff : 0xff9a72);
     this.mesh.add(this.#bubble);
@@ -95,10 +98,14 @@ export class FighterView extends Fighter {
         this.#attack = run;
         this.#struck = false;
         // A strong attack raises the sword first; the swing clip starts when the charge ends.
-        if (run.def.chargeFrame === undefined)
-          this.play(run.def.clip, totalFrames(run.def) * STEP);
+        if (run.def.chargeFrame === undefined) this.play(run.def.clip, totalFrames(run.def) * STEP);
         else this.loop(CLIPS.charge, 0.05);
-      } else if (run.def.chargeFrame !== undefined && !this.#struck && run.frame > run.def.chargeFrame && !run.waiting) {
+      } else if (
+        run.def.chargeFrame !== undefined &&
+        !this.#struck &&
+        run.frame > run.def.chargeFrame &&
+        !run.waiting
+      ) {
         this.#struck = true;
         this.play(run.def.clip, (totalFrames(run.def) - run.def.chargeFrame) * STEP);
       }
@@ -114,9 +121,13 @@ export class FighterView extends Fighter {
         return;
       case "hitstun":
         if (entered || f.percent !== this.#percent)
-          this.play(f.hitstunTotal > 32 ? CLIPS.hitHard : CLIPS.hit, Math.max(0.2, Math.min(f.hitstunTotal, 40) * STEP), {
-            record: false,
-          });
+          this.play(
+            f.hitstunTotal > 32 ? CLIPS.hitHard : CLIPS.hit,
+            Math.max(0.2, Math.min(f.hitstunTotal, 40) * STEP),
+            {
+              record: false,
+            },
+          );
         return;
       case "stun":
         if (entered) this.play(CLIPS.stun, 0.5, { record: false });
@@ -132,7 +143,8 @@ export class FighterView extends Fighter {
         break;
     }
     if (f.floor === undefined) {
-      if (f.jumps < this.#jumps && f.mode === "free") this.play(CLIPS.jumpStart, 0.3, { record: false });
+      if (f.jumps < this.#jumps && f.mode === "free")
+        this.play(CLIPS.jumpStart, 0.3, { record: false });
       else this.loop(CLIPS.jump, 0.1);
       return;
     }

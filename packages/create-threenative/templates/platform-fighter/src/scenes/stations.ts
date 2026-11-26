@@ -2,9 +2,9 @@
 // mechanic in a few ticks instead of a scripted walk across the stage. They answer only under a
 // playtest runner (`UNDER_PLAYTEST` in `Play.ts`). Delete them with the playtests.
 import { SPAWN } from "../level.js";
-import { type ICpuMemory } from "../sim/cpu.js";
 import { JAB } from "../sim/attacks.js";
 import { CPU_WEIGHT, SHIELD_MAX, STOCKS } from "../sim/constants.js";
+import type { ICpuMemory } from "../sim/cpu.js";
 import { startAttack } from "../sim/fighter.js";
 import type { Match } from "../sim/match.js";
 
@@ -66,7 +66,7 @@ export const STATIONS: readonly ((host: IStationHost) => void)[] = [
   // 9. The CPU steps up to the player and swings a jab now.
   ({ match, cpu }) => {
     const p1 = match.fighters.p1;
-    match.place("cpu", p1.x + p1.facing, p1.y, (-p1.facing) as -1 | 1);
+    match.place("cpu", p1.x + p1.facing, p1.y, -p1.facing as -1 | 1);
     startAttack(match.fighters.cpu, JAB);
     cpu.dummy = true;
   },

@@ -98,7 +98,7 @@ export function knockback(
   weight: number,
   def: Pick<AttackDef, "base" | "growth">,
 ): number {
-  const scaled = percentAfter * KB_DAMAGE_COEF + (percentAfter * damage * KB_HIT_COEF);
+  const scaled = percentAfter * KB_DAMAGE_COEF + percentAfter * damage * KB_HIT_COEF;
   const weighted = scaled * (2 / (weight + 1)) * KB_WEIGHT_FACTOR + KB_BASE;
   return Math.min(KB_CAP, (weighted * def.growth) / 100 + def.base);
 }

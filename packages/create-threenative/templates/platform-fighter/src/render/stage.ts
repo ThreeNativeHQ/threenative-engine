@@ -10,7 +10,14 @@ const BEVEL = 0.04;
 const SLAB = 0.14;
 const PLATFORM_THICKNESS = 0.3;
 
-function block(width: number, height: number, depth: number, x: number, y: number, material: Mesh["material"]): Mesh {
+function block(
+  width: number,
+  height: number,
+  depth: number,
+  x: number,
+  y: number,
+  material: Mesh["material"],
+): Mesh {
   const geometry = new RoundedBoxGeometry(width, height, depth, 2, BEVEL);
   geometry.translate(x, y, 0);
   const mesh = new Mesh(worldGridUVs(geometry), material);
@@ -24,7 +31,16 @@ export function createStage(): Group {
   stage.name = "stage";
   const width = MAIN.x1 - MAIN.x0;
   const height = MAIN.y - MAIN.bottom;
-  stage.add(block(width, height - SLAB, STAGE_DEPTH, 0, MAIN.bottom + (height - SLAB) / 2, structureMaterial));
+  stage.add(
+    block(
+      width,
+      height - SLAB,
+      STAGE_DEPTH,
+      0,
+      MAIN.bottom + (height - SLAB) / 2,
+      structureMaterial,
+    ),
+  );
   stage.add(block(width, SLAB, STAGE_DEPTH, 0, MAIN.y - SLAB / 2, floorMaterial));
   for (const platform of PLATFORMS)
     stage.add(

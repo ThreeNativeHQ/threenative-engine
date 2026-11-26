@@ -1,11 +1,5 @@
 // The two fighters are one mannequin told apart by a material swap, plus the shield bubble.
-import {
-  DoubleSide,
-  Mesh,
-  MeshStandardMaterial,
-  type Object3D,
-  SphereGeometry,
-} from "three";
+import { DoubleSide, Mesh, MeshStandardMaterial, type Object3D, SphereGeometry } from "three";
 
 /** The player's suit: the kit's one saturated blue. */
 export const p1Material = new MeshStandardMaterial({ color: 0x2a6cf0, roughness: 0.5 });

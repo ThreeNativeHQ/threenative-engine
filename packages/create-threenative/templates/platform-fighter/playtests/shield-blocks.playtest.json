@@ -28,10 +28,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "KeyL",
-        "Digit9"
-      ],
+      "press": ["KeyL", "Digit9"],
       "holdTicks": 1,
       "label": "cpu-jab",
       "release": false

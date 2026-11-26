@@ -32,10 +32,10 @@ export function createFightCamera(camera: PerspectiveCamera): IFightCamera {
   const tanHalf = Math.tan(MathUtils.degToRad(FOV / 2));
   return {
     follow: (fighters, dt, snap = false) => {
-      let x0 = Infinity;
-      let x1 = -Infinity;
-      let y0 = Infinity;
-      let y1 = -Infinity;
+      let x0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
       for (const f of fighters) {
         if (f.mode === "dead") continue;
         x0 = Math.min(x0, f.x - (f.facing === -1 ? FRONT_MARGIN : REAR_MARGIN));
@@ -43,7 +43,7 @@ export function createFightCamera(camera: PerspectiveCamera): IFightCamera {
         y0 = Math.min(y0, f.y - VERTICAL_MARGIN);
         y1 = Math.max(y1, f.y + 1.8 + VERTICAL_MARGIN);
       }
-      if (x0 === Infinity) return;
+      if (x0 === Number.POSITIVE_INFINITY) return;
       const aspect = camera.aspect > 0 ? camera.aspect : 16 / 9;
       const wanted = MathUtils.clamp(
         Math.max((x1 - x0) / 2 / (tanHalf * aspect), (y1 - y0) / 2 / tanHalf),

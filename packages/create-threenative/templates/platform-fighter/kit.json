@@ -3,13 +3,6 @@
   "title": "Platform fighter",
   "blurb": "A floating grid stage, two fighters and a CPU: damage percent, knockback by percent and weight, double jump, fast fall, shield and roll, ledges, blast zones and stocks.",
   "genre": "fighting",
-  "aliases": [
-    "smash",
-    "smash-bros",
-    "super-smash-bros",
-    "platform-fighter",
-    "brawler",
-    "fighting"
-  ],
+  "aliases": ["smash", "smash-bros", "super-smash-bros", "platform-fighter", "brawler", "fighting"],
   "kit": true
 }

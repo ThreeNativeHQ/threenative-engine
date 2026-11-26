@@ -25,15 +25,7 @@ import {
   STOCKS,
 } from "./constants.js";
 import { getupStep, ledgeStep, tryLedge } from "./ledge.js";
-import {
-  DEAD_ZONE,
-  type IWorld,
-  airMove,
-  downFlick,
-  edge,
-  groundMove,
-  setMode,
-} from "./motion.js";
+import { DEAD_ZONE, type IWorld, airMove, downFlick, edge, groundMove, setMode } from "./motion.js";
 import type { FighterId, IFighter, Pad } from "./types.js";
 
 export function createFighter(id: FighterId, x: number, y: number, weight = 1): IFighter {
@@ -102,17 +94,28 @@ function startDodge(f: IFighter, pad: Pad, world: IWorld): void {
 
 function freeGround(f: IFighter, pad: Pad, world: IWorld): void {
   if (Math.abs(pad.x) > DEAD_ZONE) f.facing = pad.x > 0 ? 1 : -1;
-  if (edge(f, pad, "dodge")) return startDodge(f, pad, world);
+  if (edge(f, pad, "dodge")) {
+    startDodge(f, pad, world);
+    return;
+  }
   if (pad.shield) {
     f.shieldRelease = 0;
     f.shieldStun = 0;
-    return setMode(f, "shield");
+    setMode(f, "shield");
+    return;
   }
-  if (edge(f, pad, "strong")) return startAttack(f, STRONG);
-  if (edge(f, pad, "attack")) return startAttack(f, JAB);
+  if (edge(f, pad, "strong")) {
+    startAttack(f, STRONG);
+    return;
+  }
+  if (edge(f, pad, "attack")) {
+    startAttack(f, JAB);
+    return;
+  }
   if (edge(f, pad, "jump")) {
     f.shortHop = false;
-    return setMode(f, "squat");
+    setMode(f, "squat");
+    return;
   }
   if (f.floor !== MAIN && pad.y <= DOWN_FLICK) {
     f.floor = undefined;
@@ -135,7 +138,8 @@ function freeAir(f: IFighter, pad: Pad, world: IWorld): void {
   }
   if (edge(f, pad, "attack") || edge(f, pad, "strong")) {
     startAttack(f, AERIAL);
-    return airMove(f, pad);
+    airMove(f, pad);
+    return;
   }
   if (downFlick(f, pad) && f.vy < 0 && !f.fastFalling) {
     f.fastFalling = true;
@@ -147,7 +151,10 @@ function freeAir(f: IFighter, pad: Pad, world: IWorld): void {
 
 function attackStep(f: IFighter, pad: Pad, world: IWorld): void {
   const run = f.attack;
-  if (run === undefined) return setMode(f, "free");
+  if (run === undefined) {
+    setMode(f, "free");
+    return;
+  }
   const { def } = run;
   const index = run.frame;
   if (def.chargeFrame === index && run.waiting) {
@@ -161,7 +168,8 @@ function attackStep(f: IFighter, pad: Pad, world: IWorld): void {
     }
     run.waiting = false;
   }
-  run.phase = index < def.startup ? "startup" : index < def.startup + def.active ? "active" : "recovery";
+  run.phase =
+    index < def.startup ? "startup" : index < def.startup + def.active ? "active" : "recovery";
   run.live = run.phase === "active";
   if (index === def.startup) world.emit({ entity: f.id, name: "strike", attack: def.id });
   run.frame = index + 1;
@@ -200,10 +208,14 @@ function dodgeStep(f: IFighter): void {
 }
 
 function shieldStep(f: IFighter, pad: Pad, world: IWorld): void {
-  if (edge(f, pad, "dodge")) return startDodge(f, pad, world);
+  if (edge(f, pad, "dodge")) {
+    startDodge(f, pad, world);
+    return;
+  }
   if (edge(f, pad, "jump")) {
     f.shortHop = false;
-    return setMode(f, "squat");
+    setMode(f, "squat");
+    return;
   }
   if (f.shieldRelease > 0) {
     f.shieldRelease -= 1;
@@ -214,7 +226,10 @@ function shieldStep(f: IFighter, pad: Pad, world: IWorld): void {
   if (f.shieldStun > 0) f.shieldStun -= 1;
   else if (!pad.shield) f.shieldRelease = SHIELD_RELEASE;
   if (world.frame % SHIELD_DECAY_EVERY === 0) f.shield -= 1;
-  if (f.shield <= 0) return breakShield(f, world);
+  if (f.shield <= 0) {
+    breakShield(f, world);
+    return;
+  }
   groundMove(f, undefined);
 }
 

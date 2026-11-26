@@ -2,8 +2,8 @@ import { Scene, type SceneFrame, getPlatform, isMobile } from "@threenative/core
 import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { PerspectiveCamera } from "three";
-import { type FighterView as View, FighterView } from "../entities/FighterView.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
+import { FighterView, type FighterView as View } from "../entities/FighterView.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createFightCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
@@ -11,11 +11,15 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { type QualityTier, isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { createStage } from "../render/stage.js";
-import { cpuPad, newCpuMemory } from "../sim/cpu.js";
 import { STEP } from "../sim/constants.js";
+import { cpuPad, newCpuMemory } from "../sim/cpu.js";
 import { Match } from "../sim/match.js";
 import type { FighterId } from "../sim/types.js";
 import type { GameState } from "../state.js";
@@ -36,7 +40,11 @@ const UNDER_PLAYTEST =
 
 export class Play extends Scene<GameState, undefined> {
   static override readonly initialState: GameState = {
-    ...matchState(new Match(), { camera: { distance: 0, x: 0, y: 0 }, cpuDummy: false, message: "" }),
+    ...matchState(new Match(), {
+      camera: { distance: 0, x: 0, y: 0 },
+      cpuDummy: false,
+      message: "",
+    }),
     paused: false,
     uiReady: false,
   };
@@ -157,7 +165,11 @@ export class Play extends Scene<GameState, undefined> {
       if (messageTimer === 0) message = "";
       frameCtx.state.set(
         matchState(match, {
-          camera: { distance: round(rig.state.distance), x: round(rig.state.x), y: round(rig.state.y) },
+          camera: {
+            distance: round(rig.state.distance),
+            x: round(rig.state.x),
+            y: round(rig.state.y),
+          },
           cpuDummy: memory.dummy,
           message,
         }),

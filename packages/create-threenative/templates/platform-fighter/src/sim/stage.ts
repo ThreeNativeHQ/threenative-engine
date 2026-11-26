@@ -20,7 +20,13 @@ export function moveInAir(f: IFighter, ignorePlatforms: boolean): Floor | undefi
   const vy = f.vy + f.ky;
   f.x += (f.vx + f.kx) * STEP;
   f.y += vy * STEP;
-  if (vy <= 0 && previousY >= MAIN.y - EPSILON && f.y <= MAIN.y && f.x >= MAIN.x0 && f.x <= MAIN.x1) {
+  if (
+    vy <= 0 &&
+    previousY >= MAIN.y - EPSILON &&
+    f.y <= MAIN.y &&
+    f.x >= MAIN.x0 &&
+    f.x <= MAIN.x1
+  ) {
     f.y = MAIN.y;
     return MAIN;
   }
@@ -34,7 +40,12 @@ export function moveInAir(f: IFighter, ignorePlatforms: boolean): Floor | undefi
     const pushRight = MAIN.x1 - (f.x - HALF_WIDTH);
     const pushDown = f.y + HEIGHT - MAIN.bottom;
     const pushUp = MAIN.y - f.y;
-    const least = Math.min(pushLeft, pushRight, pushDown, pushUp <= TOP_FORGIVENESS ? pushUp : Infinity);
+    const least = Math.min(
+      pushLeft,
+      pushRight,
+      pushDown,
+      pushUp <= TOP_FORGIVENESS ? pushUp : Number.POSITIVE_INFINITY,
+    );
     if (least === pushUp) {
       f.y = MAIN.y;
       return MAIN;

@@ -5,12 +5,12 @@ import {
   HALF_WIDTH,
   HEAVY_HITSTUN,
   HEIGHT,
+  LAUNCH_PER_KB,
   RESPAWN_DELAY,
   RESPAWN_INVULN,
   SHIELD_MAX,
   SHIELD_PUSH_PER_STUN,
   SHIELD_RADIUS,
-  LAUNCH_PER_KB,
   hitlagFrames,
   shieldScale,
   shieldStunFrames,
@@ -77,7 +77,10 @@ export function hurtbox(f: IFighter): { x0: number; x1: number; y0: number; y1: 
   return { x0: f.x - HALF_WIDTH, x1: f.x + HALF_WIDTH, y0: f.y, y1: f.y + HEIGHT };
 }
 
-export function hitbox(f: IFighter, def: AttackDef): { x0: number; x1: number; y0: number; y1: number } {
+export function hitbox(
+  f: IFighter,
+  def: AttackDef,
+): { x0: number; x1: number; y0: number; y1: number } {
   const { box } = def;
   const x0 = f.facing === 1 ? f.x + box.x0 : f.x - box.x1;
   const x1 = f.facing === 1 ? f.x + box.x1 : f.x - box.x0;
@@ -145,13 +148,15 @@ export class Match {
       if (wasHitstun && f.mode !== "hitstun") this.last.measuredHitstun = hitstunFramesBefore;
     }
     if (!running) return;
-    for (const id of ["p1", "cpu"] as const) this.#resolveHits(this.fighters[id], this.fighters[OTHER[id]]);
+    for (const id of ["p1", "cpu"] as const)
+      this.#resolveHits(this.fighters[id], this.fighters[OTHER[id]]);
     for (const id of ["p1", "cpu"] as const) this.#checkBlastZone(this.fighters[id]);
   }
 
   #resolveHits(attacker: IFighter, victim: IFighter): void {
     const run = attacker.attack;
-    if (attacker.mode !== "attack" || run === undefined || !run.live || run.hit.has(victim.id)) return;
+    if (attacker.mode !== "attack" || run === undefined || !run.live || run.hit.has(victim.id))
+      return;
     if (victim.mode === "dead" || victim.invuln > 0) return;
     const box = hitbox(attacker, run.def);
     const shielded = victim.mode === "shield" && victim.shieldRelease === 0;
@@ -166,7 +171,11 @@ export class Match {
 
   /** Direction a victim is pushed: away from the attacker. */
   #away(attacker: IFighter, victim: IFighter): Side {
-    return Math.abs(victim.x - attacker.x) > 0.15 ? (victim.x > attacker.x ? 1 : -1) : attacker.facing;
+    return Math.abs(victim.x - attacker.x) > 0.15
+      ? victim.x > attacker.x
+        ? 1
+        : -1
+      : attacker.facing;
   }
 
   #hit(attacker: IFighter, victim: IFighter, def: AttackDef, damage: number): void {
@@ -179,7 +188,7 @@ export class Match {
     if (victim.ledge !== 0) releaseLedge(victim, this.#world);
     victim.attack = undefined;
     victim.fastFalling = false;
-    victim.facing = (-this.#away(attacker, victim)) as Side;
+    victim.facing = -this.#away(attacker, victim) as Side;
     victim.hitstun = stun;
     victim.hitstunTotal = stun;
     setMode(victim, "hitstun");

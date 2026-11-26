@@ -53,7 +53,10 @@ export function tryLedge(f: IFighter, pad: Pad, world: IWorld): void {
 
 export function ledgeStep(f: IFighter, pad: Pad, world: IWorld): void {
   const side = f.ledge;
-  if (side === 0) return setMode(f, "free");
+  if (side === 0) {
+    setMode(f, "free");
+    return;
+  }
   const hold =
     f.percent >= LEDGE_HIGH_DAMAGE_PERCENT ? LEDGE_HOLD_HIGH_DAMAGE : LEDGE_HOLD_LOW_DAMAGE;
   const drop = (): void => {
@@ -62,7 +65,10 @@ export function ledgeStep(f: IFighter, pad: Pad, world: IWorld): void {
     f.floor = undefined;
     setMode(f, "free");
   };
-  if (f.timer >= hold) return drop();
+  if (f.timer >= hold) {
+    drop();
+    return;
+  }
   if (f.timer < LEDGE_LOCK) return;
   const inward = -side;
   if (edge(f, pad, "jump")) {

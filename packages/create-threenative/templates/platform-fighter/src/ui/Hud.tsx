@@ -15,14 +15,16 @@ function percentColor(percent: number): string {
   return `hsl(${Math.round(20 - 20 * heat)} ${Math.round(10 + 80 * heat)}% ${Math.round(92 - 38 * heat)}%)`;
 }
 
-function Plate({ id, name, fighter, tone }: { id: string; name: string; fighter: FighterState; tone: string }) {
+function Plate({
+  id,
+  name,
+  fighter,
+  tone,
+}: { id: string; name: string; fighter: FighterState; tone: string }) {
   const stocks = Math.max(0, fighter.stocks);
   const shield = Math.max(0, Math.min(1, fighter.shield / SHIELD_FULL));
   return (
-    <section
-      id={id}
-      className={`w-60 rounded border-t-4 bg-black/70 px-4 py-2 ${tone}`}
-    >
+    <section id={id} className={`w-60 rounded border-t-4 bg-black/70 px-4 py-2 ${tone}`}>
       <div className="flex items-baseline justify-between text-[10px] uppercase tracking-[0.24em] text-dim">
         <span>{name}</span>
         <span className="flex gap-1">

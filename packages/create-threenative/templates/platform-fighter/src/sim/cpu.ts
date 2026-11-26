@@ -80,14 +80,16 @@ export function cpuPad(
     if (memory.chargeFor === 0) memory.cooldown = 40;
     return pad;
   }
-  const foeSwings = foe.mode === "attack" && foe.attack !== undefined && foe.attack.phase !== "recovery";
+  const foeSwings =
+    foe.mode === "attack" && foe.attack !== undefined && foe.attack.phase !== "recovery";
   if (foeSwings && near < GUARD_RANGE && me.floor !== undefined && memory.cooldown === 0) {
     if (random() < 0.6) memory.shieldFor = 18 + Math.floor(random() * 20);
     else memory.cooldown = 20;
     return pad;
   }
   if (near > STRIKE_RANGE) {
-    const goesOffEdge = Math.abs(me.x + sign(dx) * 0.4) > MAIN.x1 - EDGE_MARGIN && sign(dx) === sign(me.x);
+    const goesOffEdge =
+      Math.abs(me.x + sign(dx) * 0.4) > MAIN.x1 - EDGE_MARGIN && sign(dx) === sign(me.x);
     // Chase on the floor; wait at the edge when the foe is hanging off it.
     pad.x = goesOffEdge && me.floor !== undefined ? 0 : sign(dx);
     if (dy > 2 && near < 3) press("jump");

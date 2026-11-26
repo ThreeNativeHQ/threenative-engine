@@ -1,3 +1,4 @@
+import { totalFrames } from "./attacks.js";
 import {
   AIR_ACCEL,
   AIR_FRICTION,
@@ -16,7 +17,6 @@ import {
   TERMINAL_SPEED,
   WALK_SPEED,
 } from "./constants.js";
-import { totalFrames } from "./attacks.js";
 import { type Floor, moveInAir } from "./stage.js";
 import type { FighterId, IFighter, Mode, Pad, Side, SimEvent } from "./types.js";
 
