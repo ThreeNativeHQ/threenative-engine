@@ -27,9 +27,16 @@
     },
     {
       "kind": "input",
-      "label": "run",
-      "press": "ArrowUp",
-      "holdTicks": 150,
+      "label": "run-east",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run-west",
+      "press": "ArrowLeft",
+      "holdTicks": 230,
       "release": true
     },
     {
@@ -52,14 +59,14 @@
         "atSteps": [
           {
             "label": "before",
-            "lte": 4.96
+            "lte": 4.86
           }
         ]
       },
       {
         "id": "state",
         "path": "runSpeed",
-        "gte": 5.0
+        "gte": 4.94
       }
     ],
     "components": [
@@ -69,11 +76,11 @@
         "atSteps": [
           {
             "label": "before",
-            "equals": 10
+            "equals": 9
           },
           {
             "label": "after",
-            "equals": 11
+            "equals": 10
           }
         ]
       }

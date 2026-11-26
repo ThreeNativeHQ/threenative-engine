@@ -35,7 +35,7 @@ export const STATS: Readonly<Record<string, IStats>> = {
     abilities: { cha: 12, dex: 12, str: 14 },
     level: 1,
     maxHp: 36,
-    skills: { athletics: 10, melee: 10, persuasion: 5 },
+    skills: { athletics: 9, melee: 9, persuasion: 5 },
     speed: 50,
     weapon: blade,
   },

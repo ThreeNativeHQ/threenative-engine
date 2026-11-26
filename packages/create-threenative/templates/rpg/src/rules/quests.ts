@@ -1,5 +1,7 @@
-// The quest log: a journal of dated entries, one per stage reached, never repeated.
-// No card yet (the reference indexes list no journal): the kit's own small rule.
+// The quest log. Reference: Morrowind card `journal-quest-index` (OpenMW quest.cpp:16): a quest is
+// one integer index (0 when never started) and a finished flag, entries are forward-only, and
+// replaying an older entry never lowers the index. A quest is finished at its last entry. Not
+// carried over: the dated stamp, restart flags and the set-index command that can lower it.
 
 export interface IQuestDef {
   readonly id: string;

@@ -14,11 +14,11 @@ export type MemberView = {
   readonly queue: readonly string[];
 };
 
+/** One skill: its level and its progress meter, 0 to 1. */
 export type SkillView = {
   readonly id: string;
   readonly label: string;
   readonly level: number;
-  readonly need: number;
   readonly progress: number;
 };
 

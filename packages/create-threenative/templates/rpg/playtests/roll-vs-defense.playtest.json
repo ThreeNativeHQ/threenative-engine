@@ -45,7 +45,7 @@
       "waitForResource": {
         "id": "state",
         "path": "lastRoll",
-        "equals": 5
+        "equals": 6
       },
       "release": false,
       "timeoutMs": 8000
@@ -69,7 +69,7 @@
       "waitForResource": {
         "id": "state",
         "path": "lastRoll",
-        "equals": 6
+        "equals": 7
       },
       "release": false,
       "timeoutMs": 8000
@@ -98,7 +98,7 @@
         "atSteps": [
           {
             "label": "missed",
-            "equals": 4
+            "equals": 3
           }
         ]
       },

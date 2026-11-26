@@ -39,11 +39,11 @@ export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
       if (member !== world.leader) place(member, -2, -10.5, Math.PI);
   },
   // Rigged dice for the leader's next attack (d20, then the confirming d20, then damage dice).
-  // The hero's attack bonus is +4 and a raider or the post defends at 10.
+  // The hero's attack bonus is +3 (+4 once Melee reaches 10) and a raider or the post defends at 10.
   station7: (world) => world.dice.rig(world.leader.id, [20, 20, 8]),
   station8: (world) => world.dice.rig(world.leader.id, [1]),
-  station9: (world) => world.dice.rig(world.leader.id, [5]),
-  station10: (world) => world.dice.rig(world.leader.id, [6, 3]),
+  station9: (world) => world.dice.rig(world.leader.id, [6]),
+  station10: (world) => world.dice.rig(world.leader.id, [7, 3]),
   station11: (world) => world.dice.rig(world.leader.id, [19, 3, 4]),
   // The next skill check: a 12 passes the elder's DC 12, a 2 fails it.
   station12: (world) => world.dice.rig(world.leader.id, [12]),
@@ -54,4 +54,6 @@ export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
     for (const raider of world.raiders) world.defeat(raider);
   },
   station16: (world) => world.defeat(world.leader),
+  // The leader alone in the far corner of the ruin: followers at the camp must find the gate.
+  station17: (world) => place(world.leader, -10, -14, Math.PI),
 };

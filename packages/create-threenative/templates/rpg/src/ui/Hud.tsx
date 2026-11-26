@@ -22,7 +22,7 @@ function SkillsPanel() {
           <div className="h-1 w-full bg-panel">
             <div
               className="h-1 bg-amber"
-              style={{ width: `${Math.round((skill.progress / skill.need) * 100)}%` }}
+              style={{ width: `${Math.round(skill.progress * 100)}%` }}
             />
           </div>
         </div>

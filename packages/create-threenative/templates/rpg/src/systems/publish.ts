@@ -1,7 +1,7 @@
 // What the HUD reads: the world's facts, rounded and shaped as the published state. Lists are set
 // only when they change, so the HUD re-renders on a new fact and not on every tick.
 import type { Actor } from "../entities/Actor.js";
-import { SKILL_LABEL, type SkillId, pointsToRise } from "../rules/skills.js";
+import { SKILL_LABEL, type SkillId } from "../rules/skills.js";
 import type { GameState, MemberView, SkillView } from "../state.js";
 import type { World } from "./world.js";
 
@@ -52,7 +52,6 @@ export function publish(world: World): {
         id,
         label: SKILL_LABEL[id],
         level: leader.skills[id].level,
-        need: pointsToRise(leader.skills[id].level),
         progress: round(leader.skills[id].progress),
       }));
       const party = world.members.map((member) => memberView(world, member));

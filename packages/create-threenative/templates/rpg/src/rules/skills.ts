@@ -1,13 +1,16 @@
-// Skills that rise with use. Reference for what a skill is worth: openmw card `walk-run-speed`
-// (npc.cpp:1378 and :1392): speed follows a percentage of the Speed attribute, and the run
-// multiplier grows by one percent of the Athletics skill. The rule that a skill rises when it is
-// used has no card yet: the kit's own table below, kept in one place.
+// Skills that rise with use. Reference: the Morrowind card `skill-use-gain-and-levelup` (OpenMW).
+// A use adds credit to a progress meter. Credit is divided by the requirement `(level + 1) * role
+// factor`, times 0.8 when the skill belongs to the class specialization. At 1 the skill rises by 1
+// and the meter resets. Uses: one per successful hit for a weapon skill, one per full second of
+// running for Athletics, one per speech attempt (the blank record default of 1.0).
+// Not carried over: attributes, level progress and the level-up screen.
+// Run speed follows card `walk-run-speed` (npc.cpp:1378 and :1392).
 
 export type SkillId = "melee" | "athletics" | "persuasion";
 
 export interface ISkill {
   level: number;
-  /** Use points collected toward the next level. */
+  /** The progress meter, 0 to 1. */
   progress: number;
 }
 
@@ -19,21 +22,27 @@ export const SKILL_LABEL: Readonly<Record<SkillId, string>> = {
   persuasion: "Persuasion",
 };
 
-/** Use points a skill earns. Melee: a swing counts 1 and a hit 1 more. Athletics: per metre run. */
-export const SKILL_GAIN = {
-  athleticsPerMetre: 0.5,
-  meleeHit: 1,
-  meleeSwing: 1,
-  persuadeFail: 1,
-  persuadeWin: 2,
-} as const;
-
-/** Points needed for the next level: slower as the skill climbs. */
-export function pointsToRise(level: number): number {
-  return 3 + Math.floor(level / 5);
-}
-
+/** Credit one use is worth: the blank skill record default. loadskil.cpp:130. */
+export const USE_CREDIT = 1;
+/** Requirement factors: major 0.75, minor 1.0 (defaultgmsts.cpp:1762, :1772). Specialization 0.8 (:1811). */
+const ROLE_FACTOR: Readonly<Record<SkillId, number>> = {
+  athletics: 0.75,
+  melee: 0.75,
+  persuasion: 1,
+};
+const SPECIALIZED: Readonly<Record<SkillId, boolean>> = {
+  athletics: true,
+  melee: true,
+  persuasion: false,
+};
+const SPECIALIZATION_FACTOR = 0.8;
+/** A skill at 100 ignores positive gain. playerskillhandlers.lua:72. */
 export const SKILL_CAP = 100;
+
+/** Uses needed for the next level. */
+export function usesToRise(id: SkillId, level: number): number {
+  return (level + 1) * ROLE_FACTOR[id] * (SPECIALIZED[id] ? SPECIALIZATION_FACTOR : 1);
+}
 
 export function newSkills(start: Readonly<Record<SkillId, number>>): Skills {
   return {
@@ -43,13 +52,14 @@ export function newSkills(start: Readonly<Record<SkillId, number>>): Skills {
   };
 }
 
-/** Add use points. Returns true when the skill rose a level. */
-export function useSkill(skills: Skills, id: SkillId, points: number): boolean {
+/** Credit uses. Returns true when the skill rose a level. */
+export function useSkill(skills: Skills, id: SkillId, uses = USE_CREDIT): boolean {
   const skill = skills[id];
   if (skill.level >= SKILL_CAP) return false;
-  skill.progress += points;
-  if (skill.progress < pointsToRise(skill.level)) return false;
-  skill.progress -= pointsToRise(skill.level);
+  skill.progress += uses / usesToRise(id, skill.level);
+  // The small slack absorbs float error: six sixths must make one.
+  if (skill.progress < 1 - 1e-9) return false;
+  skill.progress = 0;
   skill.level += 1;
   return true;
 }

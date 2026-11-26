@@ -286,7 +286,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
           if (move.lengthSq() > 0.01) {
             leader.queue.clear();
             move.normalize().multiplyScalar(10).add(leader.position);
-            leader.stepToward(move.x, move.z, !input.pressed("walk"), dt);
+            leader.stepToward(move.x, move.z, !input.pressed("walk"), dt, false);
           } else leader.queue.update((action) => stepAction(world, leader, action, dt));
 
           directFollowers(world);
@@ -305,7 +305,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         actor.setStance(inCombat);
         if (!actor.acted) actor.rest(dt);
         actor.acted = false;
-        actor.sync();
+        actor.sync(dt);
       }
 
       leaderRing.position.set(leader.position.x, 0.04, leader.position.z);

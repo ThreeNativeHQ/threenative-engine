@@ -3,7 +3,6 @@
 import type { Actor } from "../entities/Actor.js";
 import { followStep } from "../rules/party.js";
 import { type Action, ARRIVAL_RADIUS, INTERACTION_DISTANCE } from "../rules/queue.js";
-import { SKILL_GAIN } from "../rules/skills.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { AGGRO_RADIUS, HEAL_AMOUNT, MELEE_REACH, type World } from "./world.js";
 
@@ -149,13 +148,13 @@ export function directRaiders(world: World): void {
   }
 }
 
-/** Metres run turn into Athletics points, once a whole metre piles up. */
+/** One full second of running is one Athletics use. */
 export function collectRunning(world: World): void {
   for (const actor of world.actors.values()) {
-    if (actor.runMetres < 1) continue;
-    const metres = Math.floor(actor.runMetres);
-    actor.runMetres -= metres;
+    if (actor.runSeconds < 1) continue;
+    const seconds = Math.floor(actor.runSeconds);
+    actor.runSeconds -= seconds;
     if (actor.team === "party")
-      world.gain(actor, "athletics", metres * SKILL_GAIN.athleticsPerMetre);
+      for (let use = 0; use < seconds; use += 1) world.gain(actor, "athletics");
   }
 }

@@ -1,5 +1,8 @@
-// A conversation tree with skill checks. No card yet (the reference indexes list no dialogue):
-// the kit's own rule. A check rolls a d20, adds the skill and ability bonus, and meets a target.
+// A conversation tree with skill checks. Reference: reone card `dialog-tree-links-scripts`: the
+// first active starting link opens the talk, a reply follows its first active link, and a link
+// is active when its condition returns non-zero (here: `when`). Morrowind card `persuasion-checks`
+// answers a speech attempt with a success or a fail response (here: `check.pass` and `check.fail`).
+// The kit's own part: the check is a d20 plus the skill and ability bonus against a target.
 import type { Die } from "./d20.js";
 
 export interface ICheck {

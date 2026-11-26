@@ -10,13 +10,7 @@ import { Conversation, type IWorld } from "../rules/dialogue.js";
 import { Party } from "../rules/party.js";
 import { QuestLog } from "../rules/quests.js";
 import { CombatRounds } from "../rules/rounds.js";
-import {
-  SKILL_GAIN,
-  SKILL_LABEL,
-  type SkillId,
-  persuasionBonus,
-  useSkill,
-} from "../rules/skills.js";
+import { SKILL_LABEL, type SkillId, persuasionBonus, useSkill } from "../rules/skills.js";
 import type { GamePhase } from "../state.js";
 
 /** Metres within which a raider notices the party and the whole ruin turns on it. */
@@ -134,8 +128,8 @@ export class World implements IWorld {
     if (this.log.length > LOG_LINES) this.log.shift();
   }
 
-  gain(actor: Actor, skill: SkillId, points: number): void {
-    if (!useSkill(actor.skills, skill, points)) return;
+  gain(actor: Actor, skill: SkillId): void {
+    if (!useSkill(actor.skills, skill)) return;
     emitPlaytestEvent({ entity: actor.id, name: "skill-rose", skill });
     if (actor === this.leader)
       this.note(`${actor.name}: ${SKILL_LABEL[skill]} rose to ${actor.skills[skill].level}.`);
@@ -230,12 +224,9 @@ export class World implements IWorld {
     }
     attacker.attacks += 1;
     emitPlaytestEvent({ entity: attacker.id, name: `attack-${result.outcome}`, roll: result.roll });
-    this.gain(
-      attacker,
-      "melee",
-      SKILL_GAIN.meleeSwing + (result.damage > 0 ? SKILL_GAIN.meleeHit : 0),
-    );
     if (result.damage === 0) return;
+    // A weapon skill earns one use per successful hit (card `skill-use-gain-and-levelup`).
+    this.gain(attacker, "melee");
     target.receiveDamage(result.damage);
     if ((target as Actor).team === "raider") this.alerted = true;
     if (!target.alive) this.#down(target as Actor);
@@ -299,11 +290,7 @@ export class World implements IWorld {
       this.lastCheckPassed = check.passed ? 1 : 0;
       this.note(`${check.passed ? "Pass" : "Fail"}: ${this.lastCheck}`);
       emitPlaytestEvent({ entity: leader.id, name: check.passed ? "check-pass" : "check-fail" });
-      this.gain(
-        leader,
-        "persuasion",
-        check.passed ? SKILL_GAIN.persuadeWin : SKILL_GAIN.persuadeFail,
-      );
+      this.gain(leader, "persuasion");
     }
     for (const effect of result.effects) this.#apply(effect);
     if (result.ended) this.npc = "";

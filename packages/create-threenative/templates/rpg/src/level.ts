@@ -34,6 +34,12 @@ export const TENTS: readonly (readonly [number, number, number, number])[] = [
   [-4, 6.5, 1.5, 0.8],
 ];
 
+/**
+ * The one gap in the ruin's south wall. There is no navmesh: an actor on one side of the wall that
+ * heads for the other side walks to the gap first (`Actor.stepToward`).
+ */
+export const GATE = { x: 0, z: -7.5, halfWidth: 1 } as const;
+
 export const FIRE = { x: 0, z: 9 } as const;
 export const SPAWN = { x: 0, z: 13 } as const;
 /** The training post: a placeable, so its defense is the flat 10 of the card, and it never fights back. */

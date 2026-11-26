@@ -1,9 +1,9 @@
 <!-- Generated mirror of AGENTS.md. Do not edit; edit AGENTS.md. -->
 
 <!-- shared: kit-identity -->
-# AGENTS.md — __PROJECT_NAME__ (Stealth infiltration, the stealth kit)
+# AGENTS.md — __PROJECT_NAME__ (Party RPG, the rpg kit)
 
-A grey-grid compound of patrolling guards: vision cones, suspicion, alert phases, noise, takedowns, bodies that raise the alarm, a radar and an extraction. Routing words: stealth, metal-gear, metal-gear-solid, mgs, splinter-cell, tenchu, infiltration. `CLAUDE.md` is a copy of this file.
+A grey-grid camp and ruin: three-second combat rounds with a d20 roll against defense, a party of three that follows its leader, a conversation with a skill check, skills that rise with use and a quest log. Routing words: rpg, kotor, knights-of-the-old-republic, morrowind, elder-scrolls, crpg, party-rpg. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -39,14 +39,14 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 ## This kit
 
 <!-- shared: kit-files -->
-Source in `src/`: `ai/`, `conventions.ts`, `entities/`, `game.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
-10 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+Source in `src/`: `content.ts`, `conventions.ts`, `entities/`, `game.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `playtest-stations.ts`, `render/`, `rules/`, `scenes/`, `state.ts`, `systems/`, `ui/`.
+20 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
-Kit notes: `node_modules/create-threenative/agent-docs/references/kit-stealth.md`.
+Kit notes: `node_modules/create-threenative/agent-docs/references/kit-rpg.md`.
 <!-- /shared -->
 
-This game owns the compound (`src/level.ts`), guard AI (`src/ai/`) and the alert phases; `src/game.ts` is portable.
-Keys: WASD/arrows move; Shift run (loud); C crouch; push into a wall to press; Q knock; F grab, then choke; hold E drag; E take or open; R restart.
+This game owns the camp and ruin (`src/level.ts`), the d20 rules (`src/rules/`) and the world that applies them (`src/systems/`); `src/game.ts` is portable.
+Keys: WASD/arrows move (Shift walks); F queue attack; G medpack; E talk; T target; Q rotate leader; J journal; 1-4 choose; R restart.
 
 <!-- shared: kit-commands -->
 ## Commands

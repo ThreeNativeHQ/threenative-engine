@@ -1,7 +1,7 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { MathUtils, Vector3 } from "three";
 import { CLASS_ATTACK, type IStats } from "../content.js";
-import type { IActorSpec, Team } from "../level.js";
+import { GATE, type IActorSpec, type Team } from "../level.js";
 import { createWeapon, dress } from "../render/props.js";
 import { abilityModifier, defenseOf } from "../rules/d20.js";
 import { ActionQueue } from "../rules/queue.js";
@@ -70,16 +70,14 @@ export class Actor extends Fighter implements ICombatant {
   queueLength = 0;
   /** Attacks this actor has resolved, hit or miss; the playtests count rounds with it. */
   attacks = 0;
-  /** Metres run since the last Athletics gain was collected. */
-  runMetres = 0;
+  /** Seconds run since the last Athletics use was collected. */
+  runSeconds = 0;
   /** What the actor is doing this tick; "running" when it moves at run speed. */
   running = false;
   /** Set by every move or rest; the scene rests whoever did neither, so each rig advances once a tick. */
   acted = false;
   /** True from the moment a round holds the actor in place until it ends. */
   locked = false;
-  /** Where the actor stood at the last `sync()`, to measure the metres it ran. */
-  readonly #last = new Vector3();
 
   constructor(ctx: GameCtx, model: IMannequin, spec: IActorSpec, stats: IStats) {
     super(ctx, model, CLIPS, {
@@ -165,18 +163,37 @@ export class Actor extends Fighter implements ICombatant {
     this.figure.rotation.y += (turn - Math.PI) * Math.min(1, dt * 10);
   }
 
-  /** Walk or run toward a point. Returns the metres left. A locked or fallen actor stays put. */
-  stepToward(x: number, z: number, run: boolean, dt: number): number {
+  /**
+   * Where to head for a goal: the goal itself, or the front of the gate when the straight line
+   * would meet the ruin's wall. Ponytail: one wall, no navmesh; a level with more walls wants a path search.
+   */
+  #route(x: number, z: number): { x: number; z: number } {
+    const here = this.mesh.position;
+    const side = Math.sign(here.z - GATE.z);
+    if (side === 0 || side === Math.sign(z - GATE.z)) return { x, z };
+    const along = (GATE.z - here.z) / (z - here.z);
+    const crossing = here.x + (x - here.x) * along;
+    if (Math.abs(crossing - GATE.x) <= GATE.halfWidth - 0.45) return { x, z };
+    return { x: GATE.x, z: GATE.z + side * 1.2 };
+  }
+
+  /**
+   * Walk or run toward a point. Returns the metres left. A locked or fallen actor stays put.
+   * `routed: false` is the player's own key press: it goes where the stick points, wall or not.
+   */
+  stepToward(x: number, z: number, run: boolean, dt: number, routed = true): number {
     this.acted = true;
-    const dx = x - this.mesh.position.x;
-    const dz = z - this.mesh.position.z;
-    const distance = Math.hypot(dx, dz);
-    if (!this.alive || this.locked || distance < 1e-3) {
+    const distance = Math.hypot(x - this.mesh.position.x, z - this.mesh.position.z);
+    const way = routed ? this.#route(x, z) : { x, z };
+    const dx = way.x - this.mesh.position.x;
+    const dz = way.z - this.mesh.position.z;
+    const leg = Math.hypot(dx, dz);
+    if (!this.alive || this.locked || leg < 1e-3) {
       this.rest(dt);
       return distance;
     }
-    const speed = Math.min(run ? this.runSpeed : this.walkSpeed, distance / dt);
-    this.body.velocity.set((dx / distance) * speed, 0, (dz / distance) * speed);
+    const speed = Math.min(run ? this.runSpeed : this.walkSpeed, leg / dt);
+    this.body.velocity.set((dx / leg) * speed, 0, (dz / leg) * speed);
     this.body.moveAndSlide(dt);
     this.conventions.applyGrounding(0, dt);
     this.running = run;
@@ -211,14 +228,8 @@ export class Actor extends Fighter implements ICombatant {
   }
 
   /** Refresh the plain fields the playtests read. */
-  sync(): void {
-    // The body moves in the physics step, so the metres run are measured here, between ticks.
-    if (this.running)
-      this.runMetres += Math.hypot(
-        this.mesh.position.x - this.#last.x,
-        this.mesh.position.z - this.#last.z,
-      );
-    this.#last.copy(this.mesh.position);
+  sync(dt: number): void {
+    if (this.running) this.runSeconds += dt;
     this.px = round2(this.mesh.position.x);
     this.pz = round2(this.mesh.position.z);
     this.melee = this.skills.melee.level;
