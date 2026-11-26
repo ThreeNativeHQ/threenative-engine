@@ -34,6 +34,8 @@ const SIGHT_HALF_ANGLE = (75 * Math.PI) / 180;
 /** Seconds a soldier that took a hit looks all round for the shooter. */
 const ALERT_SECONDS = 4;
 const TURN_RATE = 5;
+/** A soldier needs this long on a clear sight line before its first round: a beat to react. */
+const REACTION_SECONDS = 0.6;
 /** Within this angle of the target the soldier fires. */
 const AIM_TOLERANCE = 0.12;
 /** One round every four ticks while the trigger is down: 7.5 a second. */
@@ -74,6 +76,7 @@ export class Soldier extends Fighter {
   #ticks = 0;
   #roundTicks = 0;
   #alert = 0;
+  #sightSeconds = 0;
   readonly #clock = new TickClock();
   readonly #tracer = createTracer();
   #tracerTimer = 0;
@@ -179,6 +182,7 @@ export class Soldier extends Fighter {
       inCone &&
       Math.hypot(dx, dz) <= SIGHT_RANGE &&
       this.#hooks.worldHit(this.#from, target.eye) === undefined;
+    this.#sightSeconds = sees ? this.#sightSeconds + dt : 0;
     // Turn toward what it sees, and back to its own front when it sees nothing.
     const wanted = sees ? heading : 0;
     const turn = MathUtils.euclideanModulo(wanted - this.yaw + Math.PI, Math.PI * 2) - Math.PI;
@@ -186,7 +190,7 @@ export class Soldier extends Fighter {
     const aimed = Math.abs(turn) <= AIM_TOLERANCE;
 
     for (let tick = this.#clock.step(dt); tick > 0; tick -= 1)
-      this.#tick(ctx, sees && aimed, target);
+      this.#tick(ctx, sees && aimed && this.#sightSeconds >= REACTION_SECONDS, target);
     this.#present(dt);
   }
 

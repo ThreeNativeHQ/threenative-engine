@@ -55,7 +55,7 @@
     },
     {
       "kind": "input",
-      "label": "prone",
+      "label": "lying",
       "press": "KeyZ",
       "holdTicks": 1,
       "release": false

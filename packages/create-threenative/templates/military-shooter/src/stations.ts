@@ -34,8 +34,8 @@ export const STATIONS: Readonly<Record<string, IStation>> = {
   station2: { x: -5.5, z: 4, yaw: facing(-5.5, 4, post("far-west")), duel: "far-west" },
   // Behind the south low wall, facing the centre soldier: cover.
   station3: { x: 0, z: 6.6, yaw: 0, duel: "centre" },
-  // Ten metres from the east soldier, aimed a little down: a grenade.
-  station4: { x: 9, z: 5.5, yaw: 0, pitch: -0.26, duel: "none" },
+  // Six metres from the far-east soldier, in the open, aimed down 24 degrees: a grenade that lands short and rolls.
+  station4: { x: 10, z: -6.5, yaw: 0, pitch: -0.42, duel: "none" },
   // The same open lane as station2, nobody firing: the rifle kills.
   station5: { x: -5.5, z: 4, yaw: facing(-5.5, 4, post("far-west")), duel: "none" },
 };

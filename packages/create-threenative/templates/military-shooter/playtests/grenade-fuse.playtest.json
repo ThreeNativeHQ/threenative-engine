@@ -94,7 +94,7 @@
     ],
     "components": [
       {
-        "entity": "soldier.east",
+        "entity": "soldier.far-east",
         "component": "health",
         "lte": 80
       }

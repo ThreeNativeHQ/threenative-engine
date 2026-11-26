@@ -71,7 +71,7 @@
       "label": "crouch",
       "press": "KeyC",
       "holdTicks": 1,
-      "release": false
+      "release": true
     },
     {
       "label": "crouch-cone",
@@ -88,7 +88,7 @@
       "label": "prone",
       "press": "KeyZ",
       "holdTicks": 1,
-      "release": false
+      "release": true
     },
     {
       "label": "prone-cone",
@@ -105,14 +105,7 @@
       "label": "stand-up",
       "press": "KeyZ",
       "holdTicks": 1,
-      "release": false
-    },
-    {
-      "kind": "input",
-      "label": "stand-up-2",
-      "press": "KeyC",
-      "holdTicks": 1,
-      "release": false
+      "release": true
     },
     {
       "kind": "wait",
