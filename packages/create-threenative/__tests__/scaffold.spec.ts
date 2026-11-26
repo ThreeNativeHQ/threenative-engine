@@ -161,7 +161,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   rhythm: {
     shared: "071c669ac4040dd00bae4460583b5a95fc6571eb15fd430dba3c150a5f356a4a",
-    kit: "4d0d6fed93710175b9f26be8cc1077245a03b7efe43668cd13409b7be4dd47cc",
+    kit: "396c3f80ba7103cd4df8f3beaf1fe028956a8a99a3dde23391e0e6cb3c65cea2",
   },
   rts: {
     shared: "26ec5fc3b8f4af896c13e05c68c82933f55298b1e8425b14edd3a2cd77fb908e",
