@@ -244,7 +244,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const target = clamp1(input.vector("pitch").y + move.y);
       const rate = target === 0 ? STICK_RETURN : STICK_BUILD;
       stick += MathUtils.clamp(target - stick, -rate * dt, rate * dt);
-      const climb = (input.pressed("climb") ? 1 : 0) - (input.pressed("descend") ? 1 : 0);
+      const climb = input.vector("climb").y;
       if (frameCtx.startup.compileSettled) {
         attempt.step(dt, { climb, pitch: stick, roll: clamp1(input.vector("bank").x + move.x) });
       }

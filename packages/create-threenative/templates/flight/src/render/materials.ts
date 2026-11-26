@@ -171,7 +171,7 @@ export const propMaterial = new MeshStandardMaterial({
 
 /** The sea: a cool grid, glossy so it mirrors the sky. */
 export const seaMaterial = new MeshStandardMaterial({
-  map: gridTexture(palette.sea, palette.gridLine),
+  map: gridTexture(palette.structure, palette.gridLine),
   roughness: 0.22,
   metalness: 0,
 });

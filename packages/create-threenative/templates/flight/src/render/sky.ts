@@ -56,7 +56,7 @@ export function setupSky(
 ): void {
   // Height fog only; FogExp2 holds the colour `heightFogNode` reads, at zero density. `createGpuSky`
   // sets that colour from the sky and again whenever the sun moves.
-  const fog = new FogExp2(palette.horizon, 0);
+  const fog = new FogExp2(palette.floor, 0);
   scene.fog = fog;
   scene.fogNode = heightFogNode(fog, { ...ATMOSPHERE_FOG }, SUN_DIRECTION);
   const { node, environment } = createGpuSky(

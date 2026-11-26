@@ -1,9 +1,11 @@
-// The island, its air and its course, as plain numbers. Nothing here imports Three.js, so the
-// terrain, the wind and the thermals answer the same on every target and in a headless check.
+// The island, its air and its course, as plain numbers. Nothing here draws (it takes only the `MathUtils`
+// helpers from Three.js), so the terrain, the wind and the thermals answer the same on every target and in a headless check.
 //
 // Reference: pilotwings-64-n64decomp `air-volumes` (`src/app/thermals.c:206`, `wind.c:485`,
 // `environment.c:307`): a thermal lifts by the square root of the remaining radial fraction and
 // fades near its bottom and top; the ambient wind wanders slowly around its mean.
+
+import { MathUtils } from "three";
 
 export const GRAVITY = 9.8;
 /** Sea level, metres. The seabed is below it and the sea plane is drawn at this height. */
@@ -15,11 +17,8 @@ export interface IVec3 {
   z: number;
 }
 
-const clamp01 = (value: number): number => Math.min(1, Math.max(0, value));
-export function smoothstep(from: number, to: number, value: number): number {
-  const t = clamp01((value - from) / (to - from));
-  return t * t * (3 - 2 * t);
-}
+export const smoothstep = (from: number, to: number, value: number): number =>
+  MathUtils.smoothstep(value, from, to);
 
 const bump = (
   x: number,

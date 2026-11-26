@@ -17,8 +17,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     // Up is the stick forward: the glider dives, the rocket belt leans forward.
     pitch: { down: ["ArrowDown", "KeyS"], up: ["ArrowUp", "KeyW"] },
     // Rocket belt only: thrust up, and let it sink.
-    climb: { buttons: [0], keys: ["Space"] },
-    descend: { buttons: [1], keys: ["ShiftLeft", "ShiftRight"] },
+    climb: { down: ["ShiftLeft", "ShiftRight"], up: ["Space"] },
     // Swap the craft: a glider or a rocket belt, on the same island.
     vehicle: { buttons: [3], keys: ["KeyV"] },
     restart: { buttons: [9], keys: ["KeyR"] },

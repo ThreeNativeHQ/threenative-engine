@@ -14,7 +14,7 @@ import { palette } from "./palette.js";
 /* BEGIN THREENATIVE LOADING APPEARANCE */
 /** Edit these source constants for the flight kit's loading look. */
 export const loading = {
-  backgroundColor: palette.horizon,
+  backgroundColor: palette.floor,
   backgroundImage: undefined as string | undefined,
   enabled: true,
   fillImage: undefined as string | undefined,
