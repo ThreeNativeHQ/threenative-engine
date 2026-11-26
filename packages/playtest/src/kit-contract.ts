@@ -133,12 +133,16 @@ export const KIT_CONTRACT_ROWS: readonly IKitContractRow[] = [
     summary: "no developer text or unreadable colours reach the player's HUD",
   },
   {
-    build: (entry) =>
-      scenario("no-hitch", entry, [explore(entry, 1200, "played")], {
+    build: (entry) => ({
+      ...(scenario("no-hitch", entry, [explore(entry, 1200, "played")], {
         diagnostics: DIAGNOSTICS,
         // Unset, the p95 frame budget is the 16.7 ms default of PRD-735; PRD-748 adds the hitch count here.
         performance: { maxDrawCalls: 2000 },
-      }),
+      }) as Json),
+      // A frame budget is judged on the wall clock: on counted ticks a 300-tick window closes on about
+      // 50 presented frames and a cheap kit fails with TN_PLAYTEST_PERF_FEW_GPU_SAMPLES (determinism.md).
+      clock: "wall-clock",
+    }),
     id: "no-hitch",
     needs: always,
     summary: "play holds the frame budget with no spike",

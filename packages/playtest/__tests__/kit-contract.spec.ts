@@ -51,6 +51,11 @@ describe("kit contract", () => {
     expect(scenario.assert?.movement).toEqual({ entity: "player", pathLength: 1 });
   });
 
+  it("judges the frame budget on the wall clock, so a cheap kit still collects GPU samples", () => {
+    const row = planKitContract({ demo: FULL }, ["demo"]).find(({ row: id }) => id === "no-hitch");
+    expect((row?.kind === "run" ? row.scenario : {}) as { clock?: string }).toMatchObject({ clock: "wall-clock" });
+  });
+
   it("judges every declared action at the step that waits for its own clip", () => {
     const row = planKitContract({ demo: FULL }, ["demo"]).find(({ row: id }) => id === "action-clip-completes");
     const scenario = (row?.kind === "run" ? row.scenario : {}) as { assert?: { animation?: { atStep?: string; clip: string }[] } };
