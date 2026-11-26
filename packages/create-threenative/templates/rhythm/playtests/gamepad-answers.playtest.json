@@ -33,9 +33,7 @@
       "kind": "input",
       "label": "pad-n0",
       "gamepad": {
-        "buttons": [
-          14
-        ]
+        "buttons": [14]
       },
       "waitTicks": 3,
       "release": true
@@ -54,9 +52,7 @@
       "kind": "input",
       "label": "pad-n1",
       "gamepad": {
-        "buttons": [
-          15
-        ]
+        "buttons": [15]
       },
       "waitTicks": 3,
       "release": true
@@ -75,9 +71,7 @@
       "kind": "input",
       "label": "pad-n2",
       "gamepad": {
-        "buttons": [
-          12
-        ]
+        "buttons": [12]
       },
       "waitTicks": 3,
       "release": true
@@ -96,9 +90,7 @@
       "kind": "input",
       "label": "pad-n3",
       "gamepad": {
-        "buttons": [
-          13
-        ]
+        "buttons": [13]
       },
       "waitTicks": 3,
       "release": true

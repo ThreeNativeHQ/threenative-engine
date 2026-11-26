@@ -1,12 +1,9 @@
 import { Scene, type SceneFrame, getPlatform, isMobile } from "@threenative/core";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { PerspectiveCamera } from "three";
-import { type GameCtx, type IMannequin } from "../entities/Fighter.js";
+import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import { Performer } from "../entities/Performer.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import { BUTTONS } from "../rhythm/buttons.js";
-import { BPM, LINES } from "../rhythm/chart.js";
-import { Session, type SessionEvent } from "../rhythm/session.js";
 import { createStageCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
@@ -21,6 +18,9 @@ import {
 } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { PLAYER_X, Stage, TEACHER_X } from "../render/stage.js";
+import { BUTTONS } from "../rhythm/buttons.js";
+import { BPM, LINES } from "../rhythm/chart.js";
+import { Session, type SessionEvent } from "../rhythm/session.js";
 import type { GameState } from "../state.js";
 
 /** How long a HUD message stays up, seconds. */

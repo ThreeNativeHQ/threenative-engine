@@ -28,6 +28,7 @@ export const WINDOWS: readonly {
   { grade: "bad", early: 6, late: 6 + LATE_SHIFT_CELLS },
 ];
 const BAD = WINDOWS[2] as (typeof WINDOWS)[number];
+const COOL = WINDOWS[0] as (typeof WINDOWS)[number];
 
 /**
  * A press more than a quarter beat before the part opens is dropped before grading
@@ -143,7 +144,7 @@ export class LineJudge {
       freestyleOpen &&
       offBeat &&
       !noteNear &&
-      Math.abs(cells) <= WINDOWS[0]!.early &&
+      Math.abs(cells) <= COOL.early &&
       this.#freestyle < FREESTYLE_CAP
     ) {
       this.#freestyle += 1;

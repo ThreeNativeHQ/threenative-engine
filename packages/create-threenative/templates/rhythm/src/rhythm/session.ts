@@ -1,7 +1,7 @@
-import type { Grade, Timing } from "./judge.js";
 import type { ButtonName } from "./buttons.js";
 import { BEATS_PER_LINE, BEATS_PER_PART, type INote, LINES } from "./chart.js";
 import { BeatClock } from "./clock.js";
+import type { Grade, Timing } from "./judge.js";
 import { EARLY_GUARD_BEATS, type ILineScore, type IPressResult, LineJudge } from "./judge.js";
 import { LADDER_SIZE, START_RUNG, clears, levelOf, nextRung } from "./rating.js";
 

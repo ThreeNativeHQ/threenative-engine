@@ -1,9 +1,9 @@
 import type { MeshStandardMaterial } from "three";
+import { dress } from "../render/props.js";
 import type { ButtonName } from "../rhythm/buttons.js";
 import type { Grade } from "../rhythm/judge.js";
 import type { Level } from "../rhythm/rating.js";
-import { dress } from "../render/props.js";
-import { type GameCtx, Fighter, type IMannequin } from "./Fighter.js";
+import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
 /** Clip names in `mannequin-combat.glb`, by what the performer does with them. */
 const CLIPS = {
