@@ -215,6 +215,8 @@ export class Play extends Scene<GameState, undefined> {
       stage.update(pulse, session.clock.beat);
       frameCamera(pulse);
       teacher.update(dt, pulse);
+      const sway = frameCtx.input.vector("move");
+      player.sway(sway.x, sway.y);
       player.update(dt, pulse);
 
       messageTimer = Math.max(0, messageTimer - dt);

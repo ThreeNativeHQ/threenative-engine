@@ -39,6 +39,8 @@ const STEP: Readonly<Record<ButtonName, readonly [number, number]>> = {
   x: [-0.2, 0],
 };
 const SETTLE_RATE = 5;
+/** How far a held arrow sways the dancer, in metres (x, z). */
+const SWAY = 0.3;
 /** The dip on the beat, in metres. */
 const BOB = 0.06;
 
@@ -60,6 +62,10 @@ export class Performer extends Fighter {
   readonly #home: number;
   #dx = 0;
   #dz = 0;
+  #sx = 0;
+  #sz = 0;
+  #tx = 0;
+  #tz = 0;
   #bob = 0;
   #fallen = false;
 
@@ -96,12 +102,25 @@ export class Performer extends Fighter {
     this.play("fall", { hold: 99 });
   }
 
+  /** Sway toward a held direction (each axis -1 to 1); letting go eases back to the mark. */
+  sway(x: number, y: number): void {
+    this.#tx = x * SWAY;
+    this.#tz = -y * SWAY;
+  }
+
   /** Advance one tick: settle the dance step, dip on the beat, then run the rig. */
   update(dt: number, pulse: number): void {
     this.#dx *= Math.exp(-SETTLE_RATE * dt);
     this.#dz *= Math.exp(-SETTLE_RATE * dt);
+    const ease = 1 - Math.exp(-SETTLE_RATE * dt);
+    this.#sx += (this.#tx - this.#sx) * ease;
+    this.#sz += (this.#tz - this.#sz) * ease;
     this.#bob = BOB * pulse;
-    this.mesh.position.set(this.#home + this.#dx, HOME_Y - this.#bob, this.#dz);
+    this.mesh.position.set(
+      this.#home + this.#dx + this.#sx,
+      HOME_Y - this.#bob,
+      this.#dz + this.#sz,
+    );
     this.animateRig(dt, undefined, 0);
   }
 

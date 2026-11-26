@@ -13,6 +13,13 @@ const game = defineGame<GameState, undefined>({
       BUTTONS.map(({ action, keys, pad }) => [action, { buttons: [...pad], keys: [...keys] }]),
     ),
     restart: { buttons: [9], keys: ["KeyR"] },
+    // The four directions of `input.vector("move")`: held arrows also sway the player on the stage.
+    move: {
+      down: ["ArrowDown"],
+      left: ["ArrowLeft"],
+      right: ["ArrowRight"],
+      up: ["ArrowUp"],
+    },
   },
   plugins: [playtest({ events: drainPlaytestEvents })],
   display: config.display,

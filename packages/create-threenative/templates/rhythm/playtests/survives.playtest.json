@@ -11,15 +11,15 @@
   "steps": [
     {
       "kind": "input",
-      "label": "answer",
-      "press": "ArrowUp",
-      "holdTicks": 1,
+      "label": "sway",
+      "press": "ArrowRight",
+      "holdTicks": 60,
       "release": true
     },
     {
       "kind": "wait",
       "label": "settle",
-      "waitTicks": 90,
+      "waitTicks": 20,
       "release": true
     }
   ],
@@ -32,7 +32,7 @@
     },
     "movement": {
       "entity": "player",
-      "pathLength": 0.3
+      "minDistance": 0.1
     },
     "visibility": [
       {
