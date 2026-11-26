@@ -40,7 +40,12 @@ export class Race {
     const dz = z - gate.z;
     const along = dx * gate.fx + dz * gate.fz;
     const across = dx * -gate.fz + dz * gate.fx;
-    const crossed = this.#previous !== undefined && this.#previous < 0 && along >= 0 && along < 12 && Math.abs(across) < ROAD_HALF + 3;
+    const crossed =
+      this.#previous !== undefined &&
+      this.#previous < 0 &&
+      along >= 0 &&
+      along < 12 &&
+      Math.abs(across) < ROAD_HALF + 3;
     this.#previous = along;
     if (!crossed) return -1;
     const index = this.nextGate;
@@ -67,7 +72,11 @@ export class Race {
   }
 
   /** Jumps the race to a state (a playtest station). */
-  set(state: { readonly lap?: number; readonly nextGate?: number; readonly timeLeft?: number }): void {
+  set(state: {
+    readonly lap?: number;
+    readonly nextGate?: number;
+    readonly timeLeft?: number;
+  }): void {
     if (state.lap !== undefined) this.lap = state.lap;
     if (state.nextGate !== undefined) this.nextGate = state.nextGate;
     if (state.timeLeft !== undefined) this.timeLeft = state.timeLeft;

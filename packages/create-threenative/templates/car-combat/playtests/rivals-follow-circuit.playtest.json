@@ -1,0 +1,44 @@
+{
+  "name": "rivals-follow-circuit",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "racing",
+      "waitTicks": 900,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rival.2",
+        "component": "objective",
+        "equals": "race",
+        "allowTrivial": "The mildest rival keeps to the circuit while the player sits at the start."
+      }
+    ],
+    "movement": {
+      "entity": "rival.2",
+      "minDistance": 80
+    }
+  }
+}

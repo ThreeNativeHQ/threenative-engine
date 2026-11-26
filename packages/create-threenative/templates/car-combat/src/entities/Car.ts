@@ -1,6 +1,14 @@
 import { CollisionShape3D, type IVehicleWheel3D, VehicleBody3D } from "@threenative/physics";
 import { Group, MathUtils, Vector3 } from "three";
-import { burn, CAR_SIZE, type ICarVisual, WHEEL_RADIUS, WHEEL_SPOTS, carVisual, crumple } from "../render/car.js";
+import {
+  burn,
+  CAR_SIZE,
+  type ICarVisual,
+  WHEEL_RADIUS,
+  WHEEL_SPOTS,
+  carVisual,
+  crumple,
+} from "../render/car.js";
 import { CarDamage, REGIONS, type Region, classify, impactLevels } from "../vehicle/damage.js";
 import { BRAKE, Drivetrain } from "../vehicle/drivetrain.js";
 import { stepCurvature } from "../vehicle/steering.js";
@@ -23,7 +31,8 @@ export const CHASSIS = {
 } as const;
 
 /** Where the chassis origin rides above the road once the struts have settled. */
-export const RIDE_HEIGHT = CHASSIS.suspensionRestLength + WHEEL_RADIUS - 9.81 / (4 * CHASSIS.suspensionStiffness);
+export const RIDE_HEIGHT =
+  CHASSIS.suspensionRestLength + WHEEL_RADIUS - 9.81 / (4 * CHASSIS.suspensionStiffness);
 const WHEELBASE = Math.abs(WHEEL_SPOTS[0][1] - WHEEL_SPOTS[2][1]);
 const AXLE_LOAD = (CHASSIS.mass * 9.81) / 2;
 const AXLE_MASS = CHASSIS.mass / 2;
@@ -96,7 +105,14 @@ export class Car {
 
   constructor(
     ctx: GameCtx,
-    options: { readonly name: string; readonly colour: number; readonly x: number; readonly z: number; readonly yaw: number; readonly player: boolean },
+    options: {
+      readonly name: string;
+      readonly colour: number;
+      readonly x: number;
+      readonly z: number;
+      readonly yaw: number;
+      readonly player: boolean;
+    },
   ) {
     this.name = options.name;
     this.player = options.player;
@@ -153,7 +169,10 @@ export class Car {
   /** The steering lock at a speed: the wheel angle that asks for `lateral` m/s² of cornering. */
   lockAt(speed: number): number {
     const fast = Math.max(Math.abs(speed), 4);
-    return Math.min(HANDLING.maxSteer, Math.max(HANDLING.minLock, (HANDLING.lateral * WHEELBASE) / (fast * fast)));
+    return Math.min(
+      HANDLING.maxSteer,
+      Math.max(HANDLING.minLock, (HANDLING.lateral * WHEELBASE) / (fast * fast)),
+    );
   }
 
   /** Teleports the car and clears everything that would carry the old motion over. */
@@ -162,7 +181,8 @@ export class Car {
     this.curvature = 0;
     this.#lastYaw = yaw;
     this.#yawRate = 0;
-    if (speed !== 0) this.body.linearVelocity = { x: -Math.sin(yaw) * speed, y: 0, z: -Math.cos(yaw) * speed };
+    if (speed !== 0)
+      this.body.linearVelocity = { x: -Math.sin(yaw) * speed, y: 0, z: -Math.cos(yaw) * speed };
     this.#lastVelocity.set(-Math.sin(yaw) * speed, 0, -Math.cos(yaw) * speed);
     this.#lastSpeed = speed;
     this.hit = undefined;
@@ -173,7 +193,11 @@ export class Car {
   control(input: IControl, dt: number): void {
     const speed = this.body.speed;
     const lock = this.lockAt(speed);
-    const yawNorm = MathUtils.clamp((-this.#yawRate * WHEELBASE) / Math.max(Math.abs(speed), 4) / Math.tan(lock), -1, 1);
+    const yawNorm = MathUtils.clamp(
+      (-this.#yawRate * WHEELBASE) / Math.max(Math.abs(speed), 4) / Math.tan(lock),
+      -1,
+      1,
+    );
     this.curvature = stepCurvature(this.curvature, input.steer, speed, yawNorm, dt);
     this.drive(input, dt);
   }
@@ -246,7 +270,9 @@ export class Car {
   }
 
   #setGrip(front: number, rear: number): void {
-    const wanted = [front, front, rear, rear].map((grip, index) => grip * this.damage.wheelGrip(index));
+    const wanted = [front, front, rear, rear].map(
+      (grip, index) => grip * this.damage.wheelGrip(index),
+    );
     wanted.forEach((grip, index) => {
       if (Math.abs(grip - (this.#grip[index] as number)) < 0.03) return;
       this.#grip[index] = grip;
@@ -262,10 +288,15 @@ export class Car {
     const dvz = v.z - this.#lastVelocity.z;
     this.#lastVelocity.set(v.x, v.y, v.z);
     const dv = Math.hypot(dvx, dvy * 0.3, dvz);
-    this.#accel = MathUtils.lerp(this.#accel, (this.body.speed - this.#lastSpeed) / Math.max(dt, 1e-3), 0.1);
+    this.#accel = MathUtils.lerp(
+      this.#accel,
+      (this.body.speed - this.#lastSpeed) / Math.max(dt, 1e-3),
+      0.1,
+    );
     this.#lastSpeed = this.body.speed;
     const yaw = this.yaw;
-    this.#yawRate = MathUtils.euclideanModulo(yaw - this.#lastYaw + Math.PI, Math.PI * 2) / dt - Math.PI / dt;
+    this.#yawRate =
+      MathUtils.euclideanModulo(yaw - this.#lastYaw + Math.PI, Math.PI * 2) / dt - Math.PI / dt;
     this.#lastYaw = yaw;
     if (dv > CRASH_DV && !this.wrecked) this.#crash(dvx, dvz, dv);
     if (this.wrecked) this.burning += dt;

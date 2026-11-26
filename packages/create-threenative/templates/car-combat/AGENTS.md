@@ -1,7 +1,7 @@
 <!-- shared: kit-identity -->
-# AGENTS.md — __PROJECT_NAME__ (Open-world crime, the open-world kit)
+# AGENTS.md — __PROJECT_NAME__ (Car combat, the car-combat kit)
 
-A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job. Routing words: open-world, gta, grand-theft-auto, gta3, vice-city, san-andreas, driver, crime, sandbox. `CLAUDE.md` is a copy of this file.
+A grey-grid arena of rival cars: friction-ellipse tyres, an automatic gearbox, per-panel damage and repair, ramming that wrecks rivals, checkpoints that add time. Routing words: car-combat, carmageddon, twisted-metal, destruction-derby, demolition-derby, vehicular-combat, wreck. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -43,8 +43,8 @@ Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agen
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-open-world.md`.
 <!-- /shared -->
 
-This game owns the city (`src/city/layout.ts`), block streaming (`src/systems/streaming.ts`), traffic, police, wanted level.
-Keys: WASD/arrows move or drive; Shift sprint; Space punch, shoot, handbrake; E lock on; Q weapon; F car; R restart.
+This game owns the car (`src/vehicle/`: tyres, drivetrain, damage), the arena (`src/arena/layout.ts`), rival drivers (`src/ai/rival.ts`), the race clock and gates (`src/systems/Race.ts`).
+Keys: Up throttle; Down brake, then reverse; Left/Right steer; Space handbrake; R restart.
 
 <!-- shared: kit-commands -->
 ## Commands

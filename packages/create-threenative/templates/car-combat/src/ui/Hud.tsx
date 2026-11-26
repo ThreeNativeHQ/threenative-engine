@@ -20,7 +20,10 @@ function Bar({ label, level }: { label: string; level: number }) {
     <div className="flex items-center gap-2 text-xs uppercase tracking-wider">
       <span className="w-20 text-dim">{label}</span>
       <span className="h-1.5 w-20 overflow-hidden rounded bg-white/20">
-        <span className={`block h-full ${wear(level)}`} style={{ width: `${Math.min(100, level)}%` }} />
+        <span
+          className={`block h-full ${wear(level)}`}
+          style={{ width: `${Math.min(100, level)}%` }}
+        />
       </span>
     </div>
   );
@@ -70,8 +73,13 @@ export function Hud() {
   const banner = state.phase === "lost" ? "text-red" : "text-[#f5cf52]";
   return (
     <>
-      <section id="clock" className="pointer-events-none absolute left-6 top-5 flex flex-col gap-1 font-mono">
-        <div className={`text-5xl font-black leading-none ${urgent ? "animate-pulse text-red" : "text-text"} ${SHADOW}`}>
+      <section
+        id="clock"
+        className="pointer-events-none absolute left-6 top-5 flex flex-col gap-1 font-mono"
+      >
+        <div
+          className={`text-5xl font-black leading-none ${urgent ? "animate-pulse text-red" : "text-text"} ${SHADOW}`}
+        >
           {timeLeft}
           <span className="ml-1 text-xl text-dim">s</span>
           {state.bonusFlash > 0 && <span className="ml-3 text-2xl text-[#7ee08a]">+20</span>}
@@ -83,13 +91,18 @@ export function Hud() {
           rivals wrecked {state.rivalsWrecked} / {state.rivalsTotal}
         </div>
       </section>
-      <section id="gauges" className="pointer-events-none absolute right-6 top-5 flex flex-col items-end gap-1 font-mono">
+      <section
+        id="gauges"
+        className="pointer-events-none absolute right-6 top-5 flex flex-col items-end gap-1 font-mono"
+      >
         <div className={`text-5xl font-black leading-none text-text ${SHADOW}`}>
           {state.speedKmh}
           <span className="ml-1 text-xl text-dim">km/h</span>
         </div>
         <div className="flex items-center gap-2 rounded bg-black/60 px-2 py-1 text-sm text-text">
-          <span className="w-4 text-center text-lg font-bold">{GEARS[state.gear] ?? state.gear}</span>
+          <span className="w-4 text-center text-lg font-bold">
+            {GEARS[state.gear] ?? state.gear}
+          </span>
           <span className="h-2 w-28 overflow-hidden rounded bg-white/20">
             <span
               className={`block h-full ${state.rpm > state.redline * 0.85 ? "bg-red" : "bg-amber"}`}
@@ -103,7 +116,10 @@ export function Hud() {
           grip {state.traction}%{state.slipping ? " · sliding" : ""}
         </div>
       </section>
-      <section id="damage" className="pointer-events-none absolute bottom-6 left-6 flex gap-4 rounded bg-black/60 p-3 font-mono">
+      <section
+        id="damage"
+        className="pointer-events-none absolute bottom-6 left-6 flex gap-4 rounded bg-black/60 p-3 font-mono"
+      >
         <div className="relative h-24 w-14" aria-label="body panels">
           <Panel crush={state.crushFront} className="left-0 top-0 h-7 w-14" />
           <Panel crush={state.crushLeft} className="left-0 top-8 h-8 w-4" />
@@ -125,10 +141,14 @@ export function Hud() {
       )}
       {state.banner !== "" && (
         <div className="pointer-events-none absolute inset-x-0 top-[38%] text-center font-mono">
-          <span className={`inline-block px-6 py-2 text-5xl font-black uppercase tracking-[0.2em] drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] ${banner}`}>
+          <span
+            className={`inline-block px-6 py-2 text-5xl font-black uppercase tracking-[0.2em] drop-shadow-[0_2px_6px_rgba(0,0,0,0.95)] ${banner}`}
+          >
             {state.banner}
           </span>
-          <div className="mt-2 text-sm uppercase tracking-[0.2em] text-text">press R to restart</div>
+          <div className="mt-2 text-sm uppercase tracking-[0.2em] text-text">
+            press R to restart
+          </div>
         </div>
       )}
     </>

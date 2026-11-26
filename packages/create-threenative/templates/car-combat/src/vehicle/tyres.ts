@@ -47,6 +47,9 @@ export function solveAxle(axle: ITyreAxle): ITyreResult {
   const slipping = length > budget;
   // The surplus is lost: the drive force shrinks until the combined length just fits.
   const room = Math.max(0, budget * TYRE.vectorDivisor - axle.lateralDemand);
-  const driveScale = !slipping || axle.driveDemand <= 0 ? 1 : Math.min(1, (room / axle.driveDemand) * TYRE.tractionOvershoot);
+  const driveScale =
+    !slipping || axle.driveDemand <= 0
+      ? 1
+      : Math.min(1, (room / axle.driveDemand) * TYRE.tractionOvershoot);
   return { budget, driveScale, grip: (mu / TYRE.mu) * Math.sqrt(loadRatio), slipping };
 }

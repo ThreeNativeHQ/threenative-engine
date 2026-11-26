@@ -14,6 +14,7 @@ function put(car: Car, s: number, lane: number, speed = 0): void {
 
 /** Parks every rival on the far straight, held still, so a station has only the cars it names. */
 function isolate(world: World): void {
+  world.holdPlayer = false;
   world.rivals.forEach((driver, index) => {
     driver.car.damage.repair(1e6);
     put(driver.car, LAP_LENGTH / 2 + index * 14, 0);
@@ -115,6 +116,7 @@ export const STATIONS: readonly Station[] = [
   // 12 jam: a rival pursuing, jammed against a stationary player.
   (world) => {
     isolate(world);
+    world.holdPlayer = true;
     put(world.player, 6, 0);
     const driver = world.rivals[0];
     if (driver === undefined) return;

@@ -86,12 +86,18 @@ export class RivalDriver {
 
   /** Called when this rival rams the player or the player rams it. */
   provoke(): void {
-    this.grudge = Math.min(RIVAL.grudgeCeiling, Math.max(RIVAL.grudgeFloor, this.grudge + RIVAL.ramGrudge));
+    this.grudge = Math.min(
+      RIVAL.grudgeCeiling,
+      Math.max(RIVAL.grudgeFloor, this.grudge + RIVAL.ramGrudge),
+    );
   }
 
   setObjective(objective: Objective): void {
     this.objective = objective;
-    this.ttl = RIVAL.minSeconds + this.random() * (RIVAL.maxSeconds - RIVAL.minSeconds) + (objective === "pursue" ? RIVAL.pursuitExtension : 0);
+    this.ttl =
+      RIVAL.minSeconds +
+      this.random() * (RIVAL.maxSeconds - RIVAL.minSeconds) +
+      (objective === "pursue" ? RIVAL.pursuitExtension : 0);
     this.#jam = 0;
   }
 
@@ -129,19 +135,27 @@ export class RivalDriver {
       if (this.grudge < RIVAL.pursuitGrudgeFloor || this.ttl <= 0) this.setObjective("race");
       return;
     }
-    const pursuers = others.filter((other) => other !== this && other.objective === "pursue").length;
+    const pursuers = others.filter(
+      (other) => other !== this && other.objective === "pursue",
+    ).length;
     if (gap < RIVAL.sight && pursuers < RIVAL.concurrentPursuers) {
       // The chance, in percent, to start a pursuit this second.
       const heading = _headOn(car, target);
-      const chance = this.grudge - RIVAL.pursuitOffset + RIVAL.pursuitNastiness * this.nastiness + (heading ? RIVAL.headOnBonus : 0);
+      const chance =
+        this.grudge -
+        RIVAL.pursuitOffset +
+        RIVAL.pursuitNastiness * this.nastiness +
+        (heading ? RIVAL.headOnBonus : 0);
       if (this.random() * 100 < chance) {
         this.setObjective("pursue");
         return;
       }
     }
     const racers = others.filter((other) => other !== this && other.objective === "race").length;
-    if (this.objective === "wait" && racers < RIVAL.concurrentRacers && this.ttl <= 0) this.setObjective("race");
-    else if (this.objective === "race" && racers >= RIVAL.concurrentRacers) this.setObjective("wait");
+    if (this.objective === "wait" && racers < RIVAL.concurrentRacers && this.ttl <= 0)
+      this.setObjective("race");
+    else if (this.objective === "race" && racers >= RIVAL.concurrentRacers)
+      this.setObjective("wait");
   }
 
   #backUp(dt: number): IRivalControl {
@@ -154,7 +168,6 @@ export class RivalDriver {
   }
 
   #pursue(target: IRivalTarget): IRivalControl {
-    const car = this.car;
     // Lead the target a little, so the ram meets it.
     const aimX = target.x + target.vx * 0.5;
     const aimZ = target.z + target.vz * 0.5;
@@ -189,7 +202,8 @@ export class RivalDriver {
       return { back: 1, fwd: 0, handbrake: false, steer: 0 };
     }
     // A proportional loop turns the speed error into pedal (oppoproc.c:460-464).
-    if (speedError > 0.5) return { back: 0, fwd: Math.min(1, speedError / 4), handbrake: false, steer: 0 };
+    if (speedError > 0.5)
+      return { back: 0, fwd: Math.min(1, speedError / 4), handbrake: false, steer: 0 };
     return { back: Math.min(1, -speedError / 6), fwd: 0, handbrake: false, steer: 0 };
   }
 }
@@ -199,15 +213,22 @@ function cornerSpeed(distance: number, speed: number): number {
   const brakeDistance = (speed * speed) / RIVAL.brakingDivisor + RIVAL.brakingLead * speed;
   const here = pathAt(distance);
   const far = pathAt(distance + Math.max(20, brakeDistance + 10));
-  const turn = Math.abs(Math.atan2(here.fx * far.fz - here.fz * far.fx, here.fx * far.fx + here.fz * far.fz));
+  const turn = Math.abs(
+    Math.atan2(here.fx * far.fz - here.fz * far.fx, here.fx * far.fx + here.fz * far.fz),
+  );
   if (turn < 0.2) return RIVAL.openRoadSpeed;
   const radius = Math.max(10, brakeDistance / Math.max(turn, 0.2));
-  return Math.max(RIVAL.slowCornerSpeed, Math.min(RIVAL.openRoadSpeed, Math.sqrt(radius * RIVAL.cornerAccel * RIVAL.gripFudge)));
+  return Math.max(
+    RIVAL.slowCornerSpeed,
+    Math.min(RIVAL.openRoadSpeed, Math.sqrt(radius * RIVAL.cornerAccel * RIVAL.gripFudge)),
+  );
 }
 
 function _headOn(car: Car, target: IRivalTarget): boolean {
   const toX = car.position.x - target.x;
   const toZ = car.position.z - target.z;
-  const along = (target.vx * toX + target.vz * toZ) / Math.max(1, Math.hypot(toX, toZ) * Math.max(target.speed, 0.1));
+  const along =
+    (target.vx * toX + target.vz * toZ) /
+    Math.max(1, Math.hypot(toX, toZ) * Math.max(target.speed, 0.1));
   return target.speed > 5 && along > 0.9;
 }

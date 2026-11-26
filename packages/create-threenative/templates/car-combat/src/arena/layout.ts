@@ -22,18 +22,29 @@ export interface IPathPoint {
 
 /** The point `s` metres along the centre line, wrapping the lap. s = 0 is the middle of the bottom straight. */
 export function pathAt(distance: number): IPathPoint {
-  const s = ((distance + STRAIGHT) % LAP_LENGTH + LAP_LENGTH) % LAP_LENGTH;
+  const s = (((distance + STRAIGHT) % LAP_LENGTH) + LAP_LENGTH) % LAP_LENGTH;
   const straight = 2 * STRAIGHT;
   const arc = Math.PI * TURN;
   // s = 0 is the straight's west end here; the shift above puts s = 0 of the caller at its middle.
   if (s < straight) return { fx: 1, fz: 0, x: -STRAIGHT + s, z: TURN };
   if (s < straight + arc) {
     const phi = (s - straight) / TURN;
-    return { fx: Math.cos(phi), fz: -Math.sin(phi), x: STRAIGHT + TURN * Math.sin(phi), z: TURN * Math.cos(phi) };
+    return {
+      fx: Math.cos(phi),
+      fz: -Math.sin(phi),
+      x: STRAIGHT + TURN * Math.sin(phi),
+      z: TURN * Math.cos(phi),
+    };
   }
-  if (s < 2 * straight + arc) return { fx: -1, fz: 0, x: STRAIGHT - (s - straight - arc), z: -TURN };
+  if (s < 2 * straight + arc)
+    return { fx: -1, fz: 0, x: STRAIGHT - (s - straight - arc), z: -TURN };
   const phi = (s - 2 * straight - arc) / TURN;
-  return { fx: -Math.cos(phi), fz: Math.sin(phi), x: -STRAIGHT - TURN * Math.sin(phi), z: -TURN * Math.cos(phi) };
+  return {
+    fx: -Math.cos(phi),
+    fz: Math.sin(phi),
+    x: -STRAIGHT - TURN * Math.sin(phi),
+    z: -TURN * Math.cos(phi),
+  };
 }
 
 export function yawOf(point: Pick<IPathPoint, "fx" | "fz">): number {

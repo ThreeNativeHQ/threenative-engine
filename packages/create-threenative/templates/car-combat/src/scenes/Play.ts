@@ -31,7 +31,8 @@ import { World } from "../systems/World.js";
  * True only under the playtest runner (it sets this global before any game code runs). The
  * station keys answer only then; a player pressing them in a real build gets nothing.
  */
-const UNDER_PLAYTEST = (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
+const UNDER_PLAYTEST =
+  (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
 
 export class Play extends Scene<GameState, IPhysicsContext> {
   static override readonly initialState: GameState = INITIAL_STATE;
@@ -55,7 +56,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
   override enter(ctx: GameCtx): SceneFrame<GameState, IPhysicsContext> {
     ctx.state.set({ ...INITIAL_STATE });
     setupSky(ctx.scene, ctx.renderer.softwareAdapter !== undefined);
-    const lighting = setupLighting(ctx.scene, ctx.renderer.raw as Parameters<typeof setupLighting>[1], isMobile());
+    const lighting = setupLighting(
+      ctx.scene,
+      ctx.renderer.raw as Parameters<typeof setupLighting>[1],
+      isMobile(),
+    );
     ctx.add(lighting.key.target);
     const materialEnvironment = {
       web: getPlatform().runtime === "web",
@@ -66,7 +71,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     };
     this.#post = setupPost(ctx.renderer, ctx.scene, ctx.camera, {
       godraysLight: lighting.key,
-      onTierChanged: (tier) => this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
+      onTierChanged: (tier) =>
+        this.#materialLighting?.setEnabled(materialLightingEnabled(tier, materialEnvironment)),
       mobile: isMobile(),
       software: ctx.renderer.softwareAdapter !== undefined,
       gpuClass: ctx.renderer.gpuClass?.class,
@@ -98,7 +104,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const merged = mergeByMaterial(arena.root, { label: "arena", skip: (mesh) => live.has(mesh) });
     for (const mesh of merged) {
       // Road paint and the floor cast no shadow anyone sees.
-      mesh.castShadow = mesh.material !== floorMaterial && mesh.material !== laneMarkMaterial && mesh.material !== roadMaterial && mesh.castShadow;
+      mesh.castShadow =
+        mesh.material !== floorMaterial &&
+        mesh.material !== laneMarkMaterial &&
+        mesh.material !== roadMaterial &&
+        mesh.castShadow;
       mesh.receiveShadow = true;
     }
     arena.root.clear();
@@ -109,7 +119,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const world = new World(ctx);
     // Walls and cars pull the lens in: a passing car never stands between the camera and the player.
     const probe = (from: Vector3, to: Vector3) =>
-      ctx.physics.directSpaceState.intersectRay({ collisionMask: WORLD_LAYER | CAR_LAYER, from, to })?.distance;
+      ctx.physics.directSpaceState.intersectRay({
+        collisionMask: WORLD_LAYER | CAR_LAYER,
+        from,
+        to,
+      })?.distance;
     ctx.entities.add("camera", { debug: () => ({ yaw: rig.yaw }) });
     rig.snap(world.player.yaw, world.player.position);
     afterPhysics(ctx, (dt) => {
@@ -130,7 +144,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     );
     if (this.#environmentSample !== undefined) {
       const { measurement, source, intensity } = this.#environmentSample;
-      this.#materialLighting.setEnvironmentMeasurement(measurement, source, intensity, this.#environmentSample);
+      this.#materialLighting.setEnvironmentMeasurement(
+        measurement,
+        source,
+        intensity,
+        this.#environmentSample,
+      );
     }
 
     const patch: Partial<GameState> = {};

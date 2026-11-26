@@ -116,16 +116,22 @@ export class Drivetrain {
       // Free revving: the engine climbs with the throttle and falls without it.
       const goal = throttleKey > 0 ? ENGINE.redline * 0.5 : ENGINE.idle;
       this.rpm += (goal - this.rpm) * Math.min(1, dt * 3);
-      if (throttleKey > 0 && this.rpm > GEARBOX.engageRpm && !input.handbrake) this.#shift(reverse ? -1 : 1);
+      if (throttleKey > 0 && this.rpm > GEARBOX.engageRpm && !input.handbrake)
+        this.#shift(reverse ? -1 : 1);
     } else {
       this.rpm += (Math.max(ENGINE.idle, target) - this.rpm) * Math.min(1, dt / GEARBOX.revLag);
       this.#autoShift(target, throttleKey, world.rearSlipping);
     }
 
     const demandBase = ENGINE.digitalThrottle * throttleKey;
-    this.trimmed = world.rearSlipping && world.steeringHard && Math.abs(this.gear) <= 2 && demandBase > ENGINE.tractionTrim;
+    this.trimmed =
+      world.rearSlipping &&
+      world.steeringHard &&
+      Math.abs(this.gear) <= 2 &&
+      demandBase > ENGINE.tractionTrim;
     const demand = this.trimmed ? ENGINE.tractionTrim : demandBase;
-    const power = 1 - Math.max(0, world.engineDamage - ENGINE.damageFreeLevels) / ENGINE.damagePowerDivisor;
+    const power =
+      1 - Math.max(0, world.engineDamage - ENGINE.damageFreeLevels) / ENGINE.damagePowerDivisor;
     const loss = Math.max(0, (this.rpm * this.rpm) / ENGINE.brakeDivisor - ENGINE.brakeBaseline);
     const limiter = this.rpm > ENGINE.redline ? 0 : 1;
     // Engine braking is a loss that never exceeds what the throttle gives when it is held.
@@ -136,7 +142,8 @@ export class Drivetrain {
     // Brake force jumps to the initial value and climbs to the cap while the pedal is held.
     this.#brakeTime = brakeKey > 0 ? this.#brakeTime + dt : 0;
     const climb = Math.min(1, this.#brakeTime / BRAKE.rampSeconds);
-    let brake = brakeKey > 0 ? (BRAKE.initial + BRAKE.ramp * climb) * brakeKey * world.brakeEfficiency : 0;
+    let brake =
+      brakeKey > 0 ? (BRAKE.initial + BRAKE.ramp * climb) * brakeKey * world.brakeEfficiency : 0;
     // A stopped car holding the back pedal is about to reverse, not brake.
     if (brakeKey > 0 && Math.abs(speed) < GEARBOX.reverseSpeed) brake = 0;
     return { brake, driveForce, throttle: throttleKey };
@@ -144,11 +151,22 @@ export class Drivetrain {
 
   /** Braking in first or second while nearly stopped flips the gear's sign (car.c:2731). */
   #flip(brakeKey: number, throttleKey: number, speed: number): void {
-    if (brakeKey > 0 && Math.abs(this.gear) <= GEARBOX.reverseCeiling && Math.abs(speed) < GEARBOX.reverseSpeed && throttleKey === 0 && this.gear >= 0) {
+    if (
+      brakeKey > 0 &&
+      Math.abs(this.gear) <= GEARBOX.reverseCeiling &&
+      Math.abs(speed) < GEARBOX.reverseSpeed &&
+      throttleKey === 0 &&
+      this.gear >= 0
+    ) {
       this.gear = -1;
       this.#held = GEARBOX.holdSeconds;
       this.shifts += 1;
-    } else if (this.gear < 0 && brakeKey > 0 && Math.abs(speed) < GEARBOX.reverseSpeed && throttleKey === 0) {
+    } else if (
+      this.gear < 0 &&
+      brakeKey > 0 &&
+      Math.abs(speed) < GEARBOX.reverseSpeed &&
+      throttleKey === 0
+    ) {
       this.gear = 0;
     }
   }
@@ -161,11 +179,23 @@ export class Drivetrain {
 
   #autoShift(target: number, throttle: number, rearSlipping: boolean): void {
     if (this.#held > 0) return;
-    if (this.gear > 0 && this.gear < GEARBOX.ratios.length && target > GEARBOX.upRpm && this.rpm > GEARBOX.upRpm && !rearSlipping) {
+    if (
+      this.gear > 0 &&
+      this.gear < GEARBOX.ratios.length &&
+      target > GEARBOX.upRpm &&
+      this.rpm > GEARBOX.upRpm &&
+      !rearSlipping
+    ) {
       this.#shift(this.gear + 1);
     } else if (this.gear > 1 && target < GEARBOX.downRpm) {
       this.#shift(this.gear - 1);
-    } else if (target < GEARBOX.neutralRpm && this.rpm < GEARBOX.neutralRpm + ENGINE.idle && throttle === 0 && this.gear > 0 && target === 0) {
+    } else if (
+      target < GEARBOX.neutralRpm &&
+      this.rpm < GEARBOX.neutralRpm + ENGINE.idle &&
+      throttle === 0 &&
+      this.gear > 0 &&
+      target === 0
+    ) {
       this.gear = 0;
     }
   }

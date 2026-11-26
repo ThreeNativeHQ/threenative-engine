@@ -32,7 +32,9 @@ const endGeometry = new BoxGeometry(CAR_SIZE.width, CAR_SIZE.height, END);
 const sideGeometry = new BoxGeometry(SIDE, CAR_SIZE.height, MID);
 const coreGeometry = new BoxGeometry(CAR_SIZE.width - 2 * SIDE, CAR_SIZE.height - 0.15, MID);
 const cabinGeometry = new BoxGeometry(CAR_SIZE.width - 0.3, 0.5, 2.0);
-const wheelGeometry = new CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.26, 18).rotateZ(Math.PI / 2);
+const wheelGeometry = new CylinderGeometry(WHEEL_RADIUS, WHEEL_RADIUS, 0.26, 18).rotateZ(
+  Math.PI / 2,
+);
 
 export interface IPanel {
   readonly mesh: Mesh;

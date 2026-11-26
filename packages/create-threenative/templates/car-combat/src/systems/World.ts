@@ -23,6 +23,9 @@ export class World {
   readonly rivals: RivalDriver[] = [];
   readonly race = new Race();
   rammed = 0;
+  backups = 0;
+  /** A station parks the player: the brake holds it still until the next restart. */
+  holdPlayer = false;
   repairing = false;
   bonusFlash = 0;
   /** Set by the clock: a freeze for tests that need the rivals still. */
@@ -31,7 +34,14 @@ export class World {
   constructor(readonly ctx: GameCtx) {
     this.#random = createRandom(30_303);
     const start = pathAt(6);
-    this.player = new Car(ctx, { colour: PAINTS[0], name: "player", player: true, x: start.x, yaw: yawOf(start), z: start.z });
+    this.player = new Car(ctx, {
+      colour: PAINTS[0],
+      name: "player",
+      player: true,
+      x: start.x,
+      yaw: yawOf(start),
+      z: start.z,
+    });
     ctx.entities.add("player", this.player);
     const grid = [
       { lane: -4, s: -4 },
@@ -42,8 +52,22 @@ export class World {
       const point = pathAt(slot.s);
       const x = point.x - point.fz * slot.lane;
       const z = point.z + point.fx * slot.lane;
-      const car = new Car(ctx, { colour: PAINTS[index + 1] as number, name: `rival.${index}`, player: false, x, yaw: yawOf(point), z });
-      ctx.entities.add(`rival.${index}`, { debug: () => ({ ...car.debug(), grudge: Math.round(driver.grudge), nastiness: driver.nastiness, objective: driver.objective }) });
+      const car = new Car(ctx, {
+        colour: PAINTS[index + 1] as number,
+        name: `rival.${index}`,
+        player: false,
+        x,
+        yaw: yawOf(point),
+        z,
+      });
+      ctx.entities.add(`rival.${index}`, {
+        debug: () => ({
+          ...car.debug(),
+          grudge: Math.round(driver.grudge),
+          nastiness: driver.nastiness,
+          objective: driver.objective,
+        }),
+      });
       const driver = new RivalDriver(car, NASTINESS[index] as number, slot.s, () => this.#random());
       this.rivals.push(driver);
     });
@@ -63,7 +87,7 @@ export class World {
   update(dt: number, input: IControl): void {
     this.bonusFlash = Math.max(0, this.bonusFlash - dt);
     const playing = this.race.phase === "playing";
-    if (playing) this.player.control(input, dt);
+    if (playing && !this.holdPlayer) this.player.control(input, dt);
     else this.player.hold();
     const target = {
       speed: Math.abs(this.player.speed),
@@ -73,7 +97,14 @@ export class World {
       z: this.player.position.z,
     };
     for (const driver of this.rivals) {
-      const control: IRivalControl = playing ? driver.update(dt, target, this.rivals) : { back: 0, fwd: 0, handbrake: false, steer: 0 };
+      const before = driver.objective;
+      const control: IRivalControl = playing
+        ? driver.update(dt, target, this.rivals)
+        : { back: 0, fwd: 0, handbrake: false, steer: 0 };
+      if (before !== "backup" && driver.objective === "backup") {
+        this.backups += 1;
+        emitPlaytestEvent({ entity: driver.car.name, name: "rival-backs-off" });
+      }
       if (driver.car.wrecked) driver.car.drive(control, dt);
       else if (driver.objective === "wait" || !playing) driver.car.hold();
       else driver.car.drive(control, dt);
@@ -83,15 +114,23 @@ export class World {
       const gate = this.race.update(dt, this.player.position.x, this.player.position.z);
       if (gate >= 0) {
         this.bonusFlash = 2;
-        emitPlaytestEvent({ entity: "player", gate, name: "gate", timeLeft: Math.ceil(this.race.timeLeft) });
+        emitPlaytestEvent({
+          entity: "player",
+          gate,
+          name: "gate",
+          timeLeft: Math.ceil(this.race.timeLeft),
+        });
       }
     }
   }
 
   #pads(dt: number): void {
     const car = this.player;
-    const onPad = PADS.some((pad) => Math.hypot(car.position.x - pad.x, car.position.z - pad.z) < pad.radius);
-    this.repairing = onPad && !car.wrecked && Math.abs(car.speed) < PAD_SPEED && this.race.phase === "playing";
+    const onPad = PADS.some(
+      (pad) => Math.hypot(car.position.x - pad.x, car.position.z - pad.z) < pad.radius,
+    );
+    this.repairing =
+      onPad && !car.wrecked && Math.abs(car.speed) < PAD_SPEED && this.race.phase === "playing";
     if (!this.repairing) return;
     if (car.damage.repaired) {
       this.repairing = false;
@@ -110,7 +149,12 @@ export class World {
         car.hit = undefined;
         const other = this.#culprit(car);
         if (other === undefined) {
-          emitPlaytestEvent({ entity: car.name, levels: Math.round(hit.levels), name: "crash", region: hit.region });
+          emitPlaytestEvent({
+            entity: car.name,
+            levels: Math.round(hit.levels),
+            name: "crash",
+            region: hit.region,
+          });
         } else {
           this.#blame(car, other, hit.levels, hit.region);
         }
@@ -118,7 +162,12 @@ export class World {
       if (!wasWrecked && car.wrecked) this.#wrecked(car);
     }
     if (this.race.phase === "playing" && this.player.wrecked) this.race.wrecked();
-    if (this.race.phase === "playing" && this.rivals.length > 0 && this.rivalsWrecked === this.rivals.length) this.race.rivalsWrecked();
+    if (
+      this.race.phase === "playing" &&
+      this.rivals.length > 0 &&
+      this.rivalsWrecked === this.rivals.length
+    )
+      this.race.rivalsWrecked();
   }
 
   #culprit(car: Car): Car | undefined {
@@ -138,12 +187,23 @@ export class World {
   #blame(victim: Car, culprit: Car, levels: number, region: string): void {
     if (victim.player) {
       this.driverOf(culprit)?.provoke();
-      emitPlaytestEvent({ entity: "player", levels: Math.round(levels), name: "rammed-by-rival", region });
+      emitPlaytestEvent({
+        entity: "player",
+        levels: Math.round(levels),
+        name: "rammed-by-rival",
+        region,
+      });
     } else {
       if (culprit.player) {
         this.rammed += 1;
         this.driverOf(victim)?.provoke();
-        emitPlaytestEvent({ entity: "player", levels: Math.round(levels), name: "rammed-rival", region, victim: victim.name });
+        emitPlaytestEvent({
+          entity: "player",
+          levels: Math.round(levels),
+          name: "rammed-rival",
+          region,
+          victim: victim.name,
+        });
       }
     }
   }
@@ -169,6 +229,11 @@ export class World {
   }
 
   debug(): Record<string, unknown> {
-    return { objectives: this.objectives(), rammed: this.rammed, rivalsWrecked: this.rivalsWrecked };
+    return {
+      backups: this.backups,
+      objectives: this.objectives(),
+      rammed: this.rammed,
+      rivalsWrecked: this.rivalsWrecked,
+    };
   }
 }

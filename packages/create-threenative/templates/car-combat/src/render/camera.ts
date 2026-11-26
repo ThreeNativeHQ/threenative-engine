@@ -54,14 +54,19 @@ export class ChaseCamera {
     const distance = RIG.distance + Math.abs(speed) * RIG.extraPerMs;
     _aim.copy(subject);
     _aim.y += RIG.aim;
-    _desired.set(subject.x + Math.sin(this.yaw) * distance, this.#height + RIG.height, subject.z + Math.cos(this.yaw) * distance);
+    _desired.set(
+      subject.x + Math.sin(this.yaw) * distance,
+      this.#height + RIG.height,
+      subject.z + Math.cos(this.yaw) * distance,
+    );
     const wall = probe(subject, _desired);
     if (wall !== undefined) {
       const room = Math.max(0.8, wall - WALL_MARGIN);
       _desired.sub(subject).setLength(room).add(subject);
       _desired.y = Math.max(_desired.y, subject.y + 3.2);
     }
-    if (wall !== undefined || this.camera.position.distanceTo(_desired) > 10) this.camera.position.copy(_desired);
+    if (wall !== undefined || this.camera.position.distanceTo(_desired) > 10)
+      this.camera.position.copy(_desired);
     else this.camera.position.lerp(_desired, Math.min(1, dt * 14));
     this.camera.lookAt(_aim);
   }

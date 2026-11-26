@@ -42,7 +42,14 @@ export function buildArena(): IArena {
   const root = new Group();
   root.name = "arena";
   const solids: ISolid[] = [];
-  const add = (geometry: BoxGeometry, material: Mesh["material"], x: number, y: number, z: number, solid = false): Mesh => {
+  const add = (
+    geometry: BoxGeometry,
+    material: Mesh["material"],
+    x: number,
+    y: number,
+    z: number,
+    solid = false,
+  ): Mesh => {
     const mesh = new Mesh(worldGridUVs(geometry.translate(x, y, z)), material);
     mesh.receiveShadow = true;
     mesh.castShadow = solid;
@@ -51,7 +58,11 @@ export function buildArena(): IArena {
       const box = geometry.boundingBox ?? (geometry.computeBoundingBox(), geometry.boundingBox);
       if (box)
         solids.push({
-          center: { x: (box.min.x + box.max.x) / 2, y: (box.min.y + box.max.y) / 2, z: (box.min.z + box.max.z) / 2 },
+          center: {
+            x: (box.min.x + box.max.x) / 2,
+            y: (box.min.y + box.max.y) / 2,
+            z: (box.min.z + box.max.z) / 2,
+          },
           size: { x: box.max.x - box.min.x, y: box.max.y - box.min.y, z: box.max.z - box.min.z },
         });
     }
@@ -61,7 +72,8 @@ export function buildArena(): IArena {
   // The floor (a collider the size of the whole world sits under it in the scene).
   add(new BoxGeometry(FLOOR.x * 2, 0.2, FLOOR.z * 2), floorMaterial, 0, -0.1, 0);
   // The road: two straights and two half circles, one finger above the floor.
-  for (const sign of [1, -1]) add(new BoxGeometry(STRAIGHT * 2, 0.04, ROAD_HALF * 2), roadMaterial, 0, 0.02, sign * TURN);
+  for (const sign of [1, -1])
+    add(new BoxGeometry(STRAIGHT * 2, 0.04, ROAD_HALF * 2), roadMaterial, 0, 0.02, sign * TURN);
   for (const [cx, start] of [
     [STRAIGHT, -Math.PI / 2],
     [-STRAIGHT, Math.PI / 2],
@@ -77,11 +89,47 @@ export function buildArena(): IArena {
 
   // Perimeter walls and infield blocks: solid, grey, and tall enough to stop a car.
   const wallY = WALL.height / 2;
-  add(new BoxGeometry(FLOOR.x * 2 + WALL.thickness * 2, WALL.height, WALL.thickness), structureMaterial, 0, wallY, -FLOOR.z - WALL.thickness / 2, true);
-  add(new BoxGeometry(FLOOR.x * 2 + WALL.thickness * 2, WALL.height, WALL.thickness), structureMaterial, 0, wallY, FLOOR.z + WALL.thickness / 2, true);
-  add(new BoxGeometry(WALL.thickness, WALL.height, FLOOR.z * 2), structureMaterial, -FLOOR.x - WALL.thickness / 2, wallY, 0, true);
-  add(new BoxGeometry(WALL.thickness, WALL.height, FLOOR.z * 2), structureMaterial, FLOOR.x + WALL.thickness / 2, wallY, 0, true);
-  for (const block of BLOCKS) add(new BoxGeometry(block.width, block.height, block.depth), structureMaterial, block.x, block.height / 2, block.z, true);
+  add(
+    new BoxGeometry(FLOOR.x * 2 + WALL.thickness * 2, WALL.height, WALL.thickness),
+    structureMaterial,
+    0,
+    wallY,
+    -FLOOR.z - WALL.thickness / 2,
+    true,
+  );
+  add(
+    new BoxGeometry(FLOOR.x * 2 + WALL.thickness * 2, WALL.height, WALL.thickness),
+    structureMaterial,
+    0,
+    wallY,
+    FLOOR.z + WALL.thickness / 2,
+    true,
+  );
+  add(
+    new BoxGeometry(WALL.thickness, WALL.height, FLOOR.z * 2),
+    structureMaterial,
+    -FLOOR.x - WALL.thickness / 2,
+    wallY,
+    0,
+    true,
+  );
+  add(
+    new BoxGeometry(WALL.thickness, WALL.height, FLOOR.z * 2),
+    structureMaterial,
+    FLOOR.x + WALL.thickness / 2,
+    wallY,
+    0,
+    true,
+  );
+  for (const block of BLOCKS)
+    add(
+      new BoxGeometry(block.width, block.height, block.depth),
+      structureMaterial,
+      block.x,
+      block.height / 2,
+      block.z,
+      true,
+    );
 
   // Gate pylons are solid-free (a car drives between them); the marker plane shows the next gate.
   const gateMarkers: Mesh[] = [];

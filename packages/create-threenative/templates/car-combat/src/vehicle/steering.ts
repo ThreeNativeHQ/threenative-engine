@@ -22,7 +22,13 @@ export function steerRate(opposing: boolean, speed: number): number {
  * smaller of two corrections: follow the yaw the car already carries (`yawNorm`, so a slide
  * keeps its counter-steer), or cancel the curvature. It never crosses zero (car.c:2048-2075).
  */
-export function stepCurvature(c: number, input: number, speed: number, yawNorm: number, dt: number): number {
+export function stepCurvature(
+  c: number,
+  input: number,
+  speed: number,
+  yawNorm: number,
+  dt: number,
+): number {
   if (input !== 0) {
     const opposing = Math.sign(input) !== Math.sign(c) && c !== 0;
     const next = c + Math.sign(input) * steerRate(opposing, speed) * dt * Math.abs(input);
@@ -31,7 +37,10 @@ export function stepCurvature(c: number, input: number, speed: number, yawNorm: 
   const toYaw = yawNorm - c;
   const toZero = -c;
   const delta = Math.abs(toYaw) < Math.abs(toZero) ? toYaw : toZero;
-  const step = Math.max(-COUNTER_RATE * RATE_GAIN * dt, Math.min(COUNTER_RATE * RATE_GAIN * dt, delta));
+  const step = Math.max(
+    -COUNTER_RATE * RATE_GAIN * dt,
+    Math.min(COUNTER_RATE * RATE_GAIN * dt, delta),
+  );
   const next = c + step;
   return Math.sign(next) === Math.sign(c) || next === 0 ? next : 0;
 }
