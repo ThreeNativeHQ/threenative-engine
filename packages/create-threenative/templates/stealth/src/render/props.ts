@@ -125,12 +125,18 @@ const CONE_COLOURS = {
  * the viewer is calm, amber while suspicious, red on alert. A teaching aid as much as a look —
  * set `visible = false` on it for the classic radar-only read.
  */
-export function createViewCone(range: number, halfAngle: number): Mesh {
+/** A flat fan of `range` metres and ±`halfAngle`, centred on +z (yaw 0). */
+export function viewConeGeometry(range: number, halfAngle: number): CircleGeometry {
   // CircleGeometry sweeps counter-clockwise from +x; rotated flat and turned so the fan's centre
   // faces +z (yaw 0) once it is a child of the viewer.
   const geometry = new CircleGeometry(range, 24, Math.PI / 2 - halfAngle, halfAngle * 2);
   geometry.rotateX(-Math.PI / 2);
   geometry.rotateY(Math.PI);
+  return geometry;
+}
+
+export function createViewCone(range: number, halfAngle: number): Mesh {
+  const geometry = viewConeGeometry(range, halfAngle);
   const cone = new Mesh(
     geometry,
     new MeshBasicMaterial({

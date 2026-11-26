@@ -26,6 +26,7 @@ import {
   dress,
   guardMaterial,
   tintViewCone,
+  viewConeGeometry,
 } from "../render/props.js";
 import type { AlertPhase } from "../state.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
@@ -86,6 +87,8 @@ export const PUMPS_TO_KNOCK_OUT = 5;
 export const KNOCKOUT_TIME = 40;
 /** How far a search point may fall from the last known position, metres. */
 const SEARCH_RADIUS = 5;
+/** The wider fan every guard draws during Caution; one geometry shared by all of them. */
+const CAUTION_CONE = viewConeGeometry(GUARD_RANGE, GUARD_HALF_ANGLE * CAUTION_ANGLE);
 /** Walking that covers less than this share of its intended distance counts as blocked. */
 const STUCK_PROGRESS = 0.25;
 /** Seconds of blocked walking before the guard gives up on the point and treats it as reached. */
@@ -125,6 +128,7 @@ export class Guard extends Fighter {
   readonly #eye = new Vector3();
   readonly #toward = new Vector3();
   readonly #lastPosition = new Vector3();
+  readonly #calmCone: Mesh["geometry"];
   #lastStep = 0;
   #stuck = 0;
   /** True on the tick `#walkTo` gave up on an unreachable point. */
@@ -157,6 +161,7 @@ export class Guard extends Fighter {
     this.#routeIndex = patrol.route.length > 1 ? 1 : 0;
     this.#face(this.#routeIndex);
     this.cone = createViewCone(GUARD_RANGE, GUARD_HALF_ANGLE);
+    this.#calmCone = this.cone.geometry;
     this.figure.add(this.cone);
     // The cone lies on the floor: cancel both the body's height and the figure's own drop.
     this.cone.position.y = 0.03 - (HALF_HEIGHT + RADIUS) - this.figure.position.y;
@@ -319,6 +324,7 @@ export class Guard extends Fighter {
       case "search":
         speed = this.#walkTo(this.#interest, CAUTION_SPEED, dt, 0.8);
         if (this.#blocked) this.#interest.copy(this.mesh.position);
+        if (speed > 0) this.#timer = 0;
         if (speed === 0) {
           if (this.#timer === 0) this.#lookBase = this.yaw;
           this.#timer += dt;
@@ -401,11 +407,8 @@ export class Guard extends Fighter {
     this.#marker.set(mood);
     this.cone.visible = this.conscious;
     // Caution widens the eyes (`halfAngle`); stretch the drawn fan so its edges match exactly.
-    // Scaling x and z by the sine and cosine ratios puts each edge at the wider angle and the
-    // same 10 m reach.
-    const wide = GUARD_HALF_ANGLE * CAUTION_ANGLE;
-    this.cone.scale.x = this.#caution ? Math.sin(wide) / Math.sin(GUARD_HALF_ANGLE) : 1;
-    this.cone.scale.z = this.#caution ? Math.cos(wide) / Math.cos(GUARD_HALF_ANGLE) : 1;
+    // Caution widens the eyes (`halfAngle`): draw the wider fan, same reach.
+    this.cone.geometry = this.#caution ? CAUTION_CONE : this.#calmCone;
     tintViewCone(this.cone, mood === "none" ? "patrol" : mood);
     if (this.state === "down" || this.state === "held") this.animateStill(dt);
     else
@@ -601,7 +604,8 @@ export class Guard extends Fighter {
 
   #checkBody(dt: number, director: AlertDirector): number {
     const body = this.#bodyTarget;
-    if (body === undefined || body.state !== "down") {
+    // Gone, or another guard already called it in: nothing for this one to add.
+    if (body === undefined || body.state !== "down" || (body.reported && this.#timer === 0)) {
       this.#returnToRoute();
       return 0;
     }

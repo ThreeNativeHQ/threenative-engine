@@ -15,7 +15,7 @@ import type { Stance } from "../state.js";
 export const GUARD_HALF_ANGLE = Math.PI / 4;
 /** How far a guard sees a standing player in light, metres. */
 export const GUARD_RANGE = 10;
-/** Inside this distance a guard notices a moving player whatever way it faces. */
+/** Inside this distance a guard notices a player who is not crouched, whatever way it faces. */
 export const CLOSE_SENSE = 0.8;
 /** Guard eye height, metres. */
 export const EYE_HEIGHT = 1.6;
