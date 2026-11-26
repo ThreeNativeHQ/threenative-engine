@@ -13419,6 +13419,21 @@
       ]
     },
     {
+      "blurb": "A grey-grid island flown by a hang glider (lift, drag, stall, thermals, wind) and a rocket belt (thrust, fuel, hover), with rings, a scored landing pad and a score card.",
+      "name": "flight",
+      "title": "Flight",
+      "words": [
+        "flight",
+        "pilotwings",
+        "pilotwings-64",
+        "flight-sim",
+        "glider",
+        "hang-glider",
+        "rocket-belt",
+        "skydiving"
+      ]
+    },
+    {
       "blurb": "Eight karts race three laps of Clover Loop, a figure-8 with a bridge, a jump over a creek and boost pads, with a hop into a power-slide, mini-turbo sparks, item boxes with burrs, acorns and nitro cans, and seven CPU drivers on a rubber band.",
       "name": "kart",
       "title": "Clover Cup",
