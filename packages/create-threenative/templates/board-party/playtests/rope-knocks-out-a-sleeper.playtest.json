@@ -103,6 +103,26 @@
             "equals": 20
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "miniAlive.2",
+        "atSteps": [
+          {
+            "label": "finished",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "miniAlive.3",
+        "atSteps": [
+          {
+            "label": "finished",
+            "equals": 1
+          }
+        ]
       }
     ]
   }

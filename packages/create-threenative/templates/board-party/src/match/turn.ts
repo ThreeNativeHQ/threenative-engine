@@ -385,6 +385,7 @@ export class Match {
     const id = this.forcedMinigame ?? (this.turn % 2 === 1 ? "dash" : "rope");
     this.forcedMinigame = undefined;
     this.minigame = id === "dash" ? new Dash(this.rng) : new Rope(this.rng, this.perfectCpu);
+    this.perfectCpu = false;
     this.phase = "intro";
     this.#start(INTRO_TIME);
     this.#emit(id, 0);

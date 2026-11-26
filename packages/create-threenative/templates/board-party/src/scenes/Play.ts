@@ -211,7 +211,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         matchTime += dt;
         if (yes) match.confirm();
         if (no) match.decline();
-        match.update(dt, { jump: confirm, run: frameCtx.input.vector("move").x });
+        match.update(dt, { jump: yes, run: frameCtx.input.vector("move").x });
       }
       for (const event of match.events.splice(0)) {
         emitPlaytestEvent({

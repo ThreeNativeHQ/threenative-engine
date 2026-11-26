@@ -62,6 +62,9 @@ export class Rope implements IMinigame {
       });
     }
     this.angle = (this.#seatAngle[0] as number) - 2;
+    // A seat the bar starts just behind has no earlier pass to arm on: it rolls for the first pass now.
+    for (let seat = 1; seat < 4; seat += 1)
+      if (wrapPositive((this.#seatAngle[seat] as number) - this.angle) <= Math.PI) this.#arm(seat);
   }
 
   /** The bar's speed now, radians per second. */
@@ -86,6 +89,7 @@ export class Rope implements IMinigame {
       const gap = Math.abs(wrapPositive(this.angle - theta + Math.PI) - Math.PI);
       if (gap < HIT_HALF && body.y < CLEAR_HEIGHT) {
         this.alive[seat] = false;
+        body.y = 0;
         body.pose = "down";
       }
     }
@@ -101,13 +105,15 @@ export class Rope implements IMinigame {
     if ((this.contestants[seat] as IContestant).y === 0) this.#vy[seat] = JUMP_SPEED;
   }
 
+  #arm(seat: number): void {
+    this.#armed[seat] = true;
+    this.#will[seat] = this.#perfect || this.#rng.percent() < CPU_SKILL;
+  }
+
   #cpuJumps(seat: number, theta: number, speed: number): boolean {
     const ahead = wrapPositive(theta - this.angle);
     if (ahead > Math.PI) {
-      if (!this.#armed[seat]) {
-        this.#armed[seat] = true;
-        this.#will[seat] = this.#perfect || this.#rng.percent() < CPU_SKILL;
-      }
+      if (!this.#armed[seat]) this.#arm(seat);
       return false;
     }
     if (!this.#armed[seat] || ahead >= speed * CPU_LEAD) return false;

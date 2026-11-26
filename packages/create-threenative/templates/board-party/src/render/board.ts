@@ -3,7 +3,7 @@
 // arena shows the set of the minigame that is running.
 import { BoxGeometry, CylinderGeometry, Group, type Material, Mesh, PlaneGeometry } from "three";
 import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
-import { CHAINS, type ISpace, lookahead, spaceAt } from "../board/layout.js";
+import { CHAINS, type ISpace, JUNCTION, lookahead, spaceAt } from "../board/layout.js";
 import { DASH_FINISH_X, DASH_START_X } from "../minigames/dash.js";
 import { ARENA } from "../minigames/minigame.js";
 import { ROPE_REACH } from "../minigames/rope.js";
@@ -60,19 +60,22 @@ export function createBoard(spaces: readonly ISpace[]): IBoardView {
   // The paths: one strip per link of every chain, merged into one draw.
   const links: BoxGeometry[] = [];
   const seen = new Set<string>();
+  const edges: [number, number][] = [[JUNCTION.space, spaceAt(JUNCTION.branch)]];
   for (const [chain, { ids }] of CHAINS.entries())
-    for (let slot = 0; slot < ids.length; slot += 1) {
-      const from = spaces[spaceAt({ chain, slot })] as ISpace;
-      const to = spaces[spaceAt(lookahead({ chain, slot }))] as ISpace;
-      const key = `${from.id}-${to.id}`;
-      if (seen.has(key)) continue;
-      seen.add(key);
-      const length = Math.hypot(to.x - from.x, to.z - from.z);
-      const link = new BoxGeometry(length, 0.08, 0.7);
-      link.rotateY(-Math.atan2(to.z - from.z, to.x - from.x));
-      link.translate((from.x + to.x) / 2, 0.04, (from.z + to.z) / 2);
-      links.push(worldGridUVs(link));
-    }
+    for (let slot = 0; slot < ids.length; slot += 1)
+      edges.push([spaceAt({ chain, slot }), spaceAt(lookahead({ chain, slot }))]);
+  for (const [a, b] of edges) {
+    const from = spaces[a] as ISpace;
+    const to = spaces[b] as ISpace;
+    const key = `${from.id}-${to.id}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    const length = Math.hypot(to.x - from.x, to.z - from.z);
+    const link = new BoxGeometry(length, 0.08, 0.7);
+    link.rotateY(-Math.atan2(to.z - from.z, to.x - from.x));
+    link.translate((from.x + to.x) / 2, 0.04, (from.z + to.z) / 2);
+    links.push(worldGridUVs(link));
+  }
   const paths = new Mesh(mergeGeometries(links, false), structureMaterial);
   paths.receiveShadow = true;
   root.add(paths);
@@ -154,11 +157,14 @@ export function createBoard(spaces: readonly ISpace[]): IBoardView {
     showMinigame: (id, go) => {
       dash.visible = id === "dash";
       rope.visible = id === "rope";
-      lamp.material = go ? greenLamp : redLamp;
+      const next = go ? greenLamp : redLamp;
+      if (lamp.material !== next) lamp.material = next;
     },
     sync: (current) => {
-      for (const [index, disc] of discs.entries())
-        disc.material = MATERIAL[(current[index] as ISpace).type];
+      for (const [index, disc] of discs.entries()) {
+        const next = MATERIAL[(current[index] as ISpace).type];
+        if (disc.material !== next) disc.material = next;
+      }
     },
   };
 }
