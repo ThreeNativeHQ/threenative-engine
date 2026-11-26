@@ -29,13 +29,13 @@
     {
       "kind": "wait",
       "label": "breathless",
-      "waitTicks": 100,
+      "waitTicks": 60,
       "release": true
     },
     {
       "kind": "wait",
       "label": "drowning",
-      "waitTicks": 100,
+      "waitTicks": 140,
       "release": true
     },
     {
@@ -68,7 +68,7 @@
         "atSteps": [
           {
             "label": "breathless",
-            "lte": 0
+            "lte": 20
           },
           {
             "label": "drowning",

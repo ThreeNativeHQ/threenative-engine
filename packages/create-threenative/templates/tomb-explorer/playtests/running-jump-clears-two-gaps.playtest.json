@@ -51,12 +51,18 @@
         "Space"
       ],
       "holdTicks": 2,
-      "release": false
+      "release": true
     },
     {
       "kind": "wait",
       "label": "landed",
       "waitTicks": 110,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stopped",
+      "waitTicks": 10,
       "release": true
     }
   ],
@@ -72,7 +78,7 @@
         "path": "mode",
         "atSteps": [
           {
-            "label": "landed",
+            "label": "stopped",
             "equals": "idle"
           }
         ]

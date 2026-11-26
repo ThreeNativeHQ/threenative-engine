@@ -73,7 +73,8 @@
       {
         "id": "state",
         "path": "grabs",
-        "equals": 0
+        "equals": 0,
+        "allowTrivial": "The count stays at zero on purpose: with the action key up, a jump at the wall must not catch the ledge, and playerY at the foot proves she landed back."
       }
     ]
   }

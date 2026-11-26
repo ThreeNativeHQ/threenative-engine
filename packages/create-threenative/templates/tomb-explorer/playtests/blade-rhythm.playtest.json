@@ -30,8 +30,8 @@
       "kind": "input",
       "label": "run",
       "press": "ArrowUp",
-      "holdTicks": 1,
-      "release": false
+      "holdTicks": 62,
+      "release": true
     },
     {
       "label": "past",
@@ -40,7 +40,7 @@
         "path": "playerX",
         "gte": 9300
       },
-      "release": false,
+      "release": true,
       "timeoutMs": 5000
     },
     {

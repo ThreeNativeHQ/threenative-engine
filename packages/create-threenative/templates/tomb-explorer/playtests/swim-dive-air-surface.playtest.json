@@ -58,7 +58,7 @@
       "press": [
         "Space"
       ],
-      "holdTicks": 40,
+      "holdTicks": 20,
       "release": false
     },
     {
@@ -68,23 +68,13 @@
         "Space",
         "ArrowDown"
       ],
-      "holdTicks": 90,
-      "release": false
-    },
-    {
-      "label": "up-again",
-      "waitForResource": {
-        "id": "state",
-        "path": "mode",
-        "equals": "surface"
-      },
-      "release": false,
-      "timeoutMs": 8000
+      "holdTicks": 80,
+      "release": true
     },
     {
       "kind": "wait",
       "label": "breathing",
-      "waitTicks": 30,
+      "waitTicks": 80,
       "release": true
     }
   ],
