@@ -13459,6 +13459,21 @@
       "words": ["rain"]
     },
     {
+      "blurb": "A grid-material stage with a beat clock and a teacher who calls a line of button prompts: answer on the beat, graded cool, good, bad or miss, ride a rating meter up to freestyle or fall off the bottom.",
+      "name": "rhythm",
+      "title": "Rhythm call and response",
+      "words": [
+        "rhythm",
+        "parappa",
+        "parappa-the-rapper",
+        "parappa-the-rapper-2",
+        "rhythm-game",
+        "music-game",
+        "beat-clock",
+        "dance"
+      ]
+    },
+    {
       "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
       "name": "rts",
       "title": "Real-time strategy",
