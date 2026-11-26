@@ -158,7 +158,7 @@ type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 const PRIVATE_FILE = "[redacted: private file]";
 const SECRET_KEY =
-  /^(?:(?:set-)?cookie|(?:proxy-)?authorization|password|passwd|secret|api_?key|access_token|refresh_token|database_url|[a-z0-9_]*_(?:key|token|secret|password|passwd))$/iu;
+  /^(?:(?:set-)?cookie|(?:proxy-)?authorization|password|passwd|secret|api[-_]?key|access[-_]token|refresh_token|database_url|[a-z0-9_-]*[-_](?:key|token|secret|password|passwd))$/iu;
 const BODY_KEYS = new Set([
   "content",
   "text",
@@ -244,7 +244,9 @@ function scrubNode(node: Json, identity: IScrubIdentity, privateIds: Set<string>
   for (const [key, value] of Object.entries(node)) {
     if ((linked || namesPrivate) && BODY_KEYS.has(key)) out[key] = PRIVATE_FILE;
     // A JSON header or env map holds the secret as the value of a named key.
-    else if (SECRET_KEY.test(key) && typeof value === "string" && value.length > 0) out[key] = R;
+    // Node's IncomingMessage keeps `set-cookie` as an array of strings.
+    else if (SECRET_KEY.test(key) && (typeof value === "string" || Array.isArray(value)))
+      out[key] = R;
     else out[scrubText(key, identity)] = scrubNode(value, identity, privateIds);
   }
   return out;

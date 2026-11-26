@@ -235,12 +235,21 @@ describe("trace scrubber", () => {
 
   it("redacts JSON cookie headers, secret-named keys and the whole email address", () => {
     const record = {
-      headers: { Cookie: "session=abc123def456", "x-api-key": "plain" },
+      headers: { Cookie: "session=abc123def456", "x-api-key": "custom-secret-value" },
+      raw: { "set-cookie": ["sid=arraysecret123; HttpOnly"] },
       env: { STRIPE_SECRET: "topsecretvalue1" },
       message: { content: '{"Set-Cookie": "sid=secret123456; HttpOnly"} from alice@acme-corp.com' },
     };
     const { jsonl } = scrubTrace(JSON.stringify(record), identity);
-    for (const leaked of ["abc123def456", "secret123456", "topsecretvalue1", "acme-corp", "alice@"])
+    for (const leaked of [
+      "abc123def456",
+      "secret123456",
+      "topsecretvalue1",
+      "custom-secret-value",
+      "arraysecret123",
+      "acme-corp",
+      "alice@",
+    ])
       expect(jsonl).not.toContain(leaked);
   });
 

@@ -6,6 +6,7 @@ prd_contract: v1
 
 **Status:** DONE
 **Priority:** P2 — AC-1 through AC-6 are met (engine PR #768). The problem it solved: developers inside `pnpm dev` had to tail raw console logs for `TN_FRAME_BUDGET` / `TN_SCENE_WARNING`, invoke `npx threenative doctor` in a separate terminal, and run `playtests/*.playtest.json` manually outside the Dashboard.
+**Review:** Gemini 4 Neon High (`agy --model gemini-4-neon-high`, read-only), 2026-11-26: round 1 REJECT (scrubber leaks, config-save data loss, Dashboard closed on save), round 2 REJECT (JSON cookies, email domain, reload race), round 3 AUTHORIZE; its two round-3 minors (hyphenated and array secret keys, hoisted core version) also fixed. Every fix has a red-green test.
 **Complexity:** 6 (MEDIUM) — 6–10 implementation files (+2), new passive marker bridge / doctor API / playtest runner middleware (+2), process lifecycle & streaming state (+2); risk override: none (dev-only Vite serve plugin, zero production runtime bytes).
 **Owner:** João
 **Depends on:** [PRD-918](./PRD-918-dev-dashboard-studio-theme-settings-and-telemetry.md) (mounts into the Studio-themed Dev Dashboard side menu)

@@ -3,6 +3,7 @@
 import { createReadStream, readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { ConfigEditError, patchConfig, readConfigView } from "./config-editor.js";
 import { CONFIG_FIELDS, CRASH_REPORTS_PATH } from "./config-fields.js";
@@ -247,7 +248,10 @@ export function createDashboardApi(options: {
 /** The project's installed `@threenative/core` version: the engine a shared trace was made with. */
 function installedCoreVersion(root: string): string | undefined {
   try {
-    const file = path.join(root, "node_modules/@threenative/core/package.json");
+    // Resolved like Node would, so a hoisted or workspace install is found too.
+    const file = createRequire(path.join(root, "package.json")).resolve(
+      "@threenative/core/package.json",
+    );
     const version = (JSON.parse(readFileSync(file, "utf8")) as { version?: unknown }).version;
     return typeof version === "string" ? version : undefined;
   } catch {
