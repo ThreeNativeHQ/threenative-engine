@@ -65,6 +65,7 @@
         "collectathon",
         "kart",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -74,6 +75,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -112,6 +115,7 @@
         "adventure",
         "collectathon",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -121,6 +125,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -165,6 +171,7 @@
       "kits": [
         "action-rpg",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -175,6 +182,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -184,7 +193,7 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure"]
+      "kits": ["action-rpg", "adventure", "open-world", "stealth", "survival-horror"]
     },
     {
       "id": "ground-snap",
@@ -193,7 +202,16 @@
       "override": "`enabled: false`",
       "marker": "\u2014",
       "symbol": "GroundSnap",
-      "kits": ["action-rpg", "minimal", "runner", "shooter", "starter"]
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "open-world",
+        "runner",
+        "shooter",
+        "starter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "attach",
@@ -202,7 +220,7 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "shooter"]
+      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
     },
     {
       "id": "scale",
@@ -211,7 +229,18 @@
       "override": "per-call options",
       "marker": "\u2014",
       "symbol": "normaliseToMetres",
-      "kits": ["action-rpg", "minimal", "racing", "runner", "sailing", "shooter", "starter"]
+      "kits": [
+        "action-rpg",
+        "minimal",
+        "open-world",
+        "racing",
+        "runner",
+        "sailing",
+        "shooter",
+        "starter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "rigged",
@@ -231,6 +260,7 @@
         "action-rpg",
         "collectathon",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -240,6 +270,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -270,6 +302,7 @@
         "adventure",
         "collectathon",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -280,6 +313,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -300,6 +335,7 @@
       "kits": [
         "action-rpg",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -309,6 +345,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -331,6 +369,7 @@
         "adventure",
         "collectathon",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -341,6 +380,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },
@@ -366,7 +407,7 @@
       "default": "every factory ships a stock look",
       "override": "per-call options on `@threenative/core/spells`",
       "marker": "\u2014",
-      "kits": ["action-rpg"]
+      "kits": ["action-rpg", "open-world", "stealth", "survival-horror"]
     },
     {
       "id": "net",
@@ -427,6 +468,7 @@
         "adventure",
         "collectathon",
         "minimal",
+        "open-world",
         "platformer",
         "puzzle",
         "racing",
@@ -437,6 +479,8 @@
         "shooter",
         "snow",
         "starter",
+        "stealth",
+        "survival-horror",
         "tower-defense"
       ]
     },

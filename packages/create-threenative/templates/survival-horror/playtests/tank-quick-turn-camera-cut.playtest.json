@@ -1,0 +1,170 @@
+{
+  "name": "tank-quick-turn-camera-cut",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": true,
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "input",
+      "label": "turn-left",
+      "press": "KeyA",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "turned-left",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "turn-right",
+      "press": "KeyD",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "turned-back",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "quick-turn",
+      "press": [
+        "KeyS",
+        "ShiftLeft"
+      ],
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "quick-turn-done",
+      "waitTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walk-west",
+      "press": "KeyW",
+      "holdTicks": 110,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "crossed",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "cameraZone",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": "save-door"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cameraZone",
+        "atSteps": [
+          {
+            "label": "crossed",
+            "equals": "save-desk"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cameraCuts",
+        "atSteps": [
+          {
+            "label": "crossed",
+            "equals": 2
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "headingDegrees",
+        "atSteps": [
+          {
+            "label": "turned-left",
+            "equals": 147
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "headingDegrees",
+        "atSteps": [
+          {
+            "label": "turned-back",
+            "equals": 90
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "quickTurns",
+        "atSteps": [
+          {
+            "label": "quick-turn-done",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "headingDegrees",
+        "atSteps": [
+          {
+            "label": "quick-turn-done",
+            "equals": 270
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "speed",
+        "atSteps": [
+          {
+            "label": "walk-west",
+            "equals": 1.4
+          }
+        ]
+      }
+    ]
+  }
+}

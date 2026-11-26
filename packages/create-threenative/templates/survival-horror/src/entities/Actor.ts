@@ -120,7 +120,12 @@ export abstract class Actor {
       ...(options.speed === undefined ? {} : { speed: options.speed }),
     });
     if (mode === "once")
-      this.#oneShot = { clip, frames: 0, needed: this.duration(clip) / (options.speed ?? 1), ran: 0 };
+      this.#oneShot = {
+        clip,
+        frames: 0,
+        needed: this.duration(clip) / (options.speed ?? 1),
+        ran: 0,
+      };
   }
 
   /** Turns the heading toward `target` by at most `rate` radians a second; returns what is left. */

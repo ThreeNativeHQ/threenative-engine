@@ -896,6 +896,55 @@
       "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
+  "survival-horror": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyE", "KeyJ", "ShiftLeft", "KeyR"]
+    },
+    "restart": {
+      "key": "KeyN",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "shots",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "doorsOpened",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyR",
+        "clip": "Pistol_Reload",
+        "ticks": 110
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: the only attack is a handgun round, which needs the aim key held, and aim-fire-auto-target proves each shot reaches its target",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "tower-defense": {
     "subject": "camera.main",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

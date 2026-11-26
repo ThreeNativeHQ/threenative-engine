@@ -4,7 +4,7 @@ import type { IPhysicsContext } from "@threenative/physics";
 import { rapier } from "@threenative/physics";
 import config from "../threenative.config.js";
 import { drainPlaytestEvents } from "./playtest-events.js";
-import { Play } from "./scenes/Play.js";
+import { Play, forgetSave } from "./scenes/Play.js";
 import type { GameState } from "./state.js";
 
 const game = defineGame<GameState, IPhysicsContext>({
@@ -24,11 +24,15 @@ const game = defineGame<GameState, IPhysicsContext>({
     // pick up, read. It is also the struggle button when something has hold of you.
     action: { keys: ["KeyE", "Space"], mouseButtons: [0] },
     reload: { keys: ["KeyR"] },
-    inventory: { keys: ["Tab", "KeyI"] },
+    inventory: { keys: ["KeyI", "Tab"] },
     back: { keys: ["Escape", "Backspace"] },
     // Mashing left and right breaks a hold too.
     struggle: { keys: ["KeyA", "KeyD", "ArrowLeft", "ArrowRight"] },
+    // Enter answers the end screens; N starts a new game at any moment.
     restart: { keys: ["Enter"] },
+    newGame: { keys: ["KeyN"] },
+    // In the case: mix the selected herb with another.
+    combine: { keys: ["KeyC"] },
     // Playtest probes: a fixed hurt and the study key, so a scenario can reach a condition or the
     // locked door without a scripted fight. Delete them with the scenarios that press them.
     probeHurt: { keys: ["KeyH"] },
@@ -50,7 +54,10 @@ export default game;
  * this way — the UI reads the game's published state instead.
  */
 game.ui.onIntent((intent) => {
-  if (intent === "restart") void game.goto("play");
+  if (intent === "restart") {
+    forgetSave();
+    void game.goto("play");
+  }
   if (intent === "pause") game.pause();
   if (intent === "resume") game.resume();
   game.state.set({

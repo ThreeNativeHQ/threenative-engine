@@ -15,7 +15,8 @@
   --color-line: #6d6e71;
   --color-amber: #e8b86a;
   --color-cyan: #2a6cf0;
-  --color-red: #d0532a;
+  --color-red: #e0603a;
+  --color-green: #5fc35a;
   --color-text: #e6e4e1;
   --color-dim: #9a9997;
   --font-mono: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -99,4 +100,37 @@ body {
 [data-threenative-debug-overlay="true"] td:last-child {
   overflow-wrap: anywhere;
   word-break: break-all;
+}
+
+/* The condition trace: a dash that runs along the line, paced by the condition's own duration. */
+.ecg {
+  stroke-dasharray: 60 200;
+  animation: ecg-run 1.6s linear infinite;
+}
+
+@keyframes ecg-run {
+  from {
+    stroke-dashoffset: 260;
+  }
+  to {
+    stroke-dashoffset: 0;
+  }
+}
+
+/* A door: down to black, hold while the survivor is moved, back up. 1.4 s is DOOR_TIME in Play.ts. */
+.door-fade {
+  animation: door-fade 1.4s linear both;
+}
+
+@keyframes door-fade {
+  0% {
+    opacity: 0;
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
 }

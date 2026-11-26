@@ -79,6 +79,8 @@ export interface ITarget {
 export interface ISurvivorHooks {
   /** The best target in front of the gun for this pitch, or none. */
   readonly acquire: (pitch: AimPitch) => ITarget | undefined;
+  /** Whether a held target can still be shot at this pitch: a body that fell is lost to a level gun. */
+  readonly keeps: (target: ITarget, pitch: AimPitch) => boolean;
   /** A round left the barrel. The scene resolves what it hit. */
   readonly shot: (pitch: AimPitch, target: ITarget | undefined) => void;
   /** The trigger clicked on an empty gun with nothing to reload. */
@@ -120,7 +122,12 @@ export class Survivor extends Actor {
     weapon: Object3D,
     inventory: Inventory,
     hooks: ISurvivorHooks,
-    spawn: { readonly position: Vector3; readonly heading: number; readonly health: number; readonly magazine: number },
+    spawn: {
+      readonly position: Vector3;
+      readonly heading: number;
+      readonly health: number;
+      readonly magazine: number;
+    },
   ) {
     super(ctx, model, Object.values(CLIPS), { weapon });
     this.#hooks = hooks;
@@ -161,6 +168,8 @@ export class Survivor extends Actor {
     this.body.teleport(position);
     this.body.velocity.set(0, 0, 0);
     this.heading = heading;
+    // A moment to see the room before anything waiting at the door can take hold.
+    this.#immunity = GRAB_IMMUNITY;
     if (this.state !== "dead") this.#toFree();
   }
 
@@ -168,6 +177,8 @@ export class Survivor extends Actor {
     this.#fireCooldown = Math.max(0, this.#fireCooldown - dt);
     this.#immunity = Math.max(0, this.#immunity - dt);
     this.#timer -= dt;
+    // Footsteps are heard only while the survivor is actually running; `#free` sets it again.
+    this.running = false;
     let speed = 0;
     switch (this.state) {
       case "free":
@@ -248,7 +259,12 @@ export class Survivor extends Actor {
       this.#toFree();
       return;
     }
+    if (input.reload && this.#startReload()) return;
     const pitch = pitchOf(input.forward);
+    if (this.target !== undefined && !this.#hooks.keeps(this.target, pitch)) {
+      // The lock moves on when its target falls, dies or gets up: the next one in the cone.
+      this.target = this.#hooks.acquire(pitch);
+    }
     if (pitch !== this.pitch) {
       this.pitch = pitch;
       // A new pitch searches again: aiming low is how a body on the floor is found.
@@ -290,7 +306,8 @@ export class Survivor extends Actor {
   }
 
   #playAim(): void {
-    const clip = this.pitch === "up" ? CLIPS.aimUp : this.pitch === "down" ? CLIPS.aimDown : CLIPS.aim;
+    const clip =
+      this.pitch === "up" ? CLIPS.aimUp : this.pitch === "down" ? CLIPS.aimDown : CLIPS.aim;
     this.play(clip, { fade: 0.1, mode: "once" });
   }
 
@@ -352,9 +369,11 @@ export class Survivor extends Actor {
   debug(): Record<string, unknown> {
     return {
       action: this.clip,
+      animation: this.animation,
       condition: this.condition,
       groundClearance: this.conventions.groundSnap.clearance,
-      headingDegrees: Math.round(MathUtils.radToDeg(MathUtils.euclideanModulo(this.heading, Math.PI * 2))) % 360,
+      headingDegrees:
+        Math.round(MathUtils.radToDeg(MathUtils.euclideanModulo(this.heading, Math.PI * 2))) % 360,
       health: this.health,
       magazine: this.magazine,
       normaliseFactor: this.conventions.normaliseFactor,

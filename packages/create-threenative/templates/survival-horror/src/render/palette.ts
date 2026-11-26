@@ -12,6 +12,8 @@ export const palette = {
   accent: 0x2a6cf0,
   /** The sky photograph's own horizon: distance fades into this, and it is the loading backdrop. */
   horizon: 0xacb1c1,
+  /** The colour `FogExp2` holds for the height fog node, which tints it from the sky itself. */
+  fogHolder: 0xffffff,
 } as const;
 
 // The hostile tint, the torch flame and the blade steel are not roles of their own — they are

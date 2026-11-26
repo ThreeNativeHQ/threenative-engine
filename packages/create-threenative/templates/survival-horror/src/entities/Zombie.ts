@@ -40,9 +40,9 @@ const GRAB_RANGE = 0.95;
 const GRAB_HALF_ANGLE = Math.PI / 5;
 /** A hold lasts this long unless the survivor struggles; each press takes `STRUGGLE` off it. */
 const HOLD = 2.2;
-const STRUGGLE = 0.3;
+const STRUGGLE = 0.4;
 /** The bite lands this far into a hold, so a fast struggle escapes it. */
-const BITE_AT = 0.75;
+const BITE_AT = 1;
 const BITE = 20;
 /** After a hold the next lunge waits 45 frames at 30 Hz (`ai-approach`, the middle band). */
 const ATTACK_COOLDOWN = 1.5;
@@ -77,6 +77,7 @@ export class Zombie extends Actor {
   #held = 0;
   #bitten = false;
   #phase = 0;
+  /** Unit push away from the gun while staggering. */
   #push = new Vector3();
   #eye = new Vector3();
   #prey = new Vector3();
@@ -86,7 +87,12 @@ export class Zombie extends Actor {
     ctx: GameCtx,
     model: IMannequin,
     material: Material,
-    spawn: { readonly room: RoomId; readonly at: readonly [number, number]; readonly facing: number; readonly rises?: boolean },
+    spawn: {
+      readonly room: RoomId;
+      readonly at: readonly [number, number];
+      readonly facing: number;
+      readonly rises?: boolean;
+    },
   ) {
     super(ctx, model, Object.values(CLIPS), { material });
     this.#ctx = ctx;
@@ -155,7 +161,7 @@ export class Zombie extends Actor {
         this.#hold(dt, survivor);
         break;
       case "stagger":
-        speed = -STAGGER_PUSH * Math.max(0, this.#timer / STAGGER);
+        speed = STAGGER_PUSH * Math.max(0, this.#timer / STAGGER);
         if (this.#timer <= 0) this.state = this.aware ? "shamble" : "idle";
         break;
       case "down":
@@ -181,8 +187,10 @@ export class Zombie extends Actor {
     const body = this.#body;
     if (body !== undefined) {
       this.facingVector(this.#forward);
-      body.velocity.x = this.#forward.x * speed;
-      body.velocity.z = this.#forward.z * speed;
+      // A stagger is shoved along the shot, whatever way the body faces; otherwise it walks.
+      const push = this.state === "stagger" ? this.#push : this.#forward;
+      body.velocity.x = push.x * speed;
+      body.velocity.z = push.z * speed;
       body.moveAndSlide(dt);
     }
     this.conventions.applyGrounding(0, dt);
@@ -194,7 +202,9 @@ export class Zombie extends Actor {
     if (distance <= NEAR_RANGE) return true;
     if (distance <= HEARING_RANGE && survivor.running) return true;
     if (distance > SIGHT_RANGE) return false;
-    const off = Math.abs(angleOff(this.heading, headingTo(this.mesh.position, survivor.mesh.position)));
+    const off = Math.abs(
+      angleOff(this.heading, headingTo(this.mesh.position, survivor.mesh.position)),
+    );
     if (off > SIGHT_HALF_ANGLE) return false;
     const hit = this.#ctx.physics.directSpaceState.intersectRay({
       collisionMask: WORLD_LAYER,
@@ -229,6 +239,7 @@ export class Zombie extends Actor {
       if (!this.#bitten) this.escapes += 1;
       this.#endGrab(survivor);
       // Shoved off: the zombie reels back before it comes again.
+      this.#pushFrom(survivor);
       this.state = "stagger";
       this.#timer = STAGGER * 1.5;
       this.play(CLIPS.hit, { fade: 0.05, mode: "once", restart: true });
@@ -260,6 +271,7 @@ export class Zombie extends Actor {
       return;
     }
     if (this.state === "grab") this.#endGrab(survivor);
+    this.#pushFrom(survivor);
     this.health = critical ? 0 : this.health - amount;
     if (this.health > 0) {
       this.state = "stagger";
@@ -276,6 +288,12 @@ export class Zombie extends Actor {
       this.health = 25;
       this.#timer = RISE_DELAY;
     }
+  }
+
+  #pushFrom(survivor: Survivor): void {
+    this.#push.subVectors(this.mesh.position, survivor.mesh.position).setY(0);
+    if (this.#push.lengthSq() < 1e-6) this.facingVector(this.#push).negate();
+    this.#push.normalize();
   }
 
   #fall(): void {
@@ -306,6 +324,7 @@ export class Zombie extends Actor {
   debug(): Record<string, unknown> {
     return {
       action: this.clip,
+      animation: this.animation,
       aware: this.aware,
       bites: this.bites,
       escapes: this.escapes,

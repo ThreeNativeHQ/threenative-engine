@@ -85,7 +85,7 @@ export function qualityPreset(tier: string): IWorldEnvironmentOptions {
   console.info(
     `TN_RENDER_CHAIN_COST_OVERRIDE ${JSON.stringify({
       reason:
-        "Action RPG: the volumetric atmosphere owns the frame; the gather and reflections took the performance scenario to 39-42 ms GPU p95",
+        "Survival horror: the volumetric atmosphere owns the frame; the gather and reflections took the action-rpg performance scenario, which this kit shares, to 39-42 ms GPU p95",
       finalGatherMethod: "none",
       ssgiEnabled: false,
       ssrEnabled: false,

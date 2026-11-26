@@ -10,6 +10,7 @@ export const ITEMS: Readonly<Record<ItemId, IItemDefinition>> = {
   handgun: { label: "Handgun", stack: 1 },
   ammo: { label: "Handgun Bullets", stack: 60 },
   herb: { label: "Green Herb", stack: 1 },
+  mixed: { label: "Mixed Herbs (G+G)", stack: 1 },
   key: { label: "Study Key", stack: 1 },
   ribbon: { label: "Ink Ribbon", stack: 10 },
 };

@@ -36,6 +36,10 @@ export type GameState = {
   pickups: number;
   refused: number;
   herbsUsed: number;
+  /** Herbs mixed in the case. */
+  combined: number;
+  /** A typewriter save exists to continue from. */
+  hasSave: boolean;
   doorsOpened: number;
   lockedTries: number;
   saveCount: number;

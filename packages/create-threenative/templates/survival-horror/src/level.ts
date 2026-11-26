@@ -11,7 +11,7 @@
 // classic games: the room behind it is loaded, so to speak, while the screen is black.
 
 export type RoomId = "save" | "hall" | "study" | "exit";
-export type ItemId = "handgun" | "ammo" | "herb" | "key" | "ribbon";
+export type ItemId = "handgun" | "ammo" | "herb" | "mixed" | "key" | "ribbon";
 
 export interface IRoom {
   readonly id: RoomId;
@@ -96,25 +96,37 @@ export const DOORS: readonly IDoor[] = [
 ];
 
 // Every lens sits inside its room, below the wall tops, so nothing solid ever stands between it and
-// the player (the kit contract's `camera-sees-subject` row). The hall is two zones shot from its two
-// ends: crossing x = 9 cuts to the reverse angle, and tank controls keep "up" meaning "forward".
+// the player (the kit contract's `camera-sees-subject` row). The hall is two zones shot back to back
+// from its middle: the survivor walks toward the lens, passes under it at x = 9 and the cut shows
+// their back. Tank controls keep "up" meaning "forward" through the cut.
 export const CAMERA_ZONES: readonly ICameraZone[] = [
+  // The save room is cut in two: the door half is shot from the far corner, the desk half from the
+  // corner over the door, so the typewriter and the item box are never under the lens.
   {
-    id: "save",
+    id: "save-door",
+    room: "save",
+    min: [-5, -3],
+    max: [-2, 3],
+    eye: [-7.6, 2.75, 2.6],
+    look: [-3.6, 0.4, -0.6],
+    fov: 60,
+  },
+  {
+    id: "save-desk",
     room: "save",
     min: [-8, -3],
-    max: [-2, 3],
-    eye: [-2.5, 2.7, 2.5],
-    look: [-5.4, 0.5, -1],
-    fov: 62,
+    max: [-5, 3],
+    eye: [-2.5, 2.75, -2.6],
+    look: [-6.6, 0.4, 0.4],
+    fov: 60,
   },
   {
     id: "hall-west",
     room: "hall",
     min: [0, -2],
     max: [9, 2],
-    eye: [0.5, 2.7, 1.5],
-    look: [8, 0.4, -0.6],
+    eye: [8.7, 2.75, 1.6],
+    look: [2, 0.5, -0.4],
     fov: 58,
   },
   {
@@ -122,8 +134,8 @@ export const CAMERA_ZONES: readonly ICameraZone[] = [
     room: "hall",
     min: [9, -2],
     max: [18, 2],
-    eye: [17.5, 2.7, 1.5],
-    look: [10, 0.4, -0.6],
+    eye: [9.3, 2.75, 1.6],
+    look: [16, 0.4, -0.6],
     fov: 58,
   },
   {
@@ -158,11 +170,12 @@ export const FURNITURE: readonly IFurniture[] = [
 
 export const PICKUPS: readonly IPickup[] = [
   // The save room's cache: one more than the case holds, so the first visit teaches the six slots.
-  { id: "save-ribbon", item: "ribbon", quantity: 2, at: [-4.1, 0.84, -2.6] },
-  { id: "save-ammo", item: "ammo", quantity: 15, at: [-3.7, 0.84, -2.6] },
-  { id: "save-herb-1", item: "herb", quantity: 1, at: [-3.3, 0.84, -2.6] },
-  { id: "save-herb-2", item: "herb", quantity: 1, at: [-2.95, 0.84, -2.6] },
-  { id: "save-herb-3", item: "herb", quantity: 1, at: [-3.5, 0.84, -2.4] },
+  // The ribbon sits at the front edge, the herbs either side, the bullets join the stack carried.
+  { id: "save-ribbon", item: "ribbon", quantity: 2, at: [-3.4, 0.84, -2.4] },
+  { id: "save-herb-1", item: "herb", quantity: 1, at: [-2.95, 0.84, -2.35] },
+  { id: "save-herb-2", item: "herb", quantity: 1, at: [-3.0, 0.84, -2.7] },
+  { id: "save-ammo", item: "ammo", quantity: 15, at: [-3.85, 0.84, -2.7] },
+  { id: "save-herb-3", item: "herb", quantity: 1, at: [-4.25, 0.84, -2.7] },
   { id: "hall-ammo", item: "ammo", quantity: 15, at: [9, 0.84, -1.75] },
   { id: "hall-herb", item: "herb", quantity: 1, at: [17.4, 0.05, 1.5] },
   { id: "study-key", item: "key", quantity: 1, at: [17.6, 0.84, -10.55] },

@@ -1,7 +1,7 @@
 <!-- shared: kit-identity -->
-# AGENTS.md — __PROJECT_NAME__ (Action RPG, the action-rpg kit)
+# AGENTS.md — __PROJECT_NAME__ (Survival horror, the survival-horror kit)
 
-A three-room grid dungeon of mannequin fighters: melee, the Arcane Surge, loot, equipment, persistence, and a real character sheet. Routing words: action-rpg, diablo, arpg, hack-and-slash, dungeon-crawler. `CLAUDE.md` is a copy of this file.
+A four-room mansion wing in the classic survival-horror mould: fixed cameras that cut, tank controls with a quick turn, a handgun with aim stance, zombies that grab and get back up, a six-slot case, an item box and ink-ribbon saves. Routing words: survival-horror, resident-evil, biohazard, silent-hill, horror, zombie. `CLAUDE.md` is a copy of this file.
 <!-- /shared -->
 
 <!-- shared: kit-router -->
@@ -37,14 +37,14 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 ## This kit
 
 <!-- shared: kit-files -->
-Source in `src/`: `abilities/`, `conventions.ts`, `entities/`, `game.ts`, `items/`, `loot/`, `main.ts`, `playtest-events.ts`, `progress.ts`, `render/`, `scenes/`, `state.ts`, `stats/`, `ui/`.
-11 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+Source in `src/`: `conventions.ts`, `entities/`, `game.ts`, `items.ts`, `level.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `ui/`.
+17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
-Kit notes: `node_modules/create-threenative/agent-docs/references/kit-action-rpg.md`.
+Kit notes: `node_modules/create-threenative/agent-docs/references/kit-survival-horror.md`.
 <!-- /shared -->
 
-This game owns dungeon, combat, stats, inventory, persistence and look; `src/game.ts` is portable, `src/main.ts` the web React mount.
-Keys: WASD/arrows move; Space/F attack; E Arcane Surge; Shift roll; Q/U equip toggle; C/R checkpoint.
+This game owns the mansion wing, tank controls, fixed cameras, handgun, zombies, case, item box and typewriter saves; `src/level.ts` is the map as data.
+Keys: W/S forward/back, A/D turn; Shift run; S+Shift quick turn; J/Ctrl/right mouse aim (W/S tilt); E/Space act or fire; R reload; I case (C mixes herbs); Enter continue after death; N new game.
 
 <!-- shared: kit-commands -->
 ## Commands

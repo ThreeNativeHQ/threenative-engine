@@ -27,6 +27,7 @@ import {
 import { PICKUP_REACH, Player } from "../entities/Player.js";
 import { SecurityCamera } from "../entities/SecurityCamera.js";
 import { CAMERAS, COMPOUND, DOOR, EXTRACTION, KEYCARD, PATROLS, SPAWN } from "../level.js";
+import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createInfiltrationCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
@@ -75,6 +76,12 @@ const STATIONS: Readonly<Record<string, Station>> = {
   station6: () => ({ x: -10, z: 1, yaw: 0 }),
 };
 const STATION_NAMES = Object.keys(STATIONS);
+/**
+ * Playtest-only keys answer only when a playtest runner launched the page (the runner sets this
+ * global before any game code runs). A player pressing them in a real build gets nothing.
+ */
+const UNDER_PLAYTEST =
+  (globalThis as Record<string, unknown>)[PLAYTEST_RUNNER_EXPECTED_GLOBAL] === true;
 
 function relativeTo(
   guard: Guard | undefined,
@@ -320,7 +327,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const state = frameCtx.state.getState();
       const playing = state.phase === "playing";
 
-      for (const name of STATION_NAMES) {
+      for (const name of UNDER_PLAYTEST ? STATION_NAMES : []) {
         if (!frameCtx.input.justPressed(name)) continue;
         const station = STATIONS[name]?.(guardById);
         if (station === undefined) continue;

@@ -28,6 +28,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     knock: { buttons: [3], keys: ["KeyQ"] },
     restart: { buttons: [9], keys: ["KeyR"] },
     // Playtest stations: each puts the player at a fixed test spot (see `STATIONS` in Play.ts).
+    // They answer only under a playtest runner (`UNDER_PLAYTEST`), never in a real build.
     // They exist so a scenario proves one mechanic in a few ticks; delete them with the playtests.
     station1: { keys: ["Digit1"] },
     station2: { keys: ["Digit2"] },

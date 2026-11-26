@@ -1,24 +1,18 @@
 import { UiLayer } from "@threenative/ui";
-import { AbilityBar } from "./AbilityBar.js";
-import { CharacterPanel } from "./CharacterPanel.js";
+import { CaseScreen } from "./CaseScreen.js";
 import { Hud } from "./Hud.js";
-import { InventoryPanel } from "./InventoryPanel.js";
+import { Screens } from "./Screens.js";
 
 /**
- * Everything the player sees that is not the scene.
- *
- * One component, mounted twice by two entries that differ only in what else is on the page:
- * `src/main.ts` puts it beside the canvas on the web target, and `src/ui/main.tsx` is the whole
- * page the native web view loads. Keeping both entries pointed at this file is what makes "the
- * same UI on every target" a fact rather than an intention.
+ * Everything the player sees that is not the scene. Mounted by `src/main.ts` beside the canvas on
+ * the web, and as the whole page by `src/ui/main.tsx` in the native web view.
  */
 export function GameUi() {
   return (
     <UiLayer>
       <Hud />
-      <CharacterPanel />
-      <InventoryPanel />
-      <AbilityBar />
+      <CaseScreen />
+      <Screens />
     </UiLayer>
   );
 }

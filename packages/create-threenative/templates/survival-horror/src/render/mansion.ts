@@ -96,7 +96,8 @@ export function itemModel(item: ItemId): Group {
     case "ammo":
       group.add(box([0.2, 0.09, 0.13], [0, 0, 0], propMaterial));
       break;
-    case "herb": {
+    case "herb":
+    case "mixed": {
       const pot = new Mesh(new CylinderGeometry(0.07, 0.055, 0.1, 12), structureMaterial);
       pot.position.y = 0.05;
       group.add(pot);
@@ -165,10 +166,12 @@ export function createMansion(): IMansion {
       box([t, WALL_HEIGHT, d], [x0 - t / 2, 0, cz], structureMaterial),
       box([t, WALL_HEIGHT, d], [x1 + t / 2, 0, cz], structureMaterial),
     );
+    // A ceiling: the sun reaches the rooms only through the doors' gaps, and the lamps light the rest.
+    decor.add(box([w + t * 2, t, d + t * 2], [cx, WALL_HEIGHT, cz], structureMaterial));
     // A lamp per room: a warm pool on the floor is what makes a grey room read as a room at night.
     const lamp = new Mesh(new SphereGeometry(0.12, 16, 8), lampMaterial);
     lamp.position.set(cx, WALL_HEIGHT - 0.4, cz);
-    const light = new PointLight(0xffc98a, 6, Math.max(w, d) * 0.9, 2);
+    const light = new PointLight(0xffc98a, 30, Math.max(w, d) * 1.2, 2);
     light.position.copy(lamp.position);
     decor.add(lamp, light);
   }
