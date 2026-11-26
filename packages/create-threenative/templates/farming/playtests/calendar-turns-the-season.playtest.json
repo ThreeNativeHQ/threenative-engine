@@ -1,0 +1,282 @@
+{
+  "name": "calendar-turns-the-season",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "season-key",
+      "press": "NumpadDecimal",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "last-day",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "planted-slot",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "planted-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "planted",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "watered",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-bed",
+      "press": "Numpad6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-sleep",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-night",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "one-wake",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "dead-tile",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cleared-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "cleared-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "cleared",
+      "waitTicks": 48,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "season",
+        "atSteps": [
+          {
+            "label": "last-day",
+            "equals": "spring"
+          },
+          {
+            "label": "one-morning",
+            "equals": "summer"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "day",
+        "atSteps": [
+          {
+            "label": "last-day",
+            "equals": 30
+          },
+          {
+            "label": "one-morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "dayIndex",
+        "atSteps": [
+          {
+            "label": "last-day",
+            "equals": 29
+          },
+          {
+            "label": "one-morning",
+            "equals": 30
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "weekday",
+        "atSteps": [
+          {
+            "label": "last-day",
+            "equals": "Tue"
+          },
+          {
+            "label": "one-morning",
+            "equals": "Wed"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "planted",
+        "atSteps": [
+          {
+            "label": "watered",
+            "equals": 1
+          },
+          {
+            "label": "one-morning",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "dead",
+        "atSteps": [
+          {
+            "label": "watered",
+            "equals": 0
+          },
+          {
+            "label": "one-morning",
+            "equals": 1
+          },
+          {
+            "label": "cleared",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "tilled",
+        "atSteps": [
+          {
+            "label": "watered",
+            "equals": 1
+          },
+          {
+            "label": "cleared",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

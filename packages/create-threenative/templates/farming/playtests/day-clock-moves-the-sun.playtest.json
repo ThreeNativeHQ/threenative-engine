@@ -1,0 +1,114 @@
+{
+  "name": "day-clock-moves-the-sun",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "label": "morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "minute",
+        "gte": 365
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "noon-key",
+      "press": "NumpadAdd",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "noon",
+      "waitForResource": {
+        "id": "state",
+        "path": "sunElevation",
+        "gte": 55
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "night-key",
+      "press": "NumpadSubtract",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "night",
+      "waitForResource": {
+        "id": "state",
+        "path": "sunElevation",
+        "lte": -20
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "sunElevation",
+        "atSteps": [
+          {
+            "label": "morning",
+            "lte": 20
+          },
+          {
+            "label": "noon",
+            "lte": 70
+          },
+          {
+            "label": "night",
+            "lte": -20
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "clock",
+        "atSteps": [
+          {
+            "label": "noon",
+            "textIncludes": "12:"
+          },
+          {
+            "label": "night",
+            "textIncludes": "21:"
+          }
+        ]
+      }
+    ]
+  }
+}

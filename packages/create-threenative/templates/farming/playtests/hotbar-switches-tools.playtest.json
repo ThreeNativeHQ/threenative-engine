@@ -1,0 +1,117 @@
+{
+  "name": "hotbar-switches-tools",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "sickle",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "seed",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "next",
+      "press": "KeyR",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "first",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "back",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "slot",
+        "atSteps": [
+          {
+            "label": "sickle",
+            "equals": 2
+          },
+          {
+            "label": "seed",
+            "equals": 4
+          },
+          {
+            "label": "next",
+            "equals": 5
+          },
+          {
+            "label": "first",
+            "equals": 0
+          },
+          {
+            "label": "back",
+            "equals": 6
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "slotLabel",
+        "atSteps": [
+          {
+            "label": "sickle",
+            "equals": "Sickle"
+          },
+          {
+            "label": "seed",
+            "equals": "turnip seed"
+          },
+          {
+            "label": "back",
+            "equals": "pumpkin seed"
+          }
+        ]
+      }
+    ]
+  }
+}

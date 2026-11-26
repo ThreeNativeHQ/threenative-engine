@@ -1,0 +1,208 @@
+{
+  "name": "sleep-ends-the-day",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "tile",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-bed",
+      "press": "Numpad6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "one-sleep",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-night",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "one-wake",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one-morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stamina",
+        "atSteps": [
+          {
+            "label": "tilled",
+            "equals": 244
+          },
+          {
+            "label": "one-night",
+            "equals": 250
+          },
+          {
+            "label": "one-morning",
+            "equals": 250
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "one-night",
+            "equals": "summary"
+          },
+          {
+            "label": "one-morning",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "summary.cause",
+        "atSteps": [
+          {
+            "label": "one-night",
+            "equals": "sleep"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "dayIndex",
+        "atSteps": [
+          {
+            "label": "tilled",
+            "equals": 0
+          },
+          {
+            "label": "one-morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "weekday",
+        "atSteps": [
+          {
+            "label": "tilled",
+            "equals": "Mon"
+          },
+          {
+            "label": "one-morning",
+            "equals": "Tue"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "sleeps",
+        "atSteps": [
+          {
+            "label": "one-morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "clock",
+        "atSteps": [
+          {
+            "label": "one-morning",
+            "equals": "06:00"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "slept",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "new-day",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

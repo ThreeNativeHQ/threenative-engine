@@ -1,0 +1,17 @@
+{
+  "name": "farming",
+  "title": "Farm life",
+  "blurb": "A grey-grid farm on a day clock: till, plant and water a tile field, crops that grow one stage a watered day by season, stamina, a shipping bin paid overnight, a seed stall and the calendar.",
+  "genre": "farming",
+  "aliases": [
+    "harvest-moon",
+    "harvest-moon-64",
+    "stardew",
+    "stardew-valley",
+    "farming",
+    "farm-sim",
+    "life-sim",
+    "cozy"
+  ],
+  "kit": true
+}

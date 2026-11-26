@@ -1,0 +1,283 @@
+{
+  "name": "stamina-spends-slows-and-faints",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "fresh-walk",
+      "press": "ArrowRight",
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "stopped",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-a",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "swung-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "swung-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "swung",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tired-key",
+      "press": "NumpadDivide",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tired-walk",
+      "press": "ArrowLeft",
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "tired-stopped",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-b",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spent-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "spent-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "spent",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-c",
+      "press": "Numpad3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "swing-too-many",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "fainted",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "summary"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "wake",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "morning",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "playing"
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "speed",
+        "atSteps": [
+          {
+            "label": "fresh-walk",
+            "equals": 3.6
+          },
+          {
+            "label": "tired-walk",
+            "equals": 2.1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "tier",
+        "atSteps": [
+          {
+            "label": "swung",
+            "equals": 0
+          },
+          {
+            "label": "tired-key",
+            "equals": 3
+          },
+          {
+            "label": "spent",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stamina",
+        "atSteps": [
+          {
+            "label": "swung",
+            "equals": 244
+          },
+          {
+            "label": "tired-key",
+            "equals": 8
+          },
+          {
+            "label": "spent",
+            "equals": 2
+          },
+          {
+            "label": "fainted",
+            "equals": 125
+          },
+          {
+            "label": "morning",
+            "equals": 125
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "summary.cause",
+        "atSteps": [
+          {
+            "label": "fainted",
+            "equals": "exhausted"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "faints",
+        "atSteps": [
+          {
+            "label": "spent",
+            "equals": 0
+          },
+          {
+            "label": "morning",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "tilled",
+        "atSteps": [
+          {
+            "label": "swung",
+            "equals": 1
+          },
+          {
+            "label": "spent",
+            "equals": 2
+          },
+          {
+            "label": "morning",
+            "equals": 2
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "tilled",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "collapsed",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "fainted",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

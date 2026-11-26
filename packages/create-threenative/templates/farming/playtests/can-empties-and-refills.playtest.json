@@ -1,0 +1,266 @@
+{
+  "name": "can-empties-and-refills",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "tile-a",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-a-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-a-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled-a",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tile-b",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-b-slot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tilled-b-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tilled-b",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "dry-key",
+      "press": "Numpad0",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "back-to-a",
+      "press": "Numpad1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-a-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-a-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "watered-a",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "back-to-b",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "empty-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "empty-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "empty",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pond",
+      "press": "Numpad8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "refilled-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "refilled-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "refilled",
+      "waitTicks": 48,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "again-b",
+      "press": "Numpad2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-b-slot",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "watered-b-swing",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "watered-b",
+      "waitTicks": 48,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "water",
+        "atSteps": [
+          {
+            "label": "tilled-b",
+            "equals": 10
+          },
+          {
+            "label": "watered-a",
+            "equals": 0
+          },
+          {
+            "label": "empty",
+            "equals": 0
+          },
+          {
+            "label": "refilled",
+            "equals": 10
+          },
+          {
+            "label": "watered-b",
+            "equals": 9
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "watered",
+        "atSteps": [
+          {
+            "label": "watered-a",
+            "equals": 1
+          },
+          {
+            "label": "empty",
+            "equals": 1
+          },
+          {
+            "label": "refilled",
+            "equals": 1
+          },
+          {
+            "label": "watered-b",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "message",
+        "atSteps": [
+          {
+            "label": "empty",
+            "textIncludes": "empty"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "refilled",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}
