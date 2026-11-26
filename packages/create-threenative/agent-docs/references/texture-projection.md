@@ -16,6 +16,23 @@ flowchart LR
   c --> g["game<br/>atlas + swatches"]
 ```
 
+## Two MCP modes: lean (default) vs detailed
+
+`threenative-assets` exposes two operating modes selectable via `--mode lean|detailed` or
+`THREENATIVE_TEXTURE_MODE=lean|detailed`:
+
+- **`lean` (authoring default, keyless):** uses only CC0 Poly Haven PBR textures and 3D models
+  matched against the reference image(s) (`polyhaven_search_assets`, `asset_download_file`, and
+  `texture_project_match_materials`), with neutral tint/procedural fallback when
+  unmatched. When the server starts in `lean` mode, `texture_project_quote`,
+  `texture_project_paint`, and `texture_project_inspect` are omitted from `tools/list` so agents
+  never spend OpenRouter credits or ask for `OPENROUTER_API_KEY`.
+- **`detailed` (opt-in, requires `OPENROUTER_API_KEY` at paint time):** matches repeating surfaces
+  and props to Poly Haven first, then runs `texture_project_quote` → `promptTestView` →
+  `texture_project_paint` → `texture_project_inspect` for remaining blockout views.
+
+Stay in `lean` mode unless the user explicitly asks for `detailed` AI texture projection.
+
 ## Quote first — it is free and it needs no key
 
 `texture_project_quote` reads the GLB and plans the views. No network call, no key, no charge. It

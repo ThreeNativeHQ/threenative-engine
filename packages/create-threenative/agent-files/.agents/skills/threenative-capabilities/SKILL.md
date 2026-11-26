@@ -61,13 +61,17 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    from both discovery passes, with controls, camera, state, acceptance checks, target platforms
    and appearance/asset needs. With a user, get explicit approval and an instruction to implement
    before downloads or game-source edits. Required texture selection follows the plan.
-5. **Assets** — use threenative-asset-mcp (configured as `threenative-assets`).
-   From the mechanics matches and reference image, if provided, identify only the textures needed by the plan. Call
-   `asset_search` (provider `threenative` first), `asset_get`, then `asset_download` for a model,
-   texture, HDRI or animation. Sound or another type: `asset_search_sources`, the returned source's
-   search/list-files tools, then `asset_download_file`. Skipping the search is a defect. Verify the
-   returned licence and record downloaded paths/source/licence
-   in `CREDITS.md`. Follow `.agents/skills/threenative-assets/SKILL.md`; no unrelated downloads or
+5. **Assets** — use `threenative-asset-mcp` (configured as `threenative-assets`). Remember the two
+   MCP modes (`lean` vs `detailed`): default to `lean` mode (keyless CC0 Poly Haven PBR textures and
+   3D models matched to the reference image(s), with neutral tint/procedural fallbacks where
+   unmatched), and switch to `detailed` AI texture projection only when the user explicitly requests
+   it and `OPENROUTER_API_KEY` is configured. From the mechanics matches and reference image, if
+   provided, identify only the assets needed by the plan. Call `asset_search` (provider `threenative`
+   first), `asset_get`, then `asset_download` for a model, texture, HDRI or animation. Sound or
+   another type: `asset_search_sources`, the returned source's search/list-files tools
+   (`polyhaven_search_assets`, `polyhaven_list_files`), then `asset_download_file`. Skipping the
+   search is a defect. Verify the returned licence and record downloaded paths/source/licence in
+   `CREDITS.md`. Follow `.agents/skills/threenative-assets/SKILL.md`; no unrelated downloads or
    invented tool results. If no textures are required, record `none` and why. Reuse existing files.
 6. **Build** — execute the plan, delegate to subagents focused on specific areas. Give each a
    bounded task, explicit file ownership, relevant context and an acceptance check; preserve other

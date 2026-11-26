@@ -1,6 +1,6 @@
 {
-  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.20.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.20.0 serves all 60 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. The item loop is `asset_search` (provider `threenative` first), `asset_get`, then `asset_download`; the provider tools remain for sound and other types. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
-  "version": "0.20.0",
+  "comment": "The asset MCP surface a generated project actually gets. `tools` is the live tools/list response of the pinned version, recorded by installing threenative-asset-mcp@0.21.0 from the registry into a clean directory containing `.threenative` and driving it over stdio - not copied from its docs. `inputSchemas` and `descriptions` come from that same response, so the documentation cannot name an argument the server does not accept. The published 0.21.0 serves all 61 tools, including the humanoid rig and Unreal import tools. `profile` is null because the server has no profile selector. `recommended` is the loop the template AGENTS.md teaches, not a claim about what the other tools can do - `asset_search_sources` is the authority on that. The item loop is `asset_search` (provider `threenative` first), `asset_get`, then `asset_download`; the provider tools remain for sound and other types. It includes the Fab loop: `fab_search_assets` finds a listing, `fab_list_owned` confirms it is in the library, and `fab_import_asset` (or `asset_import_unreal` for a local pack) converts the Unreal source to textured GLBs. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`.",
+  "version": "0.21.0",
   "profile": null,
   "recommended": [
     "asset_search",
@@ -81,6 +81,7 @@
     "smithsonian_list_files",
     "smithsonian_search_assets",
     "texture_project_inspect",
+    "texture_project_match_materials",
     "texture_project_paint",
     "texture_project_quote",
     "unity_list_packages"
@@ -2172,7 +2173,7 @@
         },
         "model": {
           "default": "or-klein",
-          "description": "Image model alias: \"or-klein\" (default), \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
+          "description": "Image model alias: \"or-klein\" (default), \"flux-3\", \"qwen-2.1-turbo\", \"qwen-2.1-pro\", \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
           "type": "string",
           "minLength": 1,
           "maxLength": 128
@@ -2185,6 +2186,21 @@
               "type": "integer",
               "minimum": 256,
               "maximum": 8192
+            },
+            {
+              "type": "string",
+              "const": "auto"
+            }
+          ]
+        },
+        "atlasPages": {
+          "default": "auto",
+          "description": "Multi-page UV atlas count (1-4), or \"auto\" (default) to split large levels across up to 4 atlases for higher texel density.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
             },
             {
               "type": "string",
@@ -2224,7 +2240,7 @@
         },
         "model": {
           "default": "or-klein",
-          "description": "Image model alias: \"or-klein\" (default), \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
+          "description": "Image model alias: \"or-klein\" (default), \"flux-3\", \"qwen-2.1-turbo\", \"qwen-2.1-pro\", \"muse-image\", \"or-seedream-lite\" or \"or:<model id>\".",
           "type": "string",
           "minLength": 1,
           "maxLength": 128
@@ -2255,12 +2271,27 @@
             }
           ]
         },
+        "atlasPages": {
+          "default": "auto",
+          "description": "Multi-page UV atlas count (1-4), or \"auto\" (default) to split large levels across up to 4 atlases for higher texel density.",
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 4
+            },
+            {
+              "type": "string",
+              "const": "auto"
+            }
+          ]
+        },
         "viewSize": {
           "default": 1024,
           "description": "Pixels per view image sent to the model (default 1024).",
           "type": "integer",
           "minimum": 128,
-          "maximum": 2048
+          "maximum": 4096
         },
         "lighting": {
           "default": "overcast",
@@ -2354,6 +2385,166 @@
           "type": "string",
           "minLength": 1,
           "maxLength": 4096
+        }
+      },
+      "additionalProperties": false
+    },
+    "texture_project_match_materials": {
+      "type": "object",
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "mode": {
+          "description": "Workflow mode: \"detailed\" (Poly Haven PBR + OpenRouter AI projection) or \"lean\" (CC0 Poly Haven PBR textures/models + procedural/tint fallbacks only, no API key). Defaults to the server mode.",
+          "type": "string",
+          "enum": ["detailed", "lean"]
+        },
+        "referenceImagePath": {
+          "description": "Primary reference image to match against Poly Haven textures/models, project-relative.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 4096
+        },
+        "referenceImagePaths": {
+          "description": "Multiple project-relative reference images (first entry is the default when an item omits referenceImagePath).",
+          "minItems": 1,
+          "maxItems": 16,
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 4096
+          }
+        },
+        "surfaces": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "query": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "crop": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": ["x", "y", "width", "height"],
+                "additionalProperties": false
+              },
+              "homogeneous": {
+                "type": "boolean"
+              },
+              "referenceImagePath": {
+                "description": "Optional per-surface reference image override, project-relative.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              }
+            },
+            "required": ["name", "query"],
+            "additionalProperties": false
+          }
+        },
+        "models": {
+          "maxItems": 24,
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "query": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 400
+              },
+              "crop": {
+                "type": "object",
+                "properties": {
+                  "x": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "y": {
+                    "type": "number",
+                    "minimum": 0
+                  },
+                  "width": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  "height": {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                },
+                "required": ["x", "y", "width", "height"],
+                "additionalProperties": false
+              },
+              "referenceImagePath": {
+                "description": "Optional per-model reference image override, project-relative.",
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096
+              },
+              "dimensionsMeters": {
+                "description": "Expected target bounding box dimensions in metres [x, y, z].",
+                "type": "array",
+                "prefixItems": [
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  },
+                  {
+                    "type": "number",
+                    "exclusiveMinimum": 0
+                  }
+                ]
+              },
+              "maxPolycount": {
+                "type": "integer",
+                "exclusiveMinimum": 0,
+                "maximum": 10000000
+              }
+            },
+            "required": ["name", "query"],
+            "additionalProperties": false
+          }
+        },
+        "topCandidates": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 12
         }
       },
       "additionalProperties": false
@@ -2507,6 +2698,7 @@
     "texture_project_quote": "Plan the camera views that would paint a gray blockout level or environment (greybox/untextured scene), and report what texturing it costs before anything is bought: planned views, model and price, the atlas size the bake would choose by measuring the plan, the UV stretch of the level's mapping and how much of that atlas the views would leave blurred. Uses OpenRouter image models with the user's own key at paint time; this quote makes no network call and needs no key. Fails closed with TEXTURE_PROJECT_MISSING_UV when the GLB has no UVs.",
     "texture_project_paint": "SPENDS PROVIDER CREDITS. Texture a gray blockout level or environment: plan camera views, ask an OpenRouter image model (FLUX 3 Klein by default) to paint each view from the clay render, project the images into the level's UV atlas, and write the baked GLB atomically under the project's assets/. Every prompt keeps the clay image's edges, openings and silhouette and forbids invented doors, windows, arches and volumes; a view that invents geometry, or whose surface is almost all grazing, is rejected and left to the fill pass. You judge the views yourself: inspect returns the contact sheet, and any view that invents an arch, doorway, passage, opening, slab, coping or decorative floor is rejected with {\"resumeRunId\": ..., \"rejectViews\": [..]}, which buys no image and re-bakes from the stored ones. An embedded vision check is an opt-in (verify: true) that costs one chat request per view; it is off by default. Fails closed and stops spending: TEXTURE_PROJECT_STRUCTURE_REJECTED once the first three painted views all invent geometry, TEXTURE_PROJECT_NO_COVERAGE when no view reaches the atlas. Requires OPENROUTER_API_KEY when an image actually has to be bought; a resume that only reuses stored images needs none. Reusing resumeRunId re-judges every stored generation and requests only views that have none, so a view is never paid for twice; viewsPainted counts what reached the atlas, bought or reused. promptTestView buys exactly one image. fill: \"debug\" paints never-painted texels hot pink (#FF69B4) so a capture can count bake gaps; use it for verification, never ship it. The atlas stays opaque RGB with the fill's own colour, so it keeps its UASTC cook; \"a view painted this texel\" ships as its own file, <name>.painted.png beside the GLB: an 8-bit grayscale PNG at a quarter of the atlas' side, 255 where an accepted view painted, 0 where the fill made the colour up, feathered and bled into the UV gutters, named by the GLB's extras.threenative.textureProjection.paintedMask and returned as paintedMask. A game samples it as a linear data texture at the atlas' uv and swaps the atlas for the paint's swatch exactly where no view painted. It also cuts true-scale, tileable material swatches from the stored paint — one wall and one floor patch, rectified onto their own planes and written beside the GLB as <name>.swatch_wall.png, <name>.swatch_floor.png and <name>.swatches.json — because the atlas is macro variation and at arm's length its texels read as blotches: a game tiles these in world space for close-range detail.",
     "texture_project_inspect": "Review the texturing of a gray blockout level or environment: return a contact sheet image (clay render, model image and projected composite per view, rejected views labelled) plus coverage, atlas size, measured blurred-texel share and rejected views by reason, and audit threenative.config.ts cook settings: flags a maxSize below the atlas or an ETC1S (or missing UASTC) base-colour codec that would blur the bake. Read this sheet yourself: no image model is called by default, so a view that invents an arch, doorway, passage, opening, slab, coping or decorative floor is yours to catch with texture_project_paint {\"resumeRunId\": ..., \"rejectViews\": [..]}, which buys no image and re-bakes from the stored ones. Read-only review of the run's own data; it buys no images and writes only the contact sheet beside the run.",
+    "texture_project_match_materials": "Evaluates named level surfaces and 3D prop/object queries against Poly Haven CC0 PBR textures and 3D models using one or more reference images, CIELAB chroma/contrast invariance, and multi-scale gradient energy, extracting referenceHex per query. Default to mode: \"lean\" (keyless Poly Haven CC0 PBR textures & 3D models + referenceHex fallbacks) unless the user explicitly asks for detailed OpenRouter AI projection.",
     "creature_compile": "Compile a bounded project-relative anyCreature JSON spec with the fixed packaged 1.3.1 compiler, validate its GLB, and publish it atomically with hash-bound evidence.",
     "creature_preview": "Render fresh, bounded silhouettes or a hero image for a project-relative creature GLB and return image artifacts with backend and camera identity; visual approval remains independent.",
     "creature_check": "Inspect actual GLB mesh, rig, materials and animation bindings, or run validated claims through the fixed anyCreature judge; visual review remains independent."
