@@ -1,0 +1,47 @@
+// Playtest stations: each key puts the party at a fixed test spot or rigs the leader's next dice,
+// so one scenario proves one rule in a few ticks instead of a long walk and a lucky roll.
+// They answer only under a playtest runner. Delete them with the playtests that use them.
+import type { Actor } from "./entities/Actor.js";
+import { POST } from "./level.js";
+import type { World } from "./systems/world.js";
+
+function place(actor: Actor, x: number, z: number, yaw: number): void {
+  actor.mesh.position.set(x, actor.mesh.position.y, z);
+  actor.body.teleport(actor.mesh.position);
+  actor.figure.rotation.y = yaw;
+}
+
+/** Leader beside a point, facing it; the other members stand a few metres behind. */
+function leadTo(world: World, x: number, z: number, yaw: number, ahead = 3): void {
+  const leader = world.leader;
+  place(leader, x, z, yaw);
+  let row = 1;
+  for (const member of world.members) {
+    if (member === leader) continue;
+    place(member, x - Math.sin(yaw) * (ahead + row), z - Math.cos(yaw) * (ahead + row), yaw);
+    row += 1;
+  }
+}
+
+export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
+  // At the training post, a placeable with the flat defense of 10.
+  station1: (world) => leadTo(world, POST.x + 1.5, POST.z, -Math.PI / 2),
+  // Three metres from the elder, from the wanderer and from the sellsword.
+  station2: (world) => leadTo(world, 2.5, 10.5, Math.PI / 2),
+  station3: (world) => leadTo(world, -3.5, 10.5, -Math.PI / 2),
+  station4: (world) => leadTo(world, 5, 13.5, Math.PI / 2),
+  // On the road, a step short of the raiders' notice.
+  station5: (world) => leadTo(world, 0, -2.5, Math.PI),
+  // At the ruin gate, inside the notice radius: the fight starts.
+  station6: (world) => leadTo(world, 0, -6, Math.PI),
+  // Rigged dice for the leader's next attack (d20, then the confirming d20, then damage dice).
+  // The hero's attack bonus is +4 and a raider or the post defends at 10.
+  station7: (world) => world.dice.rig(world.leader.id, [20, 20, 8]),
+  station8: (world) => world.dice.rig(world.leader.id, [1]),
+  station9: (world) => world.dice.rig(world.leader.id, [5]),
+  station10: (world) => world.dice.rig(world.leader.id, [6, 3]),
+  station11: (world) => world.dice.rig(world.leader.id, [19, 3, 4]),
+  // The next skill check: a 12 passes the elder's DC 12, a 2 fails it.
+  station12: (world) => world.dice.rig(world.leader.id, [12]),
+  station13: (world) => world.dice.rig(world.leader.id, [2]),
+};
