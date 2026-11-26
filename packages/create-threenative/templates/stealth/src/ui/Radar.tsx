@@ -25,9 +25,12 @@ function wedge(contact: RadarContact, x: number, y: number): string {
  * the cost of being seen is losing the one tool that let you avoid it.
  */
 export function Radar() {
-  const state = useUiState<GameState>();
-  if (state === undefined) return null;
-  const jammed = state.radarJammed === 1;
+  const radar = useUiState<GameState, readonly RadarContact[]>((state) => state.radar);
+  const jammed = useUiState<GameState, boolean>((state) => state.radarJammed === 1);
+  const noise = useUiState<GameState, number>((state) => state.noise) ?? 0;
+  // The static scrolls at ten steps a second: select the step, not the clock.
+  const tick = useUiState<GameState, number>((state) => Math.floor(state.missionTime * 10)) ?? 0;
+  if (radar === undefined) return null;
   const centre = SIZE / 2;
   return (
     <section
@@ -42,7 +45,7 @@ export function Radar() {
               <rect
                 key={row}
                 x={0}
-                y={row * 12 + ((Math.round(state.missionTime * 10) * 7) % 12)}
+                y={row * 12 + ((tick * 7) % 12)}
                 width={SIZE}
                 height={3}
                 fill="#3a5a46"
@@ -57,7 +60,7 @@ export function Radar() {
           <>
             <circle cx={centre} cy={centre} r={centre - 2} fill="none" stroke="#2c4a36" />
             <circle cx={centre} cy={centre} r={(centre - 2) / 2} fill="none" stroke="#2c4a36" />
-            {state.radar.map((contact, index) => {
+            {radar.map((contact, index) => {
               const x = centre + contact.x * SCALE;
               const y = centre + contact.z * SCALE;
               const alert = contact.state === "alert";
@@ -80,11 +83,11 @@ export function Radar() {
               );
             })}
             <circle cx={centre} cy={centre} r={3.5} fill="#2a6cf0" />
-            {state.noise > 0 && (
+            {noise > 0 && (
               <circle
                 cx={centre}
                 cy={centre}
-                r={state.noise * SCALE}
+                r={noise * SCALE}
                 fill="none"
                 stroke="#2a6cf0"
                 opacity={0.6}

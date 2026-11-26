@@ -18,10 +18,7 @@ export interface IStealthConventions {
  *
  * `model` is the cloned rig; `weapon` is a small mesh this game owns and the hand has to hold.
  */
-export function preparePlayerConventions(
-  model: Object3D,
-  weapon?: Object3D,
-): IStealthConventions {
+export function preparePlayerConventions(model: Object3D, weapon?: Object3D): IStealthConventions {
   // A skinned figure is measured from its origin to its crown joint, and on this Unreal-style
   // skeleton that is `Head` — the base of the skull, not its top. 1.545 m at that joint puts the
   // top of the head at 1.8 m, the height the capsule in `Player.ts` is built for.

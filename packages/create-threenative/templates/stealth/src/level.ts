@@ -9,20 +9,24 @@
 /** A box: centre x/z on the floor, size along x, height, size along z. */
 export type Box = readonly [x: number, z: number, width: number, height: number, depth: number];
 
-export const COMPOUND = { halfWidth: 22, halfDepth: 16, wallHeight: 3 } as const;
+/**
+ * Walls stand 2.2 m: above a guard's 1.6 m eye, so they block every sight line, and low enough
+ * that the overhead camera sees a player standing right against their far side.
+ */
+export const COMPOUND = { halfWidth: 22, halfDepth: 16, wallHeight: 2.2 } as const;
 
 /** Full-height walls inside the perimeter (the perimeter itself is built from `COMPOUND`). */
 export const WALLS: readonly Box[] = [
   // The north wall of the courtyard, with a 2.4 m gap at x = 0 that the locked door fills.
-  [-11.6, -6, 20.8, 3, 0.4],
-  [11.6, -6, 20.8, 3, 0.4],
+  [-11.6, -6, 20.8, 2.2, 0.4],
+  [11.6, -6, 20.8, 2.2, 0.4],
   // The records room in the west: east wall with a doorway between z = -1.2 and z = 1.2.
-  [-12, -3.6, 0.4, 3, 4.8],
-  [-12, 4.4, 0.4, 3, 6.4],
+  [-12, -3.6, 0.4, 2.2, 4.8],
+  [-12, 4.4, 0.4, 2.2, 6.4],
   // Its south wall.
-  [-17, 7.4, 10.4, 3, 0.4],
+  [-17, 7.4, 10.4, 2.2, 0.4],
   // The yard fence in the east, open at both ends so a patrol can loop through it.
-  [10, 6, 0.4, 3, 6],
+  [10, 6, 0.4, 2.2, 6],
 ];
 
 /**
@@ -118,4 +122,4 @@ export const CAMERAS: readonly {
   readonly yaw: number;
   /** Half the sweep, radians. */
   readonly sweep: number;
-}[] = [{ id: "camera.west", x: -11.6, z: 7.1, height: 2.7, yaw: Math.PI * 0.75, sweep: 0.9 }];
+}[] = [{ id: "camera.west", x: -11.6, z: 7.1, height: 2, yaw: 3.1, sweep: 0.45 }];

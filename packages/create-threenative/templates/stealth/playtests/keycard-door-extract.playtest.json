@@ -1,0 +1,157 @@
+{
+  "name": "keycard-opens-the-door-and-the-pad-ends-the-mission",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "at-door",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "try-door",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "locked",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "at-keycard",
+      "press": "Digit4",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "take",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "carded",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "back-at-door",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "open",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "opened",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "go-north",
+      "press": [
+        "ShiftLeft",
+        "ArrowUp"
+      ],
+      "holdTicks": 150,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "extracted",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "doorOpen",
+        "atSteps": [
+          {
+            "label": "locked",
+            "equals": 0
+          },
+          {
+            "label": "opened",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "keycard",
+        "atSteps": [
+          {
+            "label": "locked",
+            "equals": 0
+          },
+          {
+            "label": "carded",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "opened",
+            "equals": "playing"
+          },
+          {
+            "label": "extracted",
+            "equals": "won"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "extracted",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

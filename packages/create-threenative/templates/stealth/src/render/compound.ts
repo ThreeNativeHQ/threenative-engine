@@ -4,16 +4,7 @@
 // `buildStaticColliders`), so a sight line and a footstep meet exactly the walls the player sees.
 import { Group, Mesh, MeshStandardMaterial, PlaneGeometry } from "three";
 import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
-import {
-  type Box,
-  COMPOUND,
-  CRATES,
-  DOOR,
-  EXTRACTION,
-  KEYCARD,
-  SHADOWS,
-  WALLS,
-} from "../level.js";
+import { type Box, COMPOUND, CRATES, DOOR, EXTRACTION, KEYCARD, SHADOWS, WALLS } from "../level.js";
 import { floorMaterial, propMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 import { createDoor, createExtractionPad, createKeycard } from "./props.js";
 

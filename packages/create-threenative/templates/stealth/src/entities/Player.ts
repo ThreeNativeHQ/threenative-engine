@@ -133,7 +133,10 @@ export class Player extends Fighter {
     if (this.dragging !== undefined && this.dragging.state !== "down") this.dragging = undefined;
 
     this.running =
-      ctx.input.pressed("run") && !this.#crouched && this.dragging === undefined && move.lengthSq() > 0.01;
+      ctx.input.pressed("run") &&
+      !this.#crouched &&
+      this.dragging === undefined &&
+      move.lengthSq() > 0.01;
     this.#updateWallPress(ctx, dt, move);
     if (this.stance !== "wall") this.stance = this.#crouched ? "crouch" : "stand";
 
@@ -145,7 +148,11 @@ export class Player extends Fighter {
       const tangentZ = this.wallNormal.x;
       const along = move.x * tangentX + -move.y * tangentZ;
       this.peek = Math.abs(along) > 0.2 ? Math.sign(along) : this.peek;
-      this.body.velocity.set(tangentX * along * WALL_SLIDE_SPEED, 0, tangentZ * along * WALL_SLIDE_SPEED);
+      this.body.velocity.set(
+        tangentX * along * WALL_SLIDE_SPEED,
+        0,
+        tangentZ * along * WALL_SLIDE_SPEED,
+      );
       if (ctx.input.justPressed("knock")) this.#knock(noises);
     } else {
       this.peek = 0;
@@ -159,7 +166,12 @@ export class Player extends Fighter {
       if (this.#stepTimer <= 0) {
         this.#stepTimer = STEP_INTERVAL;
         this.noise = RUN_NOISE;
-        noises.post({ x: this.mesh.position.x, z: this.mesh.position.z, radius: RUN_NOISE, source: "footstep" });
+        noises.post({
+          x: this.mesh.position.x,
+          z: this.mesh.position.z,
+          radius: RUN_NOISE,
+          source: "footstep",
+        });
       }
     } else this.#stepTimer = 0;
 
@@ -182,9 +194,10 @@ export class Player extends Fighter {
       this.figure.rotation.y = Math.atan2(this.wallNormal.x, this.wallNormal.y);
       this.animateRig(dt, undefined, 0);
     } else {
-      const heading = this.dragging !== undefined
-        ? Math.atan2(-this.body.velocity.x, -this.body.velocity.z) // walk backwards, pulling
-        : Math.atan2(this.body.velocity.x, this.body.velocity.z);
+      const heading =
+        this.dragging !== undefined
+          ? Math.atan2(-this.body.velocity.x, -this.body.velocity.z) // walk backwards, pulling
+          : Math.atan2(this.body.velocity.x, this.body.velocity.z);
       this.animateRig(dt, this.busy ? undefined : heading, planar);
     }
   }
@@ -225,7 +238,9 @@ export class Player extends Fighter {
 
   /** True while a downed guard lies within drag reach: what the HUD prompt reads. */
   canDrag(guards: readonly Guard[]): boolean {
-    return this.dragging === undefined && this.#bodyWithin(guards, PICKUP_REACH + 0.2) !== undefined;
+    return (
+      this.dragging === undefined && this.#bodyWithin(guards, PICKUP_REACH + 0.2) !== undefined
+    );
   }
 
   #tryGrab(guards: readonly Guard[]): void {

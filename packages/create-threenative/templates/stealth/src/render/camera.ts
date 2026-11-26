@@ -9,7 +9,7 @@
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
 /** Where the camera sits relative to the player's body centre: high and a little south. */
-const OFFSET = new Vector3(0, 13, 7.5);
+const OFFSET = new Vector3(0, 14, 5);
 /** What it looks at relative to the same centre. */
 const AIM = new Vector3(0, 0, -0.6);
 /** How far the view slides toward the wall end the player edges to, metres. */

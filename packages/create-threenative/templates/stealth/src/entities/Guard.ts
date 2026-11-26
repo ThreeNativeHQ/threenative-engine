@@ -245,10 +245,7 @@ export class Guard extends Fighter {
 
     if (this.state !== "alert") {
       for (const noise of noises.noises) {
-        const distance = Math.hypot(
-          noise.x - this.mesh.position.x,
-          noise.z - this.mesh.position.z,
-        );
+        const distance = Math.hypot(noise.x - this.mesh.position.x, noise.z - this.mesh.position.z);
         if (distance > noise.radius) continue;
         this.suspicion = Math.max(this.suspicion, SUSPICIOUS_AT);
         this.#becomeSuspicious(this.#toward.set(noise.x, 0, noise.z));
@@ -349,7 +346,12 @@ export class Guard extends Fighter {
     this.cone.visible = this.conscious;
     tintViewCone(this.cone, mood === "none" ? "patrol" : mood);
     if (this.state === "down" || this.state === "held") this.animateStill(dt);
-    else this.animateRig(dt, speed > 0 ? Math.atan2(this.body.velocity.x, this.body.velocity.z) : undefined, speed);
+    else
+      this.animateRig(
+        dt,
+        speed > 0 ? Math.atan2(this.body.velocity.x, this.body.velocity.z) : undefined,
+        speed,
+      );
     const clip = this.character.current ?? "";
     if (clip !== this.#heldClip) {
       this.#heldClip = clip;

@@ -76,7 +76,11 @@ export class SecurityCamera {
     // crate is still covered, and one in the open is not.
     this.sight = sightStrength(
       { eye: this.eye, halfAngle: HALF_ANGLE, range: RANGE, yaw: this.#yaw },
-      { ...player, stance: player.stance === "crouch" ? "crouch" : "stand", running: player.running },
+      {
+        ...player,
+        stance: player.stance === "crouch" ? "crouch" : "stand",
+        running: player.running,
+      },
       clear,
     );
     const before = this.suspicion;
@@ -91,7 +95,10 @@ export class SecurityCamera {
   #apply(): void {
     this.#pivot.rotation.y = this.#yaw;
     this.#cone.rotation.y = this.#yaw;
-    tintViewCone(this.#cone, this.suspicion >= 1 ? "alert" : this.suspicion > 0 ? "suspicious" : "patrol");
+    tintViewCone(
+      this.#cone,
+      this.suspicion >= 1 ? "alert" : this.suspicion > 0 ? "suspicious" : "patrol",
+    );
   }
 
   debug(): Record<string, unknown> {

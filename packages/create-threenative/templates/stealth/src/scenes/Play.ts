@@ -63,6 +63,8 @@ const STATIONS: Readonly<Record<string, Station>> = {
   station4: () => ({ x: KEYCARD.x + 1, z: KEYCARD.z + 0.6, yaw: -Math.PI / 2 }),
   // On the courtyard side of the locked door.
   station5: () => ({ x: DOOR.x, z: DOOR.z + 1.2, yaw: Math.PI }),
+  // In the open by the records doorway, inside the west camera's sweep.
+  station6: () => ({ x: -10, z: 1, yaw: 0 }),
 };
 
 function relativeTo(
@@ -281,7 +283,15 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       const dx = x - player.mesh.position.x;
       const dz = z - player.mesh.position.z;
       if (Math.hypot(dx, dz) > RADAR_RANGE) return;
-      radar.push({ halfAngle: round(halfAngle), kind, range, state, x: round(dx), yaw: round(yaw), z: round(dz) });
+      radar.push({
+        halfAngle: round(halfAngle),
+        kind,
+        range,
+        state,
+        x: round(dx),
+        yaw: round(yaw),
+        z: round(dz),
+      });
     };
 
     return (frameCtx, dt) => {
@@ -340,7 +350,11 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
       // The guards and the camera see and hear; the director turns what they report into a phase.
       if (playing && frameCtx.startup.compileSettled) {
-        const target = { position: player.mesh.position, running: player.running, stance: player.stance };
+        const target = {
+          position: player.mesh.position,
+          running: player.running,
+          stance: player.stance,
+        };
         for (const guard of guards)
           guard.update(frameCtx, dt, target, director, director.phase, noises, guards);
         for (const securityCamera of cameras) {
@@ -352,10 +366,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
             director.spotted(player.mesh.position.x, player.mesh.position.z);
         }
         let seen = false;
-        for (const guard of guards) if (guard.conscious && guard.sight > 0 && guard.state === "alert") seen = true;
-        for (const securityCamera of cameras) if (securityCamera.sight > 0 && securityCamera.suspicion >= 1) seen = true;
-        const change = director.update(dt, seen);
-        if (change !== undefined) emitPlaytestEvent({ entity: "director", name: change.to });
+        for (const guard of guards)
+          if (guard.conscious && guard.sight > 0 && guard.state === "alert") seen = true;
+        for (const securityCamera of cameras)
+          if (securityCamera.sight > 0 && securityCamera.suspicion >= 1) seen = true;
+        director.update(dt, seen);
+        for (const change of director.changes)
+          emitPlaytestEvent({ entity: "director", name: change.to });
+        director.changes.length = 0;
       }
       noises.clear();
 

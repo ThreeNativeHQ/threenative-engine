@@ -43,8 +43,8 @@ Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agen
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-action-rpg.md`.
 <!-- /shared -->
 
-This game owns dungeon, combat, stats, inventory, persistence and look; `src/game.ts` is portable, `src/main.ts` the web React mount.
-Keys: WASD/arrows move; Space/F attack; E Arcane Surge; Shift roll; Q/U equip toggle; C/R checkpoint.
+This game owns the compound (`src/level.ts` tables), guard AI (`src/ai/`, `src/entities/Guard.ts`), the alert phases and the look; `src/game.ts` is portable, `src/main.ts` the web React mount.
+Keys: WASD/arrows move; Shift run (loud); C crouch; push into a wall to press; Q knock; F grab, F again to choke; hold E drag a body; E take or open; R restart. Digits 1-6 are playtest stations.
 
 <!-- shared: kit-commands -->
 ## Commands
