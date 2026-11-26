@@ -1,0 +1,90 @@
+{
+  "name": "enemy-shot-drains-the-shield",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "wait",
+      "label": "untouched",
+      "waitTicks": 5,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "shot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "struck",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "drained",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shield",
+        "atSteps": [
+          {
+            "label": "untouched",
+            "equals": 255
+          },
+          {
+            "label": "drained",
+            "gte": 224,
+            "lte": 226
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "deflected",
+        "atSteps": [
+          {
+            "label": "drained",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "struck",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "drained"
+      }
+    ]
+  }
+}

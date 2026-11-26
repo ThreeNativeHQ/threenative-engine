@@ -591,6 +591,31 @@
       }
     }
   },
+  "rail-shooter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft", "KeyX", "KeyQ", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "shield", "equals": 255 },
+        { "id": "state", "path": "score", "equals": 0 },
+        { "id": "state", "path": "kills", "equals": 0 },
+        { "id": "state", "path": "wave", "equals": 0 },
+        { "id": "state", "path": "gauge", "lte": 10 },
+        { "id": "state", "path": "railS", "lte": 40 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the ship has no feet: it flies a spline rail and the pilot is not drawn",
+      "action-clip-completes": "no key plays an animation clip: the ship is procedural geometry and a barrel roll is a transform, proven by the barrel-roll-deflects scenario",
+      "effect-follows-contact": "no melee or timed contact window: lasers fly and hit, proven by the laser-hit-count scenario",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "rts": {
     "subject": "camera.main",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

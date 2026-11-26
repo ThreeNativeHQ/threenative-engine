@@ -1,0 +1,125 @@
+{
+  "name": "steer-inside-the-corridor",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "steering-right",
+      "press": "ArrowRight",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle-right",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hard-right",
+      "press": "ArrowRight",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hard-up",
+      "press": "ArrowUp",
+      "holdTicks": 160,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "at-the-wall",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "aimX",
+        "atSteps": [
+          {
+            "label": "steering-right",
+            "gte": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bank",
+        "atSteps": [
+          {
+            "label": "steering-right",
+            "lte": -8
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "offsetX",
+        "atSteps": [
+          {
+            "label": "steering-right",
+            "gte": 4
+          },
+          {
+            "label": "at-the-wall",
+            "gte": 10.9,
+            "lte": 11.0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "offsetY",
+        "atSteps": [
+          {
+            "label": "hard-right",
+            "lte": 0.1
+          },
+          {
+            "label": "at-the-wall",
+            "gte": 5.9,
+            "lte": 6.0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "railS",
+        "atSteps": [
+          {
+            "label": "at-the-wall",
+            "gte": 80
+          }
+        ]
+      }
+    ]
+  }
+}
