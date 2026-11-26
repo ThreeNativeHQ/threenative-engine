@@ -39,7 +39,7 @@ flowchart LR
   L --> R
 ```
 
-**Frozen 2026-11-09.** `packages/engine-mcp/__tests__/fixtures/search-gold.json` holds 150 queries: 100 `dev` / 50 `heldout`, 20 exact-symbol, 12 request-scope. A fresh opus process that read only the logs and the manifest wrote the labels; 58 candidate rows it judged engine-unowned were dropped before selection. Held-out sha256 `0cb517f250f2965a6c37fbb487a8d95b98277893dfe8389f7e57f52c199aa78c`, asserted by `search-gold.spec.ts` against both the fixture and this line.
+**Frozen 2026-11-09.** `packages/engine-mcp/__tests__/fixtures/search-gold.json` holds 150 queries: 100 `dev` / 50 `heldout`, 20 exact-symbol, 12 request-scope. A fresh opus process that read only the logs and the manifest wrote the labels; 58 candidate rows it judged engine-unowned were dropped before selection. Held-out sha256 `d678279989924e167ea064d22e894faec62d1c40e01e19ebb8e01470c9a156eb` (re-frozen 2026-11-25: #743 removed the wolf symbols of 6 rows, 3 of them held out, so they now name live symbols, and `mechanic.heldout.19` was reworded once after a measurement (its word "props" pulled `loadPropPackage`); was `0cb517f250f2965a6c37fbb487a8d95b98277893dfe8389f7e57f52c199aa78c`), asserted by `search-gold.spec.ts` against both the fixture and this line.
 
 **Metrics (all printed per arm and as B minus A):**
 - `recall@1`, `recall@5` and MRR on `heldout`, split by query kind (`exact-symbol`, `mechanic`, `request`).

@@ -1,5 +1,5 @@
 {
-  "heldoutSha256": "0cb517f250f2965a6c37fbb487a8d95b98277893dfe8389f7e57f52c199aa78c",
+  "heldoutSha256": "d678279989924e167ea064d22e894faec62d1c40e01e19ebb8e01470c9a156eb",
   "rows": [
     {
       "expect": ["compileAssets"],
@@ -875,21 +875,21 @@
       "split": "dev"
     },
     {
-      "expect": ["bakeWolfToFile"],
+      "expect": ["fetchAsset"],
       "id": "mechanic.dev.78",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "publish a generated wolf without replacing the last valid bake on interruption",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "read a JSON data file the asset loader serves, trying each resolved url until one answers",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "dev"
     },
     {
-      "expect": ["animalBakePass"],
+      "expect": ["lightmapPass"],
       "id": "mechanic.dev.79",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "cook staged animal bakes through the ordinary asset pipeline",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "bake a lightmap atlas into a static level GLB during the asset cook",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "dev"
     },
     {
@@ -929,12 +929,12 @@
       "split": "dev"
     },
     {
-      "expect": ["createAnimalActor"],
+      "expect": ["normaliseToMetres"],
       "id": "mechanic.dev.84",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "follow a baked animal from accepted fixed-step Rapier state",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "scale an imported model authored in centimetres to its real-world height",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "dev"
     },
     {
@@ -1127,21 +1127,21 @@
       "split": "heldout"
     },
     {
-      "expect": ["bakeWolf"],
+      "expect": ["loadAll"],
       "id": "mechanic.heldout.19",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "bake high and crowd wolf geometry before the ordinary asset cook",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "load forty items without opening forty requests at once, keeping results in input order",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "heldout"
     },
     {
-      "expect": ["createAnimalGeometry"],
+      "expect": ["createVfxPreset"],
       "id": "mechanic.heldout.20",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "construct a Three.js geometry from a validated procedural wolf bake",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "turn an effect picked from the shared VFX catalog into renderable layers in the scene",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "heldout"
     },
     {
@@ -1208,12 +1208,12 @@
       "split": "heldout"
     },
     {
-      "expect": ["loadAnimalBake"],
+      "expect": ["resolveTargetFps"],
       "id": "mechanic.heldout.28",
       "kind": "mechanic",
-      "note": "exact situation",
-      "query": "load a cooked animal from ctx.assets without runtime generation",
-      "source": "log-search:wolf-hitch-478a876",
+      "note": "replaces a symbol #743 removed",
+      "query": "find which frame rate the game runs at when its config sets no max fps",
+      "source": "replacement:#743-retired-procedural-animals",
       "split": "heldout"
     },
     {

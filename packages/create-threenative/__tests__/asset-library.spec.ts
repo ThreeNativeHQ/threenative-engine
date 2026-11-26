@@ -123,7 +123,11 @@ beforeAll(async () => {
     root,
     configFile: false,
     logLevel: "silent",
-    server: { port: 0, host: "127.0.0.1" },
+    // `close()` waits for a running watcher scan and a running dep bundle. The stories pull in
+    // `three/webgpu` and TSL late, and bundling them on a cold, loaded runner outlived the 60 s
+    // afterAll hook. No test edits a file or needs a pre-bundled dependency.
+    server: { port: 0, host: "127.0.0.1", watch: null },
+    optimizeDeps: { noDiscovery: true },
     plugins: [
       // A kit's engine alias, listed first as in every kit: it claims every `three` import.
       {
