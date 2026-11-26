@@ -43,6 +43,277 @@ bake call and mesh attributes, and the Stats tab shows dimensions and triangle c
 Story links retain the controls, such as `#/rock/cliff?biome=coastal&module=1`. Changes
 under `src/`, `vendor/`, or `scans/` rebuild the package and reload the viewer.
 
+### Furniture finishes
+
+The Tavern and Workshop kits share **Cherry veneer**, **Rough wood**, and **Solid color**.
+Pick a **Wood finish** under **Materials**, then adjust tint and roughness. The Tavern Kit also
+exposes **Iron tint**. The Workshop Kit's **Accent color** controls its painted parts and fabrics
+separately from its timber. A finish changes the surface while preserving dimensions, anchors,
+pivots, and snap points.
+
+```ts
+import { readFile } from "node:fs/promises";
+import { bakeTavern } from "@threenative/procedural-environment";
+
+await bakeTavern({
+  module: "tavern-table",
+  width: 2.2,
+  woodFinish: "solid",
+  materials: {
+    wood: {
+      color: "#ffffff",
+      map: await readFile("textures/oak-color.webp"),
+      normalMap: await readFile("textures/oak-normal.webp"),
+      roughness: 0.72,
+    },
+    iron: { color: "#33383d", metalness: 0.65 },
+  },
+  out: "assets/tavern",
+});
+```
+
+The `materials` map accepts color, roughness, metalness, emissive color and intensity, normal
+strength, and encoded color, OpenGL normal, roughness, or metalness maps. Pass `null` for a map
+to clear it. Maps accept PNG, JPEG, or WebP up to 16 MiB and 4096² pixels. Bakes resize them to at
+most 1024 px per side and embed compressed WebP. Roughness uses the green channel and metalness
+uses the blue channel. The numeric factors multiply their respective maps.
+
+Tavern slots are `wood` and `iron`. Workshop slots are `wood`, `accent`, `dark` (structural
+steel), `linen`, `steel` (hardware), `insert`, `ceramic`, `screen`, `shade`, and `diffuser`.
+The same options work on Station, Frontier, Pickup, Mechanism, Rail, Sports and Logistics models.
+Check **Material slots** in the asset's **Docs** tab or `materialSlots` on the bake result for the
+keys used by that model. An invalid slot lists the keys available on that model.
+
+### Tavern Kit
+
+Filter by **Realistic** and **Medieval** for the trestle table, plank bench, serving counter,
+dining set, storage barrel, wooden bucket, and tankard. Furniture uses **Width** along local X.
+Vessels use the same `width` option for **Body diameter** on the barrel and **Rim diameter** on
+the bucket and tankard. These controls preserve body height. **Wood tint**, **Seed** and **Scale**
+vary the finish and size using the shared compressed wood maps.
+
+```ts
+await bakeTavern({ module: "tavern-dining-set", width: 2.2, out: "assets/tavern" });
+await bakeTavern({ module: "tavern-barrel", width: 0.78, open: true, out: "assets/tavern" });
+```
+
+Use `tavern-tabletop` for dishes or props. The standalone bench exposes `bench-seat-left`
+and `bench-seat-right`, pointing along local +Z. The dining set prefixes these with `north-`
+and `south-`, with the seats facing the table. The counter has `counter-surface` and
+`counter-shelf` on the usable surfaces. Its customer side faces +Z. Join counters of the
+same scale by aligning `counter-join-left` and `counter-join-right` with their local +Z axes
+pointing toward each other.
+
+The `barrel-mouth`, `bucket-mouth` and `tankard-mouth` nodes mark the rim center with +Y pointing
+out of the vessel. **Remove lid** places the separate `barrel-lid` beside the barrel. Its grip
+travels with the lid. The `bucket-handle` rotates around its local X axis, carrying
+`bucket-grip` with it. The `tankard-grip` faces outward along +X in the tankard's frame.
+
+### Workshop Kit
+
+Open **Workshop Kit** for workshop, bedroom, lounge, dining, kitchen, bathroom and office furniture.
+Use **Width** to resize work surfaces, the wall shelf, dining bench, vanity or bathtub. Pick two or three
+**Seats** for the sofa or lounge, or four or six for the dining set. **Open** previews the top
+drawer, cabinet and wardrobe doors, or the toilet and trunk lids. **Scale**, **Seed** and **Accent color** make size
+and finish variants.
+
+| Asset | Named nodes and placement |
+| --- | --- |
+| Workbench | `worktop`, `workbench-drawer-bay`, and `workbench-stool-bay` place props and matching furniture. |
+| Stool and bed | `stool-seat` and `bed-sleep` sit on the usable surfaces. |
+| Drawer cabinet | Translate `drawer-1` through `drawer-3` along local +Z. `drawer-content` follows the top drawer. |
+| Wall shelf | Mount `shelf-wall` on a facing surface. Local +Z points away from the wall. Use `shelf-surface` for props. |
+| Locker | Rotate `locker-door` around local Y. Place items on `locker-floor` or `locker-shelf`. |
+| Sofa, armchair and lounge | Use `seat-1` through `seat-3` on the sofa and `armchair-seat` on the chair. The lounge includes both and the coffee table. |
+| Coffee table | Place props at `coffee-surface` or `coffee-shelf`. |
+| Media console | Rotate `console-door-left` and `console-door-right` around their local Y axes. Place props at `console-top` or `console-shelf`. |
+| Dining table and set | Place dishes at `dining-top`. The set adds four or six separately movable chairs with `dining-seat-1` through `dining-seat-6`. Seat local +Z faces the table. |
+| Dining chair and bench | Place characters at `dining-seat`, `bench-seat-left` or `bench-seat-right`. |
+| Kitchen | Align each module's `{section}-join-right` with the next `{section}-join-left`, facing their local +Z axes toward each other. Counter height is 0.91 m before scale. `prep-surface`, `sink-basin`, `sink-faucet` and `cooktop-burner-1` through `cooktop-burner-4` mark work positions. Rotate `{section}-door-left` or `{section}-door-right` around local Y. |
+| Vanity and tub | Place props at `vanity-shelf`, `vanity-basin` or `tub-bottom`. Water outlet nodes are `vanity-faucet` and `tub-spout`. Detach or reposition the `tub-faucet` group at its floor mount, `tub-filler`. The tub's long axis is local X. |
+| Toilet | Rotate `toilet-seat` or `toilet-lid` upward around local −X. `toilet-sit` follows the seat and `toilet-flush` marks the button. |
+| Office desk and workstation | Use `desk-monitor`, `desk-keyboard` and `desk-cable` to place equipment. The workstation includes the desk, swivel chair and monitor. **Width** changes the desk size and **Seat height** adjusts the chair independently. |
+| Swivel chair and monitor | Turn `chair-swivel` around local Y. `chair-seat` follows its cushion. Rotate `monitor-panel` around local X to tilt it. Attach a 16:9 UI at `monitor-display`, facing local +Z. The screen corner nodes mark its 0.48 × 0.27 m area before scaling. |
+| Bookcase | Set **Width** independently of **Shelf levels** (3–5). Use `bookcase-shelf-1` upward for item placement, starting at the bottom shelf. `bookcase-wall` faces the wall (local −Z of the bookcase). |
+| Wardrobe and trunk | Set **Width** to fit the alcove or room. Rotate `wardrobe-door-left` around local −Y, `wardrobe-door-right` around +Y and `trunk-lid` around −X. Place props at `wardrobe-floor`, `wardrobe-shelf`, `wardrobe-hanger-rail` or `trunk-content`. `trunk-latch` marks the stationary front clasp. |
+| Lamps | Set **Height** on the floor lamp (1.28–1.86 m) or **Tilt** on the desk lamp (−30° to 35°). Rotate `lamp-head` about local X to animate the desk lamp. Place the sconce's `lamp-wall` at the wall surface, pointing into the wall. |
+
+**Lit** switches the lamp materials to emissive. To illuminate the scene, attach a game light at
+`light-emitter` and aim its beam along the marker's local +Z. The desk lamp's emitter follows the
+tilting head.
+
+The assembled kitchen run includes prep, sink and cooktop cabinets. Changing **Width** resizes
+the prep section while the sink and cooktop remain 0.6 m wide.
+
+The furniture uses +Y up and faces +Z. The shared 512 px wood color and normal maps come from
+[Poly Haven's CC0 Cherry Veneer](https://polyhaven.com/a/cherry_veneer) and ship embedded as WebP.
+
+```ts
+import { bakeWorkshop } from "@threenative/procedural-environment";
+
+await bakeWorkshop({ module: "workshop-station", width: 2.4, out: "assets/furniture" });
+```
+
+### Logistics Kit
+
+Open **Logistics Kit** for a timber pallet, stackable cargo tote, an assembled loaded pallet,
+a pallet jack, an adjustable warehouse rack, and a walk-in shipping container. Change
+**Shelf levels** to fit the rack to your space and **Doors open** to preview the container interior.
+Use the same **Scale** across parts that interact. **Accent color** recolors painted surfaces
+and **Seed** varies the timber and paint finish.
+
+| Asset | Named nodes and placement |
+| --- | --- |
+| Pallet | `pallet-fork-rear` and `pallet-fork-front` face into the channels from opposite ends. `pallet-load-left` and `pallet-load-right` seat one tote each. |
+| Cargo tote | Place the next tote at `tote-stack` for a vertical stack. |
+| Pallet jack | Match `jack-fork-entry` to a pallet's fork socket. Raise the `jack-forks` group along +Y or tilt `jack-handle` around X relative to the jack. |
+| Rack | `rack-shelf-1` through `rack-shelf-4` are the centers of available deck surfaces. Place an empty or loaded pallet at each. |
+| Container | `container-deck` seats cargo on the interior floor. Door groups `container-door-left` and `container-door-right` pivot outward about local Y. |
+
+The jack's forks and the container's entry face +Z. The models and their named nodes are
+baked in metres. The game supplies the controls, collision, and cargo motion.
+
+```ts
+import { bakeLogistics } from "@threenative/procedural-environment";
+
+await bakeLogistics({ module: "logistics-rack", shelves: 4, out: "assets/cargo" });
+```
+
+### Sports Kit
+
+Open **Sports Kit** for a soccer goal, basketball hoop and backboard, a court net, and
+three matching balls. Set the goal's clear opening width and height, the hoop's rim
+height, or the court net's span and center height. The post and rim thickness stay
+fixed when height changes. **Scale** resizes the whole piece. **Accent color** recolors
+the visible paint or ball panels.
+
+| Asset | Named nodes | Placement |
+| --- | --- | --- |
+| Soccer goal | `goal-center`, `goal-left-post`, `goal-right-post`, `goal-crossbar` | Opening faces +Z. Post and crossbar nodes mark the clear opening. |
+| Basketball hoop | `rim-center`, `backboard-target` | Hoop faces +Z. Use the rim center to place a scoring test. |
+| Court net | `net-left`, `net-center`, `net-right` | Net runs across X. Nodes mark the centerline of the top cord. |
+| Soccer ball, basketball, tennis ball | `ball-center` | The model rests on y = 0. Use the center node for a rotation pivot. |
+
+```ts
+import { bakeSports } from "@threenative/procedural-environment";
+
+await bakeSports({ module: "sports-net", span: 9.5, height: 2.24, out: "assets/sports" });
+```
+
+Dimensions are in metres before scale. The game owns collision, scoring and ball motion.
+
+### Rail Kit
+
+Open **Rail Kit** for straight and quarter-turn track, a raised approach, a trestle bridge,
+a buffer stop and an open minecart. **Scale** applies to the whole piece, including its
+attachment points. Keep the same scale across the route. **Accent color** recolors
+the ramp, bridge, stop and cart. **Seed** varies the timber and iron finishes.
+
+Snap `track-out` to the next piece's `track-in` by matching their world positions and rotations.
+The sockets are at rail height and local +Z points along travel. The curve turns toward +X
+with a 4 m centerline radius. Straight sections run 4 m. The ramp rises 1 m to the bridge's
+rail height. The buffer stop has one track socket.
+
+Place the cart origin at rail height and point its local +Z along the track. Rotate the
+`cart-front-axle` and `cart-rear-axle` groups around their local X axes. The `cart-load` node is
+at the center of the hopper floor. The game supplies the route, motion and collision.
+
+```ts
+import { bakeRail } from "@threenative/procedural-environment";
+
+await bakeRail({ module: "rail-cart", accent: "#447c8a", out: "assets/rail" });
+```
+
+### Mechanism Kit
+
+Open **Mechanism Kit** for a signal emitter, receiver and reflector, a modular conveyor,
+a rotating deck and a power cell socket. All six bake as grounded PBR GLBs. Change **Accent color**
+and **Scale** in the viewer. Toggle **Active** to bake lit indicators for the emitter, receiver or socket.
+
+| Piece | Named node | Placement |
+| --- | --- | --- |
+| Emitter, receiver, reflector | `signal-output`, `signal-input`, `signal-reflector` | Face centre at y = 0.72 m. Local +Z points out. |
+| Conveyor | `belt-start`, `belt-end` | 2 m sections run toward +Z with the belt at y = 0.34 m. |
+| Rotating deck | `turntable-deck` | Rotate the child group around its Y axis. Its surface matches the conveyor. |
+| Power cell socket | `cell-dock` | Seat the Station Kit power cell here at matching scale. |
+
+These coordinates describe the default scale. Read the named world transforms in your game
+to work with scaled or rotated pieces. The GLBs carry the visual parts and attachment points.
+The game supplies movement, signals and collision.
+
+```ts
+import { bakeMechanism } from "@threenative/procedural-environment";
+
+await bakeMechanism({ module: "mechanism-receiver", active: true, out: "assets/mechanisms" });
+```
+
+### Pickups
+
+Open **Pickups** for seven stylized props for recovery, access and equipment: a medkit,
+potion, access keycard, shield, vault key, parchment scroll and repair wrench. Use **Accent color**
+for variants that need to read differently in play, **Scale** for size (0.5× to 2×), and **Seed** for
+subtle changes in the finish. Set **Pose** to Flat on the access card, shield, vault key or wrench
+for a face-up prop in an overhead game. GLBs use opaque PBR materials and sit at y = 0. Upright
+props face +Z.
+
+```ts
+import { bakePickup, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "pickup" });
+await bakePickup({
+  module: "pickup-keycard",
+  accent: "#ed5166",
+  scale: 1.5,
+  out: "assets/pickups",
+});
+```
+
+### Frontier Kit
+
+Open **Frontier Kit** for industrial buildings and props for strategy, colony and base-building
+games. It includes command headquarters, a supply depot, an ore processor, a power generator,
+a communications relay, a crystal ore deposit, a landing pad and an assembled outpost.
+
+**Team color** sets the painted panels across the kit. **Scale** sets the uniform size from
+0.5× to 2×. **Seed** varies the ore cluster and ceramic paint tones. The modules are centred at
+ground level, use +Y up and are baked in metres as opaque PBR GLBs.
+
+```ts
+import { bakeFrontier, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "frontier" });
+await bakeFrontier({
+  module: "frontier-command",
+  accent: "#628ac4",
+  scale: 1.5,
+  out: "assets/frontier",
+});
+```
+
+### Station Kit
+
+Open **Station Kit** for 12 stylized science-fiction interiors and props. The kit covers deck,
+wall, bulkhead and ceiling pieces, straight, elbow, T and four-way corridors, a cargo case,
+control terminal, power cell and an assembled maintenance junction. Use **Accent paint** to
+recolor the kit and **Ceiling** to enclose a corridor or show its interior from above.
+
+```ts
+import { bakeStation, environmentElements } from "@threenative/procedural-environment";
+
+environmentElements({ kind: "station" });
+await bakeStation({
+  module: "station-elbow",
+  accent: "#ee9955",
+  roof: true,
+  out: "assets/station",
+});
+```
+
+Corridors snap on a 4 m grid. North is −Z and the deck surface is 0.25 m above the origin.
+Rotate in quarter turns to match the open sides. Corridor GLBs record their local openings
+in `extras.sockets`. Place standalone props on the deck at y = 0.25 m, and place the separate
+ceiling at y = 3.2 m. Paint and ceiling changes produce distinct filenames.
+
 ### Stylized Biome Kit
 
 Open **Stylized Biome Kit** in the same sidebar for the alpine forest, snow peaks, and desert

@@ -1,0 +1,731 @@
+import { readFile } from "node:fs/promises";
+import sharp from "sharp";
+import { Box3, Mesh, Raycaster, Vector3 } from "three";
+import { describe, expect, it } from "vitest";
+import { makeTempDir } from "../../../test-support/temp-dir.js";
+import { proceduralEnvironmentSource } from "../src/asset-library.js";
+import { bakeWorkshop, environmentElements } from "../src/index.js";
+import { buildWorkshop, workshopAccent } from "../src/workshop.js";
+
+const anchors = {
+  workbench: ["worktop", "workbench-drawer-bay", "workbench-stool-bay"],
+  stool: ["stool-seat"],
+  drawer: ["drawer-1", "drawer-2", "drawer-3", "drawer-content"],
+  shelf: ["shelf-wall", "shelf-surface"],
+  locker: ["locker-door", "locker-floor", "locker-shelf"],
+  bed: ["bed-sleep"],
+  station: ["worktop", "stool-seat", "drawer-content"],
+  sofa: ["seat-1", "seat-2", "seat-3"],
+  armchair: ["armchair-seat"],
+  "coffee-table": ["coffee-surface", "coffee-shelf"],
+  "media-console": ["console-top", "console-shelf", "console-door-left", "console-door-right"],
+  lounge: ["seat-1", "seat-2", "seat-3", "armchair-seat", "coffee-surface"],
+  "dining-table": ["dining-top"],
+  "dining-chair": ["dining-seat"],
+  "dining-bench": ["bench-seat-left", "bench-seat-right"],
+  "dining-set": ["dining-top", "dining-seat-1", "dining-seat-2", "dining-seat-3", "dining-seat-4"],
+  "kitchen-prep": ["prep-surface", "prep-shelf", "prep-join-left", "prep-join-right"],
+  "kitchen-sink": ["sink-basin", "sink-faucet", "sink-join-left", "sink-join-right"],
+  "kitchen-cooktop": [
+    "cooktop-burner-1",
+    "cooktop-burner-4",
+    "cooktop-join-left",
+    "cooktop-join-right",
+  ],
+  "kitchen-run": [
+    "prep-surface",
+    "sink-basin",
+    "cooktop-burner-1",
+    "prep-door-left",
+    "sink-door-right",
+  ],
+  "bath-vanity": ["vanity-basin", "vanity-faucet", "vanity-shelf", "vanity-wall"],
+  "bath-tub": ["tub-bottom", "tub-drain", "tub-filler", "tub-faucet", "tub-spout"],
+  "bath-toilet": ["toilet-seat", "toilet-lid", "toilet-sit", "toilet-flush"],
+  "office-desk": ["desk-surface", "desk-monitor", "desk-keyboard"],
+  "office-chair": ["chair-swivel", "chair-seat"],
+  "office-monitor": [
+    "monitor-panel",
+    "monitor-display",
+    "monitor-screen-top-left",
+    "monitor-screen-bottom-right",
+  ],
+  "office-set": ["desk-surface", "chair-seat", "monitor-display"],
+  bookcase: ["bookcase-shelf-1", "bookcase-shelf-4", "bookcase-wall"],
+  wardrobe: [
+    "wardrobe-door-left",
+    "wardrobe-door-right",
+    "wardrobe-floor",
+    "wardrobe-shelf",
+    "wardrobe-hanger-rail",
+  ],
+  trunk: ["trunk-lid", "trunk-content", "trunk-latch"],
+  "floor-lamp": ["light-emitter"],
+  "desk-lamp": ["lamp-head", "light-emitter"],
+  "wall-sconce": ["lamp-wall", "light-emitter"],
+} as const;
+const options = { accent: workshopAccent, seed: 1, scale: 1 };
+const down = new Vector3(0, -1, 0);
+
+describe("Workshop furniture", () => {
+  it("lists every workshop asset in the catalog", async () => {
+    const out = await makeTempDir("tn-workshop-catalog-");
+    const rows = environmentElements({ kind: "workshop" });
+    expect(rows.map(({ id }) => id)).toEqual(Object.keys(anchors).map((id) => `workshop-${id}`));
+    const catalog = (await proceduralEnvironmentSource({ root: out }).catalog()) as {
+      elements: { id: string; kind: string; styleTags: string[] }[];
+    };
+    expect(catalog.elements.filter(({ kind }) => kind === "workshop")).toMatchObject(
+      rows.map(({ id }) => ({ id, styleTags: ["stylized"] })),
+    );
+  });
+
+  it("classifies every catalog asset by visual style, setting and category", async () => {
+    const root = await makeTempDir("tn-procedural-metadata-");
+    const catalog = (await proceduralEnvironmentSource({ root }).catalog()) as {
+      styles: Record<string, string>;
+      settings: Record<string, string>;
+      elements: {
+        id: string;
+        kind: string;
+        category: string;
+        styleTags: string[];
+        settingTags: string[];
+      }[];
+    };
+    expect(catalog.elements.length).toBeGreaterThan(0);
+    for (const asset of catalog.elements) {
+      expect(asset.category, asset.id).toBeTruthy();
+      expect(asset.styleTags, asset.id).toHaveLength(1);
+      expect(catalog.styles[asset.styleTags[0] ?? ""], asset.id).toBeTruthy();
+      expect(asset.settingTags.length, asset.id).toBeGreaterThan(0);
+      expect(
+        asset.settingTags.every((setting) => setting in catalog.settings),
+        asset.id,
+      ).toBe(true);
+    }
+    expect(catalog.elements.find(({ id }) => id === "village-tavern")).toMatchObject({
+      styleTags: ["stylized"],
+      settingTags: ["medieval"],
+    });
+    expect(catalog.elements.find(({ id }) => id === "workshop-dining-table")).toMatchObject({
+      category: "Dining",
+      styleTags: ["stylized"],
+      settingTags: ["modern"],
+    });
+    expect(catalog.elements.find(({ id }) => id === "pickup-potion")).toMatchObject({
+      settingTags: ["medieval", "fantasy"],
+    });
+  });
+
+  it.each(Object.entries(anchors))("exports grounded %s with named nodes", async (id, nodes) => {
+    const out = await makeTempDir("tn-workshop-");
+    const [entry] = await bakeWorkshop({ module: `workshop-${id}`, out });
+    if (!entry) throw new Error(`Missing GLB for ${id}`);
+    const bytes = await readFile(entry.path);
+    const length = bytes.readUInt32LE(12);
+    expect(bytes.readUInt32LE(0)).toBe(0x46546c67);
+    const json = JSON.parse(bytes.subarray(20, 20 + length).toString()) as {
+      nodes: { name: string }[];
+      extensionsRequired?: string[];
+      images?: { mimeType: string; bufferView: number }[];
+      bufferViews: { byteLength: number; byteOffset?: number }[];
+    };
+    expect(json.nodes.map(({ name }) => name)).toEqual(expect.arrayContaining([...nodes]));
+    expect(entry.bounds.min[1]).toBeCloseTo(0, 5);
+    if (id === "wall-sconce") expect(entry.bounds.min[2]).toBeCloseTo(0, 5);
+    expect(entry.triangles).toBeLessThan(6500);
+    if (
+      [
+        "bath-tub",
+        "bath-toilet",
+        "office-chair",
+        "office-monitor",
+        "desk-lamp",
+        "wall-sconce",
+      ].includes(id)
+    ) {
+      expect(json.images ?? []).toHaveLength(0);
+      return;
+    }
+    expect(json.extensionsRequired).toContain("EXT_texture_webp");
+    expect(json.images).toHaveLength(2);
+    let textureBytes = 0;
+    for (const image of json.images ?? []) {
+      expect(image.mimeType).toBe("image/webp");
+      const view = json.bufferViews[image.bufferView];
+      if (!view) throw new Error("Missing texture buffer view");
+      const start = 28 + length + (view.byteOffset ?? 0);
+      const { format, width, height } = await sharp(
+        bytes.subarray(start, start + view.byteLength),
+      ).metadata();
+      expect({ format, width, height }).toEqual({ format: "webp", width: 512, height: 512 });
+      textureBytes += view.byteLength;
+    }
+    expect(textureBytes).toBeLessThan(32 * 1024);
+  });
+
+  it.each([1.2, 1.65, 2.4])("seats the stool and drawer inside the %s m workbench", (width) => {
+    const furniture = buildWorkshop("station", { ...options, width });
+    const worktop = furniture.getObjectByName("worktop");
+    if (!worktop) throw new Error("Missing worktop");
+    for (const name of ["stool", "drawer-unit"]) {
+      const part = furniture.getObjectByName(name);
+      if (!part) throw new Error(`Missing ${name}`);
+      const box = new Box3().setFromObject(part);
+      expect(Math.max(Math.abs(box.min.x), Math.abs(box.max.x))).toBeLessThan(width / 2 - 0.09);
+      expect(box.max.y).toBeLessThan(worktop.position.y - 0.08);
+    }
+    const cabinet = furniture.getObjectByName("drawer-unit");
+    const stool = furniture.getObjectByName("stool");
+    if (!cabinet || !stool) throw new Error("Missing nested furniture");
+    expect(new Box3().setFromObject(cabinet).intersectsBox(new Box3().setFromObject(stool))).toBe(
+      false,
+    );
+    const steel = furniture.getObjectByName("Workshop structural steel");
+    if (!steel) throw new Error("Missing bench frame");
+    const ray = new Raycaster(new Vector3(cabinet.position.x, 0.213, 0), new Vector3(0, 0, -1));
+    const brace = ray.intersectObject(steel)[0];
+    if (!brace) throw new Error("Missing rear brace");
+    expect(new Box3().setFromObject(cabinet).min.z).toBeGreaterThan(brace.point.z);
+  });
+
+  it("moves an open drawer's content marker with its usable floor", () => {
+    const closed = buildWorkshop("drawer", options);
+    const open = buildWorkshop("drawer", { ...options, open: true });
+    open.updateMatrixWorld(true);
+    expect(open.getObjectByName("drawer-3")?.position.z).toBeGreaterThan(0.2);
+    expect(closed.getObjectByName("drawer-3")?.position.z).toBe(0);
+    expect(open.getObjectByName("drawer-2")?.position.z).toBe(0);
+    const contact = open.getObjectByName("drawer-content")?.getWorldPosition(new Vector3());
+    if (!contact) throw new Error("Missing drawer contact");
+    const ray = new Raycaster(contact.clone().add(new Vector3(0, 0.2, 0)), down);
+    expect(ray.intersectObject(open)[0]?.point.y).toBeCloseTo(contact.y);
+  });
+
+  it("covers the tray interiors with the drawer faces in the closed pose", () => {
+    const cabinet = buildWorkshop("drawer", options);
+    cabinet.updateMatrixWorld(true);
+    const ray = new Raycaster(new Vector3(0, 0.279, 1), new Vector3(0, 0, -1));
+    const face = ray.intersectObject(cabinet)[0];
+    expect(face?.object.name).toBe("Workshop accent inset");
+    expect(face?.point.z).toBeGreaterThan(0.25);
+  });
+
+  it("opens the locker door without blocking its storage shelf", () => {
+    const closed = buildWorkshop("locker", options);
+    const open = buildWorkshop("locker", { ...options, open: true });
+    closed.updateMatrixWorld(true);
+    open.updateMatrixWorld(true);
+    const shelf = open.getObjectByName("locker-shelf");
+    if (!shelf) throw new Error("Missing locker shelf");
+    const ray = new Raycaster(new Vector3(0, shelf.position.y + 0.1, 1), new Vector3(0, 0, -1));
+    expect(ray.intersectObject(closed)[0]?.point.z).toBeGreaterThan(0.2);
+    expect(ray.intersectObject(open)[0]?.point.z).toBeLessThan(-0.2);
+    expect(open.getObjectByName("locker-door")?.rotation.y).toBeLessThan(-Math.PI / 2);
+  });
+
+  it("keeps seat spacing and surface height when the sofa adds a cushion", () => {
+    const two = buildWorkshop("sofa", { ...options, seats: 2 });
+    const three = buildWorkshop("sofa", { ...options, seats: 3 });
+    two.updateMatrixWorld(true);
+    three.updateMatrixWorld(true);
+    expect(two.getObjectByName("seat-3")).toBeUndefined();
+    expect(three.getObjectByName("seat-3")).toBeDefined();
+    const spacing = (sofa: typeof two) => {
+      const first = sofa.getObjectByName("seat-1");
+      const second = sofa.getObjectByName("seat-2");
+      if (!first || !second) throw new Error("Missing seats");
+      for (const contact of [first, second]) {
+        const ray = new Raycaster(contact.position.clone().add(new Vector3(0, 0.1, 0)), down);
+        expect(ray.intersectObject(sofa)[0]?.point.y).toBeCloseTo(contact.position.y);
+      }
+      return second.position.x - first.position.x;
+    };
+    expect(spacing(two)).toBeCloseTo(spacing(three));
+    const width = (sofa: typeof two) => new Box3().setFromObject(sofa).getSize(new Vector3()).x;
+    expect(width(three) - width(two)).toBeCloseTo(spacing(two));
+  });
+
+  it.each([2, 3])("maintains access to the coffee table in the %s-seat arrangement", (seats) => {
+    const room = buildWorkshop("lounge", { ...options, seats });
+    const bounds = (name: string) => {
+      const component = room.getObjectByName(name);
+      if (!component) throw new Error(`Missing ${name}`);
+      return new Box3().setFromObject(component, true);
+    };
+    const chair = bounds("lounge-armchair");
+    const sofa = bounds("lounge-sofa");
+    const table = bounds("lounge-table");
+    expect(table.min.z - sofa.max.z).toBeGreaterThan(0.31);
+    expect(chair.min.x - table.max.x).toBeGreaterThan(0.25);
+    expect(chair.intersectsBox(sofa)).toBe(false);
+  });
+
+  it("swings both media cabinet doors clear of their compartments", () => {
+    const closed = buildWorkshop("media-console", options);
+    const open = buildWorkshop("media-console", { ...options, open: true });
+    closed.updateMatrixWorld(true);
+    open.updateMatrixWorld(true);
+    for (const x of [-0.52, 0.52]) {
+      const ray = new Raycaster(new Vector3(x, 0.38, 1), new Vector3(0, 0, -1));
+      expect(ray.intersectObject(closed)[0]?.point.z).toBeGreaterThan(0.2);
+      expect(ray.intersectObject(open)[0]?.point.z).toBeLessThan(-0.1);
+    }
+  });
+
+  it("keeps the media console's back panel clear of coplanar supports", () => {
+    const console = buildWorkshop("media-console", options);
+    console.updateMatrixWorld(true);
+    for (const x of [0.305, 0.79]) {
+      const ray = new Raycaster(new Vector3(x, 0.345, -1), new Vector3(0, 0, 1));
+      const [panel, support] = ray.intersectObject(console);
+      if (!panel || !support) throw new Error("Missing back panel or support");
+      expect(support.point.z - panel.point.z).toBeGreaterThan(0.01);
+    }
+  });
+
+  it.each([
+    [4, 1.4],
+    [6, 1.4],
+    [6, 2.4],
+  ])("fits %s dining chairs at width %s m with usable seat and knee space", (seats, width) => {
+    const set = buildWorkshop("dining-set", { ...options, seats, width });
+    set.updateMatrixWorld(true);
+    const table = set.getObjectByName("dining-table");
+    if (!table) throw new Error("Missing table");
+    expect(new Box3().setFromObject(table).getSize(new Vector3()).x).toBeCloseTo(width);
+    const chairs = set.children.filter(({ name }) => name.startsWith("dining-chair-"));
+    expect(chairs).toHaveLength(seats);
+    const boxes: Box3[] = [];
+    for (const [i, chair] of chairs.entries()) {
+      const seat = chair.getObjectByName(`dining-seat-${i + 1}`);
+      if (!seat) throw new Error(`Missing seat ${i + 1}`);
+      const position = seat.getWorldPosition(new Vector3());
+      const forward = seat.getWorldDirection(new Vector3());
+      const reachRay = new Raycaster(position.clone().setY(0.724), forward, 0, 0.25);
+      expect(reachRay.intersectObject(table).length).toBeGreaterThan(0);
+      const seatRay = new Raycaster(position.clone().setY(0.53), down);
+      expect(seatRay.intersectObject(chair)[0]?.point.y).toBeCloseTo(position.y);
+      const kneeRay = new Raycaster(position.clone().setY(0.56), forward, 0, 0.5);
+      expect(kneeRay.intersectObject(table)).toHaveLength(0);
+      const box = new Box3().setFromObject(chair, true);
+      expect(boxes.some((other) => box.intersectsBox(other))).toBe(false);
+      boxes.push(box);
+    }
+  });
+
+  it("keeps both bench anchors on the usable surface across widths", () => {
+    for (const width of [0.92, 1.65]) {
+      const bench = buildWorkshop("dining-bench", { ...options, width });
+      bench.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(bench).getSize(new Vector3()).x).toBeCloseTo(width);
+      for (const name of ["bench-seat-left", "bench-seat-right"]) {
+        const seat = bench.getObjectByName(name);
+        if (!seat) throw new Error(`Missing ${name}`);
+        const ray = new Raycaster(seat.position.clone().setY(0.54), down);
+        expect(ray.intersectObject(bench)[0]?.point.y).toBeCloseTo(seat.position.y);
+      }
+    }
+  });
+
+  it("maps wood grain along the dining chair's upright", () => {
+    const chair = buildWorkshop("dining-chair", options);
+    const wood = chair.getObjectByName("Workshop cherry veneer");
+    if (!(wood instanceof Mesh)) throw new Error("Missing chair timber");
+    const position = wood.geometry.getAttribute("position");
+    const normal = wood.geometry.getAttribute("normal");
+    const uv = wood.geometry.getAttribute("uv");
+    const grain: number[] = [];
+    for (let i = 0; i < position.count; i++) {
+      if (
+        normal.getZ(i) < -0.999 &&
+        Math.abs(position.getX(i) - 0.175) < 0.03 &&
+        position.getZ(i) < -0.2
+      ) {
+        grain.push(uv.getX(i));
+      }
+    }
+    expect(grain.length).toBeGreaterThan(0);
+    expect(Math.max(...grain) - Math.min(...grain)).toBeGreaterThan(0.75);
+  });
+
+  it.each([0.6, 1.2])("joins the kitchen run flush with a %s m prep counter", (width) => {
+    const run = buildWorkshop("kitchen-run", { ...options, width });
+    run.updateMatrixWorld(true);
+    expect(new Box3().setFromObject(run, true).getSize(new Vector3()).x).toBeCloseTo(width + 1.2);
+    for (const [left, right] of [
+      ["prep", "sink"],
+      ["sink", "cooktop"],
+    ] as const) {
+      const a = run.getObjectByName(`${left}-join-right`);
+      const b = run.getObjectByName(`${right}-join-left`);
+      if (!a || !b) throw new Error("Missing kitchen join");
+      const seam = a.getWorldPosition(new Vector3());
+      expect(seam.distanceTo(b.getWorldPosition(new Vector3()))).toBeCloseTo(0);
+      expect(a.getWorldDirection(new Vector3()).x).toBeCloseTo(1);
+      expect(b.getWorldDirection(new Vector3()).x).toBeCloseTo(-1);
+      for (const delta of [-0.006, 0.006]) {
+        const rim = new Raycaster(new Vector3(seam.x + delta, 1.25, 0.28), down);
+        expect(rim.intersectObject(run)[0]?.point.y).toBeCloseTo(seam.y);
+      }
+    }
+  });
+
+  it("bakes a recessed sink with a reachable basin floor and a flush surrounding counter", () => {
+    const sink = buildWorkshop("kitchen-sink", options);
+    sink.updateMatrixWorld(true);
+    const floor = new Raycaster(new Vector3(0.08, 1.2, 0.08), down);
+    const rim = new Raycaster(new Vector3(0.265, 1.2, 0.08), down);
+    expect(floor.intersectObject(sink)[0]?.point.y).toBeCloseTo(0.775);
+    expect(rim.intersectObject(sink)[0]?.point.y).toBeCloseTo(0.91);
+  });
+
+  it("keeps the kitchen back panel clear of nearly coplanar sides", () => {
+    const sink = buildWorkshop("kitchen-sink", options);
+    sink.updateMatrixWorld(true);
+    const rear = new Raycaster(new Vector3(0.272, 0.49, -1), new Vector3(0, 0, 1));
+    const [panel, side] = rear.intersectObject(sink);
+    if (!panel || !side) throw new Error("Missing kitchen back panel or side");
+    expect(side.point.z - panel.point.z).toBeGreaterThan(0.012);
+  });
+
+  it.each([
+    ["prep", 0.6],
+    ["prep", 1.2],
+    ["sink", 0.6],
+    ["cooktop", 0.6],
+  ] as const)("opens %s cabinet doors within their bay with a %s m prep section", (name, width) => {
+    const closed = buildWorkshop(`kitchen-${name}`, options);
+    closed.updateMatrixWorld(true);
+    for (const x of [0.008, 0.13]) {
+      const closedBay = new Raycaster(new Vector3(x, 0.5, 1), new Vector3(0, 0, -1));
+      expect(closedBay.intersectObject(closed)[0]?.point.z).toBeGreaterThan(0.25);
+    }
+    const open = buildWorkshop("kitchen-run", { ...options, width, open: true });
+    open.updateMatrixWorld(true);
+    const module = open.getObjectByName(`kitchen-${name}`);
+    if (!module) throw new Error(`Missing ${name}`);
+    const openBay = new Raycaster(
+      new Vector3(module.position.x + 0.13, 0.5, 1),
+      new Vector3(0, 0, -1),
+    );
+    expect(openBay.intersectObject(open)[0]?.point.z).toBeLessThan(-0.2);
+    for (const side of ["left", "right"]) {
+      const door = module.getObjectByName(`${name}-door-${side}`);
+      const edge = module.getObjectByName(`${name}-join-${side}`);
+      if (!door || !edge) throw new Error("Missing cabinet door or join");
+      const bounds = new Box3().setFromObject(door, true);
+      const edgeX = edge.getWorldPosition(new Vector3()).x;
+      if (side === "left") expect(bounds.min.x).toBeGreaterThan(edgeX);
+      else expect(bounds.max.x).toBeLessThan(edgeX);
+    }
+  });
+
+  it.each([1.4, 1.9])("keeps the bathtub hollow at %s m wide", (width) => {
+    const tub = buildWorkshop("bath-tub", { ...options, width });
+    tub.updateMatrixWorld(true);
+    const bounds = new Box3().setFromObject(tub, true);
+    expect(bounds.getSize(new Vector3()).x).toBeCloseTo(width);
+    const floor = new Raycaster(new Vector3(0, 0.8, 0), down);
+    const rim = new Raycaster(new Vector3(width * 0.47, 0.8, 0), down);
+    expect(floor.intersectObject(tub)[0]?.point.y).toBeCloseTo(0.1);
+    expect(rim.intersectObject(tub)[0]?.point.y).toBeGreaterThan(0.53);
+    const tap = tub.getObjectByName("tub-faucet");
+    const mount = tub.getObjectByName("tub-filler");
+    const spout = tap?.getObjectByName("tub-spout");
+    if (!tap || !mount || !spout) throw new Error("Missing removable tub filler");
+    expect(tap.position.distanceTo(mount.position)).toBeCloseTo(0);
+    const flow = new Raycaster(
+      spout.getWorldPosition(new Vector3()).addScaledVector(down, 0.02),
+      down,
+    );
+    const hit = flow.intersectObject(tub)[0];
+    expect(hit?.point.y).toBeGreaterThan(0.1);
+    expect(hit?.point.y).toBeLessThan(0.3);
+  });
+
+  it("preserves the vanity bowl and tap placement as the cabinet widens", () => {
+    for (const width of [0.64, 1.2]) {
+      const vanity = buildWorkshop("bath-vanity", { ...options, width });
+      vanity.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(vanity, true).getSize(new Vector3()).x).toBeCloseTo(width);
+      const bowl = vanity.getObjectByName("vanity-basin");
+      const tap = vanity.getObjectByName("vanity-faucet");
+      if (!bowl || !tap) throw new Error("Missing bathroom attachment");
+      const ray = new Raycaster(bowl.position.clone().setY(1.2), down);
+      expect(ray.intersectObject(vanity)[0]?.point.y).toBeCloseTo(bowl.position.y);
+      expect(tap.position.y).toBeGreaterThan(0.94);
+    }
+  });
+
+  it("pivots the toilet lid clear of the bowl and leaves the seat in place", () => {
+    const closed = buildWorkshop("bath-toilet", options);
+    const open = buildWorkshop("bath-toilet", { ...options, open: true });
+    closed.updateMatrixWorld(true);
+    open.updateMatrixWorld(true);
+    const bowl = new Raycaster(new Vector3(0, 1.1, 0.14), down);
+    expect(bowl.intersectObject(closed)[0]?.point.y).toBeGreaterThan(0.49);
+    expect(bowl.intersectObject(open)[0]?.point.y).toBeCloseTo(0.29);
+    expect(open.getObjectByName("toilet-seat")?.rotation.x).toBe(0);
+    expect(open.getObjectByName("toilet-lid")?.rotation.x).toBeLessThan(-1.5);
+  });
+
+  it.each([0.42, 0.57])("keeps the swivel chair grounded at %s m high", (height) => {
+    const chair = buildWorkshop("office-chair", { ...options, height });
+    chair.updateMatrixWorld(true);
+    const anchor = chair.getObjectByName("chair-seat");
+    if (!anchor) throw new Error("Missing chair seat");
+    const position = anchor.getWorldPosition(new Vector3());
+    expect(position.y).toBeCloseTo(height);
+    const ray = new Raycaster(position.clone().add(new Vector3(0, 0.1, 0)), down);
+    expect(ray.intersectObject(chair)[0]?.point.y).toBeCloseTo(height);
+    expect(new Box3().setFromObject(chair, true).min.y).toBeCloseTo(0, 5);
+  });
+
+  it("positions the 16:9 display anchors on the monitor face after tilting", () => {
+    const monitor = buildWorkshop("office-monitor", options);
+    const head = monitor.getObjectByName("monitor-panel");
+    const middle = monitor.getObjectByName("monitor-display");
+    const top = monitor.getObjectByName("monitor-screen-top-left");
+    const bottom = monitor.getObjectByName("monitor-screen-bottom-right");
+    if (!head || !middle || !top || !bottom) throw new Error("Missing display mounts");
+    head.rotation.x = -0.26;
+    monitor.updateMatrixWorld(true);
+    expect(top.position.x + 0.48).toBeCloseTo(bottom.position.x);
+    expect(top.position.y - 0.27).toBeCloseTo(bottom.position.y);
+    const surface = middle.getWorldPosition(new Vector3());
+    const normal = middle.getWorldDirection(new Vector3());
+    const ray = new Raycaster(surface.clone().addScaledVector(normal, 0.08), normal.negate());
+    expect(ray.intersectObject(monitor)[0]?.point.distanceTo(surface)).toBeLessThan(0.002);
+  });
+
+  it("fits a high chair and monitor at the narrowest desk setting", () => {
+    const set = buildWorkshop("office-set", { ...options, width: 0.95, height: 0.57 });
+    set.updateMatrixWorld(true);
+    const desk = set.getObjectByName("office-desk");
+    const monitor = set.getObjectByName("office-monitor");
+    const mount = desk?.getObjectByName("desk-monitor");
+    const seat = set.getObjectByName("chair-seat");
+    if (!desk || !monitor || !mount || !seat) throw new Error("Missing workstation part");
+    expect(new Box3().setFromObject(desk, true).getSize(new Vector3()).x).toBeCloseTo(0.95);
+    expect(monitor.position.distanceTo(mount.position)).toBeCloseTo(0);
+    const forwards = seat.getWorldDirection(new Vector3());
+    expect(forwards.z).toBeCloseTo(-1);
+    const knees = new Raycaster(seat.getWorldPosition(new Vector3()).setY(0.62), forwards, 0, 0.62);
+    expect(knees.intersectObject(desk)).toHaveLength(0);
+  });
+
+  it.each([3, 4, 5])("has %s usable bookcase shelves at both width limits", (shelves) => {
+    for (const width of [0.7, 1.38]) {
+      const bookcase = buildWorkshop("bookcase", { ...options, width, shelves });
+      bookcase.updateMatrixWorld(true);
+      expect(new Box3().setFromObject(bookcase, true).getSize(new Vector3()).x).toBeCloseTo(width);
+      for (let level = 1; level <= shelves; level++) {
+        const surface = bookcase.getObjectByName(`bookcase-shelf-${level}`);
+        if (!surface) throw new Error("Missing bookcase shelf");
+        const point = surface.getWorldPosition(new Vector3());
+        const items = new Raycaster(point.clone().add(new Vector3(0, 0.23, 0)), down);
+        expect(items.intersectObject(bookcase)[0]?.point.y).toBeCloseTo(point.y);
+      }
+      expect(bookcase.getObjectByName(`bookcase-shelf-${shelves + 1}`)).toBeUndefined();
+    }
+  });
+
+  it.each([0.9, 1.6])("opens both wardrobe doors clear of the %s m opening", (width) => {
+    const wardrobe = buildWorkshop("wardrobe", { ...options, width, open: true });
+    wardrobe.updateMatrixWorld(true);
+    const left = wardrobe.getObjectByName("wardrobe-door-left");
+    const right = wardrobe.getObjectByName("wardrobe-door-right");
+    expect(left?.rotation.y).toBeLessThan(-Math.PI / 2);
+    expect(right?.rotation.y).toBeGreaterThan(Math.PI / 2);
+    const inside = new Raycaster(new Vector3(0, 1.05, 1), new Vector3(0, 0, -1), 0, 1.19);
+    expect(inside.intersectObject(wardrobe)).toHaveLength(0);
+    const carcass = wardrobe.children.filter((child) => child instanceof Mesh);
+    for (const door of [left, right]) {
+      if (!door) throw new Error("Missing wardrobe door");
+      const joint = new Vector3(door.position.x, 0.46, door.position.z - 0.016);
+      const hinge = new Raycaster(joint, down, 0, 0.11);
+      expect(hinge.intersectObjects(carcass, false)[0]?.point.y).toBeCloseTo(0.398);
+    }
+    const rail = wardrobe.getObjectByName("wardrobe-hanger-rail");
+    if (!rail) throw new Error("Missing wardrobe hanger rail");
+    const point = rail.getWorldPosition(new Vector3());
+    const railRay = new Raycaster(point.clone().add(new Vector3(0, 0.06, 0)), down);
+    expect(railRay.intersectObject(wardrobe)[0]?.point.y).toBeCloseTo(point.y);
+  });
+
+  it.each([1.28, 1.86])(
+    "sets the floor lamp height to %s m while keeping its base and shade dimensions",
+    (height) => {
+      const lamp = buildWorkshop("floor-lamp", { ...options, height });
+      lamp.updateMatrixWorld(true);
+      const bounds = new Box3().setFromObject(lamp, true);
+      expect(bounds.min.y).toBeCloseTo(0, 5);
+      expect(bounds.max.y).toBeCloseTo(height, 5);
+      expect(bounds.getSize(new Vector3()).x).toBeCloseTo(0.424);
+      const emitter = lamp.getObjectByName("light-emitter");
+      if (!emitter) throw new Error("Missing floor lamp emitter");
+      const point = emitter.getWorldPosition(new Vector3());
+      const direction = emitter.getWorldDirection(new Vector3());
+      expect(direction.y).toBeCloseTo(-1, 5);
+      expect(height - point.y).toBeCloseTo(0.307, 5);
+    },
+  );
+
+  it.each([-30, 35])("aims the desk lamp and emitter together at %s degrees", (tilt) => {
+    const lamp = buildWorkshop("desk-lamp", { ...options, tilt });
+    lamp.updateMatrixWorld(true);
+    const head = lamp.getObjectByName("lamp-head");
+    const emitter = lamp.getObjectByName("light-emitter");
+    if (!head || !emitter) throw new Error("Missing desk lamp moving parts");
+    const radians = (tilt * Math.PI) / 180;
+    expect(head.rotation.x).toBeCloseTo(radians);
+    expect(emitter.parent).toBe(head);
+    const direction = emitter.getWorldDirection(new Vector3());
+    const point = emitter.getWorldPosition(new Vector3());
+    expect(direction.z).toBeCloseTo(-Math.sin(radians));
+    const face = new Raycaster(point, direction.negate(), 0, 0.025);
+    expect(face.intersectObject(head)[0]?.object.name).toBe("Workshop lamp diffuser");
+  });
+
+  it("mounts the sconce flush to the wall and aims out into the room", () => {
+    const lamp = buildWorkshop("wall-sconce", options);
+    lamp.updateMatrixWorld(true);
+    const wall = lamp.getObjectByName("lamp-wall");
+    const emitter = lamp.getObjectByName("light-emitter");
+    if (!wall || !emitter) throw new Error("Missing wall sconce mounts");
+    const bounds = new Box3().setFromObject(lamp, true);
+    expect(wall.position.x).toBe(0);
+    expect(wall.position.y).toBeCloseTo(bounds.max.y / 2);
+    expect(wall.position.z).toBe(0);
+    expect(wall.getWorldDirection(new Vector3()).z).toBeCloseTo(-1);
+    expect(emitter.getWorldDirection(new Vector3()).z).toBeCloseTo(1);
+    expect(emitter.position.z).toBeGreaterThan(bounds.max.z);
+  });
+
+  it.each(["floor-lamp", "desk-lamp", "wall-sconce"])(
+    "exports separate lit and unlit %s materials",
+    async (module) => {
+      const out = await makeTempDir("tn-workshop-fixtures-");
+      for (const lit of [true, false]) {
+        const [entry] = await bakeWorkshop({ module: `workshop-${module}`, out, lit });
+        if (!entry) throw new Error("Missing lamp GLB");
+        expect(entry.path.endsWith("-lit.glb")).toBe(lit);
+        const bytes = await readFile(entry.path);
+        const data = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {
+          materials: { name: string; emissiveFactor?: number[] }[];
+          extensionsUsed: string[];
+        };
+        const diffuser = data.materials.find(
+          (material) => material.name === "Workshop lamp diffuser",
+        );
+        expect(diffuser).toBeDefined();
+        expect(diffuser?.emissiveFactor?.some((part) => part > 0) ?? false).toBe(lit);
+        expect(data.extensionsUsed ?? []).not.toContain("KHR_lights_punctual");
+      }
+    },
+  );
+
+  it.each([0.66, 1.35])(
+    "keeps the %s m trunk closed over its cavity and open for placement",
+    (width) => {
+      for (const open of [false, true]) {
+        const trunk = buildWorkshop("trunk", { ...options, width, open });
+        trunk.updateMatrixWorld(true);
+        const lid = trunk.getObjectByName("trunk-lid");
+        const content = trunk.getObjectByName("trunk-content");
+        if (!lid || !content) throw new Error("Missing trunk anchors");
+        expect(lid.rotation.x).toBeCloseTo(open ? -Math.PI * 0.56 : 0);
+        const point = content.getWorldPosition(new Vector3());
+        const ray = new Raycaster(point.clone().setY(1), down);
+        const hit = ray.intersectObject(trunk)[0]?.point.y;
+        if (open) expect(hit).toBeCloseTo(point.y);
+        else expect(hit).toBeGreaterThan(0.45);
+      }
+    },
+  );
+
+  it("keeps distinct variants and rejects controls for incompatible furniture", async () => {
+    const out = await makeTempDir("tn-workshop-controls-");
+    const [stock] = await bakeWorkshop({ module: "workshop-workbench", out });
+    const [wide] = await bakeWorkshop({ module: "workshop-workbench", out, width: 2.4 });
+    expect(wide?.path).not.toBe(stock?.path);
+    expect(wide?.bounds.max[0]).toBeCloseTo(1.2);
+    const [smallSofa] = await bakeWorkshop({ module: "workshop-sofa", out, seats: 2 });
+    expect(smallSofa?.path).toMatch(/-2-seats\.glb$/u);
+    const [wideDining] = await bakeWorkshop({
+      module: "workshop-dining-set",
+      out,
+      width: 2.3,
+      seats: 6,
+    });
+    expect(wideDining?.path).toMatch(/-w2\.3-6-seats\.glb$/u);
+    const [openKitchen] = await bakeWorkshop({
+      module: "workshop-kitchen-run",
+      out,
+      width: 1.08,
+      open: true,
+    });
+    expect(openKitchen?.path).toMatch(/-w1\.08-open\.glb$/u);
+    const [office] = await bakeWorkshop({
+      module: "workshop-office-set",
+      out,
+      width: 1.69,
+      height: 0.54,
+    });
+    expect(office?.path).toMatch(/-w1\.69-h0\.54\.glb$/u);
+    await expect(
+      bakeWorkshop({ module: "workshop-office-chair", out, height: 0.6 }),
+    ).rejects.toThrow(/height/u);
+    await expect(bakeWorkshop({ module: "workshop-stool", out, height: 0.54 })).rejects.toThrow(
+      /height/u,
+    );
+    const [bookcase] = await bakeWorkshop({
+      module: "workshop-bookcase",
+      out,
+      width: 1.38,
+      shelves: 5,
+    });
+    expect(bookcase?.path).toMatch(/-w1\.38-5-shelves\.glb$/u);
+    await expect(bakeWorkshop({ module: "workshop-bookcase", out, shelves: 3.5 })).rejects.toThrow(
+      /shelves/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-wardrobe", out, shelves: 3 })).rejects.toThrow(
+      /shelves/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-bookcase", out, lit: true })).rejects.toThrow(
+      /lit/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-desk-lamp", out, tilt: 36 })).rejects.toThrow(
+      /tilt/u,
+    );
+    if (!wideDining) throw new Error("Missing six-seat dining GLB");
+    const bytes = await readFile(wideDining.path);
+    const { nodes } = JSON.parse(bytes.subarray(20, 20 + bytes.readUInt32LE(12)).toString()) as {
+      nodes: { name: string; mesh?: number; children?: number[] }[];
+    };
+    const chairs = nodes.filter(({ name }) => name.startsWith("dining-chair-"));
+    expect(chairs).toHaveLength(6);
+    const meshes = chairs.map(({ children }) =>
+      children?.flatMap((child) => nodes[child]?.mesh ?? []),
+    );
+    expect(meshes[0]).toHaveLength(3);
+    for (const chairMeshes of meshes) expect(chairMeshes).toEqual(meshes[0]);
+    await expect(bakeWorkshop({ module: "workshop-dining-set", out, seats: 5 })).rejects.toThrow(
+      /seats/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-stool", out, seats: 2 })).rejects.toThrow(
+      /seats/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-sofa", out, seats: 2.5 })).rejects.toThrow(
+      /seats/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-stool", out, width: 1.2 })).rejects.toThrow(
+      /width/u,
+    );
+    await expect(bakeWorkshop({ module: "workshop-shelf", out, open: true })).rejects.toThrow(
+      /open/u,
+    );
+  });
+});

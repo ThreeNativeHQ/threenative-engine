@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -769,4 +769,42 @@ it("caps the compressed terrain tarball at 2 MB and requires a build", async () 
   expect(await terrainTarballErrors(root)).toEqual([
     expect.stringMatching(/terrain packed tarball .* must be < 2000000 B/u),
   ]);
+});
+
+it("caps the procedural asset package at 6 MB packed and 10 MB unpacked", async () => {
+  const root = await fixtureRoot();
+  const assets = path.join(root, "packages/procedural-environment");
+  await mkdir(path.join(assets, "dist"), { recursive: true });
+  await writeFile(
+    path.join(assets, "package.json"),
+    JSON.stringify({
+      name: "@threenative/procedural-environment",
+      version: "0.1.0",
+      files: ["dist"],
+    }),
+  );
+  await expect(enforceBudgets(root)).rejects.toThrow(/build @threenative\/procedural-environment/u);
+  await writeFile(path.join(assets, "dist/index.js"), "export {};\n");
+  const releaseArchive = path.join(root, "procedural-environment.tgz");
+  await execFileAsync("pnpm", ["pack", "--out", releaseArchive], { cwd: assets });
+  const { size } = await stat(releaseArchive);
+  const log = vi.spyOn(console, "log");
+  try {
+    await expect(enforceBudgets(root)).resolves.toMatchObject({ frameworkPackages: 1 });
+    expect(log).toHaveBeenCalledWith(
+      `procedural-environment packed tarball: ${size} B (limit <= 6000000 B)`,
+    );
+  } finally {
+    log.mockRestore();
+  }
+
+  const fixture = path.join(assets, "dist/large.bin");
+  await writeFile(fixture, randomBytes(6_000_000));
+  await expect(enforceBudgets(root)).rejects.toThrow(
+    /procedural-environment packed tarball .* must be <= 6000000 B/u,
+  );
+  await writeFile(fixture, Buffer.alloc(10_000_000));
+  await expect(enforceBudgets(root)).rejects.toThrow(
+    /procedural-environment unpacked package .* must be <= 10000000 B/u,
+  );
 });

@@ -11,6 +11,63 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ### Added
 
+- Static prop kits support custom color, PBR values and texture maps by material slot. Tavern
+  and Workshop models share selectable wood finishes.
+
+- The Tavern Kit adds a storage barrel, wooden bucket, and tankard with adjustable diameters,
+  named grips, and a removable barrel lid.
+
+- The realistic Tavern Kit adds a width-adjustable trestle table, plank bench, serving
+  counter and assembled dining set with named placement and join points.
+
+- The Asset Library filters by setting and category alongside visual style and biome.
+  Procedural assets include setting metadata such as Medieval, Modern and Sci-fi.
+
+- The Asset Library's Workshop Kit adds a height-adjustable floor lamp, tilting desk lamp,
+  and wall sconce with lit variants and light attachment points.
+
+- The Asset Library's Workshop Kit adds a bookcase with configurable shelves, a double-door
+  wardrobe, and a hinged storage trunk with item placement nodes.
+
+- The Asset Library's Workshop Kit adds an adjustable office desk and swivel chair, a
+  tilting monitor with 16:9 UI placement nodes, and an assembled office workstation.
+
+- The Asset Library's Workshop Kit adds a width-adjustable vanity and bathtub, and a toilet
+  with separately movable seat and lid.
+
+- The Asset Library's Workshop Kit adds matching kitchen prep, sink and cooktop cabinets, with
+  a width-adjustable run, named snap points, recessed basin and individually hinged doors.
+
+- The Asset Library's Workshop Kit adds a dining table, slat-back chair, bench, and a four- or
+  six-seat dining set with adjustable table width and named seat placements.
+
+- The Asset Library's Workshop Kit adds a two- or three-seat sofa, armchair, adjustable coffee
+  table, hinged media console and assembled lounge, all using the existing compressed wood maps.
+
+- The Asset Library's Workshop Kit bakes seven furniture entries with adjustable work
+  surfaces, independently movable storage parts, and compressed Poly Haven wood maps.
+
+- The Asset Library's Logistics Kit adds six cargo, storage and handling models with
+  matching fork and load positions, adjustable shelves, and independent container doors.
+
+- The Asset Library's Sports Kit bakes soccer, basketball and court equipment with named
+  placement points, adjustable fixture dimensions, and matching ball props.
+
+- The Asset Library's Rail Kit bakes six modular railway GLBs, including a matching minecart
+  with separately rotatable axle groups and a cargo attachment point.
+
+- The Asset Library's Mechanism Kit adds six modular puzzle and transport GLBs with
+  named signal, conveyor, deck and power cell attachment points.
+
+- The Asset Library's Pickups pack bakes seven stylized recovery, access and equipment props
+  as PBR GLBs. Use Accent color and Scale to make variants in the viewer or with `bakePickup`.
+
+- The Asset Library's Frontier Kit bakes eight industrial buildings, utilities, resources
+  and an assembled outpost for strategy games, with team color and scale controls.
+
+- The Asset Library's Station Kit bakes 12 modular sci-fi interior pieces, props and an assembled
+  junction as PBR GLBs. Set accent paint and optional ceilings in the viewer or with `bakeStation`.
+
 - `@threenative/terrain` exports `paintCanopyCover` and `skyVisibility`, the bake-time canopy and
   sky-occlusion grids a streamed starter world reads.
 - `@threenative/core/render/environment` is the one home of the environment measure-and-sample

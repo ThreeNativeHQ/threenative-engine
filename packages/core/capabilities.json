@@ -9593,6 +9593,107 @@
       "symbol": "bakeCity"
     },
     {
+      "aliases": [],
+      "constraints": ["models use metres, +Y up and a ground-level origin; scale from 0.5 to 2"],
+      "example": "await bakeFrontier({ module: \"frontier-command\", accent: \"#628ac4\", scale: 1.5, out: \"assets/frontier\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeFrontier(options: IBakeFrontierOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular industrial headquarters, supply depots and ore processors for strategy, RTS and base-building games",
+        "generate a power generator, antenna relay, ore deposit or landing pad for a colony or factory outpost"
+      ],
+      "summary": "Bake Frontier Kit buildings, utility structures or a resource deposit as a grounded PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeFrontier"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "match scale across the pallet, crates, jack and rack; fork sockets point into the pallet",
+        "shelves applies to the rack and open applies to the shipping container"
+      ],
+      "example": "await bakeLogistics({ module: \"logistics-container\", open: true, out: \"assets/cargo\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeLogistics(options: IBakeLogisticsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a logistics warehouse set with a pallet, stacking tote, pallet jack, rack or walk-in shipping container",
+        "bake a shipping container with open swing doors and a clear cargo deck"
+      ],
+      "summary": "Bake compatible cargo, storage and handling props as grounded PBR GLBs.",
+      "supersedes": [],
+      "symbol": "bakeLogistics"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "all pieces stand at y = 0; conveyor flow and signal faces point +Z",
+        "active lights the emitter, receiver and socket indicators"
+      ],
+      "example": "await bakeMechanism({ module: \"mechanism-emitter\", active: true, out: \"assets/mechanisms\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeMechanism(options: IBakeMechanismOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "create modular conveyor belts, turntables and power cell sockets for a factory or puzzle game",
+        "build a signal puzzle with an emitter, reflector and receiver model"
+      ],
+      "summary": "Bake modular puzzle and transport props with named GLB attachment points.",
+      "supersedes": [],
+      "symbol": "bakeMechanism"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "models ground at y = 0; upright props face +Z and flat props face +Y; scale from 0.5 to 2"
+      ],
+      "example": "await bakePickup({ module: \"pickup-medkit\", accent: \"#ed5166\", scale: 1.5, out: \"assets/pickups\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakePickup(options: IBakePickupOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "generate a medkit, potion bottle, access keycard, shield, vault key, scroll or repair wrench pickup model",
+        "recolor or scale a physical pickup model for a shooter, adventure, puzzle or racing game"
+      ],
+      "summary": "Bake a stylized pickup prop as an opaque PBR GLB with configurable accent and scale.",
+      "supersedes": [],
+      "symbol": "bakePickup"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "all pieces sit at y = 0; track sockets sit on the running surface and face along travel",
+        "use one scale across connected pieces and place the cart origin at rail height"
+      ],
+      "example": "await bakeRail({ module: \"rail-curve\", out: \"assets/rail\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeRail(options: IBakeRailOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake snap-together railroad or minecart track with a turn, ramp, trestle bridge and buffer stop",
+        "bake a minecart model with separate axle groups and a cargo attachment point"
+      ],
+      "summary": "Bake modular narrow-gauge railway GLBs with track endpoints and a matching minecart.",
+      "supersedes": [],
+      "symbol": "bakeRail"
+    },
+    {
       "aliases": ["rocks and boulders", "cliffs and mountains"],
       "constraints": [
         "fails closed: an unknown form or biome throws naming the nearest ids, as do unknown traits or surface keys, a non-integer seed, a lod outside 0 to 2 and a detail outside 0 to 1",
@@ -9616,6 +9717,73 @@
       "summary": "Bake a procedural rock (Outcrop) to GLBs, one per level of detail: a boulder, slab, spire, hoodoo, sea stack, mesa, arch, tileable cliff module or a mountain, weathered and coloured for its biome (moss in a forest, snow in the tundra, sand in the desert, algae below the tide line).",
       "supersedes": [],
       "symbol": "bakeRock"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "span and height are in metres before uniform scale; equipment faces +Z",
+        "span applies to the goal and court net, height to the goal, hoop and court net"
+      ],
+      "example": "await bakeSports({ module: \"sports-net\", span: 9.5, height: 2.24, out: \"assets/sports\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeSports(options: IBakeSportsOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake a soccer football goal, basketball hoop, tennis or volleyball net with configurable dimensions",
+        "bake a soccer ball, basketball or tennis ball with a named sphere center"
+      ],
+      "summary": "Bake grounded sports equipment and matching balls with named play surfaces and pivots.",
+      "supersedes": [],
+      "symbol": "bakeSports"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "corridors snap on a 4 m grid; north is -Z, Y is up, and the deck is 0.25 m above the origin",
+        "roof applies only to corridors and the assembled maintenance junction"
+      ],
+      "example": "await bakeStation({ module: \"station-elbow\", accent: \"#ee9955\", roof: true, out: \"assets/station\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeStation(options: IBakeStationOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "build a modular sci-fi spaceship or research station interior with snap-together corridor junctions, bulkheads and doors",
+        "generate a science-fiction control terminal, cargo case or glowing power cell for a shooter or puzzle game"
+      ],
+      "summary": "Bake modular science-fiction station corridors, architecture or props to a standard PBR GLB.",
+      "supersedes": [],
+      "symbol": "bakeStation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "Width changes furniture length along local X or vessel diameter; body height stays fixed",
+        "Use the same scale across counters; counter-join-left and counter-join-right meet at worktop height",
+        "Set open on tavern-barrel to place its removable lid beside it",
+        "materials overrides apply by slot; missing properties inherit the chosen finish"
+      ],
+      "example": "await bakeTavern({ module: \"tavern-dining-set\", width: 2.2, out: \"assets/tavern\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeTavern(options: IBakeTavernOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "furnish a medieval inn or fantasy guild hall with a timber trestle table, plank bench or serving counter",
+        "assemble a tavern dining table with two matching benches and four seat anchors",
+        "bake a storage barrel with a removable lid, wooden bucket with a movable handle, or handheld wooden tankard",
+        "restyle tavern furniture with a shared wood finish or custom wood and iron material maps"
+      ],
+      "summary": "Bake realistic medieval tavern furniture and wooden vessels with shared compressed Poly Haven wood maps.",
+      "supersedes": [],
+      "symbol": "bakeTavern"
     },
     {
       "aliases": [
@@ -9656,6 +9824,36 @@
       "summary": "Bake a procedural tree (Arbor) to GLBs, one per level of detail, ready for ctx.assets.model. Each GLB carries the _WIND vertex attribute, COLOR_0 and TEXCOORD_0 and embeds WebP textures: Arbor trees and cover wear a CC0 bark scan and alpha-masked leaves, blades, fronds and needles painted from CC0 leaf scans; forest-kit wood and stone wear a grey CC0 detail scan, and forest-kit cover and leaf litter a grey CC0 blade or leaf scan, each over the kit's COLOR_0 palette.",
       "supersedes": [],
       "symbol": "bakeVegetation"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "the workbench width changes while the matching stool and cabinet keep their sizes",
+        "open previews supported drawers, doors or lids; moving groups remain available for animation",
+        "lit switches lamp emissive materials; place the game light at light-emitter with its beam following local +Z"
+      ],
+      "example": "await bakeWorkshop({ module: \"workshop-drawer\", open: true, out: \"assets/furniture\" });",
+      "importPath": "@threenative/procedural-environment",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/procedural-environment",
+      "requires": ["npm i -D @threenative/procedural-environment"],
+      "signature": "export async function bakeWorkshop(options: IBakeWorkshopOptions): Promise<IEnvironmentBake[]> { … }",
+      "situations": [
+        "bake configurable furniture for a workshop, apartment, safehouse or office",
+        "bake a cabinet with individually sliding drawers or a locker with its hinge and interior shelf",
+        "furnish a living room or office lounge with a two- or three-seat sofa, armchair, coffee table and media console",
+        "furnish a home, café or tavern with a dining table, chair, bench or four- or six-seat arrangement",
+        "bake matching kitchen prep, sink and cooktop modules with snap joints, usable surfaces and hinged cabinet doors",
+        "furnish a bathroom with a vanity, freestanding bathtub and toilet with separately movable seat and lid",
+        "bake office furniture with a width-adjustable desk, rolling swivel chair and desktop monitor mount for game UI",
+        "furnish a home, shop or RPG interior with adjustable bookcase shelves, a double-door wardrobe and a hinged storage trunk",
+        "bake an adjustable floor lamp, tilting desk lamp or wall sconce with emissive material and a game light attachment point",
+        "restyle workshop furniture with a shared wood finish or override color and texture maps by material slot"
+      ],
+      "summary": "Bake modern workshop furniture and storage GLBs with compressed Poly Haven wood scans.",
+      "supersedes": [],
+      "symbol": "bakeWorkshop"
     },
     {
       "aliases": [],

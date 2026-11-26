@@ -36,7 +36,10 @@ export interface IAssetElement {
   readonly name: string;
   readonly kind: string;
   readonly source: string;
+  /** Visual style ids. The first identifies the collection in the tree. */
   readonly styleTags: readonly string[];
+  /** Setting ids, such as medieval or sci-fi. An asset can fit several settings. */
+  readonly settingTags?: readonly string[];
   readonly biomes?: readonly string[];
   readonly category?: string;
   readonly latin?: string;
@@ -73,6 +76,8 @@ export interface IAssetCatalog {
   readonly biomes?: readonly IAssetBiome[];
   /** Collection id -> heading; an element's first style tag is its collection. */
   readonly styles: Readonly<Record<string, string>>;
+  /** Setting id -> filter and Docs label. */
+  readonly settings?: Readonly<Record<string, string>>;
   readonly controls?: Readonly<Record<string, readonly IAssetControl[]>>;
   readonly kinds?: Readonly<Record<string, IAssetKind>>;
 }
@@ -114,6 +119,7 @@ export interface IAssetReport {
   readonly call?: string;
   readonly lod?: number;
   readonly path?: string;
+  readonly materialSlots?: readonly string[];
 }
 
 /** A server bake: the report plus the GLB url and any extra rows the source attaches. */

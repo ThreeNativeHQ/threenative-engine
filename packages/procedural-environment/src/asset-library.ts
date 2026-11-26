@@ -8,7 +8,35 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Outcrop from "../vendor/outcrop.js";
 import { cityModules, cityRoadDefaults, cityRoadEdgeModules } from "./city.js";
-import { stylizedAssets } from "./stylized.js";
+import { frontierAccent, frontierModules } from "./frontier.js";
+import type { EnvironmentKind } from "./index.js";
+import { logisticsAccent, logisticsModules, logisticsShelfCount } from "./logistics.js";
+import { litMechanismModules, mechanismAccent } from "./mechanisms.js";
+import { flatPickupModules, pickupAccent } from "./pickups.js";
+import { railAccent, railModules } from "./rail.js";
+import { sportsDimensions, sportsModules } from "./sports.js";
+import { type WoodFinish, defaultWoodFinish, woodFinishes } from "./static-kit-materials.js";
+import { stationAccent, stationRoofModules } from "./station.js";
+import { type IStylizedAsset, stylizedAssets } from "./stylized.js";
+import { tavernAccent, tavernIron, tavernModules, tavernWoodRoughness } from "./tavern.js";
+import {
+  deskLampTilt,
+  workshopAccent,
+  workshopHeights,
+  workshopLitModules,
+  workshopModules,
+  workshopOpeningModules,
+  workshopSeatCounts,
+  workshopShelfCount,
+  workshopWidths,
+  workshopWoodRoughness,
+  workshopWoodTint,
+  workshopWoodless,
+} from "./workshop.js";
+
+const frontierPaintable = frontierModules
+  .filter(({ id }) => id !== "ore")
+  .map(({ id }) => `frontier-${id}`);
 
 type Package = typeof import("./index.js");
 
@@ -16,12 +44,13 @@ type Package = typeof import("./index.js");
 interface IControl {
   key: string;
   label: string;
-  type: "range" | "select" | "toggle" | "text";
+  type: "range" | "select" | "toggle" | "text" | "color";
   group?: string;
   min?: number;
   max?: number;
   step?: number;
   options?: string[];
+  labels?: string[];
   default?: number | string | boolean;
   only?: string[];
 }
@@ -35,6 +64,18 @@ const unit = (key: string, label: string, group: string): IControl => ({
   max: 1,
   step: 0.01,
 });
+const WOOD_FINISH: IControl = {
+  key: "woodFinish",
+  label: "Wood finish",
+  group: "Materials",
+  type: "select",
+  options: Object.keys(woodFinishes),
+  labels: Object.values(woodFinishes),
+  default: defaultWoodFinish,
+};
+const workshopWood = workshopModules
+  .filter(({ id }) => !workshopWoodless.has(id))
+  .map(({ id }) => `workshop-${id}`);
 const ROCK_TRAITS: IControl[] = [
   unit("roughness", "Roughness", "Shape"),
   unit("chipping", "Chipping", "Shape"),
@@ -84,6 +125,210 @@ function controls(biomes: string[]): Record<string, IControl[]> {
     tree: [TEXTURES],
     cover: [TEXTURES],
     debris: [TEXTURES],
+    mechanism: [
+      { key: "accent", label: "Accent color", type: "color", default: mechanismAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "active",
+        label: "Active",
+        type: "toggle",
+        default: false,
+        only: litMechanismModules.map((id) => `mechanism-${id}`),
+      },
+    ],
+    tavern: [
+      WOOD_FINISH,
+      {
+        key: "accent",
+        label: "Wood tint",
+        group: "Materials",
+        type: "color",
+        default: tavernAccent,
+      },
+      {
+        key: "ironTint",
+        label: "Iron tint",
+        group: "Materials",
+        type: "color",
+        default: tavernIron,
+      },
+      { ...unit("woodRoughness", "Wood roughness", "Materials"), default: tavernWoodRoughness },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      ...tavernModules.map(
+        (entry): IControl => ({
+          key: "width",
+          label: "widthLabel" in entry ? entry.widthLabel : "Width",
+          type: "range",
+          step: "widthStep" in entry ? entry.widthStep : 0.01,
+          ...entry.width,
+          only: [`tavern-${entry.id}`],
+        }),
+      ),
+      { key: "open", label: "Remove lid", type: "toggle", default: false, only: ["tavern-barrel"] },
+    ],
+    workshop: [
+      { key: "accent", label: "Accent color", type: "color", default: workshopAccent },
+      { ...WOOD_FINISH, only: workshopWood },
+      {
+        key: "woodTint",
+        label: "Wood tint",
+        group: "Materials",
+        type: "color",
+        default: workshopWoodTint,
+        only: workshopWood,
+      },
+      {
+        ...unit("woodRoughness", "Wood roughness", "Materials"),
+        default: workshopWoodRoughness,
+        only: workshopWood,
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      ...(
+        [
+          ["width", "Width", workshopWidths],
+          ["height", "Seat height", workshopHeights],
+        ] as const
+      ).flatMap(([key, label, ranges]) =>
+        Object.entries(ranges).map(
+          ([id, range]): IControl => ({
+            key,
+            label: id === "floor-lamp" ? "Height" : label,
+            type: "range",
+            step: 0.01,
+            ...range,
+            only: [`workshop-${id}`],
+          }),
+        ),
+      ),
+      {
+        key: "open",
+        label: "Open",
+        type: "toggle",
+        default: false,
+        only: workshopOpeningModules.map((id) => `workshop-${id}`),
+      },
+      ...Object.entries(workshopSeatCounts).map(
+        ([id, seats]): IControl => ({
+          key: "seats",
+          label: "Seats",
+          type: "range",
+          step: seats.max - seats.min,
+          ...seats,
+          only: [`workshop-${id}`],
+        }),
+      ),
+      {
+        key: "shelves",
+        label: "Shelf levels",
+        type: "range",
+        ...workshopShelfCount,
+        step: 1,
+        only: ["workshop-bookcase"],
+      },
+      {
+        key: "tilt",
+        label: "Tilt",
+        type: "range",
+        ...deskLampTilt,
+        step: 1,
+        only: ["workshop-desk-lamp"],
+      },
+      {
+        key: "lit",
+        label: "Lit",
+        type: "toggle",
+        default: false,
+        only: workshopLitModules.map((id) => `workshop-${id}`),
+      },
+    ],
+    logistics: [
+      {
+        key: "accent",
+        label: "Accent color",
+        type: "color",
+        default: logisticsAccent,
+        only: logisticsModules
+          .filter(({ id }) => id !== "pallet")
+          .map(({ id }) => `logistics-${id}`),
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "shelves",
+        label: "Shelf levels",
+        type: "range",
+        ...logisticsShelfCount,
+        step: 1,
+        only: ["logistics-rack"],
+      },
+      {
+        key: "open",
+        label: "Doors open",
+        type: "toggle",
+        default: false,
+        only: ["logistics-container"],
+      },
+    ],
+    sports: [
+      ...sportsModules.map(
+        ({ id, accent }): IControl => ({
+          key: "accent",
+          label: "Accent color",
+          type: "color",
+          default: accent,
+          only: [`sports-${id}`],
+        }),
+      ),
+      ...Object.entries(sportsDimensions).flatMap(([id, dimensions]) =>
+        Object.entries(dimensions).map(
+          ([key, rules]): IControl => ({
+            key,
+            ...rules,
+            type: "range",
+            step: 0.01,
+            only: [`sports-${id}`],
+          }),
+        ),
+      ),
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+    ],
+    rail: [
+      {
+        key: "accent",
+        label: "Accent color",
+        type: "color",
+        default: railAccent,
+        only: railModules
+          .filter(({ id }) => ["ramp", "bridge", "stop", "cart"].includes(id))
+          .map(({ id }) => `rail-${id}`),
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+    ],
+    pickup: [
+      { key: "accent", label: "Accent color", type: "color", default: pickupAccent },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+      {
+        key: "pose",
+        label: "Pose",
+        type: "select",
+        options: ["upright", "flat"],
+        default: "upright",
+        only: flatPickupModules.map((id) => `pickup-${id}`),
+      },
+    ],
+    frontier: [
+      {
+        key: "accent",
+        label: "Team color",
+        type: "color",
+        default: frontierAccent,
+        only: frontierPaintable,
+      },
+      { key: "scale", label: "Scale", type: "range", min: 0.5, max: 2, step: 0.05, default: 1 },
+    ],
+    station: [
+      { key: "accent", label: "Accent paint", type: "color", default: stationAccent },
+      { key: "roof", label: "Ceiling", type: "toggle", default: false, only: stationRoofModules },
+    ],
     rock: [
       { key: "biome", label: "Biome", type: "select", options: biomes, default: "hills" },
       { key: "detail", label: "Detail", type: "range", min: 0, max: 1, step: 0.05, default: 0.3 },
@@ -196,6 +441,22 @@ const pick = (q: URLSearchParams, list: IControl[]) => {
 };
 const opt = <T>(key: string, value: T | undefined) => (value === undefined ? {} : { [key]: value });
 
+function furnitureFinish(q: URLSearchParams) {
+  const finish = q.get("woodFinish") as WoodFinish | null;
+  const color = q.get("woodTint") ?? undefined;
+  const roughness = num(q, "woodRoughness");
+  const iron = q.get("ironTint") ?? undefined;
+  const wood = color === undefined && roughness === undefined ? undefined : { color, roughness };
+  const materials = {
+    ...opt("wood", wood),
+    ...opt("iron", iron === undefined ? undefined : { color: iron }),
+  };
+  return {
+    woodFinish: finish ?? undefined,
+    materials: Object.keys(materials).length ? materials : undefined,
+  };
+}
+
 function rockBake(
   pkg: Package,
   q: URLSearchParams,
@@ -219,13 +480,14 @@ function rockBake(
   });
 }
 
+function toggle(q: URLSearchParams, key: string): boolean | undefined {
+  const value = q.get(key);
+  if (value === null) return undefined;
+  if (value !== "true" && value !== "false") throw new Error(`Invalid toggle: ${key}`);
+  return value === "true";
+}
+
 function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: string }) {
-  const toggle = (key: string) => {
-    const value = q.get(key);
-    if (value === null) return undefined;
-    if (value !== "true" && value !== "false") throw new Error(`Invalid toggle: ${key}`);
-    return value === "true";
-  };
   return pkg.bakeCity({
     module: q.get("id") ?? "",
     ...base,
@@ -233,16 +495,16 @@ function cityBake(pkg: Package, q: URLSearchParams, base: { seed: number; out: s
     ...opt("wet", num(q, "wet")),
     ...opt("floors", num(q, "floors")),
     ...opt("text", q.get("text") ?? undefined),
-    ...opt("dressing", toggle("dressing")),
+    ...opt("dressing", toggle(q, "dressing")),
     ...opt("roadWidth", num(q, "roadWidth")),
     ...opt("roadLength", num(q, "roadLength")),
     ...opt("bendAngle", num(q, "bendAngle")),
     ...opt("bendRadius", num(q, "bendRadius")),
     ...opt("bendSide", q.get("bendSide") ?? undefined),
     ...opt("roadSurface", q.get("roadSurface") ?? undefined),
-    ...opt("sidewalk", toggle("sidewalk")),
-    ...opt("curb", toggle("curb")),
-    ...opt("markings", toggle("markings")),
+    ...opt("sidewalk", toggle(q, "sidewalk")),
+    ...opt("curb", toggle(q, "curb")),
+    ...opt("markings", toggle(q, "markings")),
   });
 }
 
@@ -252,17 +514,106 @@ function bake(pkg: Package, q: URLSearchParams, cache: string) {
   const seed = num(q, "seed") ?? (kind === "city" ? 31082 : 1);
   const lods = [num(q, "lod") ?? 0];
   const out = path.join(cache, kind);
-  if (kind === "rock") return rockBake(pkg, q, { seed, lods, out });
-  if (kind === "city") return cityBake(pkg, q, { seed, out });
-  if (kind === "tree" || kind === "cover" || kind === "debris")
-    return pkg.bakeVegetation({
-      preset: q.get("id") ?? "",
-      seed,
-      lods,
-      out,
-      ...opt("textures", q.get("textures") === "generated" ? ("generated" as const) : undefined),
-    });
-  throw new Error(`asset-library: no bake for kind "${kind}"`);
+  switch (kind) {
+    case "rock":
+      return rockBake(pkg, q, { seed, lods, out });
+    case "city":
+      return cityBake(pkg, q, { seed, out });
+    case "mechanism":
+      return pkg.bakeMechanism({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("active", toggle(q, "active")),
+      });
+    case "tavern":
+      return pkg.bakeTavern({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("width", num(q, "width")),
+        ...opt("open", toggle(q, "open")),
+        ...furnitureFinish(q),
+      });
+    case "workshop":
+      return pkg.bakeWorkshop({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("width", num(q, "width")),
+        ...opt("height", num(q, "height")),
+        ...opt("open", toggle(q, "open")),
+        ...opt("seats", num(q, "seats")),
+        ...opt("shelves", num(q, "shelves")),
+        ...opt("tilt", num(q, "tilt")),
+        ...opt("lit", toggle(q, "lit")),
+        ...furnitureFinish(q),
+      });
+    case "logistics":
+      return pkg.bakeLogistics({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("shelves", num(q, "shelves")),
+        ...opt("open", toggle(q, "open")),
+      });
+    case "sports":
+      return pkg.bakeSports({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...opt("span", num(q, "span")),
+        ...opt("height", num(q, "height")),
+      });
+    case "rail":
+      return pkg.bakeRail({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+      });
+    case "frontier":
+    case "pickup":
+      return (kind === "frontier" ? pkg.bakeFrontier : pkg.bakePickup)({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("scale", num(q, "scale")),
+        ...(kind === "pickup" ? opt("pose", q.get("pose") ?? undefined) : {}),
+      });
+    case "station":
+      return pkg.bakeStation({
+        module: q.get("id") ?? "",
+        seed,
+        out,
+        ...opt("accent", q.get("accent") ?? undefined),
+        ...opt("roof", toggle(q, "roof")),
+      });
+    case "tree":
+    case "cover":
+    case "debris":
+      return pkg.bakeVegetation({
+        preset: q.get("id") ?? "",
+        seed,
+        lods,
+        out,
+        ...opt("textures", q.get("textures") === "generated" ? ("generated" as const) : undefined),
+      });
+    default:
+      throw new Error(`asset-library: no bake for kind "${kind}"`);
+  }
 }
 
 function send(res: ServerResponse, status: number, body: unknown): true {
@@ -279,10 +630,63 @@ const KINDS = {
   debris: { lod: true },
   rock: { lod: true },
   city: {},
+  tavern: { name: "Tavern Kit" },
+  workshop: { name: "Workshop Kit" },
+  logistics: { name: "Logistics Kit" },
+  sports: { name: "Sports Kit" },
+  rail: { name: "Rail Kit" },
+  mechanism: { name: "Mechanism Kit" },
+  pickup: { name: "Pickups" },
+  frontier: { name: "Frontier Kit" },
+  station: { name: "Station Kit" },
   stylized: { runtime: true, name: "Stylized Biome Kit", pack: "Biome Kit" },
   dungeon: { runtime: true, pack: "Dungeon Kit" },
   village: { runtime: true, pack: "Village Kit" },
   toybox: { runtime: true, pack: "Toybox Kit" },
+};
+
+const STYLES = { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" };
+const SETTINGS = {
+  natural: "Natural",
+  medieval: "Medieval",
+  fantasy: "Fantasy",
+  modern: "Modern",
+  industrial: "Industrial",
+  "sci-fi": "Sci-fi",
+  toy: "Toy world",
+};
+type SettingTag = keyof typeof SETTINGS;
+type ProceduralKind = EnvironmentKind | IStylizedAsset["kind"];
+const CATALOG_TAGS: Record<
+  ProceduralKind,
+  { style: keyof typeof STYLES; settings: readonly SettingTag[]; category?: string }
+> = {
+  tree: { style: "realistic", settings: ["natural"], category: "Trees" },
+  cover: { style: "realistic", settings: ["natural"], category: "Ground cover" },
+  debris: { style: "realistic", settings: ["natural"], category: "Forest debris" },
+  rock: { style: "realistic", settings: ["natural"], category: "Rock formations" },
+  city: { style: "realistic", settings: ["modern"] },
+  tavern: { style: "realistic", settings: ["medieval", "fantasy"] },
+  station: { style: "stylized", settings: ["sci-fi"] },
+  frontier: { style: "stylized", settings: ["sci-fi", "industrial"] },
+  pickup: { style: "stylized", settings: ["modern"] },
+  mechanism: { style: "stylized", settings: ["industrial", "sci-fi"] },
+  rail: { style: "stylized", settings: ["industrial"] },
+  sports: { style: "stylized", settings: ["modern"] },
+  logistics: { style: "stylized", settings: ["industrial", "modern"] },
+  workshop: { style: "stylized", settings: ["modern"] },
+  stylized: { style: "stylized", settings: ["natural"] },
+  dungeon: { style: "stylized", settings: ["medieval", "fantasy"] },
+  village: { style: "stylized", settings: ["medieval"] },
+  toybox: { style: "hybrid", settings: ["toy"] },
+};
+const SETTING_OVERRIDES: Readonly<Partial<Record<string, readonly SettingTag[]>>> = {
+  "pickup-potion": ["medieval", "fantasy"],
+  "pickup-keycard": ["modern", "sci-fi"],
+  "pickup-shield": ["medieval", "fantasy"],
+  "pickup-vault-key": ["medieval", "fantasy"],
+  "pickup-scroll": ["medieval", "fantasy"],
+  "pickup-repair-tool": ["modern", "industrial"],
 };
 
 export interface IProceduralEnvironmentSourceOptions {
@@ -386,14 +790,17 @@ export function proceduralEnvironmentSource(
       const biomes = pkg.environmentBiomes();
       return {
         biomes,
-        styles: { realistic: "Realistic", stylized: "Stylized", hybrid: "Stylized realism" },
-        elements: [
-          ...pkg.environmentElements().map((entry) => ({ ...entry, styleTags: ["realistic"] })),
-          ...stylizedAssets().map((entry) => ({
+        styles: STYLES,
+        settings: SETTINGS,
+        elements: [...pkg.environmentElements(), ...stylizedAssets()].map((entry) => {
+          const tags = CATALOG_TAGS[entry.kind];
+          return {
             ...entry,
-            styleTags: [entry.kind === "toybox" ? "hybrid" : "stylized"],
-          })),
-        ],
+            category: entry.category ?? tags.category,
+            styleTags: [tags.style],
+            settingTags: SETTING_OVERRIDES[entry.id] ?? tags.settings,
+          };
+        }),
         controls: controls(biomes.map((biome) => biome.id)),
         kinds: KINDS,
       };

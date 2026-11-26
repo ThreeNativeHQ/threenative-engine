@@ -68,6 +68,71 @@ afterAll(async () => {
 });
 
 describe("asset library in a browser", () => {
+  it("combines visual style, setting, category and search without duplicating results", async () => {
+    const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
+    try {
+      await page.route("**/api/catalog", async (route) => {
+        const response = await route.fetch();
+        const catalog = await response.json();
+        await route.fulfill({
+          response,
+          json: {
+            ...catalog,
+            styles: { ...catalog.styles, realistic: "Realistic", stylized: "Stylized" },
+            settings: { medieval: "Medieval", modern: "Modern" },
+            elements: [
+              ...catalog.elements,
+              {
+                id: "oak-table",
+                name: "Oak table",
+                kind: "model",
+                source: "project",
+                styleTags: ["realistic"],
+                settingTags: ["medieval", "modern"],
+                category: "Dining",
+              },
+              {
+                id: "pine-table",
+                name: "Pine table",
+                kind: "model",
+                source: "project",
+                styleTags: ["stylized"],
+                settingTags: ["medieval"],
+                category: "Dining",
+              },
+              {
+                id: "oak-bed",
+                name: "Oak bed",
+                kind: "model",
+                source: "project",
+                styleTags: ["realistic"],
+                settingTags: ["medieval"],
+                category: "Beds",
+              },
+            ],
+          },
+        });
+      });
+      await page.goto(`${base}/__assets/`);
+      await page.getByRole("button", { name: "Realistic", exact: true }).click();
+      await page.getByRole("button", { name: "Filter assets", exact: true }).click();
+      const setting = page.getByLabel("Setting filter");
+      const category = page.getByLabel("Category filter");
+      await setting.selectOption("medieval");
+      await category.selectOption("Dining");
+      const assets = page.getByRole("navigation", { name: "Assets" });
+      expect(await assets.getByText("Oak table", { exact: true }).count()).toBe(1);
+      expect(await assets.getByText(/Pine table|Oak bed|crate\.glb/u).count()).toBe(0);
+      const search = page.getByRole("searchbox", { name: "Find assets" });
+      await search.fill("medieval oak");
+      expect(await assets.getByText("Oak table", { exact: true }).count()).toBe(1);
+      await search.fill("pine");
+      expect(await assets.getByText("No matching assets", { exact: true }).count()).toBe(1);
+    } finally {
+      await page.close();
+    }
+  }, 30_000);
+
   it("renders a labelled, non-blank turntable sheet and then sets the READY flag", async () => {
     const page = await browser.newPage({ viewport: { width: 1000, height: 700 } });
     await page.goto(`${base}/__assets/?sheet=turntable${MODEL}`);
