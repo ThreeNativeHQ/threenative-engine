@@ -108,6 +108,44 @@
       }
     }
   },
+  "board-party": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "label": "ready",
+        "waitForResource": { "id": "state", "path": "time", "gte": 0.5 },
+        "release": false,
+        "timeoutMs": 5000
+      }
+    ],
+    "explore": {
+      "actions": ["Space", "KeyY", "KeyN"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "turn", "equals": 1 },
+        { "id": "state", "path": "die", "equals": 0 },
+        { "id": "state", "path": "players.0.stars", "equals": 0 },
+        { "id": "state", "path": "players.0.coins", "equals": 10 },
+        { "id": "state", "path": "time", "lte": 1 }
+      ]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Interact",
+        "ticks": 48
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a turn is a die roll and a walk between spaces, and a minigame ends on a finish line or a bar sweep",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "collectathon": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

@@ -63,6 +63,7 @@
       "marker": "\u2014",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
         "farming",
         "kart",
@@ -115,6 +116,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "farming",
         "minimal",
@@ -173,6 +175,7 @@
       "marker": "updateRateReport",
       "kits": [
         "action-rpg",
+        "board-party",
         "farming",
         "minimal",
         "open-world",
@@ -197,7 +200,15 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure", "farming", "open-world", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "farming",
+        "open-world",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "ground-snap",
@@ -208,6 +219,7 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "board-party",
         "farming",
         "minimal",
         "open-world",
@@ -228,6 +240,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "farming",
         "open-world",
         "shooter",
@@ -244,6 +257,7 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "board-party",
         "farming",
         "minimal",
         "open-world",
@@ -272,6 +286,7 @@
       "marker": "boneContact",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
         "farming",
         "minimal",
@@ -315,6 +330,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "farming",
         "minimal",
@@ -350,6 +366,7 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "board-party",
         "farming",
         "minimal",
         "open-world",
@@ -384,6 +401,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "farming",
         "minimal",
@@ -484,6 +502,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "farming",
         "minimal",

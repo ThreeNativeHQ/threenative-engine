@@ -1468,7 +1468,7 @@ cpSync("public", out, { recursive: true });
       .filter((entry) => entry.isDirectory())
       .map((entry) => entry.name)
       .sort();
-    expect(templates.length).toBe(21);
+    expect(templates.length).toBe(22);
     for (const template of templates) {
       const manifest = JSON.parse(
         await readFile(
