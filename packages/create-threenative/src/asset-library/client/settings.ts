@@ -53,7 +53,7 @@ export function mountSettings(root: HTMLElement, api: string): void {
     role: "tablist",
     "aria-label": "Settings",
   });
-  const body = h("div", "px-8 pt-5 pb-12");
+  const body = h("div", "px-8 pt-5 pb-24");
   root.append(
     header(
       "Settings",
@@ -239,7 +239,13 @@ async function gameConfig(
         ),
       ]),
     );
-    body.replaceChildren(h("div", "grid max-w-5xl gap-5 xl:grid-cols-2", cards));
+    body.replaceChildren(
+      h(
+        "div",
+        "max-w-5xl columns-1 gap-5 xl:columns-2 [&>section]:mb-5 [&>section]:break-inside-avoid",
+        cards,
+      ),
+    );
   };
   render();
 }
@@ -260,7 +266,11 @@ async function telemetry(
       say((error as Error).message, "bad");
     }
   };
-  const traceList = h("div", "grid gap-2");
+  const traceList = h(
+    "div",
+    "grid gap-2",
+    h("p", "text-muted", "Looking for this project's sessions"),
+  );
   const procList = h("div", "grid gap-2");
   const preview = h(
     "pre",

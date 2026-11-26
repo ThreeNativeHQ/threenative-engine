@@ -194,6 +194,25 @@ async function session(model: string, name: string, extra = "") {
 }
 
 describe("session trace sharing", () => {
+  it("finds Codex sessions by the cwd at their start and ignores other projects", async () => {
+    const day = path.join(home, ".codex/sessions/2026/11/26");
+    await mkdir(day, { recursive: true });
+    const codex = (cwd: string, model: string) =>
+      [
+        { type: "session_meta", payload: { cwd, model } },
+        { type: "response_item", payload: { text: "x".repeat(70_000) } },
+      ]
+        .map((line) => JSON.stringify(line))
+        .join("\n");
+    await writeFile(path.join(day, "rollout-mine.jsonl"), codex(root, "gpt-neon-5"));
+    await writeFile(
+      path.join(day, "rollout-other.jsonl"),
+      codex(path.join(dir, "elsewhere"), "gpt-neon-5"),
+    );
+    const found = await discoverTraces(root, { home });
+    expect(found.map((trace) => trace.id)).toEqual(["codex:rollout-mine"]);
+  });
+
   it("sends nothing while the switch is off", async () => {
     await session("claude-opus-5-5", "a");
     const fetch = vi.fn();

@@ -3,7 +3,7 @@
 // and uploads it only when the developer opted in on this machine. Off by default; dev runs only.
 import { createHash } from "node:crypto";
 import { existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
+import { mkdir, open, readFile, readdir, rename, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
@@ -80,6 +80,43 @@ async function sessionFacts(file: string): Promise<{ cwd?: string; models: strin
   return { ...(cwd ? { cwd } : {}), models: [...models] };
 }
 
+const HEAD_BYTES = 64 * 1024;
+
+/**
+ * The first `cwd` in a session's first 64 KB. Every agent writes it at the start (Codex in its
+ * `session_meta` line), so a session from another project costs one small read, not the whole
+ * file: one machine held 6,101 Codex sessions, 9 GB, and full reads took 72 s.
+ */
+async function headCwd(file: string): Promise<string | undefined> {
+  const handle = await open(file, "r");
+  try {
+    const head = Buffer.alloc(HEAD_BYTES);
+    const { bytesRead } = await handle.read(head, 0, HEAD_BYTES, 0);
+    const lines = head.subarray(0, bytesRead).toString("utf8").split("\n");
+    if (bytesRead === HEAD_BYTES) lines.pop();
+    let cwd: string | undefined;
+    const visit = (node: unknown, key = ""): void => {
+      if (cwd) return;
+      if (typeof node === "string") {
+        if (key === "cwd") cwd = node;
+      } else if (Array.isArray(node)) for (const child of node) visit(child);
+      else if (node && typeof node === "object")
+        for (const [k, v] of Object.entries(node)) visit(v, k);
+    };
+    for (const line of lines) {
+      if (cwd) break;
+      try {
+        visit(JSON.parse(line));
+      } catch {
+        // A line cut at the 64 KB edge or a torn write is not a fact.
+      }
+    }
+    return cwd;
+  } finally {
+    await handle.close();
+  }
+}
+
 async function ledger(): Promise<Set<string>> {
   try {
     const raw = JSON.parse(await readFile(path.join(prefsDir(), "submitted-traces.json"), "utf8"));
@@ -136,18 +173,19 @@ export async function discoverTraces(
   const out: ITraceCandidate[] = [];
   for (const [agent, list] of sources) {
     for (const file of list) {
-      const facts = await sessionFacts(file);
-      if (!inProject(facts.cwd)) continue;
+      if (!inProject(await headCwd(file))) continue;
       const bytes = (await stat(file)).size;
+      // An oversize session is never shared, so its models are not worth a full read.
+      const facts = bytes > MAX_TRACE_BYTES ? { models: [] } : await sessionFacts(file);
       const families = facts.models.map(modelFamily);
       const family = families[0];
       const id = `${agent}:${path.basename(file, ".jsonl")}`;
       let skip: string | undefined;
-      if (facts.models.length === 0) skip = "no model recorded";
+      if (bytes > MAX_TRACE_BYTES) skip = "over 10 MB";
+      else if (facts.models.length === 0) skip = "no model recorded";
       else if (families.some((f) => f === undefined))
         skip = `uses a model outside opus/astra/neon/fable (${facts.models.filter((m) => !modelFamily(m)).join(", ")})`;
       else if (new Set(families).size > 1) skip = "mixes model families";
-      else if (bytes > MAX_TRACE_BYTES) skip = "over 10 MB";
       out.push({
         id,
         agent,

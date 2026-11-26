@@ -351,12 +351,12 @@ export function devShellScript(mount: string, dashboard = mount): string {
     strip = document.createElement("div");
     strip.id = "tn-dev-dock";
     strip.setAttribute("role", "status");
-    strip.style.cssText = "position:fixed;right:8px;top:8px;z-index:2147483647;display:flex;gap:12px;align-items:center;padding:5px 6px 5px 12px;border-radius:10px;background:#101115ee;border:1px solid #24262c;color:#f4f5f6;font:600 11px ui-monospace,SFMono-Regular,Menlo,monospace";
+    strip.style.cssText = "position:fixed;right:8px;top:8px;z-index:2147483647;display:flex;gap:12px;align-items:center;padding:5px 6px 5px 12px;border-radius:10px;background:#101115ee;border:1px solid #24262c;color:#f4f5f6;font:600 12px ui-monospace,SFMono-Regular,Menlo,monospace";
     const cell = (label) => {
       const wrap = document.createElement("span");
       const name = document.createElement("span");
       name.textContent = label + " ";
-      name.style.color = "#868991";
+      name.style.color = "#a9abb0";
       const value = document.createElement("b");
       value.textContent = "–";
       wrap.append(name, value);
@@ -368,7 +368,7 @@ export function devShellScript(mount: string, dashboard = mount): string {
     close.type = "button";
     close.textContent = "×";
     close.title = "Close the live strip";
-    close.style.cssText = "cursor:pointer;border:0;border-radius:6px;padding:0 6px;background:#17181d;color:#a9abb0;font:inherit";
+    close.style.cssText = "cursor:pointer;border:0;border-radius:6px;padding:1px 8px;background:#17181d;color:#f4f5f6;font:600 15px/1 system-ui,sans-serif";
     close.onclick = undock;
     strip.append(close);
     let warnings = 0;

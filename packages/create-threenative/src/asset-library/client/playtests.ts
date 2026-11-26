@@ -34,7 +34,7 @@ const TONE = {
 
 export function mountPlaytests(root: HTMLElement, api: string): void {
   const check = h("input", "accent-accent", null, { type: "checkbox", id: "playtest-check" });
-  const list = h("div", "card divide-y divide-line-soft");
+  const list = h("div", "card min-w-0 divide-y divide-line-soft");
   const runHead = h("div", "flex flex-wrap items-center gap-2");
   const cancel = h("button", "btn", "Cancel", { type: "button", hidden: "" });
   const output = h(
@@ -48,14 +48,14 @@ export function mountPlaytests(root: HTMLElement, api: string): void {
     header("Playtests", "Scenarios under playtests/, run against this dev server one at a time.", [
       h("label", "flex items-center gap-2 text-muted", [check, "Run typecheck and lint first"]),
     ]),
-    h("div", "grid max-w-6xl gap-6 px-8 pt-6 pb-12 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]", [
-      h("section", "grid content-start gap-3", [h("h2", "eyebrow", "Scenarios"), list]),
-      h("section", "card grid content-start gap-4 p-5", [
-        h("div", "flex items-center gap-2", [h("h2", "eyebrow flex-1", "Run"), cancel]),
-        runHead,
-        output,
-        verdicts,
-        images,
+    h("div", "grid max-w-6xl gap-6 px-8 pt-6 pb-24 xl:grid-cols-[minmax(0,1fr)_minmax(0,1.3fr)]", [
+      h("section", "grid min-w-0 grid-cols-1 content-start gap-3", [
+        h("h2", "eyebrow flex h-7 items-center", "Scenarios"),
+        list,
+      ]),
+      h("section", "grid min-w-0 grid-cols-1 content-start gap-3", [
+        h("div", "flex h-7 items-center gap-2", [h("h2", "eyebrow flex-1", "Run"), cancel]),
+        h("div", "card grid min-w-0 gap-4 p-5", [runHead, output, verdicts, images]),
       ]),
     ]),
   );

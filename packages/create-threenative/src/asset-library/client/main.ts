@@ -1642,7 +1642,17 @@ async function visibleOnce(): Promise<void> {
 
 // ── Dev Dashboard (PRD-918): Animations narrows the tree; Stage / Bundler opens the Stage ──
 initDashboard(config, embed || !!sheetMode);
+/** The empty-stage card names the section the side menu shows. */
+function introFor(section: string): void {
+  const animations = section === "animations";
+  $("intro-title").textContent = animations ? "Animations" : "Asset Library";
+  $("intro-body").textContent = animations
+    ? "Pick a rigged or animated model to play its clips. Its Animation panel opens Pose Lab."
+    : "Pick an asset in the list to inspect it, or open an overview to see a whole section.";
+}
+introFor(currentSection());
 onSection((next, previous) => {
+  introFor(next);
   if (next === "stage") {
     if (!location.hash.startsWith("#/stage")) location.hash = "#/stage/stage";
   } else if (previous === "stage" && route.kind === "stage") location.hash = "";

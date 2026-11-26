@@ -19,7 +19,7 @@
   --color-accent-soft: rgb(224 251 80 / 0.09);
   --color-hover: #14151a;
   --color-doc: #fbbf24;
-  --color-story: #7dd3fc;
+  --color-story: #4ade80; /* Studio live: a good reading, not a link */
   --color-group: #e0fb50;
   --color-live: #4ade80;
   --color-warn: #fbbf24;
@@ -89,6 +89,10 @@
 /* `?embed=1`: a host frames the stage alone; the sidebar and toolbar are its own chrome. */
 html[data-embed] body {
   grid-template-columns: minmax(0, 1fr);
+}
+/* The side menu carries the brand mark, so the library header does not repeat it. */
+html:not([data-embed]):not([data-sheet]) #logo {
+  display: none !important;
 }
 html[data-embed] #sidebar,
 html[data-embed] #toolbar,

@@ -121,7 +121,7 @@ const compact = (value: number, digits: number) =>
 export function mountPerformance(root: HTMLElement, api: string): void {
   const inShell = window.self !== window.top;
   const post = (type: string) => window.parent.postMessage({ type }, location.origin);
-  const dockButton = h("button", "btn-accent", "Dock live strip", {
+  const dockButton = h("button", "btn", "Dock live strip", {
     type: "button",
     id: "perf-dock",
     title: "Back to the game with a live FPS, p95 and draws readout",
@@ -150,9 +150,9 @@ export function mountPerformance(root: HTMLElement, api: string): void {
       "Read from the running game's own TN_* markers (last 60 s) and threenative doctor.",
       [refresh, dockButton],
     ),
-    h("div", "grid max-w-6xl gap-6 px-8 pt-6 pb-12", [
+    h("div", "grid max-w-6xl gap-6 px-8 pt-6 pb-24", [
       h("section", "grid gap-3", [h("h2", "eyebrow", "Frame budget"), tiles]),
-      h("div", "grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]", [
+      h("div", "grid items-start gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]", [
         h("section", "card grid content-start gap-3 p-5", [
           h("h2", "eyebrow", "Where the frame goes (mean ms)"),
           phases,
@@ -262,11 +262,13 @@ export function mountPerformance(root: HTMLElement, api: string): void {
                 ),
                 h(
                   "span",
-                  "min-w-0 flex-1 break-all text-muted",
+                  "min-w-0 flex-1 break-words text-muted",
                   m.text
                     .slice(m.code.length)
                     .replace(/^[:\s]+/u, "")
-                    .slice(0, 600),
+                    .slice(0, 600)
+                    // A JSON payload has no spaces: give it break points at its keys, not mid-word.
+                    .replace(/,(?=")/gu, ", "),
                 ),
               ]),
             )),
