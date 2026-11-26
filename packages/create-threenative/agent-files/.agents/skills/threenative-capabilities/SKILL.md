@@ -63,8 +63,10 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    before downloads or game-source edits. Required texture selection follows the plan.
 5. **Assets** — use threenative-asset-mcp (configured as `threenative-assets`).
    From the mechanics matches and reference image, if provided, identify only the textures needed by the plan. Call
-   `asset_search_sources`, the returned source's search/list-files tools, then
-   `asset_download_file`; verify the returned licence and record downloaded paths/source/licence
+   `asset_search` (provider `threenative` first), `asset_get`, then `asset_download` for a model,
+   texture, HDRI or animation. Sound or another type: `asset_search_sources`, the returned source's
+   search/list-files tools, then `asset_download_file`. Skipping the search is a defect. Verify the
+   returned licence and record downloaded paths/source/licence
    in `CREDITS.md`. Follow `.agents/skills/threenative-assets/SKILL.md`; no unrelated downloads or
    invented tool results. If no textures are required, record `none` and why. Reuse existing files.
 6. **Build** — execute the plan, delegate to subagents focused on specific areas. Give each a
