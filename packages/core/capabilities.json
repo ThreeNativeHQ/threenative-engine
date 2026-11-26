@@ -13453,6 +13453,20 @@
       "words": ["racing"]
     },
     {
+      "blurb": "A ship flies a spline rail while you steer a bounded offset: boost and brake, a barrel roll that turns shots back, rapid lasers, a charged lock-on shot, enemy waves and a boss with weak points.",
+      "name": "rail-shooter",
+      "title": "Rail shooter",
+      "words": [
+        "rail-shooter",
+        "star-fox",
+        "starfox",
+        "star-fox-64",
+        "on-rails",
+        "space-shooter",
+        "arwing-like"
+      ]
+    },
+    {
       "blurb": "A real-time coastal weather study: shape rain, cloud, wind, fog and wetness, and watch a coastline answer.",
       "name": "rain",
       "title": "Rain",

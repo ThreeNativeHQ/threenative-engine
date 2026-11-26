@@ -1,0 +1,187 @@
+{
+  "name": "barrel-roll-turns-shots-back",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "first-tap",
+      "press": "KeyQ",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "window-closed",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "lone-tap",
+      "press": "KeyQ",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "single-taps-only",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tap-one",
+      "press": "KeyQ",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tap-gap",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tap-two",
+      "press": "KeyQ",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rolling",
+      "waitTicks": 3,
+      "release": true,
+      "screenshot": "rolling"
+    },
+    {
+      "kind": "input",
+      "label": "shot",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "shot-turned",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "label": "shot-turned:deflected",
+      "waitForResource": {
+        "id": "state",
+        "path": "deflected",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "wait",
+      "label": "roll-over",
+      "waitTicks": 40,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "rolls",
+        "atSteps": [
+          {
+            "label": "window-closed",
+            "equals": 0
+          },
+          {
+            "label": "single-taps-only",
+            "equals": 0
+          },
+          {
+            "label": "rolling",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "rolling",
+        "atSteps": [
+          {
+            "label": "single-taps-only",
+            "equals": 0
+          },
+          {
+            "label": "rolling",
+            "equals": 1
+          },
+          {
+            "label": "roll-over",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "deflected",
+        "atSteps": [
+          {
+            "label": "rolling",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "shield",
+        "atSteps": [
+          {
+            "label": "rolling",
+            "equals": 255
+          },
+          {
+            "label": "roll-over",
+            "equals": 255
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "deflect",
+        "entity": "player",
+        "minCount": 1,
+        "atStep": "shot-turned"
+      },
+      {
+        "name": "struck",
+        "entity": "player",
+        "maxCount": 0
+      }
+    ]
+  }
+}

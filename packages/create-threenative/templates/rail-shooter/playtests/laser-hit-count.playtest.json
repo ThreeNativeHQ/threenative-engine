@@ -1,0 +1,172 @@
+{
+  "name": "lasers-need-two-hits-on-a-scout",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "dummy",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "placed",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "first-shot",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "one-hit",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "second-shot",
+      "press": "Space",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "destroyed",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "label": "destroyed:score",
+      "waitForResource": {
+        "id": "state",
+        "path": "score",
+        "gte": 100
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "rapid",
+      "press": "Space",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rapid-done",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "label": "rapid-done:shots",
+      "waitForResource": {
+        "id": "state",
+        "path": "shots",
+        "gte": 8
+      },
+      "release": false,
+      "timeoutMs": 300
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shots",
+        "atSteps": [
+          {
+            "label": "placed",
+            "equals": 0
+          },
+          {
+            "label": "one-hit",
+            "equals": 1
+          },
+          {
+            "label": "destroyed",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hits",
+        "atSteps": [
+          {
+            "label": "placed",
+            "equals": 0
+          },
+          {
+            "label": "one-hit",
+            "equals": 1
+          },
+          {
+            "label": "destroyed",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "atSteps": [
+          {
+            "label": "one-hit",
+            "equals": 0
+          },
+          {
+            "label": "destroyed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "atSteps": [
+          {
+            "label": "one-hit",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "destroyed",
+        "entity": "dummy.1",
+        "minCount": 1,
+        "atStep": "destroyed"
+      }
+    ]
+  }
+}
