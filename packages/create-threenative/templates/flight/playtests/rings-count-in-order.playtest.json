@@ -1,0 +1,87 @@
+{
+  "name": "rings-count-in-order",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "approach-two",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "passed-two",
+      "waitForResource": {
+        "id": "state",
+        "path": "ringsPassed",
+        "gte": 1
+      },
+      "release": true,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "ringsMissed",
+        "atSteps": [
+          {
+            "label": "end",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "activeRing",
+        "atSteps": [
+          {
+            "label": "end",
+            "equals": 2
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "ring-missed",
+        "entity": "ring-1",
+        "minCount": 1
+      },
+      {
+        "name": "ring-passed",
+        "entity": "ring-2",
+        "minCount": 1
+      }
+    ]
+  }
+}
