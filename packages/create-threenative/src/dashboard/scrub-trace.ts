@@ -313,8 +313,12 @@ export function scrubTrace(
   return { jsonl: out ? `${out}\n` : "", records: records.length, dropped, redactions };
 }
 
-/** The four allowlisted model families; anything else (or nothing) is never uploaded. */
-export const MODEL_FAMILIES = ["opus", "astra", "neon", "fable"] as const;
+/**
+ * The allowlisted model families; anything else (or nothing) is never uploaded. Studio's trace store
+ * keeps the same list (`TRACED_MODEL_FAMILIES` in threenative-live-studio `src/contract/runs.ts`), and
+ * so does the site's ingest route; change all three together.
+ */
+export const MODEL_FAMILIES = ["opus", "astra", "neon", "fable", "sol"] as const;
 export type ModelFamily = (typeof MODEL_FAMILIES)[number];
 
 /** `claude-opus-5-5` → `opus`; `gemini-4-neon-high` → `neon`; `deepseek-v4` / `haiku` → undefined. */

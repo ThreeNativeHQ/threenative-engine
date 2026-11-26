@@ -261,8 +261,9 @@ describe("trace scrubber", () => {
     expect(residualFinding("ping 10.1.2.3", identity)).toBeDefined();
   });
 
-  it("allows only the opus, astra, neon and fable families", () => {
+  it("allows only the opus, astra, neon, fable and sol families", () => {
     expect(modelFamily("claude-opus-5-5")).toBe("opus");
+    expect(modelFamily("gpt-6.2-sol")).toBe("sol");
     expect(modelFamily("claude-fable-5-2")).toBe("fable");
     for (const other of [
       "claude-haiku-5-5",
