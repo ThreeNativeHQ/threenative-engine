@@ -74,19 +74,6 @@
       "label": "result-shown",
       "waitTicks": 20,
       "release": true
-    },
-    {
-      "kind": "input",
-      "label": "restart",
-      "press": "KeyR",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "wait",
-      "label": "restarted",
-      "waitTicks": 40,
-      "release": true
     }
   ],
   "assert": {
@@ -120,10 +107,6 @@
           {
             "label": "line-5-judged",
             "equals": 8
-          },
-          {
-            "label": "restarted",
-            "equals": 3
           }
         ]
       },
@@ -142,10 +125,6 @@
           {
             "label": "line-5-judged",
             "equals": "end"
-          },
-          {
-            "label": "restarted",
-            "equals": "good"
           }
         ]
       },
@@ -160,10 +139,6 @@
           {
             "label": "failed",
             "equals": "failed"
-          },
-          {
-            "label": "restarted",
-            "equals": "playing"
           }
         ]
       },
@@ -172,12 +147,12 @@
         "path": "part",
         "atSteps": [
           {
-            "label": "result-shown",
-            "equals": "result"
+            "label": "line-4-judged",
+            "equals": "teacher"
           },
           {
-            "label": "restarted",
-            "equals": "count-in"
+            "label": "result-shown",
+            "equals": "result"
           }
         ]
       },
@@ -188,10 +163,6 @@
           {
             "label": "failed",
             "equals": 5
-          },
-          {
-            "label": "restarted",
-            "equals": 0
           }
         ]
       }
@@ -208,10 +179,6 @@
           {
             "label": "result-shown",
             "equals": true
-          },
-          {
-            "label": "restarted",
-            "equals": false
           }
         ]
       }

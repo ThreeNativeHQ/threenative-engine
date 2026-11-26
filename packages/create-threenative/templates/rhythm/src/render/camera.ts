@@ -5,7 +5,7 @@
 // the pulse of `clock.ts`, so the picture breathes with the song.
 import { type PerspectiveCamera, Vector3 } from "three";
 
-const POSITION = new Vector3(0, 2.2, 9.6);
+const POSITION = new Vector3(0, 2.1, 8.4);
 const AIM = new Vector3(0, 0.25, 0);
 /** Metres the lens moves toward the stage at the top of a beat. */
 const PUSH = 0.12;

@@ -28,8 +28,8 @@ const LAMP_BRIGHT = 420;
 /** Above this a lamp counts as lit: the top of the beat, not the afterglow. */
 const LAMP_LIT = 300;
 /** Pad glow at the dimmest and brightest point of the beat. */
-const PAD_DIM = 0.25;
-const PAD_BRIGHT = 1.6;
+const PAD_DIM = 0.5;
+const PAD_BRIGHT = 3;
 
 function box(
   width: number,
@@ -103,7 +103,7 @@ export class Stage {
       [PLAYER_X, BLUE],
     ] as const) {
       const material = new MeshStandardMaterial({
-        color: 0x303236,
+        color: 0x7a7d82,
         emissive: new Color(colour),
         emissiveIntensity: PAD_DIM,
         roughness: 0.4,
@@ -124,7 +124,7 @@ export class Stage {
         emissiveIntensity: PAD_DIM,
         roughness: 0.4,
       });
-      const panel = new Mesh(new BoxGeometry(1.5, 1.5, 0.1).translate((index - 3.5) * 2.2, 3.1, -5.25), material);
+      const panel = new Mesh(new BoxGeometry(1.7, 0.4, 0.1).translate((index - 3.5) * 2.2, 3.4, -5.25), material);
       this.mesh.add(panel);
       this.#chase.push(material);
     }
