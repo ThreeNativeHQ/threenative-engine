@@ -1,6 +1,6 @@
 {
   "name": "@threenative/backend",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "license": "MIT",
   "description": "Cloud saves, shared per-game documents and relay rooms: a local-first client, the Cloudflare Worker handler and the D1 schema behind them.",
   "keywords": [
