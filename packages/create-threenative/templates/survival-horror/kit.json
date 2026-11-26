@@ -1,0 +1,8 @@
+{
+  "name": "survival-horror",
+  "title": "Survival horror",
+  "blurb": "A grey-grid mansion wing seen through fixed cameras: tank controls with a quick turn, an aim stance with high and low aim, scarce ammo, shambling grabbers, six inventory slots, herbs, a key for a locked door and a typewriter that eats ink ribbons.",
+  "genre": "survival-horror",
+  "aliases": ["resident-evil", "residentevil", "biohazard", "silent-hill", "survival-horror", "horror", "zombie"],
+  "kit": true
+}
