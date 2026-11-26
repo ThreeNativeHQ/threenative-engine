@@ -13393,6 +13393,12 @@
       "words": ["adventure", "zelda", "ocarina", "action-adventure"]
     },
     {
+      "blurb": "A dice board for four: ring spaces, a shortcut junction, coin spaces, a moving star, three CPU rivals and a minigame after every turn.",
+      "name": "board-party",
+      "title": "Board party",
+      "words": ["board-game", "mario-party", "marioparty", "mario-party-1"]
+    },
+    {
       "blurb": "A stout sprout-keeper in a knit beanie runs one free-roam island with a triple jump, long jump, backflip, side flip, wall kick, dive, ground pound and ledge grab, collecting three Sunseeds past bumblets, hoppers and spiked thornbacks.",
       "name": "collectathon",
       "title": "Hop Garden",

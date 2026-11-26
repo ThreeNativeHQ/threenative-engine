@@ -63,6 +63,7 @@
       "marker": "\u2014",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
         "kart",
         "minimal",
@@ -114,6 +115,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "minimal",
         "open-world",
@@ -171,6 +173,7 @@
       "marker": "updateRateReport",
       "kits": [
         "action-rpg",
+        "board-party",
         "minimal",
         "open-world",
         "platformer",
@@ -194,7 +197,7 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure", "open-world", "stealth", "survival-horror"]
+      "kits": ["action-rpg", "adventure", "board-party", "open-world", "stealth", "survival-horror"]
     },
     {
       "id": "ground-snap",
@@ -205,6 +208,7 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "board-party",
         "minimal",
         "open-world",
         "runner",
@@ -221,7 +225,15 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "open-world",
+        "shooter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "scale",
@@ -232,6 +244,7 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "board-party",
         "minimal",
         "open-world",
         "racing",
@@ -259,6 +272,7 @@
       "marker": "boneContact",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
         "minimal",
         "open-world",
@@ -301,6 +315,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "minimal",
         "open-world",
@@ -335,6 +350,7 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "board-party",
         "minimal",
         "open-world",
         "platformer",
@@ -368,6 +384,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "minimal",
         "open-world",
@@ -467,6 +484,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
         "minimal",
         "open-world",
