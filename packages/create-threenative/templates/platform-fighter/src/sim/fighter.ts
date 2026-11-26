@@ -163,7 +163,8 @@ function attackStep(f: IFighter, pad: Pad, world: IWorld): void {
       run.charge += 1;
       run.phase = "charge";
       run.live = false;
-      groundMove(f, undefined);
+      if (f.floor === undefined) airMove(f, undefined);
+      else groundMove(f, undefined);
       return;
     }
     run.waiting = false;
@@ -195,7 +196,7 @@ function squatStep(f: IFighter, pad: Pad, world: IWorld): void {
 
 function dodgeStep(f: IFighter): void {
   const index = f.timer;
-  if (index === ROLL_INTANGIBLE_START) f.invuln = ROLL_INTANGIBLE_FRAMES;
+  if (index === ROLL_INTANGIBLE_START) f.invuln = Math.max(f.invuln, ROLL_INTANGIBLE_FRAMES);
   const moving = index >= ROLL_INTANGIBLE_START && index < ROLL_MOVE_END;
   f.vx = moving ? (f.facing * ROLL_DISTANCE) / ((ROLL_MOVE_END - ROLL_INTANGIBLE_START) * STEP) : 0;
   const floor = f.floor;
@@ -264,6 +265,11 @@ export function stepFighter(f: IFighter, pad: Pad, world: IWorld): void {
   if (f.dropThrough > 0) f.dropThrough -= 1;
   if (f.mode !== "shield" && f.shield < SHIELD_MAX && world.frame % SHIELD_HEAL_EVERY === 0)
     f.shield += 1;
+  // A shield or a jump squat has no air version: sliding off the edge ends it and the fighter falls.
+  if (f.floor === undefined && (f.mode === "shield" || f.mode === "squat")) {
+    f.shieldRelease = f.shieldStun = 0;
+    setMode(f, "free");
+  }
   const before = f.mode;
   switch (f.mode) {
     case "free":

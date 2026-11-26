@@ -21,14 +21,18 @@
     },
     {
       "kind": "input",
-      "press": ["KeyL"],
+      "press": [
+        "KeyL"
+      ],
       "holdTicks": 4,
       "label": "raised",
       "release": false
     },
     {
       "kind": "input",
-      "press": ["KeyL"],
+      "press": [
+        "KeyL"
+      ],
       "holdTicks": 96,
       "label": "held",
       "release": false

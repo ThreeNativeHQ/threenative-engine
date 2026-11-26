@@ -7,7 +7,7 @@ import {
   p1Material,
 } from "../render/fighters.js";
 import { totalFrames } from "../sim/attacks.js";
-import { GETUP_FRAMES, ROLL_FRAMES, STEP } from "../sim/constants.js";
+import { GETUP_FRAMES, HEAVY_HITSTUN, ROLL_FRAMES, STEP } from "../sim/constants.js";
 import { shieldRadius } from "../sim/match.js";
 import type { FighterId, IAttackRun, IFighter } from "../sim/types.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
@@ -75,7 +75,8 @@ export class FighterView extends Fighter {
     this.figure.rotation.y = this.#turn;
     this.#wear(f.invuln > 0 && f.mode !== "hitstun" ? ghostMaterial : this.#skin);
 
-    const tumbling = f.mode === "hitstun" && f.hitstunTotal > 32 && f.floor === undefined;
+    const tumbling =
+      f.mode === "hitstun" && f.hitstunTotal > HEAVY_HITSTUN && f.floor === undefined;
     this.mesh.rotation.z = tumbling
       ? this.mesh.rotation.z + Math.sign(f.kx || -f.facing) * -TUMBLE_RATE * dt
       : MathUtils.lerp(this.mesh.rotation.z, 0, Math.min(1, dt * 12));
@@ -122,7 +123,7 @@ export class FighterView extends Fighter {
       case "hitstun":
         if (entered || f.percent !== this.#percent)
           this.play(
-            f.hitstunTotal > 32 ? CLIPS.hitHard : CLIPS.hit,
+            f.hitstunTotal > HEAVY_HITSTUN ? CLIPS.hitHard : CLIPS.hit,
             Math.max(0.2, Math.min(f.hitstunTotal, 40) * STEP),
             {
               record: false,

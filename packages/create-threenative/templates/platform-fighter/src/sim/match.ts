@@ -136,9 +136,9 @@ export class Match {
 
   step(pads: Record<FighterId, Pad>): void {
     this.events.length = 0;
-    this.frame += 1;
-    this.#world.frame = this.frame;
     const running = this.winner === undefined;
+    if (running) this.frame += 1;
+    this.#world.frame = this.frame;
     for (const id of ["p1", "cpu"] as const) {
       const f = this.fighters[id];
       const wasHitstun = f.mode === "hitstun";
@@ -201,9 +201,13 @@ export class Match {
     if (victim.floor !== undefined && stun <= HEAVY_HITSTUN) {
       victim.vx = victim.kx;
       victim.kx = victim.ky = 0;
-    } else if (victim.floor !== undefined) {
-      victim.floor = undefined;
-      victim.y += 0.02;
+    } else {
+      // The launch replaces whatever the fighter was doing: it keeps none of its own speed.
+      if (victim.floor !== undefined) {
+        victim.floor = undefined;
+        victim.y += 0.02;
+      }
+      victim.vx = victim.vy = 0;
     }
     Object.assign(this.last, {
       damage,

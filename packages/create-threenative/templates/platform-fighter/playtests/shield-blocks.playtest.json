@@ -21,21 +21,28 @@
     },
     {
       "kind": "input",
-      "press": ["KeyL"],
+      "press": [
+        "KeyL"
+      ],
       "holdTicks": 6,
       "label": "raise",
       "release": false
     },
     {
       "kind": "input",
-      "press": ["KeyL", "Digit9"],
+      "press": [
+        "KeyL",
+        "Digit9"
+      ],
       "holdTicks": 1,
       "label": "cpu-jab",
       "release": false
     },
     {
       "kind": "input",
-      "press": ["KeyL"],
+      "press": [
+        "KeyL"
+      ],
       "holdTicks": 14,
       "label": "blocked",
       "release": false

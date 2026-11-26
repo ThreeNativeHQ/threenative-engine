@@ -15,7 +15,7 @@ const REAR_MARGIN = 700 * UNIT; // gmcamera.c:357
 const VERTICAL_MARGIN = 700 * UNIT; // gmcamera.c:372
 /** Extra room under the fighters so the stage top stays clear of the HUD plates. Tuned, not from the card. */
 const FLOOR_ROOM = 1.6;
-/** Closest and farthest the camera sits from the fight, metres. Card minimum 2500 units. */
+/** Closest and farthest the camera sits from the fight, metres. Card minimum 2500 units (gmcamera.c:479); the farthest is tuned. */
 const MIN_DISTANCE = 2500 * UNIT + 2;
 const MAX_DISTANCE = 45;
 /** Fraction of the remaining way covered per 60 Hz frame (gmcamera.c:545, 549). */

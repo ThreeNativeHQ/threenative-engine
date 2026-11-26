@@ -21,7 +21,9 @@
     },
     {
       "kind": "input",
-      "press": ["KeyZ"],
+      "press": [
+        "KeyZ"
+      ],
       "holdTicks": 1,
       "release": true
     },

@@ -31,13 +31,13 @@ export const GROUND_FRICTION = accel(4 * 1.5);
 export const SLIDE_FRICTION = GROUND_FRICTION * 0.25;
 
 // --- Air. Cards `air-drift-and-gravity`, `fast-fall`, `jump-force-and-shorthop`, `double-jump`.
-export const GRAVITY = accel(2.4);
-export const TERMINAL_SPEED = speed(44);
-export const FAST_FALL_SPEED = speed(70);
+export const GRAVITY = accel(2.4); // 203_MarioMain.c:257
+export const TERMINAL_SPEED = speed(44); // 203_MarioMain.c:258
+export const FAST_FALL_SPEED = speed(70); // 203_MarioMain.c:259
 /** Stick 80 units at 0.025 per unit (203_MarioMain.c:254). */
 export const AIR_ACCEL = accel(80 * 0.025);
-export const AIR_MAX_SPEED = speed(30);
-export const AIR_FRICTION = accel(0.2);
+export const AIR_MAX_SPEED = speed(30); // 203_MarioMain.c:255
+export const AIR_FRICTION = accel(0.2); // 203_MarioMain.c:256
 /** Speed above the limit is stepped down by 1 per frame (ftphysics.c:278). */
 export const AIR_OVERSPEED_DECAY = accel(1);
 /** Full hop: jump base 26 plus long-jump minimum 63 times 0.7 (203_MarioMain.c:250-251, ftcommon.h:51). */

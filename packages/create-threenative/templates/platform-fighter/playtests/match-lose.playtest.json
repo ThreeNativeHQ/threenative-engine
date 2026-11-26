@@ -21,13 +21,17 @@
     },
     {
       "kind": "input",
-      "press": ["KeyX"],
+      "press": [
+        "KeyX"
+      ],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "press": ["KeyZ"],
+      "press": [
+        "KeyZ"
+      ],
       "holdTicks": 1,
       "release": true
     },

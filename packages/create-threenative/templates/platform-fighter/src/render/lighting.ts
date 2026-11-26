@@ -30,7 +30,7 @@ function atmosphereSun(): DirectionalLight {
 
 type ShadowRenderer = { shadowMap: { enabled: boolean; type: number } };
 
-/** Half the shadow camera's box, in metres. The compound is 44 x 32, so 26 covers it and its walls. */
+/** Half the shadow camera's box, in metres. The stage is 14 m wide, so 26 covers it and the fighters above it. */
 const EXTENT = 26;
 
 export function setupLighting(

@@ -47,12 +47,23 @@ export function cpuPad(
   frame: number,
 ): Pad {
   const pad = neutralPad();
+  if (me.mode === "dead") memory.shieldFor = memory.chargeFor = 0;
   if (memory.dummy || frame < memory.wakeAt || me.mode === "dead") return pad;
   if (memory.cooldown > 0) memory.cooldown -= 1;
   const press = (key: "attack" | "jump"): void => {
     pad[key] = !me.prev[key];
   };
 
+  if (memory.chargeFor > 0) {
+    // The strong button stays down while the swing waits on its charge frame.
+    if (me.mode === "attack") {
+      memory.chargeFor -= 1;
+      pad.strong = true;
+      if (memory.chargeFor === 0) memory.cooldown = 40;
+      return pad;
+    }
+    memory.chargeFor = 0;
+  }
   if (me.mode === "ledge") {
     // Hang a moment, then climb.
     pad.x = me.timer > 24 ? -me.ledge : 0;
@@ -75,12 +86,6 @@ export function cpuPad(
     memory.shieldFor -= 1;
     pad.shield = true;
     if (memory.shieldFor === 0) memory.cooldown = 30;
-    return pad;
-  }
-  if (memory.chargeFor > 0) {
-    memory.chargeFor -= 1;
-    pad.strong = true;
-    if (memory.chargeFor === 0) memory.cooldown = 40;
     return pad;
   }
   const foeSwings =

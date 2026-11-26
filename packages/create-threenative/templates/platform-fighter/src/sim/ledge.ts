@@ -97,7 +97,7 @@ export function getupStep(f: IFighter): void {
   f.invuln = Math.max(f.invuln, 2);
   if (f.timer + 1 >= GETUP_FRAMES) {
     f.ledge = 0;
-    f.invuln = 6;
+    f.invuln = Math.max(f.invuln, 6);
     f.facing = side === 1 ? -1 : 1;
     land(f, MAIN);
     setMode(f, "free");

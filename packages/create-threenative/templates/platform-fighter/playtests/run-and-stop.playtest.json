@@ -21,7 +21,9 @@
     },
     {
       "kind": "input",
-      "press": ["ArrowRight"],
+      "press": [
+        "ArrowRight"
+      ],
       "holdTicks": 40,
       "label": "running",
       "release": false

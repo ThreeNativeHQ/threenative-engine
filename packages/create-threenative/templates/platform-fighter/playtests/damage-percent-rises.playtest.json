@@ -21,7 +21,9 @@
     },
     {
       "kind": "input",
-      "press": ["Digit1"],
+      "press": [
+        "Digit1"
+      ],
       "holdTicks": 1,
       "release": true
     },
@@ -32,7 +34,9 @@
     },
     {
       "kind": "input",
-      "press": ["KeyJ"],
+      "press": [
+        "KeyJ"
+      ],
       "holdTicks": 1,
       "label": "jab-1",
       "release": true
@@ -45,7 +49,9 @@
     },
     {
       "kind": "input",
-      "press": ["KeyJ"],
+      "press": [
+        "KeyJ"
+      ],
       "holdTicks": 1,
       "label": "jab-2",
       "release": true
@@ -58,7 +64,9 @@
     },
     {
       "kind": "input",
-      "press": ["KeyJ"],
+      "press": [
+        "KeyJ"
+      ],
       "holdTicks": 1,
       "label": "jab-3",
       "release": true

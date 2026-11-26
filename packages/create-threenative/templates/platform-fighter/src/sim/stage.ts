@@ -44,7 +44,9 @@ export function moveInAir(f: IFighter, ignorePlatforms: boolean): Floor | undefi
       pushLeft,
       pushRight,
       pushDown,
-      pushUp <= TOP_FORGIVENESS ? pushUp : Number.POSITIVE_INFINITY,
+      pushUp <= TOP_FORGIVENESS && f.x >= MAIN.x0 && f.x <= MAIN.x1
+        ? pushUp
+        : Number.POSITIVE_INFINITY,
     );
     if (least === pushUp) {
       f.y = MAIN.y;

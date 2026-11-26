@@ -1,7 +1,7 @@
 // Generated for you. Keep these roles coherent when you change the look.
 // Neutral greys carry the light; one saturated blue marks what you can touch.
 export const palette = {
-  /** Light grid: the compound floor and the ground around it. */
+  /** Light grid: the stage top. */
   // Owner 2026-10-26 prefers the 7b546d6 neutral floor to the darker beige 0x98948e.
   floor: 0xb4b1ae,
   /** Dark grid: walls, door lintels, pillars — anything structural. */

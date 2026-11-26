@@ -21,7 +21,9 @@
     },
     {
       "kind": "input",
-      "press": ["KeyJ"],
+      "press": [
+        "KeyJ"
+      ],
       "holdTicks": 1,
       "label": "press",
       "release": true
