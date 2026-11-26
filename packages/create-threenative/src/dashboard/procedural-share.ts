@@ -14,7 +14,8 @@ export const MAX_GLB_BYTES = 25 * 1024 * 1024;
 export function procedurallyExcluded(relative: string): string | undefined {
   const file = relative.replaceAll("\\", "/");
   if (file.includes("..") || path.isAbsolute(file)) return "outside the project";
-  if (!file.startsWith("assets/procedural/")) return "not a saved procedural bake (assets/procedural/)";
+  if (!file.startsWith("assets/procedural/"))
+    return "not a saved procedural bake (assets/procedural/)";
   if (/(^|\/)(downloads|levels)\//u.test(file)) return "third-party download or level";
   if (/-lod\d+\.glb$/u.test(file)) return "a generated LOD sibling";
   if (!file.endsWith(".glb")) return "not a .glb";
@@ -28,13 +29,17 @@ export function validateGlb(bytes: Uint8Array): { readonly json: Record<string, 
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   if (view.getUint32(0, true) !== 0x46546c67) throw new Error("not a GLB (bad magic)");
   if (view.getUint32(4, true) !== 2) throw new Error("not glTF 2.0");
-  if (view.getUint32(8, true) !== bytes.byteLength) throw new Error("GLB length header does not match the file");
+  if (view.getUint32(8, true) !== bytes.byteLength)
+    throw new Error("GLB length header does not match the file");
   const jsonLength = view.getUint32(12, true);
   if (view.getUint32(16, true) !== 0x4e4f534a || 20 + jsonLength > bytes.byteLength)
     throw new Error("GLB has no JSON chunk");
   let json: Record<string, unknown>;
   try {
-    json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength))) as Record<string, unknown>;
+    json = JSON.parse(new TextDecoder().decode(bytes.subarray(20, 20 + jsonLength))) as Record<
+      string,
+      unknown
+    >;
   } catch {
     throw new Error("GLB JSON chunk does not parse");
   }
@@ -42,7 +47,8 @@ export function validateGlb(bytes: Uint8Array): { readonly json: Record<string, 
     const list = json[key];
     if (!Array.isArray(list)) continue;
     for (const item of list as { uri?: unknown }[])
-      if (typeof item.uri === "string") throw new Error(`${key} reference an external or inline URI; not self-contained`);
+      if (typeof item.uri === "string")
+        throw new Error(`${key} reference an external or inline URI; not self-contained`);
   }
   return { json };
 }
@@ -65,12 +71,15 @@ export async function shareProcedural(
   share: IProceduralShare,
   options: { readonly fetch?: typeof fetch; readonly endpoint?: string } = {},
 ): Promise<{ readonly sha256: string; readonly status: number }> {
-  if (!(await readPrefs()).shareProcedurals) throw new Error("Share procedurals is off on this machine.");
+  if (!(await readPrefs()).shareProcedurals)
+    throw new Error("Share procedurals is off on this machine.");
   const excluded = procedurallyExcluded(share.path);
   if (excluded) throw new Error(`${share.path}: ${excluded}`);
   const family = share.source === "agent" ? modelFamily(share.model) : undefined;
   if (share.source === "agent" && !family)
-    throw new Error(`an agent share needs an opus/astra/neon/fable model, got ${share.model ?? "none"}`);
+    throw new Error(
+      `an agent share needs an opus/astra/neon/fable model, got ${share.model ?? "none"}`,
+    );
   const file = path.resolve(root, share.path);
   if (!file.startsWith(`${path.resolve(root)}${path.sep}`)) throw new Error("outside the project");
   if ((await stat(file)).size > MAX_GLB_BYTES) throw new Error(`${share.path}: over 25 MB`);
@@ -93,7 +102,11 @@ export async function shareProcedural(
       tags: (share.tags ?? []).slice(0, 12).map((tag) => String(tag).slice(0, 40)),
     }),
   );
-  const response = await (options.fetch ?? fetch)(options.endpoint ?? PROCEDURAL_ENDPOINT, { method: "POST", body: form });
-  if (!response.ok && response.status !== 409) throw new Error(`share failed: HTTP ${response.status}`);
+  const response = await (options.fetch ?? fetch)(options.endpoint ?? PROCEDURAL_ENDPOINT, {
+    method: "POST",
+    body: form,
+  });
+  if (!response.ok && response.status !== 409)
+    throw new Error(`share failed: HTTP ${response.status}`);
   return { sha256, status: response.status };
 }

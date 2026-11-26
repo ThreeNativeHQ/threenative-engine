@@ -32,7 +32,12 @@ export const CONFIG_FIELDS: readonly IConfigField[] = [
     options: ["threenative", "threejs"],
     hint: "Restarts the dev server",
   },
-  { path: "renderer.preferWebGPU", label: "Prefer WebGPU", group: "Engine & Renderer", kind: "boolean" },
+  {
+    path: "renderer.preferWebGPU",
+    label: "Prefer WebGPU",
+    group: "Engine & Renderer",
+    kind: "boolean",
+  },
   {
     path: "renderer.resolutionScale",
     label: "Resolution scale",
@@ -43,7 +48,12 @@ export const CONFIG_FIELDS: readonly IConfigField[] = [
     min: 0.25,
     max: 1,
   },
-  { path: "renderer.antialias", label: "Antialias (MSAA)", group: "Engine & Renderer", kind: "boolean" },
+  {
+    path: "renderer.antialias",
+    label: "Antialias (MSAA)",
+    group: "Engine & Renderer",
+    kind: "boolean",
+  },
   {
     path: "renderer.alphaAntialiasing",
     label: "Alpha antialiasing",
@@ -74,7 +84,12 @@ export const CONFIG_FIELDS: readonly IConfigField[] = [
     options: ["landscape", "portrait", "sensor"],
   },
   { path: "display.fullscreen", label: "Fullscreen", group: "Display & Window", kind: "boolean" },
-  { path: "display.keepScreenOn", label: "Keep screen on", group: "Display & Window", kind: "boolean" },
+  {
+    path: "display.keepScreenOn",
+    label: "Keep screen on",
+    group: "Display & Window",
+    kind: "boolean",
+  },
   {
     path: "display.maxFps",
     label: "Max FPS",
@@ -98,9 +113,26 @@ export const CONFIG_FIELDS: readonly IConfigField[] = [
     options: ["pause", "continue"],
   },
   { path: "window.title", label: "Window title", group: "Display & Window", kind: "text" },
-  { path: "window.width", label: "Window width", group: "Display & Window", kind: "integer", min: 1 },
-  { path: "window.height", label: "Window height", group: "Display & Window", kind: "integer", min: 1 },
-  { path: "window.maximized", label: "Start maximized", group: "Display & Window", kind: "boolean" },
+  {
+    path: "window.width",
+    label: "Window width",
+    group: "Display & Window",
+    kind: "integer",
+    min: 1,
+  },
+  {
+    path: "window.height",
+    label: "Window height",
+    group: "Display & Window",
+    kind: "integer",
+    min: 1,
+  },
+  {
+    path: "window.maximized",
+    label: "Start maximized",
+    group: "Display & Window",
+    kind: "boolean",
+  },
   { path: "window.resizable", label: "Resizable", group: "Display & Window", kind: "boolean" },
   {
     path: "ui.renderer",
@@ -158,5 +190,7 @@ export function parseFieldValue(field: IConfigField, value: unknown): unknown {
     case "choice":
       break;
   }
-  throw new Error(`${field.path}: ${JSON.stringify(value)} is not a valid ${field.label.toLowerCase()}`);
+  throw new Error(
+    `${field.path}: ${JSON.stringify(value)} is not a valid ${field.label.toLowerCase()}`,
+  );
 }

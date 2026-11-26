@@ -4,13 +4,18 @@
 // written, and the write is a rename, so a crash never leaves half a config on disk.
 import { readFile, rename, writeFile } from "node:fs/promises";
 import path from "node:path";
-import type * as TS from "typescript";
+import type * as Typescript from "typescript";
 import { loadConfig } from "../config.js";
-import { CONFIG_FIELDS, CRASH_REPORTS_PATH, configField, parseFieldValue } from "./config-fields.js";
+import {
+  CONFIG_FIELDS,
+  CRASH_REPORTS_PATH,
+  configField,
+  parseFieldValue,
+} from "./config-fields.js";
 
 const CONFIG_FILE = "threenative.config.ts";
 
-type Ts = typeof TS;
+type Ts = typeof Typescript;
 let typescript: Ts | undefined;
 async function ts(): Promise<Ts> {
   typescript ??= (await import("typescript")).default;
@@ -38,8 +43,11 @@ export class ConfigEditError extends Error {
 const EDITABLE = [...CONFIG_FIELDS.map((field) => field.path), CRASH_REPORTS_PATH];
 
 /** The config's root object literal: `export default {…}`, or `const config = {…}` it names. */
-function rootObject(ts: Ts, file: TS.SourceFile): TS.ObjectLiteralExpression | undefined {
-  const unwrap = (node: TS.Expression | undefined): TS.Expression | undefined => {
+function rootObject(
+  ts: Ts,
+  file: Typescript.SourceFile,
+): Typescript.ObjectLiteralExpression | undefined {
+  const unwrap = (node: Typescript.Expression | undefined): Typescript.Expression | undefined => {
     let current = node;
     while (
       current &&
@@ -52,7 +60,7 @@ function rootObject(ts: Ts, file: TS.SourceFile): TS.ObjectLiteralExpression | u
     if (current && ts.isCallExpression(current)) return unwrap(current.arguments[0]);
     return current;
   };
-  let exported: TS.Expression | undefined;
+  let exported: Typescript.Expression | undefined;
   for (const statement of file.statements)
     if (ts.isExportAssignment(statement)) exported = unwrap(statement.expression);
   if (exported && ts.isIdentifier(exported)) {
@@ -67,21 +75,21 @@ function rootObject(ts: Ts, file: TS.SourceFile): TS.ObjectLiteralExpression | u
   return exported && ts.isObjectLiteralExpression(exported) ? exported : undefined;
 }
 
-function propertyName(ts: Ts, property: TS.ObjectLiteralElementLike): string | undefined {
+function propertyName(ts: Ts, property: Typescript.ObjectLiteralElementLike): string | undefined {
   if (!ts.isPropertyAssignment(property)) return undefined;
   const name = property.name;
   if (ts.isIdentifier(name) || ts.isStringLiteral(name)) return name.text;
   return undefined;
 }
 
-function findProperty(ts: Ts, object: TS.ObjectLiteralExpression, key: string) {
+function findProperty(ts: Ts, object: Typescript.ObjectLiteralExpression, key: string) {
   return object.properties.find((property) => propertyName(ts, property) === key) as
-    | TS.PropertyAssignment
+    | Typescript.PropertyAssignment
     | undefined;
 }
 
 /** A literal's value, or `undefined` for anything that is not a plain literal. */
-function literalValue(ts: Ts, node: TS.Expression): { value: unknown } | undefined {
+function literalValue(ts: Ts, node: Typescript.Expression): { value: unknown } | undefined {
   if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node))
     return { value: node.text };
   if (ts.isNumericLiteral(node)) return { value: Number(node.text) };
@@ -124,10 +132,11 @@ export async function readConfigView(root: string): Promise<IConfigView> {
   const authored: Record<string, unknown> = {};
   const expressions: string[] = [];
   for (const dotted of EDITABLE) {
-    let node: TS.ObjectLiteralExpression | undefined = object;
+    let node: Typescript.ObjectLiteralExpression | undefined = object;
     const keys = dotted.split(".");
     for (const [index, key] of keys.entries()) {
-      const property: TS.PropertyAssignment | undefined = node && findProperty(t, node, key);
+      const property: Typescript.PropertyAssignment | undefined =
+        node && findProperty(t, node, key);
       if (!property) break;
       if (index === keys.length - 1) {
         const literal = literalValue(t, property.initializer);
@@ -144,7 +153,9 @@ export async function readConfigView(root: string): Promise<IConfigView> {
   const resolved: Record<string, unknown> = {};
   for (const dotted of EDITABLE) {
     const value =
-      dotted === CRASH_REPORTS_PATH ? config.telemetry?.crashReports !== false : read(config, dotted);
+      dotted === CRASH_REPORTS_PATH
+        ? config.telemetry?.crashReports !== false
+        : read(config, dotted);
     if (value !== undefined) resolved[dotted] = value;
   }
   return { authored, expressions, resolved };
@@ -174,7 +185,7 @@ function nestedText(keys: readonly string[], value: unknown, indent: string, ste
 function editFor(
   t: Ts,
   source: string,
-  object: TS.ObjectLiteralExpression,
+  object: Typescript.ObjectLiteralExpression,
   keys: readonly string[],
   value: unknown,
 ): IEdit | undefined {
@@ -182,7 +193,9 @@ function editFor(
   const property = findProperty(t, object, key);
   if (property && rest.length > 0) {
     if (!t.isObjectLiteralExpression(property.initializer))
-      throw new ConfigEditError(`${keys.join(".")} sits under an expression the Dashboard will not rewrite.`);
+      throw new ConfigEditError(
+        `${keys.join(".")} sits under an expression the Dashboard will not rewrite.`,
+      );
     return editFor(t, source, property.initializer, rest, value);
   }
   if (property) {
@@ -193,7 +206,7 @@ function editFor(
       const lineEnd = source.indexOf("\n", end);
       const tail = lineEnd === -1 ? "" : source.slice(end, lineEnd);
       if (/^\s*(\/\/.*)?$/u.test(tail)) end = lineEnd;
-      const start = source.lastIndexOf("\n", property.getStart()) ;
+      const start = source.lastIndexOf("\n", property.getStart());
       const lead = source.slice(start + 1, property.getStart());
       return /^\s*$/u.test(lead)
         ? { start, end, text: "" }
@@ -201,7 +214,11 @@ function editFor(
     }
     if (!literalValue(t, property.initializer))
       throw new ConfigEditError(`${keys.join(".")} is an expression; edit it in ${CONFIG_FILE}.`);
-    return { start: property.initializer.getStart(), end: property.initializer.end, text: print(value) };
+    return {
+      start: property.initializer.getStart(),
+      end: property.initializer.end,
+      text: print(value),
+    };
   }
   if (value === null) return undefined;
   // Insert a new property after the last one (or into an empty object).
@@ -270,7 +287,8 @@ export async function patchConfig(
 ): Promise<{ view: IConfigView; engineChanged: boolean }> {
   const file = path.join(root, CONFIG_FILE);
   const source = await readFile(file, "utf8").catch(
-    () => "import type { IThreeNativeConfig } from \"@threenative/core\";\n\nconst config: IThreeNativeConfig = {};\n\nexport default config;\n",
+    () =>
+      'import type { IThreeNativeConfig } from "@threenative/core";\n\nconst config: IThreeNativeConfig = {};\n\nexport default config;\n',
   );
   const before = await loadConfig(root, undefined, { source });
   const next = await applyConfigChanges(source, changes);
@@ -279,7 +297,10 @@ export async function patchConfig(
     after = await loadConfig(root, undefined, { source: next });
   } catch (error) {
     const message = (error as Error).message;
-    throw new ConfigEditError(message, Object.fromEntries(Object.keys(changes).map((k) => [k, message])));
+    throw new ConfigEditError(
+      message,
+      Object.fromEntries(Object.keys(changes).map((k) => [k, message])),
+    );
   }
   if (next !== source) {
     const temp = `${file}.${process.pid}.${Date.now()}.tmp`;

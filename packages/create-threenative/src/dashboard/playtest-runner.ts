@@ -39,7 +39,10 @@ const SCENARIO = /\.playtest\.json$/u;
 const MAX_LINES = 2000;
 
 /** Every scenario under `<root>/playtests/`, three folders deep at most. */
-export async function listScenarios(root: string, last: ReadonlyMap<string, IRunState> = new Map()): Promise<IScenarioRow[]> {
+export async function listScenarios(
+  root: string,
+  last: ReadonlyMap<string, IRunState> = new Map(),
+): Promise<IScenarioRow[]> {
   const base = path.join(root, "playtests");
   const out: IScenarioRow[] = [];
   const walk = async (dir: string, depth: number): Promise<void> => {
@@ -52,7 +55,10 @@ export async function listScenarios(root: string, last: ReadonlyMap<string, IRun
         let assertions = 0;
         let name = entry.name.replace(SCENARIO, "");
         try {
-          const json = JSON.parse(await readFile(full, "utf8")) as { name?: unknown; assertions?: unknown };
+          const json = JSON.parse(await readFile(full, "utf8")) as {
+            name?: unknown;
+            assertions?: unknown;
+          };
           if (Array.isArray(json.assertions)) assertions = json.assertions.length;
           if (typeof json.name === "string") name = json.name;
         } catch {
@@ -87,12 +93,17 @@ export function scenarioPath(root: string, requested: string): string {
 export function playtestCli(root: string): string {
   try {
     const require = createRequire(path.join(root, "package.json"));
-    const cli = path.join(path.dirname(require.resolve("@threenative/playtest/package.json")), "dist/runner/cli.js");
+    const cli = path.join(
+      path.dirname(require.resolve("@threenative/playtest/package.json")),
+      "dist/runner/cli.js",
+    );
     if (existsSync(cli)) return cli;
   } catch {
     // Reported below.
   }
-  throw new Error("TN_PLAYTEST_RUNNER_MISSING: install @threenative/playtest (pnpm add -D @threenative/playtest).");
+  throw new Error(
+    "TN_PLAYTEST_RUNNER_MISSING: install @threenative/playtest (pnpm add -D @threenative/playtest).",
+  );
 }
 
 export class PlaytestRunner {
@@ -145,7 +156,13 @@ export class PlaytestRunner {
     this.#counter += 1;
     const id = `${Date.now().toString(36)}-${this.#counter}`;
     const relative = path.relative(this.root, scenario).replaceAll("\\", "/");
-    const run: IRunState = { id, scenario: relative, startedAt: new Date().toISOString(), status: "running", lines: [] };
+    const run: IRunState = {
+      id,
+      scenario: relative,
+      startedAt: new Date().toISOString(),
+      status: "running",
+      lines: [],
+    };
     this.#current = run;
     this.runs.set(id, run);
     const args = [
@@ -159,13 +176,14 @@ export class PlaytestRunner {
       this.artifactDir(id),
       ...(options.check ? [] : ["--skip-check"]),
     ];
-    this.#emit(`$ threenative-playtest ${relative} --url ${url} --browser-recipe webgpu${options.check ? "" : " --skip-check"}`);
+    this.#emit(
+      `$ threenative-playtest ${relative} --url ${url} --browser-recipe webgpu${options.check ? "" : " --skip-check"}`,
+    );
     const child = spawn(this.options.node ?? process.execPath, args, {
       cwd: this.root,
       // Its own process group, so Cancel stops the browser it launched as well.
       detached: process.platform !== "win32",
       stdio: ["ignore", "pipe", "pipe"],
-      env: { ...process.env, FORCE_COLOR: "0" },
     });
     this.#child = child;
     let stdout = "";
@@ -191,13 +209,20 @@ export class PlaytestRunner {
 
   async #finish(run: IRunState, code: number | null, stdout: string): Promise<void> {
     const cancelled = run.status === "cancelled";
-    let report: { pass?: boolean; assertionResults?: IRunResult["assertions"]; diagnostics?: IRunResult["diagnostics"]; reports?: unknown[] } = {};
+    let report: {
+      pass?: boolean;
+      assertionResults?: IRunResult["assertions"];
+      diagnostics?: IRunResult["diagnostics"];
+      reports?: unknown[];
+    } = {};
     try {
       report = JSON.parse(stdout.slice(stdout.indexOf("{")));
     } catch {
       if (stdout.trim()) this.#emit(stdout.trim().slice(0, 2000));
     }
-    const reports = (Array.isArray(report.reports) ? report.reports : [report]) as (typeof report)[];
+    const reports = (
+      Array.isArray(report.reports) ? report.reports : [report]
+    ) as (typeof report)[];
     const images = await this.#images(run.id);
     run.result = {
       pass: report.pass === true && code === 0,
@@ -207,7 +232,13 @@ export class PlaytestRunner {
       images,
       ...(cancelled ? { cancelled: true } : {}),
     };
-    run.status = cancelled ? "cancelled" : run.result.pass ? "passed" : code === 2 ? "error" : "failed";
+    run.status = cancelled
+      ? "cancelled"
+      : run.result.pass
+        ? "passed"
+        : code === 2
+          ? "error"
+          : "failed";
     this.#emit(`exit ${code ?? "signal"} · ${run.status}`);
     this.last.set(run.scenario, run);
     this.#child = undefined;
@@ -222,7 +253,8 @@ export class PlaytestRunner {
       for (const entry of await readdir(folder, { withFileTypes: true })) {
         const full = path.join(folder, entry.name);
         if (entry.isDirectory() && depth < 2) await walk(full, depth + 1);
-        else if (entry.isFile() && entry.name.endsWith(".png")) out.push(path.relative(dir, full).replaceAll("\\", "/"));
+        else if (entry.isFile() && entry.name.endsWith(".png"))
+          out.push(path.relative(dir, full).replaceAll("\\", "/"));
       }
     };
     await walk(dir, 0);
@@ -255,7 +287,8 @@ export class PlaytestRunner {
     if (!/^[\w.-]+$/u.test(id) || !this.runs.has(id)) return undefined;
     const dir = path.resolve(this.artifactDir(id));
     const full = path.resolve(dir, file);
-    if (!full.startsWith(`${dir}${path.sep}`) || !/\.(png|json)$/u.test(full) || !existsSync(full)) return undefined;
+    if (!full.startsWith(`${dir}${path.sep}`) || !/\.(png|json)$/u.test(full) || !existsSync(full))
+      return undefined;
     return full;
   }
 }

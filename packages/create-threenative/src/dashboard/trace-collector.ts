@@ -7,7 +7,13 @@ import { mkdir, readFile, readdir, rename, stat, writeFile } from "node:fs/promi
 import os from "node:os";
 import path from "node:path";
 import { gzipSync } from "node:zlib";
-import { type IScrubIdentity, type ModelFamily, localIdentity, modelFamily, scrubTrace } from "./scrub-trace.js";
+import {
+  type IScrubIdentity,
+  type ModelFamily,
+  localIdentity,
+  modelFamily,
+  scrubTrace,
+} from "./scrub-trace.js";
 import { prefsDir, readPrefs } from "./telemetry-prefs.js";
 
 export const TRACE_ENDPOINT = "https://threenative.com/api/telemetry/traces";
@@ -55,7 +61,8 @@ async function sessionFacts(file: string): Promise<{ cwd?: string; models: strin
   const visit = (node: unknown, key = ""): void => {
     if (typeof node === "string") {
       if (!cwd && key === "cwd") cwd = node;
-      if ((key === "model" || key === "modelId") && node && node !== "<synthetic>") models.add(node);
+      if ((key === "model" || key === "modelId") && node && node !== "<synthetic>")
+        models.add(node);
       return;
     }
     if (Array.isArray(node)) for (const child of node) visit(child);
@@ -95,14 +102,35 @@ async function remember(ids: Set<string>): Promise<void> {
  * working directory is the project root (or inside it); Antigravity transcripts record none, so
  * they are never candidates.
  */
-export async function discoverTraces(root: string, where: ISessionHome = { home: os.homedir() }): Promise<ITraceCandidate[]> {
+export async function discoverTraces(
+  root: string,
+  where: ISessionHome = { home: os.homedir() },
+): Promise<ITraceCandidate[]> {
   const project = path.resolve(root);
   const inProject = (cwd: string | undefined) =>
-    cwd !== undefined && (path.resolve(cwd) === project || path.resolve(cwd).startsWith(`${project}${path.sep}`));
+    cwd !== undefined &&
+    (path.resolve(cwd) === project || path.resolve(cwd).startsWith(`${project}${path.sep}`));
   const sources: [ITraceCandidate["agent"], string[]][] = [
-    ["claude", await files(path.join(where.home, ".claude/projects", claudeFolder(project)), (n) => n.endsWith(".jsonl"))],
-    ["codex", await files(path.join(where.home, ".codex/sessions"), (n) => n.startsWith("rollout-") && n.endsWith(".jsonl"), 3)],
-    ["pi", await files(path.join(where.home, ".pi/agent/sessions", piFolder(project)), (n) => n.endsWith(".jsonl"))],
+    [
+      "claude",
+      await files(path.join(where.home, ".claude/projects", claudeFolder(project)), (n) =>
+        n.endsWith(".jsonl"),
+      ),
+    ],
+    [
+      "codex",
+      await files(
+        path.join(where.home, ".codex/sessions"),
+        (n) => n.startsWith("rollout-") && n.endsWith(".jsonl"),
+        3,
+      ),
+    ],
+    [
+      "pi",
+      await files(path.join(where.home, ".pi/agent/sessions", piFolder(project)), (n) =>
+        n.endsWith(".jsonl"),
+      ),
+    ],
   ];
   const done = await ledger();
   const out: ITraceCandidate[] = [];
@@ -160,10 +188,22 @@ export async function previewTrace(
       records: scrubbed.records,
       redactions: scrubbed.redactions,
       bytes: Buffer.byteLength(scrubbed.jsonl),
-      sample: scrubbed.jsonl.split("\n").filter(Boolean).slice(0, 6).map((l) => (l.length > 400 ? `${l.slice(0, 400)}…` : l)),
+      sample: scrubbed.jsonl
+        .split("\n")
+        .filter(Boolean)
+        .slice(0, 6)
+        .map((l) => (l.length > 400 ? `${l.slice(0, 400)}…` : l)),
     };
   } catch (error) {
-    return { id: candidate.id, family: candidate.family, records: 0, redactions: 0, bytes: 0, sample: [], aborted: (error as Error).message };
+    return {
+      id: candidate.id,
+      family: candidate.family,
+      records: 0,
+      redactions: 0,
+      bytes: 0,
+      sample: [],
+      aborted: (error as Error).message,
+    };
   }
 }
 
@@ -199,7 +239,10 @@ export async function shareTraces(
     }
     let body: Buffer;
     try {
-      body = gzipSync(scrubTrace(await readFile(candidate.file, "utf8"), options.identity ?? localIdentity()).jsonl);
+      body = gzipSync(
+        scrubTrace(await readFile(candidate.file, "utf8"), options.identity ?? localIdentity())
+          .jsonl,
+      );
     } catch (error) {
       report.aborted.push({ id: candidate.id, reason: (error as Error).message });
       continue;

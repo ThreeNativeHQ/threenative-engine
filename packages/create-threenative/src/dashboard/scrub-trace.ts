@@ -33,7 +33,10 @@ const R = "[redacted]";
 
 /** Token and key shapes: the union of the site's store-secrets rules and the dataset builder's. */
 const SECRET_SHAPES: readonly [string, RegExp][] = [
-  ["private key block", /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/gu],
+  [
+    "private key block",
+    /-----BEGIN [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----[\s\S]*?(?:-----END [A-Z0-9 ]*PRIVATE KEY(?: BLOCK)?-----|$)/gu,
+  ],
   ["AWS key", /\b(?:AKIA|ASIA|AGPA|AIDA|AROA)[0-9A-Z]{16}\b/gu],
   ["GitHub token", /\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_[A-Za-z0-9_]{20,})/gu],
   ["Stripe key", /\b(?:sk|rk|pk)_(?:live|test)_[A-Za-z0-9]{10,}/gu],
@@ -44,10 +47,16 @@ const SECRET_SHAPES: readonly [string, RegExp][] = [
   ["HuggingFace token", /\bhf_[A-Za-z0-9]{20,}/gu],
   ["npm token", /\bnpm_[A-Za-z0-9]{30,}/gu],
   ["JWT", /\beyJ[A-Za-z0-9_-]{6,}\.eyJ[A-Za-z0-9_-]{6,}\.[A-Za-z0-9_-]{6,}/gu],
-  ["authorization header", /\b(?:Proxy-)?Authorization\b["']?\s*[:=]\s*["']?(?:Bearer|Basic|Token|Digest)\s+(?!\[redacted)[^\s"'\\,;]+/giu],
+  [
+    "authorization header",
+    /\b(?:Proxy-)?Authorization\b["']?\s*[:=]\s*["']?(?:Bearer|Basic|Token|Digest)\s+(?!\[redacted)[^\s"'\\,;]+/giu,
+  ],
   ["bearer token", /\bBearer\s+(?!\[redacted)[A-Za-z0-9._~+/=-]{16,}/gu],
   ["URL credentials", /\b[a-z][a-z0-9+.-]*:\/\/(?!\[redacted)[^\s:/@"'\\]+:[^\s@/"'\\]+@/giu],
-  ["secret assignment", /\b(?:[A-Za-z0-9_]*(?:_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PAT|APIKEY|API_KEY)|DATABASE_URL|PASSWORD|SECRET)\b["']?\s*[:=]\s*["']?(?!\[redacted)(?=[^\s"'\\,;}]{6,})[^\s"'\\,;}]+/gu],
+  [
+    "secret assignment",
+    /\b(?:[A-Za-z0-9_]*(?:_KEY|_TOKEN|_SECRET|_PASSWORD|_PASSWD|_PAT|APIKEY|API_KEY)|DATABASE_URL|PASSWORD|SECRET)\b["']?\s*[:=]\s*["']?(?!\[redacted)(?=[^\s"'\\,;}]{6,})[^\s"'\\,;}]+/gu,
+  ],
   ["cookie header", /\b(?:Set-)?Cookie\b["']?\s*:\s*(?!\[redacted)[^\n"\\]{4,}/giu],
 ];
 
@@ -66,7 +75,11 @@ function redactSecrets(text: string): string {
   for (const [name, shape] of SECRET_SHAPES) {
     out = out.replace(shape, (match) => {
       if (name === "URL credentials") return match.replace(/\/\/[^@]+@/u, `//${R}@`);
-      if (name === "secret assignment" || name === "authorization header" || name === "cookie header") {
+      if (
+        name === "secret assignment" ||
+        name === "authorization header" ||
+        name === "cookie header"
+      ) {
         const cut = match.search(/[:=]/u);
         const head = match.slice(0, cut + 1);
         return `${head}${R}`;
@@ -77,11 +90,14 @@ function redactSecrets(text: string): string {
   return out;
 }
 
-const IPV4 = /\b(?!127\.)(?!0\.0\.0\.0\b)(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/gu;
-const IPV6 = /\b(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\b|\b(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4}\b/giu;
+const IPV4 =
+  /\b(?!127\.)(?!0\.0\.0\.0\b)(?:25[0-5]|2[0-4]\d|1?\d?\d)(?:\.(?:25[0-5]|2[0-4]\d|1?\d?\d)){3}\b/gu;
+const IPV6 =
+  /\b(?:[0-9a-f]{1,4}:){7}[0-9a-f]{1,4}\b|\b(?:[0-9a-f]{1,4}:){1,6}:(?:[0-9a-f]{1,4}:){0,5}[0-9a-f]{1,4}\b/giu;
 const EMAIL = /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/gu;
 const USER_PATH = /(?:\/home\/|\/Users\/|[A-Za-z]:\\{1,2}Users\\{1,2})(?!<user>)[^\\/\s"'`]+/gu;
-const QUERY_SECRET = /([?&](?:token|key|secret|sig|signature|password|access_token|api_key|apikey|auth|code)=)(?!\[redacted)[^&\s"'#\\]+/giu;
+const QUERY_SECRET =
+  /([?&](?:token|key|secret|sig|signature|password|access_token|api_key|apikey|auth|code)=)(?!\[redacted)[^&\s"'#\\]+/giu;
 
 function identityPatterns(identity: IScrubIdentity): [RegExp, string][] {
   const out: [RegExp, string][] = [];
@@ -96,7 +112,8 @@ function identityPatterns(identity: IScrubIdentity): [RegExp, string][] {
 /** Scrubs one decoded string. */
 export function scrubText(text: string, identity: IScrubIdentity = localIdentity()): string {
   let out = redactSecrets(text);
-  for (const [pattern, replacement] of identityPatterns(identity)) out = out.replace(pattern, replacement);
+  for (const [pattern, replacement] of identityPatterns(identity))
+    out = out.replace(pattern, replacement);
   out = out.replace(USER_PATH, (match) => match.replace(/[^\\/]+$/u, "<user>"));
   out = out.replace(EMAIL, "<email>");
   out = out.replace(IPV4, "<ip>");
@@ -106,7 +123,10 @@ export function scrubText(text: string, identity: IScrubIdentity = localIdentity
 }
 
 /** The first secret or identity that is still present in `text`, or undefined. */
-export function residualFinding(text: string, identity: IScrubIdentity = localIdentity()): string | undefined {
+export function residualFinding(
+  text: string,
+  identity: IScrubIdentity = localIdentity(),
+): string | undefined {
   for (const [name, shape] of SECRET_SHAPES) {
     shape.lastIndex = 0;
     if (shape.test(text)) {
@@ -128,18 +148,42 @@ export function residualFinding(text: string, identity: IScrubIdentity = localId
 type Json = null | boolean | number | string | Json[] | { [key: string]: Json };
 
 const PRIVATE_FILE = "[redacted: private file]";
-const BODY_KEYS = new Set(["content", "text", "output", "stdout", "stderr", "result", "new_string", "old_string", "file_text", "data"]);
-const PATH_KEYS = new Set(["file_path", "filePath", "path", "filename", "file", "notebook_path", "command", "cmd"]);
+const BODY_KEYS = new Set([
+  "content",
+  "text",
+  "output",
+  "stdout",
+  "stderr",
+  "result",
+  "new_string",
+  "old_string",
+  "file_text",
+  "data",
+]);
+const PATH_KEYS = new Set([
+  "file_path",
+  "filePath",
+  "path",
+  "filename",
+  "file",
+  "notebook_path",
+  "command",
+  "cmd",
+]);
 
 /** Tool calls that read or print a private file: their results are dropped whole. */
 function privateToolIds(records: Json[]): Set<string> {
   const ids = new Set<string>();
   const visit = (node: Json): void => {
-    if (Array.isArray(node)) return node.forEach(visit);
+    if (Array.isArray(node)) {
+      for (const child of node) visit(child);
+      return;
+    }
     if (node === null || typeof node !== "object") return;
     const id = node.id ?? node.call_id ?? node.tool_call_id;
     const input = node.input ?? node.arguments ?? node.args;
-    if (typeof id === "string" && input !== undefined && isSensitiveFile(JSON.stringify(input))) ids.add(id);
+    if (typeof id === "string" && input !== undefined && isSensitiveFile(JSON.stringify(input)))
+      ids.add(id);
     for (const value of Object.values(node)) visit(value);
   };
   records.forEach(visit);
@@ -151,7 +195,8 @@ function scrubNode(node: Json, identity: IScrubIdentity, privateIds: Set<string>
   if (Array.isArray(node)) return node.map((child) => scrubNode(child, identity, privateIds));
   if (node === null || typeof node !== "object") return node;
   const linked = [node.tool_use_id, node.call_id, node.tool_call_id].some(
-    (id) => typeof id === "string" && privateIds.has(id) && !("input" in node || "arguments" in node),
+    (id) =>
+      typeof id === "string" && privateIds.has(id) && !("input" in node || "arguments" in node),
   );
   const namesPrivate = Object.entries(node).some(
     ([key, value]) => PATH_KEYS.has(key) && typeof value === "string" && isSensitiveFile(value),
@@ -177,7 +222,10 @@ export interface IScrubResult {
  * Scrubs a JSONL trace and re-scans the result. Throws `TraceScrubAbort` if anything a scrub
  * should have caught is still there; the caller then sends nothing.
  */
-export function scrubTrace(jsonl: string, identity: IScrubIdentity = localIdentity()): IScrubResult {
+export function scrubTrace(
+  jsonl: string,
+  identity: IScrubIdentity = localIdentity(),
+): IScrubResult {
   const records: Json[] = [];
   let dropped = 0;
   for (const line of jsonl.split("\n")) {
@@ -197,7 +245,11 @@ export function scrubTrace(jsonl: string, identity: IScrubIdentity = localIdenti
   const collect = (node: Json): void => {
     if (typeof node === "string") decoded.push(node);
     else if (Array.isArray(node)) node.forEach(collect);
-    else if (node && typeof node === "object") for (const [k, v] of Object.entries(node)) (decoded.push(k), collect(v));
+    else if (node && typeof node === "object")
+      for (const [k, v] of Object.entries(node)) {
+        decoded.push(k);
+        collect(v);
+      }
   };
   for (const line of lines) collect(JSON.parse(line) as Json);
   const finding = residualFinding(out, identity) ?? residualFinding(decoded.join("\n"), identity);

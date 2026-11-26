@@ -42,7 +42,9 @@ interface IDevServer extends IMiddlewareServer {
     on(event: "change" | "add", listener: (file: string) => void): void;
   };
   readonly ws?: { send(payload: { type: "full-reload"; path?: string }): void };
-  readonly config?: { readonly logger?: { info(message: string): void; error(message: string): void } };
+  readonly config?: {
+    readonly logger?: { info(message: string): void; error(message: string): void };
+  };
   restart?(): Promise<void>;
 }
 
@@ -160,7 +162,7 @@ export function withBootGlobals(
   // that asks with `?tnTelemetry=1` still turns it back on.
   const telemetry =
     config.telemetry?.crashReports === false
-      ? 'if (!/[?&]tnTelemetry=1(?:&|$)/u.test(location.search)) globalThis.__THREENATIVE_TELEMETRY__ = false; '
+      ? "if (!/[?&]tnTelemetry=1(?:&|$)/u.test(location.search)) globalThis.__THREENATIVE_TELEMETRY__ = false; "
       : "";
   return html.replace(
     /<script/iu,

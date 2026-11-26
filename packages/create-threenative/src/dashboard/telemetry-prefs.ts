@@ -11,7 +11,10 @@ export interface ITelemetryPrefs {
   readonly shareSessionTraces: boolean;
 }
 
-export const DEFAULT_PREFS: ITelemetryPrefs = { shareProcedurals: false, shareSessionTraces: false };
+export const DEFAULT_PREFS: ITelemetryPrefs = {
+  shareProcedurals: false,
+  shareSessionTraces: false,
+};
 
 /** `$XDG_CONFIG_HOME/threenative`, else `~/.config/threenative` (Windows: `%APPDATA%`). */
 export function prefsDir(env: NodeJS.ProcessEnv = process.env): string {

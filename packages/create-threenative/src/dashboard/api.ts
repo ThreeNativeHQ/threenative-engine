@@ -114,11 +114,15 @@ export function createDashboardApi(options: {
     };
   };
 
-  const routes: Record<string, (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<unknown>> = {
+  const routes: Record<
+    string,
+    (req: IncomingMessage, res: ServerResponse, url: URL) => Promise<unknown>
+  > = {
     "GET config": async () => ({ fields: CONFIG_FIELDS, ...(await readConfigView(root)) }),
     "PATCH config": async (req, res) => {
       const changes = (await body(req)).changes;
-      if (typeof changes !== "object" || changes === null) return send(res, 400, { error: "expected { changes }" });
+      if (typeof changes !== "object" || changes === null)
+        return send(res, 400, { error: "expected { changes }" });
       const { view, engineChanged } = await patchConfig(root, changes as Record<string, unknown>);
       return { fields: CONFIG_FIELDS, ...view, restarting: engineChanged };
     },
@@ -126,7 +130,8 @@ export function createDashboardApi(options: {
     "PATCH telemetry": async (req) => {
       const { crashReports, ...prefs } = await body(req);
       if (crashReports !== undefined) {
-        if (typeof crashReports !== "boolean") throw Object.assign(new Error("crashReports: expected a boolean"), { status: 400 });
+        if (typeof crashReports !== "boolean")
+          throw Object.assign(new Error("crashReports: expected a boolean"), { status: 400 });
         // Back to the default is "remove the key", so an opted-in project carries no telemetry line.
         await patchConfig(root, { [CRASH_REPORTS_PATH]: crashReports ? null : false });
       }
@@ -141,13 +146,17 @@ export function createDashboardApi(options: {
       return previewTrace(candidate);
     },
     "POST telemetry/traces/share": async (_req, res) => {
-      if (!(await readPrefs()).shareSessionTraces) return send(res, 409, { error: "Share session traces is off on this machine." });
-      return shareTraces(root, { ...(options.engineVersion ? { engineVersion: options.engineVersion } : {}) });
+      if (!(await readPrefs()).shareSessionTraces)
+        return send(res, 409, { error: "Share session traces is off on this machine." });
+      return shareTraces(root, {
+        ...(options.engineVersion ? { engineVersion: options.engineVersion } : {}),
+      });
     },
     "GET telemetry/procedurals": async () => ({ files: await procedurals(root) }),
     "POST telemetry/procedurals/share": async (req) => {
       const { path: file } = await body(req);
-      if (typeof file !== "string") throw Object.assign(new Error("expected { path }"), { status: 400 });
+      if (typeof file !== "string")
+        throw Object.assign(new Error("expected { path }"), { status: 400 });
       return shareProcedural(root, { path: file, source: "manual" });
     },
     "GET health": async (_req, _res, url) => {
@@ -162,7 +171,11 @@ export function createDashboardApi(options: {
       const { path: scenario, check } = await body(req);
       const url = options.url();
       if (!url) return send(res, 503, { error: "the dev server is not listening yet" });
-      if (runner.busy) return send(res, 409, { error: "a playtest is already running", running: runner.current?.id });
+      if (runner.busy)
+        return send(res, 409, {
+          error: "a playtest is already running",
+          running: runner.current?.id,
+        });
       const run = runner.start(String(scenario ?? ""), url, { check: check === true });
       return { id: run.id, scenario: run.scenario };
     },
@@ -173,19 +186,25 @@ export function createDashboardApi(options: {
         "cache-control": "no-store",
         connection: "keep-alive",
       });
-      const write = (event: string, data: unknown) => res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+      const write = (event: string, data: unknown) =>
+        res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
       const run = runner.current;
       if (run) {
         write("start", { id: run.id, scenario: run.scenario });
         for (const line of run.lines) write("line", line);
         if (run.status !== "running") write("done", run);
       }
-      const off = runner.subscribe((event) => (event.type === "line" ? write("line", event.line) : write("done", event.run)));
+      const off = runner.subscribe((event) =>
+        event.type === "line" ? write("line", event.line) : write("done", event.run),
+      );
       req.on("close", off);
       return true;
     },
     "GET playtests/artifact": async (_req, res, url) => {
-      const file = runner.artifact(url.searchParams.get("run") ?? "", url.searchParams.get("file") ?? "");
+      const file = runner.artifact(
+        url.searchParams.get("run") ?? "",
+        url.searchParams.get("file") ?? "",
+      );
       if (!file) return send(res, 404, { error: "no such artifact in that run" });
       res.setHeader("content-type", file.endsWith(".png") ? "image/png" : "application/json");
       res.setHeader("cache-control", "no-store");
@@ -206,7 +225,8 @@ export function createDashboardApi(options: {
         const result = await route(req, res, url);
         if (result !== true) send(res, 200, result);
       } catch (error) {
-        const status = (error as { status?: number }).status ?? (error instanceof ConfigEditError ? 400 : 500);
+        const status =
+          (error as { status?: number }).status ?? (error instanceof ConfigEditError ? 400 : 500);
         send(res, status, {
           error: (error as Error).message,
           ...(error instanceof ConfigEditError ? { fields: error.fields } : {}),

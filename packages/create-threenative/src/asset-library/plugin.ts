@@ -71,7 +71,9 @@ export interface IAssetLibraryVitePlugin {
 type Middleware = (req: IncomingMessage, res: ServerResponse, next: () => void) => void;
 interface IViteServer extends IAssetLibraryServer {
   readonly config: { readonly root: string; readonly logger?: { info(message: string): void } };
-  readonly httpServer?: { once(event: "listening" | "close", listener: () => void): unknown } | null;
+  readonly httpServer?: {
+    once(event: "listening" | "close", listener: () => void): unknown;
+  } | null;
   readonly resolvedUrls?: { readonly local?: readonly string[] } | null;
   readonly middlewares: { use(handler: Middleware): void };
   transformIndexHtml(url: string, html: string): Promise<string>;
