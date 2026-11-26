@@ -21,6 +21,7 @@ import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
+import { floorMaterial, laneMarkMaterial } from "../render/materials.js";
 import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
@@ -98,7 +99,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
 
-    // What stays built: the ground, the boundary, the lane paint and the markers. One box collider
+    // What stays built: the ground, the slabs, the lane paint, the boundary and the markers. One box collider
     // per drawn solid, then the drawing merged to a mesh per material.
     const city = buildCity();
     for (const solid of city.solids)
@@ -119,7 +120,9 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const live = new Set<Mesh>([city.respraySign, city.dropoffPad, city.phoneMarker]);
     const merged = mergeByMaterial(city.root, { label: "city", skip: (mesh) => live.has(mesh) });
     for (const mesh of merged) {
-      mesh.castShadow = true;
+      // A 15 cm kerb and 1 cm of lane paint cast no shadow anyone sees, and would draw the whole
+      // city's slabs into the shadow map.
+      mesh.castShadow = mesh.material !== floorMaterial && mesh.material !== laneMarkMaterial;
       mesh.receiveShadow = true;
     }
     city.root.clear();

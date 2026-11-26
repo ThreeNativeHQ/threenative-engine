@@ -1,5 +1,5 @@
 // The city streams by block, the way a classic open world streams its map: the blocks near the
-// player are built in full (grid towers, kerbs, landmarks, shadows, colliders) and freed again once
+// player are built in full (grid towers, landmarks, shadows, colliders) and freed again once
 // the player is far enough away. `buildSkyline` in `render/city.ts` stands in for every block that is
 // not built, so the horizon never empties. Building is charged to a frame budget, so driving across
 // the city never stalls a frame on the blocks it brings in.
@@ -17,7 +17,7 @@ import { buildBlock } from "../render/city.js";
  * `POPULATION_RANGE` in `World.ts` stays inside `load`, so every car and pedestrian stands on
  * built ground. `budgetMs` is what one frame may spend building blocks.
  */
-export const STREAMING = { load: 150, keep: 180, budgetMs: 2 } as const;
+export const STREAMING = { load: 110, keep: 135, budgetMs: 2 } as const;
 
 interface IResident {
   readonly root: Group;

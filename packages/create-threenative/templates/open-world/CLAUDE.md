@@ -40,12 +40,12 @@ A change to an existing game repeats steps 2-3 for that change, then steps 5-8.
 
 <!-- shared: kit-files -->
 Source in `src/`: `city/`, `conventions.ts`, `entities/`, `game.ts`, `main.ts`, `playtest-events.ts`, `render/`, `scenes/`, `state.ts`, `systems/`, `ui/`.
-17 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
+18 scenarios in `playtests/`; `playtests/survives.playtest.json` is the smoke proof.
 Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agent-docs/references/auto-exposure.md`).
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-open-world.md`.
 <!-- /shared -->
 
-This game owns the city (`src/city/layout.ts`), traffic, police and wanted level.
+This game owns the city (`src/city/layout.ts`), block streaming (`src/systems/streaming.ts`), traffic, police, wanted level.
 Keys: WASD/arrows move or drive; Shift sprint; Space punch, shoot, handbrake; E lock on; Q weapon; F car; R restart.
 
 <!-- shared: kit-commands -->

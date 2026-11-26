@@ -4,7 +4,7 @@
 // lane paint, and the landmark blocks (hospital, police, respray garage, the job's drop-off lot).
 // Every solid is also returned as a box, so the colliders are exactly what is drawn.
 //
-// Three builders, for three lifetimes: `buildCity` is what stays (ground, boundary, paint, markers),
+// Three builders, for three lifetimes: `buildCity` is what stays (ground, slabs, lane paint, boundary, markers),
 // `buildBlock` is one block's detail that `systems/streaming.ts` builds and frees by distance, and
 // `buildSkyline` is every block's solids as one instanced draw, the far field nothing streams.
 import { InstancedBatch } from "@threenative/core";
@@ -81,7 +81,7 @@ function builder(name: string) {
   return { box, root, solids };
 }
 
-/** The ground, the boundary wall, the lane paint and the glowing markers: built once, kept. */
+/** The ground, every kerb slab, the lane paint, the boundary and the markers: built once, kept. */
 export function buildCity(): ICity {
   const { box, root, solids } = builder("city");
   // Asphalt under the whole grid, the plain ground out to the boundary, and the boundary wall.
@@ -114,6 +114,15 @@ export function buildCity(): ICity {
       root.add(new Mesh(dash, laneMarkMaterial));
     }
   }
+  // Every block's kerbed slab. Flat and cheap, so one merged draw for the whole city; only its
+  // collider streams with the block (`buildBlock`).
+  for (const target of BLOCKS)
+    box(
+      [target.size, KERB, target.size],
+      [target.center.x, KERB / 2, target.center.z],
+      floorMaterial,
+      false,
+    );
 
   const respraySign = new Mesh(new BoxGeometry(5.5, 0.02, 7.5), markerMaterial);
   respraySign.position.set(PLACES.respray.x, KERB + 0.02, PLACES.respray.z);
@@ -128,12 +137,16 @@ export function buildCity(): ICity {
   return { dropoffPad, phoneMarker, respraySign, root, solids };
 }
 
-/** One block's slab and what stands on it: what `systems/streaming.ts` builds near the player. */
+/** What stands on one block, and the collider of its slab: what `systems/streaming.ts` builds. */
 export function buildBlock(target: IBlock): IBuilt {
   const { box, root, solids } = builder(`block-${target.i}-${target.j}`);
   const { x, z } = target.center;
-  // The kerbed slab: sidewalk and lot are one raised block, which is what a car climbs.
-  box([target.size, KERB, target.size], [x, KERB / 2, z], floorMaterial);
+  // The kerbed slab: sidewalk and lot are one raised block, which is what a car climbs. It is drawn
+  // with the city (`buildCity`); the block holds only its collider.
+  solids.push({
+    center: new Vector3(x, KERB / 2, z),
+    size: new Vector3(target.size, KERB, target.size),
+  });
   const lot = target.size - SIDEWALK * 2;
   const top = KERB;
   switch (target.kind) {
@@ -198,7 +211,8 @@ export function buildSkyline(): Mesh | undefined {
   });
   for (const target of BLOCKS) {
     const { root, solids } = buildBlock(target);
-    for (const solid of solids)
+    // The slabs are already drawn with the city; the skyline needs only what stands on them.
+    for (const solid of solids.filter((candidate) => candidate.size.y > KERB))
       batch.place({
         position: [solid.center.x, solid.center.y, solid.center.z],
         scale: [solid.size.x - 0.1, solid.size.y - 0.1, solid.size.z - 0.1],

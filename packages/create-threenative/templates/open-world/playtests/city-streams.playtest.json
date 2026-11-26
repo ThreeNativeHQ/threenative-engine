@@ -37,8 +37,8 @@
       {
         "entity": "city",
         "component": "resident",
-        "lte": 45,
-        "allowTrivial": "The bound holds from the first tick by design: it proves the city never builds all 81 blocks: at most the 45 within `keep`."
+        "lte": 21,
+        "allowTrivial": "The bound holds from the first tick by design: it proves the city never builds all 81 blocks: at most the 21 within `keep`."
       },
       {
         "entity": "world",

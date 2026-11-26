@@ -188,7 +188,7 @@ export const roadMaterial = new MeshStandardMaterial({
 });
 
 /**
- * The far skyline (`render/city.ts`): the structure colour without its grid, which a block 150 m
+ * The far skyline (`render/city.ts`): the structure colour without its grid, which a block 110 m
  * away cannot resolve anyway. One instanced draw, so it carries no world-space UVs.
  */
 export const skylineMaterial = new MeshStandardMaterial({

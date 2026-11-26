@@ -37,7 +37,9 @@ export const POPULATION = { traffic: 8, parked: 4, civilians: 12, maxCopsOnFoot:
  * all of it. Both stay inside `STREAMING.load` (`systems/streaming.ts`): nobody walks on an
  * unbuilt block.
  */
-export const POPULATION_RANGE = { spawn: 90, despawn: 120 } as const;
+export const POPULATION_RANGE = { spawn: 75, despawn: 100 } as const;
+/** People past this many metres from the player cast no shadow (`Humanoid.castShadowWithin`). */
+const SHADOW_RANGE = 25;
 /** Seconds a WASTED or BUSTED banner holds before the respawn. */
 const DOWN_TIME = 3;
 /** Respawn fee at the hospital or the police station. */
@@ -946,6 +948,7 @@ export class World {
   /** Keep the population topped up and the dead and the distant cleared away. */
   #housekeeping(): void {
     const where = this.player.where;
+    for (const ped of this.people) ped.castShadowWithin(where, SHADOW_RANGE);
     for (let index = this.people.length - 1; index >= 0; index -= 1) {
       const ped = this.people[index] as Pedestrian;
       const gone =

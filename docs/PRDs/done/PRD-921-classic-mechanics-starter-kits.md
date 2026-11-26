@@ -55,7 +55,7 @@ code, names, levels or art.
 ### Phase 2 — open-world kit
 
 - [x] `templates/open-world/` builds, typechecks, lints; only mannequin + grid materials — evidence: scaffold runs 2026-11-26 typecheck, eslint, biome clean; root `biome check .` 0 errors after the lint pass; template structure check clean.
-- [x] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=open-world pnpm test:templates` — evidence: 17 of 17 scenarios (16 mechanics + performance, 320,000-triangle budget from a measured 281,601) pass on headed WebGPU after review round 6.
+- [x] One fail-closed playtest per mechanic, all green with `TN_TEMPLATE_ONLY=open-world pnpm test:templates` — evidence: 18 of 18 scenarios (16 mechanics + city-streams + performance, 320,000-triangle budget from a measured 281,601) pass on headed WebGPU; city-streams added after review round 6.
 - [x] Kit contract row, kit notes `agent-docs/references/kit-open-world.md` — evidence: contract green (explore-clean, camera-sees-subject, hud-clean, no-hitch, restart-resets, action-clip-completes, effect-follows-contact; engine-cost and foot-slip opted out with reasons).
 
 ### Phase 3 — stealth kit
@@ -81,6 +81,7 @@ code, names, levels or art.
       `~/Downloads/prd-921-kits/<kit>/reviews/`.
 - [x] Every mechanic is proven by a fail-closed playtest and the kit contract is green — evidence:
       final headed WebGPU run 47 of 47 scenarios, contract exit 0 for all three kits.
+- [x] The open-world kit streams its world (owner request 2026-11-26) — evidence: the city grew from 3 x 3 to 9 x 9 blocks (about 460 m), landmarks at the same coordinates. `systems/streaming.ts` builds a block's towers, landmarks and colliders inside 110 m and frees them past 135 m, charged to the engine's `AdmissionBudget` (2 ms a frame); `buildSkyline` draws every block's solids as one instanced draw for the far field; civilians and traffic spawn within 75 m and clear past 100 m; people past 25 m cast no shadow. Red-green: `city-streams.playtest.json` (teleport 270 m: downtown freed, far corner built, at most 21 of 81 blocks built, no stray people or cars) failed before the streamer existed and passes now. Cost measured on the same scaffold: peak 127 draws and 268,259 triangles against 104 and 281,793 before, inside the 140-draw / 320,000-triangle budget. Asset streaming does not apply: the mannequin is the only asset, and the engine's coarse-first model streaming and cooked LOD skip skinned meshes. Frames: `~/Downloads/prd-921-kits/open-world/streaming/`.
 - [x] The reverse-engineering MCP carries more classic games for the mechanics — evidence:
       `ThreeNativeHQ/threenative-reverse-engineer-mcp` PR #9 merged, release v0.6 (58 assets, 56 games),
       eight new games including Resident Evil 1, 2 and Code: Veronica and Driver 2; GTA III, Vice City

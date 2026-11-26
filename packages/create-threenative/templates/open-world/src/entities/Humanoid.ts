@@ -68,6 +68,7 @@ export abstract class Humanoid {
   readonly conventions: IOpenWorldConventions;
   health: number;
   #action: Action = "idle";
+  #castsShadow = true;
   #remaining = 0;
   #attached = true;
   readonly #durations = new Map<string, number>();
@@ -127,6 +128,19 @@ export abstract class Humanoid {
   }
 
   /** The object the playtest bridge and the camera read: the visual wherever it stands. */
+  /**
+   * Shadow level of detail: a figure far from the player drops out of the shadow pass, where its
+   * 13,700 triangles would buy a shadow a few pixels long. Walks the rig only when the answer changes.
+   */
+  castShadowWithin(from: Vector3, metres: number): void {
+    const on = this.root.position.distanceTo(from) < metres;
+    if (on === this.#castsShadow) return;
+    this.#castsShadow = on;
+    this.character.root.traverse((object) => {
+      object.castShadow = on;
+    });
+  }
+
   get mesh(): Object3D {
     return this.#attached ? this.root : this.visual;
   }
