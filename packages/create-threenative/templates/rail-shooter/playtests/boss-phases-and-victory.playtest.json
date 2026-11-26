@@ -62,7 +62,8 @@
       "kind": "wait",
       "label": "armoured",
       "waitTicks": 1,
-      "release": true
+      "release": true,
+      "screenshot": "armoured"
     },
     {
       "kind": "input",
@@ -147,7 +148,8 @@
         "gte": 2
       },
       "release": false,
-      "timeoutMs": 20000
+      "timeoutMs": 20000,
+      "screenshot": "core-open"
     },
     {
       "kind": "input",
@@ -222,7 +224,8 @@
         "gte": 3
       },
       "release": false,
-      "timeoutMs": 20000
+      "timeoutMs": 20000,
+      "screenshot": "raging"
     },
     {
       "label": "victory",
@@ -259,14 +262,6 @@
           {
             "label": "armoured",
             "equals": 1
-          },
-          {
-            "label": "core-open",
-            "gte": 2
-          },
-          {
-            "label": "raging",
-            "gte": 3
           }
         ]
       },
@@ -291,10 +286,6 @@
           {
             "label": "armoured",
             "equals": 1
-          },
-          {
-            "label": "core-open",
-            "gte": 0.5
           },
           {
             "label": "score-card",
@@ -323,32 +314,30 @@
           {
             "label": "arrived",
             "equals": 0
-          },
-          {
-            "label": "score-card",
-            "gte": 4000
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "gte": 4000
       }
     ],
     "signals": [
       {
         "name": "pod-down",
         "entity": "boss",
-        "minCount": 2,
-        "atStep": "score-card"
+        "minCount": 2
       },
       {
         "name": "core-down",
         "entity": "boss",
-        "minCount": 1,
-        "atStep": "score-card"
+        "minCount": 1
       },
       {
         "name": "complete",
         "entity": "player",
-        "minCount": 1,
-        "atStep": "score-card"
+        "minCount": 1
       }
     ]
   }

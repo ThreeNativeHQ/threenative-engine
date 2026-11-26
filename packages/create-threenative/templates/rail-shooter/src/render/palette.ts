@@ -15,5 +15,3 @@ export const palette = {
   /** The sky photograph's own horizon: distance fades into this, and it is the loading backdrop. */
   horizon: 0xacb1c1,
 } as const;
-
-

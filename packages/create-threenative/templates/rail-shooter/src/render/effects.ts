@@ -1,4 +1,12 @@
-import { type Camera, Group, Mesh, MeshBasicMaterial, RingGeometry, SphereGeometry, Vector3 } from "three";
+import {
+  type Camera,
+  Group,
+  Mesh,
+  MeshBasicMaterial,
+  RingGeometry,
+  SphereGeometry,
+  type Vector3,
+} from "three";
 
 const BURSTS = 14;
 const BURST_TIME = 0.55;
@@ -39,13 +47,20 @@ export class Bursts {
       const age = (this.#age[index] ?? BURST_TIME) + dt;
       this.#age[index] = age;
       mesh.visible = age < BURST_TIME;
-      if (mesh.visible) mesh.scale.setScalar((this.#size[index] ?? 1) * Math.sin((age / BURST_TIME) * Math.PI));
+      if (mesh.visible)
+        mesh.scale.setScalar((this.#size[index] ?? 1) * Math.sin((age / BURST_TIME) * Math.PI));
     }
   }
 }
 
 const overlay = (color: number): MeshBasicMaterial =>
-  new MeshBasicMaterial({ color, depthTest: false, depthWrite: false, transparent: true, opacity: 0.9 });
+  new MeshBasicMaterial({
+    color,
+    depthTest: false,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.9,
+  });
 
 /** The reticle ahead of the nose and the brackets around the marked target. Both face the camera. */
 export class Sights {

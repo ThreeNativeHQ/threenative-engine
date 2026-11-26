@@ -48,6 +48,9 @@ export class Rail {
   /** `s` plus a lateral and vertical offset in that frame, written to `out`. */
   worldAt(s: number, x: number, y: number, out: Vector3, scratch: IRailFrame): Vector3 {
     this.frameAt(s, scratch);
-    return out.copy(scratch.position).addScaledVector(scratch.right, x).addScaledVector(scratch.up, y);
+    return out
+      .copy(scratch.position)
+      .addScaledVector(scratch.right, x)
+      .addScaledVector(scratch.up, y);
   }
 }

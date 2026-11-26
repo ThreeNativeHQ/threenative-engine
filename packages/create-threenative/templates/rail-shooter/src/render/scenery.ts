@@ -17,7 +17,7 @@ import { floorMaterial, propMaterial, structureMaterial, worldGridUVs } from "./
 const PYLON_HEIGHTS = [14, 26, 40] as const;
 const PYLON_EVERY = 38;
 const GATE_EVERY = 210;
-const GROUND_SIZE = 900;
+const GROUND_SIZE = 3000;
 
 /** A deterministic 0..1 from an index, so the same rail always gets the same pylons. */
 function hash(index: number): number {
@@ -53,9 +53,7 @@ export function createScenery(rail: Rail): IScenery {
       const heights = byHeight[Math.min(2, Math.floor(roll * 3))];
       const height = PYLON_HEIGHTS[Math.min(2, Math.floor(roll * 3))] ?? 14;
       rail.frameAt(s + roll * 12, frame);
-      place
-        .copy(frame.position)
-        .addScaledVector(frame.right, side * (28 + hash(index + 90) * 16));
+      place.copy(frame.position).addScaledVector(frame.right, side * (28 + hash(index + 90) * 16));
       place.y = height / 2;
       heights?.push(matrix.clone().compose(place, turn.identity(), one));
     }
@@ -80,7 +78,11 @@ export function createScenery(rail: Rail): IScenery {
     matrix.makeBasis(frame.right, frame.up, frame.forward).setPosition(frame.position);
     gates.push(matrix.clone());
   }
-  const rings = new InstancedMesh(new TorusGeometry(15, 0.5, 8, 40), propMaterial, Math.max(1, gates.length));
+  const rings = new InstancedMesh(
+    new TorusGeometry(15, 0.5, 8, 40),
+    propMaterial,
+    Math.max(1, gates.length),
+  );
   for (const [at, entry] of gates.entries()) rings.setMatrixAt(at, entry);
   rings.count = gates.length;
   group.add(rings);

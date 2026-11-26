@@ -1,9 +1,9 @@
 import type { InputMap } from "@threenative/core";
 import { Group, MathUtils, Matrix4, Vector3 } from "three";
-import { createShipModel } from "../render/hulls.js";
 import { type IRailFrame, type Rail, createFrame } from "../rail.js";
-import { AIM, ROLL, SHIELD, SHIP } from "../tuning.js";
+import { createShipModel } from "../render/hulls.js";
 import type { FlightMode } from "../state.js";
+import { AIM, ROLL, SHIELD, SHIP } from "../tuning.js";
 
 const _basis = new Matrix4();
 const _frame = createFrame();
@@ -33,7 +33,7 @@ export class Ship {
   aimY = 0;
   /** Speed above (+) or below (-) cruise, m/s. */
   speedOffset = 0;
-  speed = SHIP.cruise;
+  speed: number = SHIP.cruise;
   mode: FlightMode = "cruise";
   gauge = 0;
   gaugeLocked = false;
@@ -52,7 +52,10 @@ export class Ship {
   #tap = { left: 0, right: 0 };
   #roll = { angle: 0, dir: 1, spin: 0, rate: 0 };
 
-  constructor(private readonly rail: Rail, private readonly arenaStop: number) {
+  constructor(
+    private readonly rail: Rail,
+    private readonly arenaStop: number,
+  ) {
     this.group.name = "ship";
     this.group.add(this.model);
     this.model.rotation.order = "YXZ";
@@ -102,7 +105,8 @@ export class Ship {
     this.#throttle = MathUtils.damp(this.#throttle, held ? 1 : 0, 2.5, dt);
     // rails-path-progress: the course scrolls by the ship's speed; at the arena it comes to rest.
     const toStop = Math.max(0, this.arenaStop - this.s);
-    this.speed = Math.max(0, SHIP.cruise + this.speedOffset) * Math.min(1, toStop / 60) * this.#throttle;
+    this.speed =
+      Math.max(0, SHIP.cruise + this.speedOffset) * Math.min(1, toStop / 60) * this.#throttle;
     this.s = Math.min(this.arenaStop, this.s + this.speed * dt);
     this.#bank(input, dt);
     this.#place(held);
@@ -133,7 +137,10 @@ export class Ship {
     const roll = this.#roll;
     this.#tap.left = Math.max(0, this.#tap.left - dt);
     this.#tap.right = Math.max(0, this.#tap.right - dt);
-    for (const [key, side, dir] of [["rollLeft", "left", 1], ["rollRight", "right", -1]] as const) {
+    for (const [key, side, dir] of [
+      ["rollLeft", "left", 1],
+      ["rollRight", "right", -1],
+    ] as const) {
       if (!input.justPressed(key)) continue;
       if (this.#tap[side] > 0 && !this.rolling) {
         roll.dir = dir;
@@ -158,24 +165,28 @@ export class Ship {
   #steer(input: InputMap, dt: number): void {
     const stick = input.vector("move");
     const scale = this.rolling ? ROLL.steerScale : 1;
-    const follow = 1 - Math.exp(-SHIP.steerRate * dt);
-    this.#vx += (stick.x * SHIP.steerSpeed * scale - this.#vx) * follow;
-    this.#vy += (stick.y * SHIP.steerSpeed * 0.6 * scale - this.#vy) * follow;
+    this.#vx = MathUtils.damp(this.#vx, stick.x * SHIP.steerSpeed * scale, SHIP.steerRate, dt);
+    this.#vy = MathUtils.damp(
+      this.#vy,
+      stick.y * SHIP.steerSpeed * 0.6 * scale,
+      SHIP.steerRate,
+      dt,
+    );
     this.offsetX = MathUtils.clamp(this.offsetX + this.#vx * dt, -SHIP.boxX, SHIP.boxX);
     this.offsetY = MathUtils.clamp(this.offsetY + this.#vy * dt, -SHIP.boxY, SHIP.boxY);
     if (Math.abs(this.offsetX) >= SHIP.boxX) this.#vx = 0;
     if (Math.abs(this.offsetY) >= SHIP.boxY) this.#vy = 0;
     // The reticle leads the stick, ahead of the nose.
-    const follow2 = 1 - Math.exp(-AIM.follow * dt);
-    this.aimX += (stick.x * AIM.leadX - this.aimX) * follow2;
-    this.aimY += (stick.y * AIM.leadY - this.aimY) * follow2;
+    this.aimX = MathUtils.damp(this.aimX, stick.x * AIM.leadX, AIM.follow, dt);
+    this.aimY = MathUtils.damp(this.aimY, stick.y * AIM.leadY, AIM.follow, dt);
   }
 
   /** banking: a held shoulder key leans the hull to 90 degrees; the stick leans it into the turn. */
   #bank(input: InputMap, dt: number): void {
-    const hold = (input.pressed("rollLeft") ? 1 : 0) - (input.pressed("rollRight") ? 1 : 0);
-    const target = hold !== 0 ? hold * SHIP.bankHold : (-this.#vx / SHIP.steerSpeed) * SHIP.bankLean;
-    const step = (target - this.bank) * (1 - Math.exp(-SHIP.bankChase * dt));
+    const hold = -input.vector("bank").x;
+    const target =
+      hold !== 0 ? hold * SHIP.bankHold : (-this.#vx / SHIP.steerSpeed) * SHIP.bankLean;
+    const step = MathUtils.damp(this.bank, target, SHIP.bankChase, dt) - this.bank;
     const limit = SHIP.bankLimit * dt;
     this.bank += Math.max(-limit, Math.min(limit, step));
   }
@@ -183,13 +194,22 @@ export class Ship {
   #place(held: boolean): void {
     this.rail.frameAt(this.s, this.frame);
     const { position, right, up, forward } = this.frame;
-    this.position.copy(position).addScaledVector(right, this.offsetX).addScaledVector(up, this.offsetY);
+    this.position
+      .copy(position)
+      .addScaledVector(right, this.offsetX)
+      .addScaledVector(up, this.offsetY);
     this.velocity.copy(forward).multiplyScalar(this.speed);
     this.group.position.copy(this.position);
-    this.group.quaternion.setFromRotationMatrix(_basis.makeBasis(right, up, _frame.forward.copy(forward).negate()));
+    this.group.quaternion.setFromRotationMatrix(
+      _basis.makeBasis(right, up, _frame.forward.copy(forward).negate()),
+    );
     // The model leans into its lateral motion: a little yaw and pitch, the bank, then any roll.
     const turn = held ? this.#vx / SHIP.steerSpeed : 0;
-    this.model.rotation.set(this.#vy / SHIP.steerSpeed * 0.25, -turn * 0.3, this.bank + this.#roll.dir * this.#roll.angle);
+    this.model.rotation.set(
+      (this.#vy / SHIP.steerSpeed) * 0.25,
+      -turn * 0.3,
+      this.bank + this.#roll.dir * this.#roll.angle,
+    );
     // The nose and the reticle sit ahead on the rail's direction, with the reticle led by the stick.
     this.nose.copy(this.position).addScaledVector(forward, 2.6);
     this.reticle

@@ -60,7 +60,9 @@ export const ROLL = {
    * barrel-roll: the rate then decays (fox_play.c:4857). The card decays 5 degrees per update per
    * update, which leaves 390 degrees. This kit decays so the whole roll is exactly one turn.
    */
-  decayTime: (360 * DEGREES - 30 * PER_SECOND * DEGREES * (10 / UPDATE_HZ)) / (0.5 * 30 * PER_SECOND * DEGREES),
+  decayTime:
+    (360 * DEGREES - 30 * PER_SECOND * DEGREES * (10 / UPDATE_HZ)) /
+    (0.5 * 30 * PER_SECOND * DEGREES),
   /** barrel-roll: lateral velocity x1.5 during a roll (fox_play.c:4853). */
   steerScale: 1.5,
   /** How far from the hull a shot is turned back while the roll lasts, metres. Own tuning. */

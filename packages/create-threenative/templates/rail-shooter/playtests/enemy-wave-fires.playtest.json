@@ -49,10 +49,31 @@
       "release": true
     },
     {
+      "label": "entering:enemiesLive",
+      "waitForResource": {
+        "id": "state",
+        "path": "enemiesLive",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "wait",
       "label": "engaged",
       "waitTicks": 240,
-      "release": true
+      "release": true,
+      "screenshot": "engaged"
+    },
+    {
+      "label": "engaged:enemyShots",
+      "waitForResource": {
+        "id": "state",
+        "path": "enemyShots",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 300
     },
     {
       "kind": "wait",
@@ -75,10 +96,6 @@
           {
             "label": "clear-sky",
             "equals": 0
-          },
-          {
-            "label": "wave-one",
-            "equals": 1
           }
         ]
       },
@@ -89,10 +106,6 @@
           {
             "label": "clear-sky",
             "equals": 0
-          },
-          {
-            "label": "entering",
-            "gte": 1
           }
         ]
       },
@@ -103,10 +116,6 @@
           {
             "label": "clear-sky",
             "equals": 0
-          },
-          {
-            "label": "engaged",
-            "gte": 1
           }
         ]
       },

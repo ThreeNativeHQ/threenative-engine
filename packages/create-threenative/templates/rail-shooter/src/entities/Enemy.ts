@@ -1,10 +1,11 @@
 import { PathFollow3D } from "@threenative/core";
-import { Group, Quaternion, Vector3 } from "three";
-import { createGunshipModel, createScoutModel } from "../render/hulls.js";
+import { Group, MathUtils, Quaternion, Vector3 } from "three";
 import type { EnemyKind } from "../level.js";
+import { createGunshipModel, createScoutModel } from "../render/hulls.js";
 import { ENEMY, SHIELD } from "../tuning.js";
 import type { ITarget } from "./Target.js";
 import type { Weapons } from "./Weapons.js";
+import { interceptDirection } from "./aim.js";
 
 const _forward = new Vector3(0, 0, -1);
 const _quaternion = new Quaternion();
@@ -66,7 +67,8 @@ export class Enemy implements ITarget {
     this.#pinned = options.pinned;
     this.#delay = options.delay ?? 0;
     this.#fire = spec.interval * 0.6 + (options.delay ?? 0) * 0.1;
-    this.#path = options.path === undefined ? undefined : new PathFollow3D({ points: [...options.path] });
+    this.#path =
+      options.path === undefined ? undefined : new PathFollow3D({ points: [...options.path] });
     this.group.name = this.id;
     this.group.add(options.kind === "scout" ? createScoutModel() : createGunshipModel());
     this.group.visible = false;
@@ -86,7 +88,12 @@ export class Enemy implements ITarget {
     return true;
   }
 
-  update(dt: number, ship: IShipView, rig: { readonly world: (ahead: number, x: number, y: number, out: Vector3) => Vector3 }, weapons: Weapons): void {
+  update(
+    dt: number,
+    ship: IShipView,
+    rig: { readonly world: (ahead: number, x: number, y: number, out: Vector3) => Vector3 },
+    weapons: Weapons,
+  ): void {
     if (this.killed || this.escaped) return;
     if (this.#delay > 0) {
       this.#delay -= dt;
@@ -106,7 +113,7 @@ export class Enemy implements ITarget {
     this.group.position.copy(_sample.point);
     // Face the way it flies, and roll a little into the bend.
     _quaternion.setFromUnitVectors(_forward, _sample.tangent);
-    this.group.quaternion.slerp(_quaternion, 1 - Math.exp(-8 * dt));
+    this.group.quaternion.slerp(_quaternion, MathUtils.damp(0, 1, 8, dt));
     if (path.completed) {
       this.live = false;
       this.escaped = true;
@@ -126,8 +133,13 @@ export class Enemy implements ITarget {
     // The ship looks down +forward, so an enemy in front of it has ship - enemy pointing back along forward.
     if (distance < ENEMY.fireNear || distance > ENEMY.fireFar || ahead < 5) return;
     this.#fire = this.#interval;
-    _lead.copy(ship.position).addScaledVector(ship.velocity, distance / ENEMY.shotSpeed);
-    const direction = _lead.sub(this.group.position).normalize();
+    const direction = interceptDirection(
+      this.group.position,
+      ship.position,
+      ship.velocity,
+      ENEMY.shotSpeed,
+      _lead,
+    );
     for (const spread of this.kind === "gunship" ? [-1, 0, 1] : [0])
       weapons.fireEnemy(
         this.group.position,
@@ -141,6 +153,11 @@ export class Enemy implements ITarget {
   }
 
   debug(): Record<string, unknown> {
-    return { hp: this.hp, kind: this.kind, live: this.live, position: this.group.position.toArray() };
+    return {
+      hp: this.hp,
+      kind: this.kind,
+      live: this.live,
+      position: this.group.position.toArray(),
+    };
   }
 }

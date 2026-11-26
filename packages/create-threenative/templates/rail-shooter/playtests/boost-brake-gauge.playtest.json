@@ -29,7 +29,34 @@
       "kind": "input",
       "label": "boosting",
       "press": "ShiftLeft",
-      "holdTicks": 30,
+      "holdTicks": 22,
+      "release": false
+    },
+    {
+      "label": "boosting:speed",
+      "waitForResource": {
+        "id": "state",
+        "path": "speed",
+        "gte": 28
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "boosting:gauge",
+      "waitForResource": {
+        "id": "state",
+        "path": "gauge",
+        "gte": 25
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "boost-ends",
+      "press": "ShiftLeft",
+      "holdTicks": 8,
       "release": true
     },
     {
@@ -45,10 +72,43 @@
       "release": true
     },
     {
+      "label": "recovering:gauge",
+      "waitForResource": {
+        "id": "state",
+        "path": "gauge",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "wait",
+      "label": "settling",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
       "kind": "input",
       "label": "braking",
       "press": "KeyX",
-      "holdTicks": 30,
+      "holdTicks": 34,
+      "release": false
+    },
+    {
+      "label": "braking:gauge",
+      "waitForResource": {
+        "id": "state",
+        "path": "gauge",
+        "gte": 10
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "brake-ends",
+      "press": "KeyX",
+      "holdTicks": 12,
       "release": true
     },
     {
@@ -71,6 +131,16 @@
       "release": true
     },
     {
+      "label": "overheating:gaugeLocked",
+      "waitForResource": {
+        "id": "state",
+        "path": "gaugeLocked",
+        "equals": 1
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "wait",
       "label": "cooling-down",
       "waitTicks": 2,
@@ -90,12 +160,7 @@
         "atSteps": [
           {
             "label": "cruising",
-            "gte": 21.5,
             "lte": 22.5
-          },
-          {
-            "label": "boosting",
-            "gte": 30
           },
           {
             "label": "braking",
@@ -103,7 +168,7 @@
           },
           {
             "label": "coasting",
-            "gte": 20
+            "lte": 22.5
           }
         ]
       },
@@ -138,21 +203,12 @@
             "lte": 0.5
           },
           {
-            "label": "boosting",
-            "gte": 30
-          },
-          {
             "label": "recovering",
-            "gte": 1,
-            "lte": 30
-          },
-          {
-            "label": "braking",
-            "gte": 15
+            "lte": 40
           },
           {
             "label": "coasting",
-            "lte": 20
+            "lte": 55
           }
         ]
       },
@@ -162,6 +218,10 @@
         "atSteps": [
           {
             "label": "boosting",
+            "equals": 0
+          },
+          {
+            "label": "braking",
             "equals": 0
           },
           {

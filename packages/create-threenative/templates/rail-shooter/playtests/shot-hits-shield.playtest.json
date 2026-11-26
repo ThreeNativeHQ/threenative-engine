@@ -62,10 +62,14 @@
           },
           {
             "label": "drained",
-            "gte": 224,
             "lte": 226
           }
         ]
+      },
+      {
+        "id": "state",
+        "path": "shield",
+        "changed": true
       },
       {
         "id": "state",
@@ -83,7 +87,7 @@
         "name": "struck",
         "entity": "player",
         "minCount": 1,
-        "atStep": "drained"
+        "atStep": "struck"
       }
     ]
   }

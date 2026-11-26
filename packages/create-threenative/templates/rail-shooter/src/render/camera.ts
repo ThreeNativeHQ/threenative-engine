@@ -45,7 +45,9 @@ export function createRailCamera(camera: PerspectiveCamera): IRailCamera {
       .addScaledVector(ahead.right, offsetX * CAMERA.follow)
       .addScaledVector(ahead.up, offsetY * CAMERA.follow);
     camera.position.lerp(_eye, blend);
-    camera.up.set(0, 1, 0).applyAxisAngle(_look.clone().sub(camera.position).normalize(), input.bank * CAMERA.roll);
+    camera.up
+      .set(0, 1, 0)
+      .applyAxisAngle(_look.clone().sub(camera.position).normalize(), input.bank * CAMERA.roll);
     camera.lookAt(_look);
   };
   return {

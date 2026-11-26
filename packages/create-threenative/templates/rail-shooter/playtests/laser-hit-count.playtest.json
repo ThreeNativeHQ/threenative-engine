@@ -59,6 +59,16 @@
       "release": true
     },
     {
+      "label": "destroyed:score",
+      "waitForResource": {
+        "id": "state",
+        "path": "score",
+        "gte": 100
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "input",
       "label": "rapid",
       "press": "Space",
@@ -70,6 +80,16 @@
       "label": "rapid-done",
       "waitTicks": 4,
       "release": true
+    },
+    {
+      "label": "rapid-done:shots",
+      "waitForResource": {
+        "id": "state",
+        "path": "shots",
+        "gte": 10
+      },
+      "release": false,
+      "timeoutMs": 300
     }
   ],
   "assert": {
@@ -94,10 +114,6 @@
           {
             "label": "destroyed",
             "equals": 2
-          },
-          {
-            "label": "rapid-done",
-            "gte": 10
           }
         ]
       },
@@ -140,10 +156,6 @@
           {
             "label": "one-hit",
             "equals": 0
-          },
-          {
-            "label": "destroyed",
-            "gte": 100
           }
         ]
       }

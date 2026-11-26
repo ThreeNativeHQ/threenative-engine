@@ -43,6 +43,26 @@
       "label": "repaired",
       "waitTicks": 150,
       "release": true
+    },
+    {
+      "label": "repaired:pickups",
+      "waitForResource": {
+        "id": "state",
+        "path": "pickups",
+        "equals": 1
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "repaired:shield",
+      "waitForResource": {
+        "id": "state",
+        "path": "shield",
+        "gte": 228
+      },
+      "release": false,
+      "timeoutMs": 300
     }
   ],
   "assert": {
@@ -59,10 +79,6 @@
           {
             "label": "flying",
             "equals": 0
-          },
-          {
-            "label": "repaired",
-            "equals": 1
           }
         ]
       },
@@ -76,7 +92,6 @@
           },
           {
             "label": "repaired",
-            "gte": 228,
             "lte": 240
           }
         ]

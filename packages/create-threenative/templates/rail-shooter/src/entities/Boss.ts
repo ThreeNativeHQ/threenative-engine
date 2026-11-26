@@ -4,6 +4,7 @@ import { BOSS, ENEMY, SHIELD } from "../tuning.js";
 import type { IShipView } from "./Enemy.js";
 import type { ITarget } from "./Target.js";
 import type { Weapons } from "./Weapons.js";
+import { interceptDirection } from "./aim.js";
 
 const UP = new Vector3(0, 1, 0);
 const _aim = new Vector3();
@@ -57,7 +58,13 @@ export class Boss {
     new WeakPoint("boss.pod.left", BOSS.pod.hp, BOSS.pod.radius, BOSS.pod.score, () => false),
     new WeakPoint("boss.pod.right", BOSS.pod.hp, BOSS.pod.radius, BOSS.pod.score, () => false),
   ];
-  readonly core = new WeakPoint("boss.core", BOSS.core.hp, BOSS.core.radius, BOSS.core.score, () => this.podsLeft > 0);
+  readonly core = new WeakPoint(
+    "boss.core",
+    BOSS.core.hp,
+    BOSS.core.radius,
+    BOSS.core.score,
+    () => this.podsLeft > 0,
+  );
   engaged = false;
   defeated = false;
   /** Seconds since the core fell. */
@@ -100,17 +107,25 @@ export class Boss {
   ): readonly IBossEvent[] {
     if (this.defeated) {
       this.dying += dt;
+      // The hull is gone once the burning has run its course.
+      this.group.visible = this.dying < 1.6;
       return [];
     }
-    if (!this.engaged && anchor.distanceTo(ship.position) < BOSS.engageDistance) this.engaged = true;
+    if (!this.engaged && anchor.distanceTo(ship.position) < BOSS.engageDistance)
+      this.engaged = true;
     this.group.visible = true;
     this.#clock += dt;
     const rate = BOSS.sway.speed * (this.phase === 3 ? 1.7 : 1);
     this.group.position
       .copy(anchor)
       .addScaledVector(axes.right, this.engaged ? Math.sin(this.#clock * rate) * BOSS.sway.x : 0)
-      .addScaledVector(axes.up, this.engaged ? Math.sin(this.#clock * rate * 1.7) * BOSS.sway.y : 0);
-    this.group.quaternion.setFromRotationMatrix(_basis.makeBasis(_left.copy(axes.right).negate(), axes.up, axes.forward));
+      .addScaledVector(
+        axes.up,
+        this.engaged ? Math.sin(this.#clock * rate * 1.7) * BOSS.sway.y : 0,
+      );
+    this.group.quaternion.setFromRotationMatrix(
+      _basis.makeBasis(_left.copy(axes.right).negate(), axes.up, axes.forward),
+    );
     this.group.updateMatrixWorld(true);
     for (const [index, pod] of this.pods.entries()) {
       const part = this.model.pods[index];
@@ -157,10 +172,13 @@ export class Boss {
   }
 
   #volley(from: Vector3, ship: IShipView, weapons: Weapons, spreads: readonly number[]): void {
-    const distance = from.distanceTo(ship.position);
-    _aim.copy(ship.position).addScaledVector(ship.velocity, distance / ENEMY.shotSpeed).sub(from).normalize();
+    interceptDirection(from, ship.position, ship.velocity, ENEMY.shotSpeed, _aim);
     for (const spread of spreads)
-      weapons.fireEnemy(from, _shot.copy(_aim).applyAxisAngle(UP, spread * 0.11), SHIELD.shotDamage);
+      weapons.fireEnemy(
+        from,
+        _shot.copy(_aim).applyAxisAngle(UP, spread * 0.11),
+        SHIELD.shotDamage,
+      );
   }
 
   debug(): Record<string, unknown> {

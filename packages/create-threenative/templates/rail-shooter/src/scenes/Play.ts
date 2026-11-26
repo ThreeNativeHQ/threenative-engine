@@ -10,7 +10,7 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { type Mesh, type PerspectiveCamera, Vector3 } from "three";
 import { Boss } from "../entities/Boss.js";
-import { Enemy, type IShipView } from "../entities/Enemy.js";
+import type { Enemy, IShipView } from "../entities/Enemy.js";
 import { Ship } from "../entities/Ship.js";
 import type { ITarget } from "../entities/Target.js";
 import { Weapons } from "../entities/Weapons.js";
@@ -25,11 +25,17 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
-import { type QualityTier, isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
+import {
+  type QualityTier,
+  isWebGLFallbackRenderer,
+  materialLightingEnabled,
+} from "../render/quality.js";
 import { createScenery } from "../render/scenery.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
-import type { GameState } from "../state.js";
+import type { GamePhase, GameState } from "../state.js";
 import { BOSS, CAMERA, ENEMY, SHIELD, SHIP } from "../tuning.js";
+import { createStations } from "./stations.js";
+import { createWave } from "./waves.js";
 
 type GameCtx = ICtx<GameState>;
 
@@ -189,7 +195,11 @@ export class Play extends Scene<GameState> {
     const ahead = createFrame();
     const arena = createFrame();
     const scratch = createFrame();
-    const shipView: IShipView = { position: ship.position, velocity: ship.velocity, forward: ship.frame.forward };
+    const shipView: IShipView = {
+      position: ship.position,
+      velocity: ship.velocity,
+      forward: ship.frame.forward,
+    };
     const enemies: Enemy[] = [];
     const rig = {
       world: (distance: number, x: number, y: number, out: Vector3): Vector3 =>
@@ -212,8 +222,8 @@ export class Play extends Scene<GameState> {
     let missionTime = 0;
     let message = "";
     let messageTimer = 0;
-    let finished = false;
-    let dummies = 0;
+    // Local, and published every tick: a restart through `goto` keeps the store, so this is what resets it.
+    let phase: GamePhase = "playing";
     let deathBurst = 0;
     const say = (text: string): void => {
       message = text;
@@ -223,54 +233,22 @@ export class Play extends Scene<GameState> {
     const spawnWave = (index: number): void => {
       const spec = WAVES[index];
       if (spec === undefined) return;
-      for (let slot = 0; slot < spec.count; slot += 1) {
-        const side = spec.mirror === true && slot % 2 === 1 ? -1 : 1;
-        const path = spec.path.map(([distance, x, y]) =>
-          rail.worldAt(spec.trigger + distance, x * side, y, new Vector3(), scratch),
-        );
-        addEnemy(new Enemy({ id: `w${index + 1}.${slot + 1}`, kind: spec.kind, path, delay: slot * spec.gap }));
-      }
+      for (const enemy of createWave(spec, index, rail, scratch)) addEnemy(enemy);
       wave = index + 1;
       say(`WAVE ${wave}`);
       emitPlaytestEvent({ entity: "director", name: "wave", wave });
     };
 
-    /**
-     * Playtest stations: each key sets up one situation, so a scenario proves one mechanic in a few
-     * ticks instead of a long flight. Delete them with the playtests.
-     */
-    const stations: Readonly<Record<string, () => void>> = {
-      // A hostile shot 14 m ahead, aimed at the ship.
-      station1: () => {
-        const from = new Vector3().copy(ship.position).addScaledVector(ship.frame.forward, 14);
-        weapons.fireEnemy(from, ship.frame.forward.clone().negate(), SHIELD.shotDamage);
+    const stations = createStations({
+      ship,
+      weapons,
+      addEnemy,
+      arenaStop,
+      skipTo: (s) => {
+        ship.s = s;
+        wave = Math.max(wave, WAVES.filter((spec) => spec.trigger <= s).length);
       },
-      // A scout riding 40 m ahead on the reticle's line, for the laser and its hit count.
-      station2: () => addEnemy(new Enemy({ id: `dummy.${++dummies}`, kind: "scout", pinned: { ahead: 40, x: 0, y: 0 } })),
-      // A gunship riding 45 m ahead and 8 m to the side: outside the lasers, inside the lock-on.
-      station3: () => addEnemy(new Enemy({ id: `dummy.${++dummies}`, kind: "gunship", pinned: { ahead: 45, x: 8, y: 0 } })),
-      // Just before the first wave.
-      station4: () => {
-        ship.s = (WAVES[0]?.trigger ?? 150) - 4;
-      },
-      // Wounded, 12 m before the first shield ring and lined up with it.
-      station5: () => {
-        const [s, x, y] = PICKUPS[0] ?? [700, 0, 0];
-        ship.s = s - 12;
-        ship.offsetX = x;
-        ship.offsetY = y;
-        ship.hit(120);
-      },
-      // At the arena, with the hull unhurtable so a long fight outlives the boss's fire.
-      station6: () => {
-        ship.s = arenaStop - 70;
-        ship.invulnerable = true;
-      },
-      // A killing blow, through the same path every hit takes.
-      station7: () => {
-        ship.hit(SHIELD.max + 10);
-      },
-    };
+    });
     const stationNames = Object.keys(stations);
 
     const events = {
@@ -293,7 +271,15 @@ export class Play extends Scene<GameState> {
     };
 
     // Seat the camera behind the ship before the first frame.
-    const cameraInput = { behind, ahead, offsetX: 0, offsetY: 0, push: 0, bank: 0, shake: new Vector3() };
+    const cameraInput = {
+      behind,
+      ahead,
+      offsetX: 0,
+      offsetY: 0,
+      push: 0,
+      bank: 0,
+      shake: new Vector3(),
+    };
     const seat = (snap: boolean, dt: number): void => {
       rail.frameAt(ship.s - CAMERA.back, behind);
       rail.frameAt(ship.s + CAMERA.look, ahead);
@@ -315,7 +301,7 @@ export class Play extends Scene<GameState> {
         void frameCtx.goto("play");
         return;
       }
-      const playing = frameCtx.state.getState().phase === "playing";
+      const playing = phase === "playing";
       for (const name of UNDER_PLAYTEST ? stationNames : []) {
         if (!frameCtx.input.justPressed(name)) continue;
         stations[name]?.();
@@ -327,7 +313,8 @@ export class Play extends Scene<GameState> {
       ship.update(frameCtx.input, dt, flying);
 
       // Waves appear as the ship reaches their trigger.
-      while (wave < WAVES.length && ship.s >= (WAVES[wave]?.trigger ?? Number.POSITIVE_INFINITY)) spawnWave(wave);
+      while (wave < WAVES.length && ship.s >= (WAVES[wave]?.trigger ?? Number.POSITIVE_INFINITY))
+        spawnWave(wave);
 
       // The boss hangs ahead of the end of the rail, facing back at the ship.
       rail.frameAt(arenaStop + BOSS.ahead, arena);
@@ -345,7 +332,9 @@ export class Play extends Scene<GameState> {
           deathBurst = 0.18;
           const spin = boss.dying * 9;
           bursts.spawn(
-            boss.group.position.clone().add(new Vector3(Math.sin(spin) * 5, Math.cos(spin * 1.3) * 2, 0)),
+            boss.group.position
+              .clone()
+              .add(new Vector3(Math.sin(spin) * 5, Math.cos(spin * 1.3) * 2, 0)),
             3 + Math.abs(Math.sin(spin)) * 2,
           );
         }
@@ -404,17 +393,15 @@ export class Play extends Scene<GameState> {
       seat(false, dt);
 
       // The run ends on a dead hull or a dead boss.
-      if (playing && !finished) {
+      if (playing) {
         if (ship.dead) {
-          finished = true;
-          frameCtx.state.set({ phase: "lost" });
+          phase = "lost";
           bursts.spawn(ship.position, 5);
           say("SHIP DESTROYED");
           emitPlaytestEvent({ entity: "player", name: "destroyed" });
         } else if (boss.defeated && boss.dying >= DEATH_TIME) {
-          finished = true;
+          phase = "won";
           score += Math.round(ship.shield) * 4;
-          frameCtx.state.set({ phase: "won" });
           say("MISSION COMPLETE");
           emitPlaytestEvent({ entity: "player", name: "complete" });
         }
@@ -423,6 +410,7 @@ export class Play extends Scene<GameState> {
       messageTimer = Math.max(0, messageTimer - dt);
       if (messageTimer === 0) message = "";
       Object.assign(frame, {
+        phase,
         shield: round(ship.shield, 10),
         gauge: round(ship.gauge, 10),
         gaugeLocked: ship.gaugeLocked ? 1 : 0,

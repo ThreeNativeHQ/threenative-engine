@@ -22,6 +22,7 @@ const game = defineGame<GameState>({
     boost: { buttons: [5], keys: ["ShiftLeft", "ShiftRight"] },
     brake: { buttons: [4], keys: ["KeyX", "ControlLeft"] },
     // Hold to bank hard; tap twice to barrel roll, which turns enemy shots back.
+    bank: { left: ["KeyQ"], right: ["KeyE"] },
     rollLeft: { buttons: [2], keys: ["KeyQ"] },
     rollRight: { buttons: [1], keys: ["KeyE"] },
     restart: { buttons: [9], keys: ["KeyR"] },

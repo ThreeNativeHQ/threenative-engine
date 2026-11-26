@@ -131,7 +131,7 @@
         "name": "destroyed",
         "entity": "player",
         "minCount": 1,
-        "atStep": "result-card"
+        "atStep": "wrecked"
       }
     ]
   }

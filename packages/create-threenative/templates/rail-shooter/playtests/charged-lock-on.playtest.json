@@ -49,7 +49,15 @@
       "kind": "input",
       "label": "charging",
       "press": "Space",
-      "holdTicks": 56,
+      "holdTicks": 50,
+      "release": false,
+      "screenshot": "charging"
+    },
+    {
+      "kind": "input",
+      "label": "charge-ends",
+      "press": "Space",
+      "holdTicks": 6,
       "release": true
     },
     {

@@ -27,6 +27,26 @@
       "release": true
     },
     {
+      "label": "steering-right:aimX",
+      "waitForResource": {
+        "id": "state",
+        "path": "aimX",
+        "gte": 3
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "steering-right:offsetX",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetX",
+        "gte": 4
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
       "kind": "wait",
       "label": "settle-right",
       "waitTicks": 1,
@@ -51,6 +71,36 @@
       "label": "at-the-wall",
       "waitTicks": 2,
       "release": true
+    },
+    {
+      "label": "at-the-wall:offsetX",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetX",
+        "gte": 10.9
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "at-the-wall:offsetY",
+      "waitForResource": {
+        "id": "state",
+        "path": "offsetY",
+        "gte": 5.9
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "at-the-wall:railS",
+      "waitForResource": {
+        "id": "state",
+        "path": "railS",
+        "gte": 80
+      },
+      "release": false,
+      "timeoutMs": 300
     }
   ],
   "assert": {
@@ -60,16 +110,6 @@
       "runtimeReady": true
     },
     "resources": [
-      {
-        "id": "state",
-        "path": "aimX",
-        "atSteps": [
-          {
-            "label": "steering-right",
-            "gte": 3
-          }
-        ]
-      },
       {
         "id": "state",
         "path": "bank",
@@ -85,12 +125,7 @@
         "path": "offsetX",
         "atSteps": [
           {
-            "label": "steering-right",
-            "gte": 4
-          },
-          {
             "label": "at-the-wall",
-            "gte": 10.9,
             "lte": 11.0
           }
         ]
@@ -105,18 +140,7 @@
           },
           {
             "label": "at-the-wall",
-            "gte": 5.9,
             "lte": 6.0
-          }
-        ]
-      },
-      {
-        "id": "state",
-        "path": "railS",
-        "atSteps": [
-          {
-            "label": "at-the-wall",
-            "gte": 80
           }
         ]
       }

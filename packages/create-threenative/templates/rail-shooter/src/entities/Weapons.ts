@@ -49,7 +49,8 @@ const _hidden = new Matrix4().makeScale(0, 0, 0);
 function segmentDistance(from: Vector3, to: Vector3, point: Vector3): number {
   _segment.subVectors(to, from);
   const length = _segment.lengthSq();
-  const along = length === 0 ? 0 : Math.min(1, Math.max(0, _to.subVectors(point, from).dot(_segment) / length));
+  const along =
+    length === 0 ? 0 : Math.min(1, Math.max(0, _to.subVectors(point, from).dot(_segment) / length));
   return _closest.copy(from).addScaledVector(_segment, along).distanceTo(point);
 }
 
@@ -81,7 +82,11 @@ export class Weapons {
 
   constructor() {
     this.group.name = "weapons";
-    const make = (geometry: BoxGeometry | SphereGeometry, color: number, count: number): InstancedMesh => {
+    const make = (
+      geometry: BoxGeometry | SphereGeometry,
+      color: number,
+      count: number,
+    ): InstancedMesh => {
       const mesh = new InstancedMesh(geometry, new MeshBasicMaterial({ color }), count);
       mesh.frustumCulled = false;
       for (let index = 0; index < count; index += 1) mesh.setMatrixAt(index, _hidden);
@@ -115,7 +120,7 @@ export class Weapons {
   }
 
   /** Enemy fire. */
-  fireEnemy(from: Vector3, direction: Vector3, damage: number = 0): void {
+  fireEnemy(from: Vector3, direction: Vector3, damage = 0): void {
     const bolt = this.#take("enemy");
     if (bolt === undefined) return;
     bolt.owner = "enemy";
@@ -136,11 +141,20 @@ export class Weapons {
     bolt.life = LASER.life;
     bolt.position.copy(from);
     bolt.previous.copy(from);
-    bolt.velocity.subVectors(toward, from).normalize().multiplyScalar(LASER.speed).add(shipVelocity);
+    bolt.velocity
+      .subVectors(toward, from)
+      .normalize()
+      .multiplyScalar(LASER.speed)
+      .add(shipVelocity);
     this.shots += 1;
   }
 
-  #homing(from: Vector3, toward: Vector3, shipVelocity: Vector3, target: ITarget | undefined): void {
+  #homing(
+    from: Vector3,
+    toward: Vector3,
+    shipVelocity: Vector3,
+    target: ITarget | undefined,
+  ): void {
     const bolt = this.#take("homing");
     if (bolt === undefined) return;
     bolt.owner = "player";
@@ -151,7 +165,11 @@ export class Weapons {
     bolt.position.copy(from);
     bolt.previous.copy(from);
     bolt.speed = CHARGE.speed;
-    bolt.velocity.subVectors(toward, from).normalize().multiplyScalar(CHARGE.speed).add(shipVelocity);
+    bolt.velocity
+      .subVectors(toward, from)
+      .normalize()
+      .multiplyScalar(CHARGE.speed)
+      .add(shipVelocity);
     this.homingShots += 1;
   }
 
@@ -168,7 +186,11 @@ export class Weapons {
    * target nearest the reticle; a release past `releaseMin` sends the homing shot.
    */
   trigger(
-    input: { readonly pressed: boolean; readonly justPressed: boolean; readonly justReleased: boolean },
+    input: {
+      readonly pressed: boolean;
+      readonly justPressed: boolean;
+      readonly justReleased: boolean;
+    },
     dt: number,
     from: Vector3,
     reticle: Vector3,
@@ -221,7 +243,13 @@ export class Weapons {
     return best;
   }
 
-  update(dt: number, ship: Vector3, rolling: boolean, targets: readonly ITarget[], events: IWeaponEvents): void {
+  update(
+    dt: number,
+    ship: Vector3,
+    rolling: boolean,
+    targets: readonly ITarget[],
+    events: IWeaponEvents,
+  ): void {
     for (const bolt of this.#bolts) {
       if (!bolt.active) continue;
       bolt.previous.copy(bolt.position);
@@ -235,7 +263,8 @@ export class Weapons {
       if (bolt.owner === "player") {
         for (const target of targets) {
           if (!target.live) continue;
-          if (segmentDistance(bolt.previous, bolt.position, target.position) > target.radius + 0.3) continue;
+          if (segmentDistance(bolt.previous, bolt.position, target.position) > target.radius + 0.3)
+            continue;
           if (target.hurt(bolt.damage)) events.onHit(target, bolt.kind);
           bolt.active = false;
           break;

@@ -69,7 +69,8 @@
       "kind": "wait",
       "label": "rolling",
       "waitTicks": 3,
-      "release": true
+      "release": true,
+      "screenshot": "rolling"
     },
     {
       "kind": "input",
@@ -83,6 +84,16 @@
       "label": "shot-turned",
       "waitTicks": 30,
       "release": true
+    },
+    {
+      "label": "shot-turned:deflected",
+      "waitForResource": {
+        "id": "state",
+        "path": "deflected",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 300
     },
     {
       "kind": "wait",
@@ -141,10 +152,6 @@
           {
             "label": "rolling",
             "equals": 0
-          },
-          {
-            "label": "shot-turned",
-            "gte": 1
           }
         ]
       },
@@ -173,8 +180,7 @@
       {
         "name": "struck",
         "entity": "player",
-        "maxCount": 0,
-        "atStep": "roll-over"
+        "maxCount": 0
       }
     ]
   }

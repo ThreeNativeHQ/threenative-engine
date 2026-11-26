@@ -18,16 +18,19 @@ import { mergeGeometries } from "three/addons/utils/BufferGeometryUtils.js";
 import { propMaterial, structureMaterial, worldGridUVs } from "./materials.js";
 import { palette } from "./palette.js";
 
-type Part = readonly [BufferGeometry, readonly [number, number, number], readonly [number, number, number]?];
+type Vec3 = readonly [number, number, number];
+type Part = readonly [geometry: BufferGeometry, at: Vec3, turn?: Vec3];
 
 /** Boxes and cones placed in the ship's own space, merged into one mesh and mapped to the metre grid. */
 function hull(parts: readonly Part[], material: MeshStandardMaterial): Mesh {
-  const placed = parts.map(([geometry, at, turn = [0, 0, 0]]) => {
-    const copy = geometry.clone().applyMatrix4(
-      new Matrix4()
-        .makeRotationFromEuler(new Euler(turn[0], turn[1], turn[2]))
-        .setPosition(at[0], at[1], at[2]),
-    );
+  const placed = parts.map(([geometry, at, turn = [0, 0, 0] as const]) => {
+    const copy = geometry
+      .clone()
+      .applyMatrix4(
+        new Matrix4()
+          .makeRotationFromEuler(new Euler(turn[0], turn[1], turn[2]))
+          .setPosition(at[0], at[1], at[2]),
+      );
     return copy.index === null ? copy : copy.toNonIndexed();
   });
   const mesh = new Mesh(worldGridUVs(mergeGeometries(placed, false)), material);
@@ -39,7 +42,10 @@ function hull(parts: readonly Part[], material: MeshStandardMaterial): Mesh {
 export const glowMaterial = new MeshBasicMaterial({ color: 0x9fd8ff });
 export const hostileGlowMaterial = new MeshBasicMaterial({ color: 0xff8a4d });
 /** Enemy trim: the one warm colour. */
-export const hostileMaterial = new MeshStandardMaterial({ color: palette.hostile, roughness: 0.45 });
+export const hostileMaterial = new MeshStandardMaterial({
+  color: palette.hostile,
+  roughness: 0.45,
+});
 
 const box = (x: number, y: number, z: number): BoxGeometry => new BoxGeometry(x, y, z);
 /** A cone that points down -Z, the way every ship in this kit faces. */
