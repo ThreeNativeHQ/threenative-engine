@@ -10,8 +10,8 @@ import {
   type ICursor,
   type ISpace,
   JUNCTION,
-  cursorBefore,
   createSpaces,
+  cursorBefore,
   lookahead,
   spaceAt,
 } from "../board/layout.js";
@@ -383,6 +383,7 @@ export class Match {
 
   #startMinigame(): void {
     const id = this.forcedMinigame ?? (this.turn % 2 === 1 ? "dash" : "rope");
+    this.forcedMinigame = undefined;
     this.minigame = id === "dash" ? new Dash(this.rng) : new Rope(this.rng, this.perfectCpu);
     this.phase = "intro";
     this.#start(INTRO_TIME);

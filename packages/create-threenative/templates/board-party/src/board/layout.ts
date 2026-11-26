@@ -24,7 +24,7 @@ export interface ICursor {
 export interface IChain {
   readonly ids: readonly number[];
   /** Where the walk goes after the last slot. A chain with no `then` wraps to its own slot 0. */
-  readonly then?: ICursor;
+  readonly rejoin?: ICursor;
 }
 
 /** Metres between neighbouring spaces. The card's 5 world units per grid unit is its own scale. */
@@ -53,7 +53,7 @@ export function createSpaces(): ISpace[] {
 /** Chain 0 is the ring. Chain 1 is the shortcut, and it rejoins the ring at the bottom middle. */
 export const CHAINS: readonly IChain[] = [
   { ids: Array.from({ length: 24 }, (_, i) => i) },
-  { ids: [24, 25, 26], then: { chain: 0, slot: 16 } },
+  { ids: [24, 25, 26], rejoin: { chain: 0, slot: 16 } },
 ];
 
 /**
@@ -76,7 +76,7 @@ export function lookahead(cursor: ICursor): ICursor {
   const chain = CHAINS[cursor.chain] as IChain;
   const slot = cursor.slot + 1;
   if (slot < chain.ids.length) return { chain: cursor.chain, slot };
-  return chain.then ?? { chain: cursor.chain, slot: 0 };
+  return chain.rejoin ?? { chain: cursor.chain, slot: 0 };
 }
 
 /** The cursor that looks ahead to `id`, for the playtest stations. */

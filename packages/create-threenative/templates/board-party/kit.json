@@ -3,11 +3,6 @@
   "title": "Board party",
   "blurb": "A dice board for four: ring spaces, a shortcut junction, coin spaces, a moving star, three CPU rivals and a minigame after every turn.",
   "genre": "board-game",
-  "aliases": [
-    "mario-party",
-    "marioparty",
-    "mario-party-1",
-    "board-game"
-  ],
+  "aliases": ["mario-party", "marioparty", "mario-party-1", "board-game"],
   "kit": true
 }

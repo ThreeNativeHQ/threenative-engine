@@ -3,11 +3,11 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
 import { MathUtils, type PerspectiveCamera } from "three";
-import { drainIntents } from "../intents.js";
 import { CHAINS, type ISpace } from "../board/layout.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
 import { PAWN_HALF, Pawn } from "../entities/Pawn.js";
-import { Match, type IPlayer, TURN_LIMIT } from "../match/turn.js";
+import { drainIntents } from "../intents.js";
+import { type IPlayer, Match, TURN_LIMIT } from "../match/turn.js";
 import { Dash } from "../minigames/dash.js";
 import { Rope } from "../minigames/rope.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
@@ -24,8 +24,8 @@ import {
   materialLightingEnabled,
 } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
-import { STATIONS, STATION_NAMES } from "../stations.js";
 import type { GameState, PlayerRow, TurnPhase } from "../state.js";
+import { STATIONS, STATION_NAMES } from "../stations.js";
 
 /**
  * Playtest-only keys answer only when a playtest runner launched the page (the runner sets this
@@ -157,11 +157,13 @@ export class Play extends Scene<GameState, IPhysicsContext> {
 
     let clock = 0;
     let matchTime = 0;
+    // Back from the arena, the pawns cut to their spaces instead of gliding across the board.
+    let wasInGame = false;
     let rowsSignature = "";
     const shared = new Map<number, number>();
     const frame: Partial<GameState> = {};
     // The pawn is where the rules put it. On a space it eases to its place on the shared ring.
-    const placeOnBoard = (player: IPlayer, pawn: Pawn, dt: number): void => {
+    const placeOnBoard = (player: IPlayer, pawn: Pawn, dt: number, snap: boolean): void => {
       const space = match.spaceOf(player);
       const count = [...match.players].filter(
         (other) => !other.walking && match.spaceOf(other) === space,
@@ -175,7 +177,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         ox = Math.sin(angle) * SHARE_RADIUS;
         oz = Math.cos(angle) * SHARE_RADIUS;
       }
-      const ease = player.walking ? 1 : Math.min(1, dt * 10);
+      const ease = player.walking || snap ? 1 : Math.min(1, dt * 10);
       pawn.mesh.position.x += (player.x + ox - pawn.mesh.position.x) * ease;
       pawn.mesh.position.z += (player.z + oz - pawn.mesh.position.z) * ease;
       pawn.mesh.position.y = PAWN_HALF + SURFACE;
@@ -230,13 +232,14 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         const player = match.players[seat] as IPlayer;
         const body = inGame ? game.contestants[seat] : undefined;
         if (body === undefined) {
-          placeOnBoard(player, pawn, dt);
+          placeOnBoard(player, pawn, dt, wasInGame);
           continue;
         }
         pawn.mesh.position.set(body.x, PAWN_HALF + body.y + 0.01, body.z);
         pawn.face(body.yaw, dt);
         pawn.update(dt, body.pose);
       }
+      wasInGame = inGame;
       const active = match.current;
       board.sync(match.spaces);
       board.showMinigame(inGame ? game.id : "", game instanceof Dash && game.go);
