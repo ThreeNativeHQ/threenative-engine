@@ -187,6 +187,16 @@ export const roadMaterial = new MeshStandardMaterial({
   metalness: 0,
 });
 
+/**
+ * The far skyline (`render/city.ts`): the structure colour without its grid, which a block 150 m
+ * away cannot resolve anyway. One instanced draw, so it carries no world-space UVs.
+ */
+export const skylineMaterial = new MeshStandardMaterial({
+  color: palette.structure,
+  roughness: 0.7,
+  metalness: 0,
+});
+
 /** Lane paint: the dashed centre line and the stop lines. */
 export const laneMarkMaterial = new MeshStandardMaterial({ color: 0xe8e2c8, roughness: 0.6 });
 

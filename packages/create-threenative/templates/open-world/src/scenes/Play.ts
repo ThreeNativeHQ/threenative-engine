@@ -12,10 +12,11 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import { CollisionShape3D, type IPhysicsContext, RigidBody3D } from "@threenative/physics";
 import { type Mesh, type PerspectiveCamera, Vector2, Vector3 } from "three";
+import { PLACES } from "../city/layout.js";
 import type { IMannequin } from "../entities/Humanoid.js";
 import { CAR_LAYER, type GameCtx, WORLD_LAYER } from "../entities/layers.js";
 import { CityCamera } from "../render/camera.js";
-import { buildCity } from "../render/city.js";
+import { buildCity, buildSkyline } from "../render/city.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
@@ -26,6 +27,7 @@ import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { TouchControls } from "../render/touch-controls.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
 import { STATIONS, World } from "../systems/World.js";
+import { CityStreamer } from "../systems/streaming.js";
 
 /** Radar dots change slowly; publishing them every sixth tick keeps the HUD cheap. */
 const RADAR_EVERY = 6;
@@ -96,7 +98,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       ? ctx.entities.add("touch-controls", new TouchControls(camera))
       : undefined;
 
-    // The city: one box collider per drawn solid, then the drawing merged to a mesh per material.
+    // What stays built: the ground, the boundary, the lane paint and the markers. One box collider
+    // per drawn solid, then the drawing merged to a mesh per material.
     const city = buildCity();
     for (const solid of city.solids)
       new RigidBody3D({
@@ -123,6 +126,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     city.root.add(...merged, ...live);
     ctx.add(city.root);
     markStatic(city.root);
+    // The blocks stream by distance (`systems/streaming.ts`); the skyline draws the ones not built.
+    const skyline = buildSkyline();
+    if (skyline !== undefined) markStatic(ctx.add(skyline));
+    const streamer = ctx.entities.add("city", new CityStreamer(ctx.physics));
+    ctx.add(streamer.root);
+    streamer.update(PLACES.playerSpawn, Number.POSITIVE_INFINITY);
 
     const world = new World(ctx, model, camera);
     // Walls and cars pull the lens in: a passing car never stands between the camera and the
@@ -147,6 +156,7 @@ export class Play extends Scene<GameState, IPhysicsContext> {
       // The sun's shadow map follows the player across the city.
       lighting.key.target.position.copy(subject);
       lighting.key.position.copy(subject).addScaledVector(SUN_DIRECTION, 60);
+      streamer.update(subject);
     });
 
     this.#materialLighting = ctx.entities.add(

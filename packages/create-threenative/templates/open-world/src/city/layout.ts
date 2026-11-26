@@ -3,8 +3,17 @@
 // meshes here — `render/city.ts` draws this, `scenes/Play.ts` plays on it.
 import { Vector3 } from "three";
 
-/** Roads per axis. Four roads make a 3 x 3 grid of blocks. */
-export const ROADS = 4;
+/**
+ * Roads per axis. Ten roads make a 9 x 9 grid of blocks, about 460 m across: too much to keep
+ * built at once, so `systems/streaming.ts` builds the blocks near the player and an instanced skyline
+ * stands in for the rest.
+ */
+export const ROADS = 10;
+/**
+ * The first road of downtown, the 3 x 3 blocks in the middle that hold every landmark. Index
+ * `DOWNTOWN + 1` is the road just west (or north) of the centre block.
+ */
+export const DOWNTOWN = 3;
 /** Centre-line to centre-line spacing of two parallel roads, in metres. */
 export const PITCH = 48;
 /** Kerb to kerb. Two lanes, one each way. */
@@ -37,11 +46,11 @@ export interface IBlock {
 
 /** The named blocks; every other block holds four buildings. */
 const SPECIAL: Readonly<Record<string, IBlock["kind"]>> = {
-  "1,1": "plaza",
-  "0,0": "hospital",
-  "2,2": "police",
-  "2,0": "respray",
-  "0,2": "dropoff",
+  [`${DOWNTOWN + 1},${DOWNTOWN + 1}`]: "plaza",
+  [`${DOWNTOWN},${DOWNTOWN}`]: "hospital",
+  [`${DOWNTOWN + 2},${DOWNTOWN + 2}`]: "police",
+  [`${DOWNTOWN + 2},${DOWNTOWN}`]: "respray",
+  [`${DOWNTOWN},${DOWNTOWN + 2}`]: "dropoff",
 };
 
 export const BLOCKS: readonly IBlock[] = (() => {

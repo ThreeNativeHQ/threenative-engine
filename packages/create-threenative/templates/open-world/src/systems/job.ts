@@ -2,7 +2,7 @@
 // lot before the clock runs out. GTA III's "steal this car and bring it here" errand, the shape
 // every early mission in the series takes.
 import { Vector3 } from "three";
-import { PLACES, ROADS, ROAD_WIDTH, block, roadLine } from "../city/layout.js";
+import { DOWNTOWN, PLACES, ROAD_WIDTH, block, roadLine } from "../city/layout.js";
 import type { JobState } from "../state.js";
 
 export const JOB = {
@@ -19,11 +19,11 @@ export const JOB = {
 } as const;
 
 /**
- * Where the job's car waits: parked against the kerb of the east edge road, beside the respray
+ * Where the job's car waits: parked against the kerb of downtown's east road, beside the respray
  * block, a metre clear of the northbound lane so traffic still passes it.
  */
 export const JOB_CAR_SPOT = new Vector3(
-  roadLine(ROADS - 1) + ROAD_WIDTH / 2 - 1,
+  roadLine(DOWNTOWN + 3) + ROAD_WIDTH / 2 - 1,
   0,
   block("respray").center.z,
 );

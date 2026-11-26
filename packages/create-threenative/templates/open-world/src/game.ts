@@ -41,6 +41,7 @@ const game = defineGame<GameState, IPhysicsContext>({
     station10: { keys: ["Digit0"] },
     station11: { keys: ["Minus"] },
     station12: { keys: ["Equal"] },
+    station13: { keys: ["BracketRight"] },
   },
   plugins: [rapier(), playtest({ events: drainPlaytestEvents })],
   display: config.display,

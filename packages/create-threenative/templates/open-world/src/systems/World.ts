@@ -4,11 +4,13 @@ import { type IRandom, createRandom } from "@threenative/core";
 import { BoxGeometry, Mesh, type PerspectiveCamera, Vector3 } from "three";
 import {
   BLOCKS,
+  DOWNTOWN,
   type IBlock,
   type ILane,
   KERB,
   LANES,
   PLACES,
+  ROADS,
   ROAD_WIDTH,
   nearestLane,
   onSidewalk,
@@ -29,6 +31,13 @@ import { JOB, JOB_CAR_SPOT, JOB_CAR_YAW, Job } from "./job.js";
 import { type Crime, POLICE_CARS, STAR_CHAOS, Wanted } from "./wanted.js";
 
 export const POPULATION = { traffic: 8, parked: 4, civilians: 12, maxCopsOnFoot: 8 } as const;
+/**
+ * The population streams with the player: civilians and traffic appear within `spawn` metres and
+ * are cleared past `despawn`, so the city looks full wherever the player is without simulating
+ * all of it. Both stay inside `STREAMING.load` (`systems/streaming.ts`): nobody walks on an
+ * unbuilt block.
+ */
+export const POPULATION_RANGE = { spawn: 90, despawn: 120 } as const;
 /** Seconds a WASTED or BUSTED banner holds before the respawn. */
 const DOWN_TIME = 3;
 /** Respawn fee at the hospital or the police station. */
@@ -75,7 +84,7 @@ const _door = new Vector3();
 const pickupGeometry = new BoxGeometry(0.5, 0.3, 0.25);
 
 /**
- * Playtest stations, in key order (Digit1 to Digit9, Digit0, Minus, Equal). Each one sets up one
+ * Playtest stations, in key order (Digit1 to Digit9, Digit0, Minus, Equal, BracketRight). Each one sets up one
  * mechanic in a single tick, so a scenario proves that mechanic in a few seconds.
  */
 export const STATIONS = [
@@ -91,6 +100,7 @@ export const STATIONS = [
   "dropoff",
   "money",
   "hide",
+  "far",
 ] as const;
 export type Station = (typeof STATIONS)[number];
 
@@ -134,14 +144,16 @@ export class World {
     this.#random = createRandom(30_301);
     this.player = new Player(ctx, model, PLACES.playerSpawn);
     ctx.entities.add("player", this.player);
-    // Traffic on random lanes, spread out so no two start nose to tail.
-    const lanes = [...LANES].sort(() => this.#random() - 0.5);
+    // Traffic on random lanes near the spawn, spread out so no two start nose to tail.
+    const lanes = LANES.filter(
+      (lane) => lane.start.distanceTo(PLACES.playerSpawn) < POPULATION_RANGE.spawn,
+    ).sort(() => this.#random() - 0.5);
     for (let index = 0; index < POPULATION.traffic; index += 1)
       this.#spawnTraffic(lanes[index] as ILane, 0.4);
     // A few parked cars along the kerb, one of them right by the spawn so the first drive is a walk away.
     const parked: [number, number, number][] = [
       // Kerbside on the spawn street, clear of the lane.
-      [PLACES.playerSpawn.x + 7, roadLine(2) - ROAD_WIDTH / 2 + 1.0, Math.PI / 2],
+      [PLACES.playerSpawn.x + 7, roadLine(DOWNTOWN + 2) - ROAD_WIDTH / 2 + 1.0, Math.PI / 2],
       [-24 + 5, -48, 0],
       [24 - 5, 48, Math.PI],
       [-72 - 5, 0, Math.PI],
@@ -150,7 +162,7 @@ export class World {
     // A cruiser parked outside the station: the city has police before anyone calls them, and its
     // light bar is drawn (and compiled) at load rather than at the first dispatch.
     this.addCar(
-      new Vector3(PLACES.police.x + 6, 0, roadLine(2) + ROAD_WIDTH / 2 - 1.0),
+      new Vector3(PLACES.police.x + 6, 0, roadLine(DOWNTOWN + 2) + ROAD_WIDTH / 2 - 1.0),
       Math.PI / 2,
       "parked",
       false,
@@ -159,7 +171,10 @@ export class World {
     );
     for (let index = 0; index < POPULATION.civilians; index += 1) this.#spawnCivilian(true);
     // Money on the street and a pistol by the police station: the first things worth walking to.
-    for (const target of BLOCKS.filter((candidate) => candidate.kind === "buildings").slice(0, 4)) {
+    const nearSpawn = BLOCKS.filter((candidate) => candidate.kind === "buildings").sort(
+      (a, b) => a.center.distanceTo(PLACES.playerSpawn) - b.center.distanceTo(PLACES.playerSpawn),
+    );
+    for (const target of nearSpawn.slice(0, 4)) {
       const corner = sidewalkLoop(target)[1] as Vector3;
       this.#addPickup("money", corner, 100, true);
     }
@@ -200,15 +215,15 @@ export class World {
   }
 
   #spawnCivilian(anywhere: boolean): Pedestrian {
-    const candidates = BLOCKS.filter((target) => target.kind !== "respray");
+    const where = this.player.where;
+    const candidates = BLOCKS.filter(
+      (target) =>
+        target.kind !== "respray" && target.center.distanceTo(where) < POPULATION_RANGE.spawn,
+    );
     let target = this.#random.pick(candidates) as IBlock;
     let corner = this.#random.pick(sidewalkLoop(target)) as Vector3;
     // A replacement appears out of the player's way, never in front of them.
-    for (
-      let tries = 0;
-      tries < 8 && !anywhere && corner.distanceTo(this.player.where) < 35;
-      tries += 1
-    ) {
+    for (let tries = 0; tries < 8 && !anywhere && corner.distanceTo(where) < 35; tries += 1) {
       target = this.#random.pick(candidates) as IBlock;
       corner = this.#random.pick(sidewalkLoop(target)) as Vector3;
     }
@@ -935,7 +950,8 @@ export class World {
       const ped = this.people[index] as Pedestrian;
       const gone =
         (ped.state === "dead" && ped.deadFor > 15) ||
-        (ped.cop && this.wanted.stars === 0 && ped.position.distanceTo(where) > 40);
+        (ped.cop && this.wanted.stars === 0 && ped.position.distanceTo(where) > 40) ||
+        (!ped.cop && ped.position.distanceTo(where) > POPULATION_RANGE.despawn);
       if (!gone) continue;
       this.#byBody.delete(ped.body.body.id);
       this.#remove(ped);
@@ -952,6 +968,13 @@ export class World {
       this.police.splice(index, 1);
       this.#dropCar(car);
     }
+    for (const driver of [...this.traffic])
+      if (
+        driver.car !== this.player.car &&
+        driver.car !== this.jobCar &&
+        driver.car.position.distanceTo(where) > POPULATION_RANGE.despawn
+      )
+        this.#dropCar(driver.car);
     if (this.traffic.length < POPULATION.traffic) {
       const lane = this.#hiddenLane();
       if (lane !== undefined && !this.cars.some((car) => car.position.distanceTo(lane.start) < 8))
@@ -1141,6 +1164,12 @@ export class World {
         this.#seat(car);
         break;
       }
+      case "far": {
+        // On the south-east corner block's sidewalk, 270 m from the plaza: streaming's test drive.
+        const corner = BLOCKS.find((target) => target.i === ROADS - 2 && target.j === ROADS - 2);
+        if (corner !== undefined) place(sidewalkLoop(corner)[0] as Vector3, corner.center);
+        break;
+      }
       case "money": {
         // Three metres short of a money pickup, facing it.
         const pickup = this.pickups.find((candidate) => candidate.kind === "money");
@@ -1171,6 +1200,15 @@ export class World {
       fleeing: this.people.filter((ped) => ped.state === "flee").length,
       policeCars: this.police.length,
       seen: this.#seen,
+      /** Civilians and traffic past `POPULATION_RANGE.despawn`: housekeeping keeps it at zero. */
+      strays:
+        this.people.filter(
+          (ped) =>
+            !ped.cop && ped.position.distanceTo(this.player.where) > POPULATION_RANGE.despawn,
+        ).length +
+        this.traffic.filter(
+          (driver) => driver.car.position.distanceTo(this.player.where) > POPULATION_RANGE.despawn,
+        ).length,
       traffic: this.traffic.length,
       trafficBlocked: this.traffic.filter((driver) => driver.blocked).length,
       trafficMoving: this.traffic.filter((driver) => Math.abs(driver.car.speed) > 3).length,
