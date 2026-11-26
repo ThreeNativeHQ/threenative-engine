@@ -50,10 +50,24 @@ describe("mcp/call.mjs", () => {
     env: { FAKE_DIR: "./public/assets" },
   };
 
+  it("shows the supported discovery commands without a project", () => {
+    const call = path.join(makeTempDirSync("tn-mcp-help-"), "call.mjs");
+    copyFileSync(path.join(mcpDir, "call.mjs"), call);
+    const help = run(call, "--help");
+    expect(help.status).toBe(0);
+    expect(help.stdout).toContain("<server> <tool> --schema");
+    expect(help.stdout).toContain("List servers");
+    expect(help.stdout).toContain("List tools");
+  });
+
   it("lists the servers, a server's tools and calls one the way a host starts it", () => {
     const { call, root } = game({ "threenative-fake": fake });
-    expect(run(call).stdout).toBe("threenative-fake\n");
-    expect(run(call, "threenative-fake").stdout).toBe("echo(word, loud?): Echoes.\n");
+    const servers = run(call);
+    expect(servers.stdout).toBe("threenative-fake\n");
+    expect(servers.stderr).toContain("--help");
+    const tools = run(call, "threenative-fake");
+    expect(tools.stdout).toBe("echo(word, loud?): Echoes.\n");
+    expect(tools.stderr).toContain("<server> <tool> --schema");
     expect(JSON.parse(run(call, "threenative-fake", "echo", "--schema").stdout)).toEqual(
       echoSchema,
     );
