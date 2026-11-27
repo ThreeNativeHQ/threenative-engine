@@ -1535,6 +1535,9 @@ jobs:
           # The path arrives as an argument: Windows temp directories contain backslashes, which a
           # JavaScript string literal would eat before require() ever sees the path.
           packaged="$target/dist-native/$(node -p "require(process.argv[1]).name" "$target/package.json")"
+          # Windows cannot run the POSIX launcher: the folder needs its `.cmd` start file (#614).
+          test -s "$packaged/$(basename "$packaged").cmd"
+          test ! -e "$packaged/$(basename "$packaged")"
           "$packaged/tn-native-engine-player-v8.exe" "$packaged/game.js" --check-game \
             > "$RUNNER_TEMP/windows-player-boot.log" 2>&1
           grep -F 'TN_PLAYER_V8_GAME_CHECK' "$RUNNER_TEMP/windows-player-boot.log"

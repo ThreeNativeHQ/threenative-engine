@@ -15,8 +15,11 @@ import {
 // PRD-899: the default engine runs the Rust Rapier crate, the native player's own build, as a
 // standalone Wasm module: one call per step, per pose read and per ray, with no wrapper objects.
 // `engine: "threejs"` (no engine marker) keeps `rapier3d-compat`. `__tnWebThreads` is set by
-// `bindWebEngine` and by nothing else.
-const ownedEngine = (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads !== undefined;
+// `bindWebEngine`, and `__tnWebEngineFallback` is set when an owned-engine page falls back to
+// WebGL2 on a browser without WebGPU (the standalone Rust crate has no WebGPU dependency).
+const ownedEngine =
+  (globalThis as { __tnWebThreads?: unknown }).__tnWebThreads !== undefined ||
+  (globalThis as { __tnWebEngineFallback?: unknown }).__tnWebEngineFallback !== undefined;
 
 // Fetched the moment physics is imported, awaited only by `initialize`, so it downloads while the
 // engine's Wasm compiles and the game boots (PRD-860). A failed fetch rejects `initialize`.

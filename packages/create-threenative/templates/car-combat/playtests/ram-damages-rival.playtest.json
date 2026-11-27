@@ -51,7 +51,7 @@
     "components": [
       {
         "entity": "rival.0",
-        "component": "engine",
+        "component": "transmission",
         "atSteps": [
           {
             "label": "ready",
@@ -61,12 +61,12 @@
       },
       {
         "entity": "rival.0",
-        "component": "engine",
+        "component": "transmission",
         "gte": 5
       },
       {
         "entity": "rival.0",
-        "component": "crushFront",
+        "component": "crushRear",
         "gte": 0.05
       },
       {

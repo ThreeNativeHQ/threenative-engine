@@ -467,3 +467,106 @@ it("draws the transparent draws' own target unless a launch asks a measurement f
     Object.defineProperty(globalThis, "location", { configurable: true, value: save.location });
   }
 });
+
+function mrtKeysCaptured(
+  options: ConstructorParameters<typeof WorldEnvironment>[0],
+  raw: object = {},
+) {
+  vi.spyOn(console, "info").mockImplementation(() => {});
+  vi.spyOn(console, "warn").mockImplementation(() => {});
+  const requested: { stages?: readonly string[]; tier?: string }[] = [];
+  let mrtKeys: string[] = [];
+  const target: OutputRenderer = {
+    kind: "webgpu",
+    raw,
+    createRenderChain(chainOptions) {
+      requested.push(chainOptions.request ?? {});
+      const mrt = (
+        chainOptions.worldPass as {
+          getMRT?: () => { outputNodes?: Record<string, unknown> } | null;
+        }
+      )?.getMRT?.();
+      mrtKeys = Object.keys(mrt?.outputNodes ?? {});
+      return {
+        applied: { stages: [...(chainOptions.request?.stages ?? [])], dropped: [] },
+        dispose() {},
+      };
+    },
+  };
+  const applied = new WorldEnvironment(options).apply(target, new Scene(), new PerspectiveCamera());
+  applied.dispose?.();
+  return { applied, mrtKeys, requested: requested[0]?.stages ?? [] };
+}
+
+function webglFallbackRaw(maxDrawBuffers: number) {
+  return {
+    backend: {
+      isWebGLBackend: true,
+      gl: {
+        MAX_DRAW_BUFFERS: 0x8824,
+        MAX_COLOR_ATTACHMENTS: 0x8cdf,
+        getParameter: () => maxDrawBuffers,
+      },
+    },
+  };
+}
+
+it("omits roughness from scene MRT when screen-space reflections are off", () => {
+  const { mrtKeys } = mrtKeysCaptured({
+    ...qualityPreset("high"),
+    autoExposureEnabled: false,
+    ssrEnabled: false,
+  });
+  expect(mrtKeys).toEqual([
+    "output",
+    "normal",
+    "metalness",
+    "diffuseColor",
+    "emissive",
+    "translucent",
+  ]);
+  expect(mrtKeys).not.toContain("roughness");
+});
+
+it("keeps high tier ssgi + gtao within WebGL2 MAX_DRAW_BUFFERS=6 and drops only ssr when enabled", () => {
+  const highNoSsr = mrtKeysCaptured(
+    { ...qualityPreset("high"), ssrEnabled: false },
+    webglFallbackRaw(6),
+  );
+  expect(highNoSsr.mrtKeys.length).toBeLessThanOrEqual(6);
+  expect(highNoSsr.requested).toEqual(expect.arrayContaining(["ssgi", "ambientOcclusion"]));
+  expect(
+    highNoSsr.applied.dropped.filter((entry) => entry.reason.startsWith("webgl2:max-draw-buffers")),
+  ).toEqual([]);
+
+  const withSsr = mrtKeysCaptured(
+    { ...qualityPreset("high"), ssrEnabled: true },
+    webglFallbackRaw(6),
+  );
+  expect(withSsr.mrtKeys.length).toBeLessThanOrEqual(6);
+  expect(withSsr.mrtKeys).not.toContain("roughness");
+  expect(withSsr.requested).toEqual(expect.arrayContaining(["ssgi", "ambientOcclusion"]));
+  expect(withSsr.requested).not.toContain("ssr");
+  expect(withSsr.applied.dropped).toContainEqual({
+    name: "ssr",
+    reason: "webgl2:max-draw-buffers(6)",
+  });
+});
+
+it("drops ssgi cleanly on minimum-spec WebGL2 MAX_DRAW_BUFFERS=4 while keeping ambientOcclusion", () => {
+  const minSpec = mrtKeysCaptured(
+    { ...qualityPreset("high"), ssrEnabled: true },
+    webglFallbackRaw(4),
+  );
+  expect(minSpec.mrtKeys).toEqual(["output", "normal", "emissive", "translucent"]);
+  expect(minSpec.mrtKeys.length).toBeLessThanOrEqual(4);
+  expect(minSpec.requested).toContain("ambientOcclusion");
+  expect(minSpec.requested).not.toContain("ssgi");
+  expect(minSpec.requested).not.toContain("ssr");
+  expect(minSpec.applied.dropped).toEqual(
+    expect.arrayContaining([
+      { name: "ssr", reason: "webgl2:max-draw-buffers(4)" },
+      { name: "ssgi", reason: "webgl2:max-draw-buffers(4)" },
+    ]),
+  );
+});

@@ -30,6 +30,7 @@ import {
   GPU_MEMORY_EXHAUSTED,
   GPU_MEMORY_SETTLE_MS,
   reloadAfterGpuMemoryLoss,
+  reloadIntoWebglFallback,
 } from "./launch-diagnostics.js";
 import { type RendererToneMapping, applyRendererToneMapping } from "./look/default-tone-mapping.js";
 import { qualityTiers } from "./look/quality.js";
@@ -46,6 +47,7 @@ import {
   type IRenderChainOptions,
   RenderChain,
 } from "./render/chain.js";
+import { isWebGLFallbackRenderer } from "./render/environment/gate.js";
 import { type IResolutionSubrect, ResolutionSubrect } from "./render/resolution-subrect.js";
 
 import { GPU_STALE_FRAME_LIMIT, GpuReadings } from "./gpu-readings.js";
@@ -519,7 +521,7 @@ export interface IRendererOptions {
   source?: IRendererPlatformSource;
   webgpuFactory?: (
     canvas: HTMLCanvasElement,
-    options: Readonly<{ antialias: boolean }>,
+    options: Readonly<{ antialias: boolean; forceWebGL?: boolean }>,
   ) => Promise<unknown> | unknown;
   webgl2Factory?: (canvas: HTMLCanvasElement, options: Readonly<{ antialias: boolean }>) => unknown;
 }
@@ -2129,7 +2131,19 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
 
   // A start that ran out of GPU memory is retried once after a settle: a page that just closed (a
   // dev server's reload) still holds its memory for a moment. Any other failure is not retried.
-  const webgpu = preferWebGPU && (source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {}));
+  const webEngineFallback = (globalThis as { __tnWebEngineFallback?: unknown })
+    .__tnWebEngineFallback;
+  const hasWebGpuApi = source?.hasWebGPU() ?? "gpu" in (globalThis.navigator ?? {});
+  const forceWebGL =
+    typeof webEngineFallback === "string" ||
+    (preferWebGPU &&
+      !hasWebGpuApi &&
+      options.webgpuFactory === undefined &&
+      options.webgl2Factory === undefined);
+  const webgpu = preferWebGPU && (hasWebGpuApi || forceWebGL);
+  const webgpuParameters = forceWebGL
+    ? { ...rendererParameters, forceWebGL: true }
+    : rendererParameters;
   for (let attempt = 0; webgpu && renderer === undefined && attempt < 2; attempt += 1) {
     if (attempt === 1) {
       report(
@@ -2140,24 +2154,25 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
     opening = undefined;
     try {
       const raw = options.webgpuFactory
-        ? await options.webgpuFactory(canvas, rendererParameters)
+        ? await options.webgpuFactory(canvas, webgpuParameters)
         : await import("three/webgpu").then(async (webgpu) => {
             // Two Sided Foliage lets the sun through on three's lit node materials too (PRD-643).
             (await import("./render/two-sided-foliage.js")).installFoliageTransmission(webgpu);
             return new webgpu.WebGPURenderer({
               canvas,
-              ...rendererParameters,
-              ...(await adapterTextureLimits()),
+              ...webgpuParameters,
+              ...(forceWebGL ? {} : await adapterTextureLimits()),
             });
           });
       const instance = raw as RendererInstance;
       opening = instance;
       await instance.init?.();
+      const webglFallback = isWebGLFallbackRenderer(instance);
       // A game that sets `toneMapping` on the renderer later (WorldEnvironment, Daylight) replaces this.
       applyRendererToneMapping(instance, options.toneMapping ?? "filmic", report);
       const alphaAntialiasing = arm(instance);
       const timestampCapable = instance.backend?.trackTimestamp === true;
-      const adapter = await readWebGpuAdapterFacts(instance);
+      const adapter = webglFallback ? {} : await readWebGpuAdapterFacts(instance);
       const pipelineCensus = await createWebGpuPipelineCensus(instance, options, adapter);
       installDrawHook(instance, alphaAntialiasing);
       renderer = wrapRenderer(
@@ -2173,6 +2188,11 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
         adapter.software,
         adapter.gpuClass,
       );
+      if (webglFallback) {
+        report(
+          `TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${typeof webEngineFallback === "string" ? webEngineFallback : "WebGPU not available; using WebGPURenderer WebGL2 backend"}`,
+        );
+      }
       if (adapter.gpuClass !== undefined)
         report(`${GPU_CLASS_MARKER}:${JSON.stringify(adapter.gpuClass)}`);
     } catch (error) {
@@ -2205,8 +2225,6 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   }
 
   if (renderer === undefined) {
-    if (webgpuFailure !== undefined)
-      report(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${webgpuFailure}`);
     let raw: RendererInstance;
     try {
       raw = (
@@ -2215,15 +2233,24 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
           : new (await import("three")).WebGLRenderer({ canvas, ...rendererParameters })
       ) as RendererInstance;
     } catch (error) {
+      // The Wasm facade refuses WebGLRenderer even when the browser supports WebGL2.
+      const webglUnavailable =
+        error instanceof Error && error.message.startsWith("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER:");
+      if (
+        webglUnavailable &&
+        webgpuFailure !== undefined &&
+        reloadIntoWebglFallback(webgpuFailure, options.reloadOnGpuMemoryLoss !== false, report)
+      ) {
+        await new Promise(() => undefined);
+      }
       // The Wasm engine has no WebGL fallback, so a GPU still full after the retry has one cure left.
       if (webgpuFailure !== undefined)
         reloadAfterGpuMemoryLoss(webgpuFailure, options.reloadOnGpuMemoryLoss ?? true);
-      // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
-      // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
-      // verbatim would show an internal "uncatalogued" code; a browser with no context throws
-      // three's own message. Neither belongs in front of a player, so both become one named failure.
+      const guidance = webglUnavailable
+        ? "This game requires WebGPU. Enable graphics acceleration and restart your browser, or open the game in a browser with WebGPU enabled."
+        : "WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.";
       throw new Error(
-        `TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
+        `TN_NO_RENDERER: ${guidance}${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
         { cause: error },
       );
     }
@@ -2241,6 +2268,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       false,
       gpuTimestampFrameInterval,
     );
+    if (webgpuFailure !== undefined)
+      report(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${webgpuFailure}`);
   }
 
   const resizing = addResizeHandling(renderer, source, state, pixelRatio);

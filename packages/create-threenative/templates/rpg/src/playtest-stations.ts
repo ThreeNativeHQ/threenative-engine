@@ -55,5 +55,10 @@ export const STATIONS: Readonly<Record<string, (world: World) => void>> = {
   },
   station16: (world) => world.defeat(world.leader),
   // The leader alone in the far corner of the ruin: followers at the camp must find the gate.
-  station17: (world) => place(world.leader, -10, -14, Math.PI),
+  // The ruin is cleared first: every spot in the yard is inside a raider's notice, and a fight
+  // would replace the walk this station proves.
+  station17: (world) => {
+    for (const raider of world.raiders) world.defeat(raider);
+    place(world.leader, -10, -14, Math.PI);
+  },
 };

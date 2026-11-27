@@ -1,11 +1,21 @@
-import { existsSync, readFileSync, readdirSync, statSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  statSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { InputMap } from "@threenative/core";
 import tsParser from "@typescript-eslint/parser";
-import { Linter } from "eslint";
+import { ESLint, Linter } from "eslint";
 import { MathUtils } from "three";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSyncAt } from "../../../test-support/temp-dir.js";
+import { qualityConfig } from "../src/quality/index.js";
 import { threenativePlugin } from "../src/quality/plugin.js";
 import { REINVENTIONS, reinventionConfigs, reinventionRules } from "../src/quality/reinventions.js";
 
@@ -13,6 +23,9 @@ const RULES = [
   "hot-callback-allocation",
   "hot-callback-resource-creation",
   "hot-callback-scene-work",
+  "no-native-incompatible-three",
+  "no-raw-model-add",
+  "no-unstable-ui-selector",
   "startup-override-reason",
   "ui-state-selector",
 ] as const;
@@ -344,6 +357,9 @@ describe("the reinvention rows", () => {
               "threenative/hot-callback-allocation": "error",
               "threenative/hot-callback-resource-creation": "error",
               "threenative/hot-callback-scene-work": "error",
+              "threenative/no-native-incompatible-three": "error",
+              "threenative/no-raw-model-add": "error",
+              "threenative/no-unstable-ui-selector": "error",
             },
           },
           ...reinventionConfigs(["src/**/*.ts", "src/**/*.tsx"]),
@@ -367,5 +383,115 @@ describe("the reinvention rows", () => {
     expect(lint(ui, "src/ui/hud.ts").length).toBe(1);
     // The same two lines in a scene are both reinventions.
     expect(lint(ui, "src/scenes/Play.ts").length).toBe(2);
+  });
+});
+
+describe("threenative/no-unstable-ui-selector", () => {
+  const ui = (call: string): string =>
+    `import { useUiState } from "@threenative/ui";\nexport function Hud() { const v = ${call}; return v; }\n`;
+
+  it("errors on selectors returning inline objects or arrays and allows primitives or bare hook", () => {
+    for (const bad of [
+      "useUiState((s) => ({ speed: s.speed }))",
+      "useUiState((s) => [s.lap, s.total])",
+      "useUiState((s) => { return { gear: s.gear }; })",
+      "useUiState(function sel(s) { return [s.score]; })",
+    ]) {
+      expect(fired(ui(bad))).toContain("threenative/no-unstable-ui-selector");
+    }
+    expect(fired(ui("useUiState((s) => s.speed)"))).toEqual([]);
+    expect(fired(ui("useUiState((s) => `${s.lap}/3`)"))).toEqual([]);
+    expect(fired(ui("useUiState((s) => s.lap + 1)"))).toEqual([]);
+  });
+});
+
+describe("threenative/no-raw-model-add", () => {
+  it("errors when adding ctx.assets.model(...) wrapper directly instead of .scene", () => {
+    for (const bad of [
+      'export async function load(ctx) { ctx.add(await ctx.assets.model("car.glb")); }',
+      'export async function load(ctx) { const car = await ctx.assets.model("car.glb"); scene.add(car); }',
+      'export function load(ctx) { scene.add(ctx.assets.model("car.glb")); }',
+    ]) {
+      expect(fired(bad)).toContain("threenative/no-raw-model-add");
+    }
+    for (const good of [
+      'export async function load(ctx) { const { scene: car } = await ctx.assets.model("car.glb"); ctx.add(car); }',
+      'export async function load(ctx) { const loaded = await ctx.assets.model("car.glb"); scene.add(loaded.scene); }',
+      'export async function load(ctx) { ctx.add((await ctx.assets.model("car.glb")).scene); }',
+    ]) {
+      expect(fired(good)).toEqual([]);
+    }
+  });
+});
+
+describe("threenative/no-native-incompatible-three", () => {
+  it("errors on CubeTexture, CubeReflectionMapping, non-TSL fogNode, null DataTexture/mapping ABI, and rangeFogFactor", () => {
+    for (const bad of [
+      "const c = new CubeTexture();",
+      "const c = new THREE.CubeTexture();",
+      "tex.mapping = THREE.CubeReflectionMapping;",
+      'import { CubeReflectionMapping } from "three"; tex.mapping = CubeReflectionMapping;',
+      "scene.fogNode = new Fog(0x000000, 1, 10);",
+      "scene.fogNode = new THREE.FogExp2(0x000000, 0.02);",
+      "scene.fogNode = 1;",
+      "const t = new DataTexture(buf, 4, 4, null);",
+      "tex.mapping = null;",
+      'import { rangeFogFactor } from "three/tsl"; void rangeFogFactor;',
+    ]) {
+      expect(fired(bad), bad).toContain("threenative/no-native-incompatible-three");
+    }
+    for (const good of [
+      'import { fog, color } from "three/tsl"; scene.fogNode = fog(color(0x000000));',
+      "scene.fogNode = null;",
+      "tex.mapping = THREE.EquirectangularReflectionMapping;",
+      "const t = new DataTexture(buf, 4, 4, THREE.RGBAFormat);",
+    ]) {
+      expect(fired(good), good).toEqual([]);
+    }
+  });
+});
+
+describe("threenative/no-unused-assets", () => {
+  it("errors once per unused asset or zip archive and skips wired files, LODs, and acquisitions metadata", async () => {
+    const tmp = makeTempDirSyncAt(path.join(import.meta.dirname, ".tmp-unused-assets-"));
+    try {
+      const write = (rel: string, content = "") => {
+        const file = path.join(tmp, rel);
+        mkdirSync(path.dirname(file), { recursive: true });
+        writeFileSync(file, content);
+      };
+      write("package.json", '{"type":"module"}');
+      write("tsconfig.json", '{"compilerOptions":{"strict":true},"include":["src"]}');
+      write(
+        "src/main.ts",
+        'import { x } from "./other.js";\nexport const a = ["used/coupe.glb", x];\n',
+      );
+      write("src/other.ts", 'export const x = "textures/asphalt.jpg";\n');
+      write("assets/used/coupe.glb", "glb");
+      write("assets/used/coupe-lod1.glb", "lod");
+      write("assets/textures/asphalt.jpg", "jpg");
+      write("assets/unused/orphan.glb", "glb");
+      write("assets/downloads/pack.zip", "zip");
+      write("assets/downloads/acquisitions/abc/cached.png", "cache");
+
+      const eslint = new ESLint({
+        cwd: tmp,
+        overrideConfig: qualityConfig({ root: tmp }),
+        overrideConfigFile: true,
+      });
+      const results = await eslint.lintFiles(["src/main.ts", "src/other.ts"]);
+      const mainUnused =
+        results[0]?.messages.filter((m) => m.ruleId === "threenative/no-unused-assets") ?? [];
+      const otherUnused =
+        results[1]?.messages.filter((m) => m.ruleId === "threenative/no-unused-assets") ?? [];
+      expect(otherUnused).toEqual([]);
+      expect(mainUnused.map((m) => m.message)).toEqual([
+        expect.stringContaining("assets/downloads/pack.zip"),
+        expect.stringContaining("assets/unused/orphan.glb"),
+      ]);
+      expect(mainUnused.every((m) => m.severity === 2)).toBe(true);
+    } finally {
+      rmSync(tmp, { force: true, recursive: true });
+    }
   });
 });

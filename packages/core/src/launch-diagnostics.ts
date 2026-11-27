@@ -237,6 +237,59 @@ export function reloadPageOnce(reason: string): boolean {
   return true;
 }
 
+/** Session storage flag set before reloading a failed WebGPU tab into WebGL2 fallback. */
+export const WEBGL_FALLBACK_RELOAD_KEY = "tnWebglFallback";
+
+/** A worker's route to its page for WebGL2 fallback reloads: a worker has neither `location.reload` nor `sessionStorage`. */
+let routeWebglFallback: ((reason: string) => void) | undefined;
+
+/** Sends this realm's WebGL2 fallback reload elsewhere (the worker game's page); `undefined` clears it. */
+export function routeWebglFallbackReload(route: ((reason: string) => void) | undefined): void {
+  routeWebglFallback = route;
+}
+
+/**
+ * Reloads the page once into WebGL2 fallback after WebGPU failed mid-boot, guarded by
+ * `sessionStorage` so a tab never reloads in a loop.
+ */
+export function reloadPageIntoWebglFallback(
+  reason: string,
+  report: (line: string) => void = console.warn,
+): boolean {
+  const page = globalThis as {
+    location?: { reload?: () => void };
+    sessionStorage?: Pick<Storage, "getItem" | "setItem">;
+  };
+  const reload = page.location?.reload;
+  if (typeof reload !== "function" || page.sessionStorage === undefined) return false;
+  try {
+    if (page.sessionStorage.getItem(WEBGL_FALLBACK_RELOAD_KEY) === "1") return false;
+    page.sessionStorage.setItem(WEBGL_FALLBACK_RELOAD_KEY, "1");
+  } catch {
+    return false;
+  }
+  report(`TN_RENDERER_FALLBACK_RELOAD: reloading into WebGL2 after WebGPU failed: ${reason}`);
+  reload.call(page.location);
+  return true;
+}
+
+/**
+ * Reloads into WebGL2 fallback on WebGPU boot refusal (or asks the worker host page to reload).
+ * Respects `renderer.reloadOnGpuMemoryLoss: false` and the once-per-tab guard.
+ */
+export function reloadIntoWebglFallback(
+  reason: string,
+  enabled = true,
+  report?: (line: string) => void,
+): boolean {
+  if (!enabled) return false;
+  if (routeWebglFallback !== undefined) {
+    routeWebglFallback(reason);
+    return true;
+  }
+  return reloadPageIntoWebglFallback(reason, report);
+}
+
 /** Preserve the actual loader error for the shell and playtest console diagnostics. */
 export function reportSceneLoadFailure(error: unknown): void {
   reportLaunchFailure({

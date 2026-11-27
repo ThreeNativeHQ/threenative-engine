@@ -49,13 +49,12 @@
           {
             "label": "ready",
             "equals": "race"
+          },
+          {
+            "label": "pursuing",
+            "equals": "pursue"
           }
         ]
-      },
-      {
-        "entity": "rival.0",
-        "component": "objective",
-        "equals": "pursue"
       },
       {
         "entity": "rival.0",
@@ -67,7 +66,16 @@
       {
         "id": "state",
         "path": "pursuing",
-        "gte": 1
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          },
+          {
+            "label": "pursuing",
+            "equals": 1
+          }
+        ]
       }
     ]
   }

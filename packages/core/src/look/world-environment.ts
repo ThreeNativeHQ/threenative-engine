@@ -70,6 +70,7 @@ import {
   RENDER_CHAIN_TIERS,
   publishDirectRenderChainReport,
 } from "../render/chain.js";
+import { isWebGLFallbackRenderer } from "../render/environment/gate.js";
 import { GIVisualize, type GIVisualizeMode } from "../render/gi-visualize.js";
 import type { TracedReflections } from "../render/traced-reflections.js";
 import { rendererFacts } from "../renderer-facts.js";
@@ -149,6 +150,106 @@ export function translucentTargetWanted(): boolean {
     { environment: "TN_TRANSLUCENT", global: "__tnTranslucent", query: "tnTranslucent" },
     "off",
   );
+}
+
+interface IMrtBudgetState {
+  ssgiEnabled: boolean;
+  ssrEnabled: boolean;
+  gtaoEnabled: boolean;
+  seesThrough: boolean;
+  readonly motionBlurEnabled: boolean;
+  readonly indirectOcclusion: boolean;
+  readonly ownedEngine: boolean;
+}
+
+function readGlIntParam(
+  gl: unknown,
+  getParameter: (...args: unknown[]) => unknown,
+  key: string,
+  fallbackEnum: number,
+): number | undefined {
+  const enumValue = Reflect.get(gl as object, key);
+  const value = Number(
+    getParameter.call(gl, typeof enumValue === "number" ? enumValue : fallbackEnum),
+  );
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
+
+/**
+ * Returns the WebGL2 draw-buffer budget when `raw` uses Three's WebGL backend fallback, or
+ * `undefined` on WebGPU / native renderers where no 4-8 attachment WebGL2 ceiling applies.
+ */
+function webGlMaxDrawBuffers(raw: unknown): number | undefined {
+  if (!isWebGLFallbackRenderer(raw)) return undefined;
+  const backend = typeof raw === "object" && raw !== null ? Reflect.get(raw, "backend") : undefined;
+  const gl =
+    typeof backend === "object" && backend !== null ? Reflect.get(backend, "gl") : undefined;
+  const getParameter =
+    typeof gl === "object" && gl !== null ? Reflect.get(gl, "getParameter") : undefined;
+  if (typeof getParameter !== "function") return 4;
+  const limits = [
+    readGlIntParam(gl, getParameter, "MAX_DRAW_BUFFERS", 0x8824),
+    readGlIntParam(gl, getParameter, "MAX_COLOR_ATTACHMENTS", 0x8cdf),
+  ].filter((value): value is number => value !== undefined);
+  return limits.length > 0 ? Math.min(...limits) : 4;
+}
+
+function mrtAttachmentCount(state: IMrtBudgetState): number {
+  const velocityCount = state.motionBlurEnabled && !state.ownedEngine ? 1 : 0;
+  if (!state.ssgiEnabled && !state.ssrEnabled && !state.gtaoEnabled) return 1 + velocityCount;
+  return (
+    1 +
+    1 +
+    (state.ssrEnabled || state.ssgiEnabled || (state.gtaoEnabled && state.indirectOcclusion)
+      ? 1
+      : 0) +
+    (state.ssrEnabled ? 1 : 0) +
+    (state.ssgiEnabled || (state.gtaoEnabled && state.indirectOcclusion) ? 1 : 0) +
+    (state.gtaoEnabled || state.ssgiEnabled ? 1 : 0) +
+    (state.seesThrough && !state.ownedEngine ? 1 : 0) +
+    velocityCount
+  );
+}
+
+/**
+ * Fits the scene pass MRT outputs within the WebGL2 backend's `MAX_DRAW_BUFFERS` ceiling so
+ * fragment shaders never declare an output location `>= MAX_DRAW_BUFFERS`.
+ */
+function fitMrtToDrawBuffers(
+  params: IMrtBudgetState & { readonly maxDrawBuffers: number | undefined },
+): IMrtBudgetState & { readonly dropped: readonly { name: string; reason: string }[] } {
+  const state: IMrtBudgetState = {
+    ssgiEnabled: params.ssgiEnabled,
+    ssrEnabled: params.ssrEnabled,
+    gtaoEnabled: params.gtaoEnabled,
+    seesThrough: params.seesThrough,
+    motionBlurEnabled: params.motionBlurEnabled,
+    indirectOcclusion: params.indirectOcclusion,
+    ownedEngine: params.ownedEngine,
+  };
+  const limit = params.maxDrawBuffers;
+  if (limit === undefined || mrtAttachmentCount(state) <= limit) {
+    return { ...state, dropped: [] };
+  }
+  const dropped: Array<{ name: string; reason: string }> = [];
+  const reason = `webgl2:max-draw-buffers(${limit})`;
+  const dropStage = (field: "ssrEnabled" | "ssgiEnabled" | "gtaoEnabled", name: string): void => {
+    if (!state[field] || mrtAttachmentCount(state) <= limit) return;
+    state[field] = false;
+    dropped.push({ name, reason });
+  };
+  dropStage("ssrEnabled", "ssr");
+  if (
+    state.ssgiEnabled &&
+    mrtAttachmentCount(state) > limit &&
+    mrtAttachmentCount({ ...state, seesThrough: false }) <= limit
+  ) {
+    state.seesThrough = false;
+  }
+  dropStage("ssgiEnabled", "ssgi");
+  if (state.seesThrough && mrtAttachmentCount(state) > limit) state.seesThrough = false;
+  dropStage("gtaoEnabled", "ambientOcclusion");
+  return { ...state, dropped };
 }
 
 /**
@@ -902,7 +1003,7 @@ export class WorldEnvironment {
       this.#options.autoExposureEnabled && renderer.kind !== "webgpu"
         ? `renderer:${renderer.kind}`
         : undefined;
-    const options =
+    const baseOptions =
       exposureRefusal === undefined
         ? this.#options
         : { ...this.#options, autoExposureEnabled: false };
@@ -910,27 +1011,57 @@ export class WorldEnvironment {
     // One writer of `toneMapping` for the whole engine: the curve this game supplies reaches the
     // same library the renderer's own default uses, and a renderer without a node library keeps
     // ACES and reports `TN_TONEMAP` once, here or in the renderer.
-    applyRendererToneMapping(raw, options.tonemapMode, (line) => console.warn(line), {
+    applyRendererToneMapping(raw, baseOptions.tonemapMode, (line) => console.warn(line), {
       curve: {
         ...FILMIC_CURVE,
-        ...options.filmicCurve,
+        ...baseOptions.filmicCurve,
         ...(lookDiagnostics.lutClipOff ? { lutClip: 0 } : {}),
       },
-      grade: resolveColorGrade(options.colorGrade),
+      grade: resolveColorGrade(baseOptions.colorGrade),
     });
 
     // Temporal AA is the owned engine's: it jitters the camera and blends the frames ahead of every stage. Any other
     // renderer keeps the spatial filter, and the report says why.
     const { ownedEngine } = rendererFacts(renderer);
-    const temporalRefusal = !options.temporalAA
+    const temporalRefusal = !baseOptions.temporalAA
       ? undefined
       : renderer.kind !== "webgpu"
         ? `renderer:${renderer.kind}`
         : ownedEngine
           ? undefined
           : "engine:threejs";
-    const temporal = options.temporalAA && temporalRefusal === undefined;
-    // What the report names beyond the chain's own: why the temporal stage was refused, and the filter it replaced.
+    const temporal = baseOptions.temporalAA && temporalRefusal === undefined;
+    // Contact occlusion dims the light that comes from around. The owned engine writes each pixel's indirect diffuse
+    // light to its own target, so only that share takes the occlusion and the sun keeps its light, as Unreal's AO
+    // (indirect light only) leaves it. Upstream three has no such target, so there the whole frame is dimmed.
+    const indirectOcclusion = ownedEngine && baseOptions.gtaoIndirectOnly;
+    // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
+    // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
+    // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
+    // over the opaque surface, as it did before the target existed — so one launch can price the pass; a diagnostic,
+    // never a look.
+    const mrtBudget = fitMrtToDrawBuffers({
+      ssgiEnabled: baseOptions.ssgiEnabled,
+      ssrEnabled: baseOptions.ssrEnabled,
+      gtaoEnabled: baseOptions.gtaoEnabled,
+      seesThrough:
+        (baseOptions.ssgiEnabled || baseOptions.gtaoEnabled) && translucentTargetWanted(),
+      motionBlurEnabled: baseOptions.motionBlurEnabled,
+      indirectOcclusion,
+      ownedEngine,
+      maxDrawBuffers: webGlMaxDrawBuffers(raw),
+    });
+    const seesThrough = mrtBudget.seesThrough;
+    const options =
+      mrtBudget.dropped.length === 0
+        ? baseOptions
+        : {
+            ...baseOptions,
+            ssgiEnabled: mrtBudget.ssgiEnabled,
+            ssrEnabled: mrtBudget.ssrEnabled,
+            gtaoEnabled: mrtBudget.gtaoEnabled,
+          };
+    // What the report names beyond the chain's own: why the temporal or MRT stages were refused, and the filter it replaced.
     const reportWith = (
       applied: readonly string[],
       dropped: readonly { name: string; reason: string }[],
@@ -938,6 +1069,7 @@ export class WorldEnvironment {
       stages: applied,
       dropped: [
         ...dropped,
+        ...mrtBudget.dropped,
         ...(exposureRefusal === undefined
           ? []
           : [{ name: "autoExposure", reason: exposureRefusal }]),
@@ -1025,16 +1157,6 @@ export class WorldEnvironment {
           ...(renderer.raw as { info?: { engine?: { temporal?: object } } }).info?.engine?.temporal,
         })
       : undefined;
-    // Contact occlusion dims the light that comes from around. The owned engine writes each pixel's indirect diffuse
-    // light to its own target, so only that share takes the occlusion and the sun keeps its light, as Unreal's AO
-    // (indirect light only) leaves it. Upstream three has no such target, so there the whole frame is dimmed.
-    const indirectOcclusion = ownedEngine && options.gtaoIndirectOnly;
-    // Both screen-space stages below darken the frame with an occlusion gathered at the opaque surface's depth, so both
-    // must leave the draws composited over it alone (see the MRT's `translucent` output and `translucentFrame`).
-    // `TN_TRANSLUCENT=0` or `?tnTranslucent=0` keeps the target off the frame — the occlusion then darkens the sheets
-    // over the opaque surface, as it did before the target existed — so one launch can price the pass; a diagnostic,
-    // never a look.
-    const seesThrough = (options.ssgiEnabled || options.gtaoEnabled) && translucentTargetWanted();
     // Upstream three has no scene-wide translucent target, so each material writes its own: its output, premultiplied
     // by its alpha, and nothing at all from an opaque material (whose alpha is 1). The owned engine draws the
     // transparent draws into the target itself (renderer.cpp, planAux), so it declares no output for it.
@@ -1055,7 +1177,7 @@ export class WorldEnvironment {
     // Normals come from the multi-render-target alongside the colour. SSGI can derive them
     // from depth alone, but the derived normal is flat across a triangle, which shows up as
     // faceted bounce on exactly the smooth surfaces GI is bought for. Metalness and
-    // roughness ride along so SSR knows which pixels are supposed to reflect.
+    // roughness ride along only when an active stage consumes them.
     if (options.ssgiEnabled || options.ssrEnabled || options.gtaoEnabled) {
       // The normal target uses the material blend mode. Its alpha is zero, so a transparent card
       // keeps the opaque normal beneath it. GTAO then does not darken a square behind the card.
@@ -1063,8 +1185,10 @@ export class WorldEnvironment {
       const sceneMrt = mrt({
         output,
         normal: vec4(normalView, 0),
-        metalness,
-        roughness,
+        ...(options.ssrEnabled || options.ssgiEnabled || (options.gtaoEnabled && indirectOcclusion)
+          ? { metalness }
+          : {}),
+        ...(options.ssrEnabled ? { roughness } : {}),
         ...(options.ssgiEnabled || (options.gtaoEnabled && indirectOcclusion)
           ? { diffuseColor }
           : {}),

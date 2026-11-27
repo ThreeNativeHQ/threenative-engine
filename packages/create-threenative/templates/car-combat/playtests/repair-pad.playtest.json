@@ -54,24 +54,41 @@
         "atSteps": [
           {
             "label": "ready",
-            "equals": 60
+            "equals": 59
+          },
+          {
+            "label": "done",
+            "equals": 0
           }
         ]
       },
       {
         "entity": "player",
-        "component": "engine",
-        "equals": 0
-      },
-      {
-        "entity": "player",
         "component": "crushFront",
-        "equals": 0
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0.79
+          },
+          {
+            "label": "done",
+            "equals": 0
+          }
+        ]
       },
       {
         "entity": "player",
         "component": "brakeEfficiency",
-        "equals": 1
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0.98
+          },
+          {
+            "label": "done",
+            "equals": 1
+          }
+        ]
       }
     ],
     "resources": [

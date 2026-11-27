@@ -58,8 +58,8 @@
       "kind": "input",
       "label": "corner",
       "press": ["ArrowUp", "ArrowLeft"],
-      "holdTicks": 90,
-      "release": true
+      "holdTicks": 150,
+      "release": false
     },
     {
       "kind": "wait",
