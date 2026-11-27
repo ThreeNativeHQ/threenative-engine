@@ -35,7 +35,7 @@ prd_contract: v1
 - [ ] AC-1 [local]: On Linux, `threenative build --target desktop --platform win32-x64` in Midway writes a folder whose file list and player sha256 match a Windows-host build of the same commit (the engine CI `clean-consumer-windows` artifact). proof: the file-list diff and the sha256 line.
 - [ ] AC-2 [local]: `tn-store-builder build --platform windows-x64` on Linux packs Midway, and the packed `.exe` starts the game under Wine for 300 frames, or, if Wine cannot run the WebGPU player, the AC records that and AC-3 carries the start proof. proof: the run log.
 - [ ] AC-3 [shared]: A Windows machine (owner's, a VM, or one paid hosted run the owner approves) installs Midway from the production launcher and starts it. proof: screenshot in `~/Downloads/prd-927`.
-- [ ] AC-5 [local]: The win32-x64 engine player attaches the web UI (WebView2) or native-css, so Midway builds for Windows with `ui.renderer: "web"` and its HUD shows on a hosted `windows-2025` desktop capture. proof: the capture and `TN_UI_OVERLAY` attached true.
+- [x] AC-5 [local]: The win32-x64 engine player attaches the web UI (WebView2) or native-css, so Midway builds for Windows with `ui.renderer: "web"` and its HUD shows on a hosted `windows-2025` desktop capture. proof: the capture and `TN_UI_OVERLAY` attached true. Result 2026-11-27: sandbox run 46075196853 built this branch's player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on `windows-2025` (MSVC), packaged Midway with its web HUD and ran it 120 s: `TN_UI_OVERLAY:{"attached":true}`, 6 HUD hit regions, D3D12 on Microsoft Basic Render Driver; the capture shows the mission cards, sortie picker and launch buttons over the carrier (`~/Downloads/windows-midway-web-ui/desktop-120s.png`). The packaging used Midway's 0.3.21 CLI with only `enginePlayerSupportsWebUi` widened to win32, as this PR does.
 - [ ] AC-4 [shared]: Production: `windows_builds_enabled` is back on, a Midway deploy builds `windows-x64` on the trusted Linux runner, and the release reaches live with both platforms built. proof: the farm run ids.
 
 ## Blocked on
@@ -49,7 +49,7 @@ prd_contract: v1
 **Files:** `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/create-threenative/src/` (the `--platform` flag), one spec in `packages/runtime-native/__tests__/`.
 - [ ] A Linux pack of Midway for `win32-x64` matches the Windows-host folder — proof: AC-1 — covers AC-1.
 
-- [ ] The win32 player shows Midway's web HUD — proof: AC-5 — covers AC-5.
+- [x] The win32 player shows Midway's web HUD — proof: AC-5 — covers AC-5.
 
 #### Phase 2: Store builder and farm
 **Status:** NOT STARTED (AC-2)
