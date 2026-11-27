@@ -1269,11 +1269,11 @@ importers:
         specifier: 'catalog:'
         version: 0.9.14(three@0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119))
       threenative-asset-mcp:
-        specifier: 0.21.1
-        version: 0.21.1(@types/node@20.19.43)
+        specifier: 0.21.2
+        version: 0.21.2(@types/node@20.19.43)
       threenative-sculpt-mcp:
-        specifier: 0.2.2
-        version: 0.2.2(@types/node@20.19.43)
+        specifier: 0.2.3
+        version: 0.2.3(@types/node@20.19.43)
       zustand:
         specifier: 'catalog:'
         version: 5.0.14(@types/react@19.2.0)(react@19.2.0)
@@ -4664,13 +4664,13 @@ packages:
   three@0.187.0:
     resolution: {integrity: sha512-Qiu7R+Cmh8CstZsY1uJOSWnVlfo7ZtNLV7mF8Jltk3LB3AtDu9cRZlcnRKkAk8Y4z6KKw35z7Y7Urd7jWY8etA==}
 
-  threenative-asset-mcp@0.21.1:
-    resolution: {integrity: sha512-/kdJdj1ZsMgX9WkbOr3eN983hJLf5z5fvjpUf3VzgROO/yR4ctz9ldDgslNpoh2b8c+1+Lnn6qI1VPBjDFXLiw==}
+  threenative-asset-mcp@0.21.2:
+    resolution: {integrity: sha512-Ma/fG6x5jih/btVMQT5oP68QPOgAqWHYwwXgsbraVdpyUEbh4LkIvRboPyemNxKF3G7dEtjFoqE7xK5NlRCnhA==}
     engines: {node: '>=20.19.0'}
     hasBin: true
 
-  threenative-sculpt-mcp@0.2.2:
-    resolution: {integrity: sha512-oxJ2EOp9Gj5zp+l9o/iSvOcRDPiwKgBgS1VcJwk7RNk8SEqS9f390pUuQAg5s3A4RppITylpaNUpVIJjiSE77A==}
+  threenative-sculpt-mcp@0.2.3:
+    resolution: {integrity: sha512-34FcQ/8zGbWZ90mqM6AkbMI318wQYk84JR2A6sqKob+emjaigvxa9n57b4hjmALuuGmjdfP+RahbhbzJfc6vDQ==}
     engines: {node: '>=20.0.0'}
     hasBin: true
 
@@ -7572,7 +7572,7 @@ snapshots:
 
   three@0.187.0(patch_hash=5e1c9b6030256227cdbe62f897150fa3ba63f9b8174ba259c8c9727088019119): {}
 
-  threenative-asset-mcp@0.21.1(@types/node@20.19.43):
+  threenative-asset-mcp@0.21.2(@types/node@20.19.43):
     dependencies:
       '@gltf-transform/core': 4.4.2
       '@gltf-transform/extensions': 4.4.2
@@ -7591,7 +7591,7 @@ snapshots:
     transitivePeerDependencies:
       - '@types/node'
 
-  threenative-sculpt-mcp@0.2.2(@types/node@20.19.43):
+  threenative-sculpt-mcp@0.2.3(@types/node@20.19.43):
     dependencies:
       '@modelcontextprotocol/sdk': 1.31.0(zod@4.3.6)
       sharp: 0.35.4(@types/node@20.19.43)
