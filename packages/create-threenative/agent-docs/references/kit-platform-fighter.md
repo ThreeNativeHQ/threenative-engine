@@ -16,7 +16,7 @@ Controls: A/D or the arrows run, Space (or W, Up) jumps and double jumps (tap fo
 
 Damage percent rises per hit. Knockback is `((p*0.1 + p*d*0.05) * 2/(weight+1) * 1.4 + 18) * growth/100 + base`, where `p` is the victim percent after the hit. Hitstun is knockback divided by 1.875 frames. The CPU weighs 1.25 and the player 1.0, so the same hit sends the CPU a little less far at the same percent.
 
-`src/sim/cpu.ts` is the opponent: it approaches, jabs or charges a smash, shields a swing it sees coming (60 percent of the time), climbs a ledge and recovers by double jump toward the stage. It sleeps for the first 150 frames, so a scenario's timing does not depend on it. The stations (Digit1-9, Digit0, Z, X, C) put the fighters in fixed test spots and answer only under the playtest runner; delete them with the playtests that use them.
+`src/sim/cpu.ts` is the opponent: it approaches, jabs or charges a smash, shields a swing it sees coming (60 percent of the time), climbs a ledge and recovers by double jump toward the stage. It sleeps for the first 300 frames (five seconds), so a scenario's timing does not depend on it. The stations (Digit1-9, Digit0, Z, X, C) put the fighters in fixed test spots and answer only under the playtest runner; delete them with the playtests that use them.
 
 Every figure is `assets/mannequin-combat.glb`. The player is blue and the CPU is red through a material swap (`src/render/fighters.ts`). The stage and the platforms are grid boxes on the procedural metre-grid materials. The camera (`src/render/camera.ts`) frames both fighters side-on and zooms with their distance.
 
