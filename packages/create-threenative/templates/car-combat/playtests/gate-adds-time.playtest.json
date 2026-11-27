@@ -1,0 +1,91 @@
+{
+  "name": "gate-adds-time",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 5,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "gatesPassed",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "gatesPassed",
+        "equals": 1
+      },
+      {
+        "id": "state",
+        "path": "bonusTotal",
+        "equals": 20
+      },
+      {
+        "id": "state",
+        "path": "nextGate",
+        "equals": 2
+      },
+      {
+        "id": "state",
+        "path": "timeLeft",
+        "gte": 55
+      }
+    ],
+    "signals": [
+      {
+        "name": "gate",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

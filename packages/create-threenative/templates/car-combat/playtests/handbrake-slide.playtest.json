@@ -1,0 +1,91 @@
+{
+  "name": "handbrake-slide",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "slide",
+      "press": [
+        "ArrowUp",
+        "Space"
+      ],
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "let-go",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "handbrake",
+        "atSteps": [
+          {
+            "label": "slide",
+            "equals": true
+          },
+          {
+            "label": "let-go",
+            "equals": false
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "slippingRear",
+        "atSteps": [
+          {
+            "label": "slide",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "gear",
+        "atSteps": [
+          {
+            "label": "slide",
+            "equals": 0
+          }
+        ]
+      }
+    ]
+  }
+}
