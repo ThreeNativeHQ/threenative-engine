@@ -42,7 +42,6 @@ function tool(entry: {
 
 export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
   tool({
-    aliases: ["playtest summary", "playtest out", "no-observations", "parse playtest json"],
     constraints: [
       "Exit codes are unchanged: 0 pass, 1 assertion failure, 2 runner failure, 75 capture lock busy.",
       "Without these flags stdout is still the full report; a report can pass 12 MB, so an agent should always pass --summary or --out.",
@@ -65,14 +64,6 @@ export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     symbol: "threenative-playtest --summary",
   }),
   tool({
-    aliases: [
-      "inspect glb",
-      "glb bounds",
-      "minY",
-      "grounded",
-      "assets.manifest audit",
-      "frame luma",
-    ],
     constraints: [
       "Read-only: it never modifies an asset, a manifest or an image.",
       "`--manifest` and `--frame` exit 1 on a finding; `--frame` reads non-interlaced 8-bit PNG only.",
@@ -97,7 +88,6 @@ export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     symbol: "threenative inspect",
   }),
   tool({
-    aliases: ["wait for resource", "IPlaytestEvent", "playtest step"],
     constraints: [
       "A step needs `timeoutMs` (1 to 300000); the wait fails the scenario when the resource never matches.",
       "The game must expose the resource through the playtest bridge (`runtime.resources`).",
@@ -118,7 +108,6 @@ export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     symbol: "waitForResource",
   }),
   tool({
-    aliases: ["Input.clear", "clear input", "reset held keys"],
     constraints: [
       "It also drops latched presses, pointer buttons and gamepad claims, so call it on a pause, a focus loss or a scene change, not every frame.",
     ],
@@ -135,7 +124,6 @@ export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     symbol: "InputMap.clear",
   }),
   tool({
-    aliases: ["localExposure", "local exposure", "bilateral grid exposure"],
     constraints: [
       "On by default in the shared look and off in the low quality tier; read `TN_FRAME_BUDGET` before leaving it on for a phone.",
     ],
@@ -153,7 +141,6 @@ export const TOOLING_MANIFEST_ENTRIES: readonly ICapabilityManifestEntry[] = [
     symbol: "localExposureEnabled",
   }),
   tool({
-    aliases: ["read contacts", "contact manifold"],
     constraints: [
       "Optional on a backend: a missing method means no narrow-phase access, so fail closed.",
       "One PHYSICS_CONTACT_STRIDE record per manifold; a return larger than the buffer means grow it and read again before the next step.",
