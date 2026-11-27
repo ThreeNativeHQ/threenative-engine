@@ -1,6 +1,14 @@
 import { readFile } from "node:fs/promises";
 import path from "node:path";
 import { Box3, LoadingManager, Vector3 } from "three";
+import {
+  type IFrameInspection,
+  type IManifestAudit,
+  auditAssetManifest,
+  formatFrameInspection,
+  formatManifestAudit,
+  inspectFrame,
+} from "./inspect-project.js";
 
 export interface IAssetVector3 {
   readonly x: number;
@@ -35,11 +43,22 @@ export interface IAssetInspection {
   readonly meshes: number;
   readonly materials: number;
   readonly textures: number;
+  /** World-space lowest and highest point: a model that stands on the floor has `minY` 0. */
+  readonly minY: number;
+  readonly maxY: number;
+  readonly triangles: number;
+  readonly materialNames: readonly string[];
+  /** The glTF `asset.extras` record, such as `{ tnOrigin: "procedural" }`; empty when none. */
+  readonly assetExtras: Readonly<Record<string, unknown>>;
 }
 
 export interface IInspectOptions {
-  readonly file: string;
+  readonly file?: string;
   readonly json: boolean;
+  /** `--manifest [--project <dir>]`: audit the project's assets against its manifest. */
+  readonly manifest?: { readonly project: string };
+  /** `--frame <image> [--sample role:u,v ...]`: blank, luma and sampled-colour check of a screenshot. */
+  readonly frame?: { readonly file: string; readonly samples: readonly string[] };
 }
 
 const SUPPORTED_EXTENSIONS = new Set([".glb", ".gltf"]);
@@ -220,6 +239,7 @@ export async function parseGltfAsset(
     materials?: number;
     textures?: number;
   };
+  assetExtras: Record<string, unknown>;
 }> {
   const restoreGlobals = installNodeGltfGlobals();
   try {
@@ -237,12 +257,14 @@ export async function parseGltfAsset(
       `${path.dirname(path.resolve(file))}${path.sep}`,
     );
     const json = parsed.parser.json as {
+      asset?: { extras?: unknown };
       meshes?: unknown;
       materials?: unknown;
       textures?: unknown;
     };
     return {
       animations: parsed.animations,
+      assetExtras: isObject(json.asset?.extras) ? { ...json.asset.extras } : {},
       resourceCounts: {
         ...(Array.isArray(json.meshes) ? { meshes: json.meshes.length } : {}),
         ...(Array.isArray(json.materials) ? { materials: json.materials.length } : {}),
@@ -261,9 +283,11 @@ function isObject(value: unknown): value is Record<string, unknown> {
 
 function countSceneResources(scene: import("three").Object3D): {
   bones: string[];
+  materialNames: string[];
   materials: number;
   meshes: number;
   textures: number;
+  triangles: number;
 } {
   const materials = new Set<object>();
   const textures = new Set<object>();
@@ -280,6 +304,7 @@ function countSceneResources(scene: import("three").Object3D): {
   };
   const bones: string[] = [];
   let meshes = 0;
+  let triangles = 0;
 
   scene.traverse((object) => {
     const candidate = object as import("three").Object3D & {
@@ -290,6 +315,10 @@ function countSceneResources(scene: import("three").Object3D): {
     if (candidate.isBone === true) bones.push(candidate.name || "(unnamed)");
     if (candidate.isMesh !== true) return;
     meshes += 1;
+    const geometry = (candidate as import("three").Mesh).geometry;
+    triangles += Math.floor(
+      (geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0) / 3,
+    );
     const material = candidate.material;
     for (const surface of Array.isArray(material) ? material : [material]) {
       if (isObject(surface)) {
@@ -299,7 +328,17 @@ function countSceneResources(scene: import("three").Object3D): {
     }
   });
 
-  return { bones, materials: materials.size, meshes, textures: textures.size };
+  const materialNames = [...materials].map(
+    (material) => (material as { name?: string }).name || "(unnamed)",
+  );
+  return {
+    bones,
+    materialNames,
+    materials: materials.size,
+    meshes,
+    textures: textures.size,
+    triangles,
+  };
 }
 
 function inspectScene(
@@ -311,6 +350,7 @@ function inspectScene(
     materials?: number;
     textures?: number;
   },
+  assetExtras: Record<string, unknown>,
 ): IAssetInspection {
   scene.updateWorldMatrix(true, true);
   const box = new Box3().setFromObject(scene);
@@ -320,6 +360,7 @@ function inspectScene(
   const largest = longestAxis(bounds.size);
   const resources = countSceneResources(scene);
   return {
+    assetExtras,
     bounds,
     bones: resources.bones,
     clips: animations.map((clip) => clip.name || "(unnamed)"),
@@ -328,10 +369,14 @@ function inspectScene(
       largest === undefined
         ? { axis: "unknown", basis: "none", direction: "unknown" }
         : { axis: largest.axis, basis: "longest geometry axis", direction: "unknown" },
+    materialNames: resources.materialNames,
     materials: resourceCounts.materials ?? resources.materials,
+    maxY: box.isEmpty() ? 0 : box.max.y,
     meshes: resourceCounts.meshes ?? resources.meshes,
+    minY: box.isEmpty() ? 0 : box.min.y,
     path: path.resolve(file),
     textures: resourceCounts.textures ?? resources.textures,
+    triangles: resources.triangles,
     units: {
       label: unitsLabel(largest?.value ?? 0),
       longestAxis: largest?.value ?? 0,
@@ -350,16 +395,38 @@ function inspectionFailure(file: string, error: unknown): Error {
   return new Error(`TN_ASSET_INSPECT_FAILED: ${file}: ${detail}`);
 }
 
+const USAGE =
+  "Usage: npx create-threenative inspect <file.glb> [--json]\n       npx create-threenative inspect --manifest [--project <dir>] [--json]\n       npx create-threenative inspect --frame <image.png> [--sample role:u,v ...] [--json]";
+
 export function parseInspectArgs(argv: readonly string[]): IInspectOptions {
-  const positional = argv.filter((argument) => !argument.startsWith("-"));
-  const unknown = argv.filter((argument) => argument.startsWith("-") && argument !== "--json");
-  if (unknown.length > 0 || positional.length !== 1) {
-    throw new Error("Usage: npx create-threenative inspect <file.glb> [--json]");
+  const json = argv.includes("--json");
+  const rest = argv.filter((argument) => argument !== "--json");
+  const take = (flag: string): string | undefined => {
+    const at = rest.indexOf(flag);
+    if (at === -1) return undefined;
+    const value = rest[at + 1];
+    if (value === undefined || value.startsWith("--"))
+      throw new Error(`${flag} needs a value.\n${USAGE}`);
+    rest.splice(at, 2);
+    return value;
+  };
+  if (rest.includes("--manifest")) {
+    rest.splice(rest.indexOf("--manifest"), 1);
+    const project = take("--project") ?? ".";
+    if (rest.length > 0) throw new Error(USAGE);
+    return { json, manifest: { project } };
   }
-  const file = positional[0];
-  if (file === undefined)
-    throw new Error("Usage: npx create-threenative inspect <file.glb> [--json]");
-  return { file, json: argv.includes("--json") };
+  const frame = take("--frame");
+  if (frame !== undefined) {
+    const samples: string[] = [];
+    for (let sample = take("--sample"); sample !== undefined; sample = take("--sample"))
+      samples.push(sample);
+    if (rest.length > 0) throw new Error(USAGE);
+    return { frame: { file: frame, samples }, json };
+  }
+  const file = rest[0];
+  if (rest.length !== 1 || file === undefined || file.startsWith("-")) throw new Error(USAGE);
+  return { file, json };
 }
 
 export async function inspectAsset(file: string): Promise<IAssetInspection> {
@@ -375,7 +442,13 @@ export async function inspectAsset(file: string): Promise<IAssetInspection> {
   }
   try {
     const parsed = await parseGltfAsset(file, data);
-    return inspectScene(file, parsed.scene, parsed.animations, parsed.resourceCounts);
+    return inspectScene(
+      file,
+      parsed.scene,
+      parsed.animations,
+      parsed.resourceCounts,
+      parsed.assetExtras,
+    );
   } catch (error) {
     throw inspectionFailure(file, error);
   }
@@ -404,27 +477,50 @@ export function formatAssetInspection(result: IAssetInspection): string {
     `  clips      ${listOrNone(result.clips)}`,
     `  bones      ${bones}`,
     `  meshes     ${result.meshes}   materials ${result.materials}   textures ${result.textures}`,
+    `  height     minY ${result.minY.toFixed(3)}   maxY ${result.maxY.toFixed(3)}   triangles ${result.triangles}`,
+    `  materials  ${listOrNone(result.materialNames)}`,
+    `  extras     ${Object.keys(result.assetExtras).length === 0 ? "(none)" : JSON.stringify(result.assetExtras)}`,
   ].join("\n")}\n`;
 }
 
 export function inspectHelp(): string {
   return `${[
-    "Usage: npx create-threenative inspect <file.glb> [--json]",
+    USAGE,
     "",
-    "Read a glTF asset and report its bounds, units heuristic, axis observation, clips, bones,",
-    "meshes, materials and textures. The command never modifies the asset.",
+    "Read a glTF asset and report its bounds, minY/maxY, triangles, units heuristic, axis",
+    "observation, clips, bones, meshes, materials (with names), textures and asset extras.",
+    "The command never modifies the asset.",
     "",
     "Options:",
-    "  --json  Print the same inspection as machine-readable JSON.",
+    "  --json                 Print the same report as machine-readable JSON.",
+    "  --manifest             Audit assets/** against public/assets.manifest.json: files the",
+    "                         manifest lacks, entries without a file, leftover .zip archives and",
+    "                         duplicate downloads (identical bytes). Exits 1 on any finding.",
+    "  --project <dir>        The project root for --manifest (default: the current directory).",
+    "  --frame <image.png>    Check a screenshot: blank or near-black, mean luma, and colour at",
+    "                         each --sample role:u,v (u,v in 0..1 from the top left).",
   ].join("\n")}\n`;
 }
 
 export async function inspectCommand(
   argv: readonly string[],
   write: (text: string) => void = (text) => process.stdout.write(text),
-): Promise<IAssetInspection> {
+): Promise<unknown> {
   const options = parseInspectArgs(argv);
-  const result = await inspectAsset(options.file);
-  write(options.json ? `${JSON.stringify(result, null, 2)}\n` : formatAssetInspection(result));
+  const result = options.manifest
+    ? await auditAssetManifest(options.manifest.project)
+    : options.frame
+      ? await inspectFrame(options.frame.file, options.frame.samples)
+      : await inspectAsset(options.file as string);
+  const text = options.json
+    ? `${JSON.stringify(result, null, 2)}\n`
+    : options.manifest
+      ? formatManifestAudit(result as IManifestAudit)
+      : options.frame
+        ? formatFrameInspection(result as IFrameInspection)
+        : formatAssetInspection(result as IAssetInspection);
+  write(text);
+  // A finding is a failed check, not a crash: the report is printed, then the process exits 1.
+  if ((result as { pass?: boolean }).pass === false) process.exitCode = 1;
   return result;
 }

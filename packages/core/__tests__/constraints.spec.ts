@@ -62,6 +62,10 @@ describe("core constraints", () => {
           // configures no property of one, and reads only `name` for the error label; which
           // materials exist, and how each looks, is entirely the game's.
           file !== "merge-parts.ts" &&
+          // `@threenative/core/bake` is a Node build-time subpath for bake scripts, never part of a
+          // game's runtime. Its material factories take every colour and PBR value from the
+          // calling script and choose none themselves.
+          file !== "bake.ts" &&
           // The automatic caller of `mergeByMaterial`: it reads each mesh's material identity and
           // render flags to decide which meshes share a draw, and constructs or edits no material.
           file !== "auto-batch.ts" &&

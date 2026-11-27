@@ -4773,6 +4773,113 @@
       "symbol": "zenithTransmittance"
     },
     {
+      "aliases": ["bake add part, mesh part helper"],
+      "constraints": [],
+      "example": "addPart(root, new BoxGeometry(2, 0.5, 4), paint, { position: [0, 0.5, 0], name: \"body\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { addPart } from \"@threenative/core/bake\""],
+      "signature": "export function addPart( parent: Object3D, geometry: BufferGeometry, material: Material, placement: IPartPlacement = { … }",
+      "situations": [
+        "add a box, cylinder or sphere primitive to the group a bake script is building"
+      ],
+      "summary": "Add one primitive to a model: geometry, material and where it sits. Returns the mesh.",
+      "supersedes": [],
+      "symbol": "addPart"
+    },
+    {
+      "aliases": ["bake emissive, glow material, neon material"],
+      "constraints": [],
+      "example": "const neon = createEmissiveMaterial(0x33ffee, 2, { name: \"neon\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { createEmissiveMaterial } from \"@threenative/core/bake\""],
+      "signature": "export function createEmissiveMaterial( color: ColorRepresentation, intensity = 1, options: IPbrMaterialOptions = { … }",
+      "situations": [
+        "bake a procedural model to a glb: make a lamp, neon strip, window or screen glow"
+      ],
+      "summary": "A glowing material: the colour is emitted at `intensity`, with the surface itself dark so it reads as a light source (a lamp, a screen, a neon strip).",
+      "supersedes": [],
+      "symbol": "createEmissiveMaterial"
+    },
+    {
+      "aliases": ["bake material, glb material factory, standard material"],
+      "constraints": [],
+      "example": "const paint = createPbrMaterial(0xcc2222, { name: \"paint\", metalness: 0.6, roughness: 0.3 });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { createPbrMaterial } from \"@threenative/core/bake\""],
+      "signature": "export function createPbrMaterial( color: ColorRepresentation, options: IPbrMaterialOptions = { … }",
+      "situations": [
+        "bake a procedural model to a glb: make a painted, metal or rubber material for a part"
+      ],
+      "summary": "A plain PBR material (`MeshStandardMaterial`). Give each distinct finish its own `name`: the name is the glTF material name and `inspect` lists it.",
+      "supersedes": [],
+      "symbol": "createPbrMaterial"
+    },
+    {
+      "aliases": [
+        "bake script, export glb, GLTFExporter, FileReader polyfill, tnOrigin procedural, ground to zero"
+      ],
+      "constraints": [
+        "node only (it writes a file); the model's look, colours and geometry come from the script"
+      ],
+      "example": "const receipt = await exportProceduralGlb(root, \"assets/lamp.glb\", { prompt: \"street lamp\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { exportProceduralGlb } from \"@threenative/core/bake\""],
+      "signature": "export async function exportProceduralGlb( root: Object3D, outPath: string, options: IExportProceduralGlbOptions, ): Promise<IProceduralGlbReceipt> { … }",
+      "situations": [
+        "bake a procedural model to a glb under assets/ with a node script (scripts/bake-name.mjs)"
+      ],
+      "summary": "Merge, ground, check and write a procedural model as a self-contained binary `.glb` whose `asset.extras` carry `tnOrigin: \"procedural\"` and `tnPrompt`. Returns what it wrote.",
+      "supersedes": [],
+      "symbol": "exportProceduralGlb"
+    },
+    {
+      "aliases": [],
+      "constraints": [
+        "returns new unparented meshes in root's local space; the originals stay in the tree"
+      ],
+      "example": "const merged = mergeByMaterial(root, { label: \"lamp\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+      "situations": [
+        "merge a baked model's many boxes and cylinders into one mesh per material before export"
+      ],
+      "summary": "`mergeByMaterial` from `@threenative/core`, re-exported so a bake script has one import. `exportProceduralGlb` already merges by material; call this only to merge before editing meshes.",
+      "supersedes": [],
+      "symbol": "mergeByMaterial"
+    },
+    {
+      "aliases": ["donor mesh, strip materials, repaint imported mesh"],
+      "constraints": [],
+      "example": "prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: \"base\" }));",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { prepareDonorWithoutMaterials } from \"@threenative/core/bake\""],
+      "signature": "export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T { … }",
+      "situations": [
+        "strip a donor mesh of its materials, textures and vertex colours before a bake script repaints it"
+      ],
+      "summary": "Strip a donor model (a downloaded or Blender-exported scene) of its materials, textures and vertex colours and put one `material` on every mesh, so the script paints it. Mutates and returns `root`.",
+      "supersedes": [],
+      "symbol": "prepareDonorWithoutMaterials"
+    },
+    {
       "aliases": [],
       "constraints": ["use only in the web development entry"],
       "example": "acceptHotUpdate(game, import.meta.hot);",
@@ -12772,6 +12879,26 @@
       "supersedes": []
     },
     {
+      "aliases": ["Input.clear", "clear input", "reset held keys"],
+      "constraints": [
+        "It also drops latched presses, pointer buttons and gamepad claims, so call it on a pause, a focus loss or a scene change, not every frame."
+      ],
+      "example": "window.addEventListener('blur', () => input.clear());",
+      "importPath": "src/input.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "InputMap.clear(): void",
+      "situations": [
+        "release every held key when the window loses focus",
+        "stop a character running on after pausing or opening a menu",
+        "reset the input state between levels"
+      ],
+      "summary": "Forget every held key, pointer button, edge and pad claim on one InputMap.",
+      "supersedes": [],
+      "symbol": "InputMap.clear"
+    },
+    {
       "symbol": "InputMap.setBinding",
       "package": "@threenative/core",
       "importPath": "src/input.ts",
@@ -12793,6 +12920,103 @@
       ],
       "overrides": [],
       "supersedes": []
+    },
+    {
+      "aliases": [
+        "inspect glb",
+        "glb bounds",
+        "minY",
+        "grounded",
+        "assets.manifest audit",
+        "frame luma"
+      ],
+      "constraints": [
+        "Read-only: it never modifies an asset, a manifest or an image.",
+        "`--manifest` and `--frame` exit 1 on a finding; `--frame` reads non-interlaced 8-bit PNG only.",
+        "A `.zip` left in `assets/` or an asset with no manifest entry fails `--manifest`; an `assets.exclude` match shows as unlisted."
+      ],
+      "example": "threenative inspect assets/car.glb --json && threenative inspect --manifest && threenative inspect --frame shot.png --sample hero:0.5,0.6",
+      "importPath": "src/inspect.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "create-threenative",
+      "signature": "threenative inspect <file.glb> | --manifest [--project <dir>] | --frame <image.png> [--sample role:u,v ...] [--json]",
+      "situations": [
+        "check that a baked glb stands on the floor (minY is 0)",
+        "count the triangles and list the material names of a glb",
+        "read the asset extras (tnOrigin procedural) of a glb",
+        "audit the assets folder against public/assets.manifest.json",
+        "find leftover zip downloads and duplicate asset files",
+        "check that a screenshot is not blank or black and read the colour at a point"
+      ],
+      "summary": "One command for the glb, manifest and screenshot checks agents otherwise write 120 ad-hoc scripts for.",
+      "supersedes": [],
+      "symbol": "threenative inspect"
+    },
+    {
+      "aliases": ["localExposure", "local exposure", "bilateral grid exposure"],
+      "constraints": [
+        "On by default in the shared look and off in the low quality tier; read `TN_FRAME_BUDGET` before leaving it on for a phone."
+      ],
+      "example": "new WorldEnvironment({ localExposureEnabled: true })",
+      "importPath": "src/look/world-environment.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "IWorldEnvironmentOptions.localExposureEnabled?: boolean",
+      "situations": [
+        "keep a bright sky and a dark interior both readable in one frame",
+        "lift shadows and tame highlights locally, like Unreal's local exposure",
+        "turn off the local exposure pass for a cheaper frame"
+      ],
+      "summary": "Unreal-style local exposure (a bilateral grid) in the world environment's tone chain.",
+      "supersedes": [],
+      "symbol": "localExposureEnabled"
+    },
+    {
+      "aliases": ["playtest summary", "playtest out", "no-observations", "parse playtest json"],
+      "constraints": [
+        "Exit codes are unchanged: 0 pass, 1 assertion failure, 2 runner failure, 75 capture lock busy.",
+        "Without these flags stdout is still the full report; a report can pass 12 MB, so an agent should always pass --summary or --out.",
+        "`--summary` prints under 4 KB: verdict, movementDelta, failed assertions with details, the top five deduplicated diagnostics, the final state and the artifact directory."
+      ],
+      "example": "threenative-playtest playtests/survives.playtest.json --summary --out .agent/playtests/survives.json --no-observations",
+      "importPath": "src/playtest-cli.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "threenative-playtest <scenario> [--summary] [--out <file>] [--no-observations]",
+      "situations": [
+        "read a playtest result without parsing megabytes of JSON",
+        "get the pass or fail, failed assertions and final state of a playtest in a few lines",
+        "write the full playtest report to a file and print only a summary",
+        "stop writing a python or node script to parse a playtest report",
+        "drop the huge per-tick observations from a playtest report"
+      ],
+      "summary": "Print a compact playtest verdict and keep the full report on disk instead of dumping it to stdout.",
+      "supersedes": [],
+      "symbol": "threenative-playtest --summary"
+    },
+    {
+      "aliases": ["wait for resource", "IPlaytestEvent", "playtest step"],
+      "constraints": [
+        "A step needs `timeoutMs` (1 to 300000); the wait fails the scenario when the resource never matches.",
+        "The game must expose the resource through the playtest bridge (`runtime.resources`)."
+      ],
+      "example": "{ \"waitForResource\": { \"id\": \"state\", \"path\": \"networkConnected\", \"equals\": true }, \"timeoutMs\": 5000 }",
+      "importPath": "src/playtest-scenario.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/playtest",
+      "signature": "step: { waitForResource: { id: string; path: string; equals?: unknown }; timeoutMs: number }",
+      "situations": [
+        "wait in a playtest until a game resource reaches a value",
+        "wait for the game to finish loading or connecting before asserting",
+        "wait for a score, a wave or a state flag in a playtest scenario"
+      ],
+      "summary": "A playtest scenario step that advances the game until a resource path matches, instead of a fixed tick count.",
+      "supersedes": [],
+      "symbol": "waitForResource"
     },
     {
       "symbol": "createStormLightning",
@@ -13058,6 +13282,27 @@
       ],
       "overrides": [],
       "supersedes": []
+    },
+    {
+      "aliases": ["read contacts", "contact manifold"],
+      "constraints": [
+        "Optional on a backend: a missing method means no narrow-phase access, so fail closed.",
+        "One PHYSICS_CONTACT_STRIDE record per manifold; a return larger than the buffer means grow it and read again before the next step."
+      ],
+      "example": "const count = sim.readContacts?.(targetCollider, candidateColliders, buffer);",
+      "importPath": "src/simulation.ts",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/physics",
+      "signature": "IPhysicsSimulation.readContacts?(target, colliders: Uint32Array, buffer: Float32Array): number",
+      "situations": [
+        "read the persistent contact points, normals and load between two colliders",
+        "tell whether a body is supported by the floor or a platform this step",
+        "feed a deformation or footstep system from solved contacts instead of collision events"
+      ],
+      "summary": "Persistent solved contacts of one collider against a candidate set, written into a Float32Array.",
+      "supersedes": [],
+      "symbol": "readContacts"
     },
     {
       "symbol": "bloom",
