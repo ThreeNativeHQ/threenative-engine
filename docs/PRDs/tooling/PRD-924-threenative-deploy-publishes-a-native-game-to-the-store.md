@@ -21,7 +21,7 @@ What exists:
 - ✅ **Native distribution is the store**, on Cloudflare (site Worker + D1 + R2). An author pushes **source** (`tn-store push`). `build-game.yml` builds `linux-x64` and `windows-x64` on Actions, then the scan and the review run, and the release goes live. The launcher installs and starts it (store PRD-790 to PRD-797, `threenative-store/DECISIONS.md` rows 3 to 6). The store builds from source by rule, and a native game is the engine player plus game data only (store PRD-815). So a native deploy must push source, not upload a local binary.
 - ✅ **The token already fits.** `threenative login` device tokens have scope `push` (site `worker/store-device.ts:123`), the scope the store push API takes.
 - ❌ **No public store client.** `tn-store` (Rust, `threenative-store/crates/tn-store-cli`) is not published. The store's `release.yml` and `scripts/release-local.mjs` ship only the launcher. Studio spawns `tn-store` from its own image with `TN_STORE_TOKEN` in the environment. It keeps the game id in `.threenative/store.json` (`threenative-live-studio/src/server/release/publish.ts:36,68`).
-- ⚠️ **Windows native is blocked**: the win32-x64 engine player crashes at startup (threenative-engine#614, open). The builder packs only the Linux launch entry (`tn-store-builder/src/build.rs:236`).
+- ⚠️ **Windows native is not proven yet**: the win32-x64 engine player crash (threenative-engine#614) is fixed on develop by #615 (`v8_main.cpp:1737`, `setvbuf` `_IOLBF` fails fast on MSVC). Engine run 45942019774 (`clean-consumer-windows`) passed `--check-game` on windows-2025. The store builder drops the `.cmd` launcher (store branch `fix/614-windows-launch-entry`). The Windows proof run (store run 45952889024) waits on the store repo's GitHub Actions billing, which has refused every store job since 2026-11-21.
 - **Midway**: `~/projects/threenative/sandbox/midway-open-pacific` (`ThreeNativeHQ/threenative-sandbox`). It has `@threenative/core` 0.3.21 and a `build:desktop` script. Its source is 751 MB without `node_modules/` and `.git/`, under the 2 GiB snapshot limit. Unverified: whether its pnpm lockfile passes the builder's registry integrity check (PRD-805), and whether it runs on the small engine player that PRD-815 allows.
 
 ## Solution
@@ -39,7 +39,7 @@ sequenceDiagram
     C->>T: games create (first deploy only), TN_STORE_TOKEN in env
     C->>T: push <gameId> --version <package.json version>
     T->>W: missing chunks, PUT chunks, create snapshot
-    W->>F: build-game.yml linux-x64 (windows-x64 after #614)
+    W->>F: build-game.yml linux-x64 (windows-x64 once its proof run passes)
     F->>W: build, scan, review: live or held
     C-->>A: state, then https://threenative.com/games/<slug>/ on the last line
 ```
@@ -56,7 +56,7 @@ sequenceDiagram
 
 ## Non-Goals
 
-- A Windows native build of Midway: it waits for #614 (see Blocked on). The deploy path itself is OS-independent.
+- A Windows native build of Midway: it waits for the store's Windows proof run (see Blocked on). Refs #614. The deploy path itself is OS-independent.
 - macOS: the store has no macOS build or launcher (`DECISIONS.md` row 9). On macOS the command exits 2 with that reason.
 - Uploading a locally built binary: the store builds from source by rule (PRD-815).
 - Changes to the store page or the install flow: those are PRD-925.
@@ -71,7 +71,7 @@ sequenceDiagram
 
 ## Blocked on
 
-- Windows native Midway: threenative-engine#614 (win32-x64 player crash) — unblocked by the #614 fix. After the fix, the builder's Windows launch entry (`build.rs:236`) needs one line, and the deploy path needs no change.
+- Windows native Midway: the store's Windows proof run (store run 45952889024) waits on the store repo's GitHub Actions billing — unblocked by João. The #614 crash itself is fixed (#615); the engine side is locked by the win32 packaging test and the `.cmd` check in `native-release.yml`. The deploy path needs no change. Refs #614, not `Fixes`, until the store run passes.
 - AC-5 only if the release gate holds Midway: an admin approves it in `/admin` (PRD-814) — unblocked by João.
 
 ## Integration Ledger
