@@ -5,6 +5,7 @@ import { randomUUID } from "node:crypto";
 import { link, mkdir, readFile, readdir, rename, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { CliExit, request, requireToken, serverMessage } from "./account.js";
+import { deployDesktop } from "./store-cli.js";
 
 const SHARE_BUILD_MAX_BYTES = 50 * 1024 * 1024;
 const MAX_FILES = 2_000;
@@ -76,6 +77,7 @@ async function runBuildScript(cwd: string): Promise<void> {
 
 interface IProjectManifest {
   name?: string;
+  version?: unknown;
   scripts?: Record<string, string>;
 }
 
@@ -150,15 +152,42 @@ async function theirKey(file: string): Promise<string> {
 
 export interface IDeployOptions {
   cwd?: string;
+  /** `desktop` publishes the source to the store, which builds the native game (store-cli.ts). */
+  target?: "desktop" | "web";
+  /** Cover picture for the first native deploy. */
+  shot?: string;
   out?: (line: string) => void;
   runBuild?: (cwd: string) => Promise<void>;
+  /** The site origin that serves the store (default threenative.com, `THREENATIVE_SITE`). */
+  site?: string;
   studio?: string;
   token?: string;
 }
 
+/** `projectId` is the store game id for a native deploy; `shareUrl` is its store page. */
 export interface IDeployResult {
   projectId: string;
   shareUrl: string;
+}
+
+export function parseDeployArgs(argv: readonly string[]): IDeployOptions {
+  const options: IDeployOptions = {};
+  for (let at = 0; at < argv.length; at += 1) {
+    const flag = argv[at];
+    const value = argv[at + 1];
+    if (flag === "--target" && (value === "web" || value === "desktop")) options.target = value;
+    else if (flag === "--shot" && value !== undefined && !value.startsWith("-"))
+      options.shot = value;
+    else
+      throw new CliExit(
+        2,
+        `deploy: unknown or incomplete option '${String(flag)}'. Try 'threenative deploy --help'.`,
+      );
+    at += 1;
+  }
+  if (options.shot !== undefined && options.target !== "desktop")
+    throw new CliExit(2, "deploy: --shot needs --target desktop.");
+  return options;
 }
 
 export async function deploy(options: IDeployOptions = {}): Promise<IDeployResult> {
@@ -170,10 +199,24 @@ export async function deploy(options: IDeployOptions = {}): Promise<IDeployResul
   const manifest = await readJson<IProjectManifest>(path.join(cwd, "package.json"));
   if (manifest === undefined)
     throw new CliExit(2, "No package.json here. Run threenative deploy inside a game.");
-  if (manifest.scripts?.["build:web"] === undefined)
-    throw new CliExit(2, "package.json has no build:web script.");
   if (manifest.name === undefined || manifest.name === "")
     throw new CliExit(2, "package.json has no name.");
+  if (options.target === "desktop") {
+    const { gameId, url } = await deployDesktop(
+      { name: manifest.name, version: manifest.version },
+      {
+        cwd,
+        out,
+        token,
+        ...(options.shot === undefined ? {} : { shot: options.shot }),
+        ...(options.site === undefined ? {} : { site: options.site }),
+      },
+    );
+    return { projectId: gameId, shareUrl: url };
+  }
+  if (options.shot !== undefined) throw new CliExit(2, "--shot only applies to --target desktop.");
+  if (manifest.scripts?.["build:web"] === undefined)
+    throw new CliExit(2, "package.json has no build:web script.");
 
   await (options.runBuild ?? runBuildScript)(cwd);
   const archive = await packDirectory(path.join(cwd, "dist")).catch((error: unknown) => {

@@ -82,7 +82,7 @@ builds locally can still fail there — check it before claiming the scaffold wo
 The `threenative` commands are `build` (`--target web|desktop|android|ios`), `doctor` (`--text` for
 the person-readable report; borrowed from `npm doctor`), `login` (device-code sign-in, token saved
 owner-only, `--no-browser`), `logout` (revokes it on the site), and `deploy` (`build:web`, uploads
-`dist/` to Studio, prints the share link last; `.threenative/share.json` keeps the link). `__tests__/cli.spec.ts`
+`dist/` to Studio, prints the share link last; `.threenative/share.json` keeps the link; `--target desktop --shot <png>` pushes source to the store with a checked `tn-store` and prints the store page last; `.threenative/store.json` keeps the game id). `__tests__/cli.spec.ts`
 derives the list from the real executable. A new command borrows an established CLI's name, never a new word.
 The scaffolder itself takes a target directory plus `inspect <file.glb> [--json]`; its flags stay
 boring: `--template`, `--no-install`, and the `--*-package` overrides CI uses to test against

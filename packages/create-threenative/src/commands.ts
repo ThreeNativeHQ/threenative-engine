@@ -14,7 +14,7 @@ export const threenativeCommands: readonly PublicCommand[] = [
 export const commandSummaries: Record<PublicCommand, string> = {
   build: "Build web or native output.",
   doctor: "Check this project and report what would break a build.",
-  deploy: "Build for the web and publish the game to its share link on threenative.com.",
+  deploy: "Publish the game: a web share link, or with --target desktop the native store.",
   login: "Sign in to your threenative.com account.",
   logout: "Sign out and revoke this machine's token.",
 };

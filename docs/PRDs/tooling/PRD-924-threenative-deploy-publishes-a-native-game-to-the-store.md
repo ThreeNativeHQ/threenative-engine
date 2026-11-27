@@ -64,7 +64,7 @@ sequenceDiagram
 ## Acceptance Criteria
 
 - [ ] AC-1 [local]: The Midway source passes the store's own build for `linux-x64` on this machine (tag, registry integrity, engine-player shape). The packed player runs Midway 300 frames with a non-blank screenshot. proof: `node scripts/local-farm.mjs` in the store repo on the Midway folder, then `threenative-playtest --target desktop` on the packed player — Evidence: pending.
-- [ ] AC-2 [local]: `threenative deploy --target desktop` on a game without `store.json` downloads `tn-store`, refuses a wrong sha256 and runs `games create` then `push` with the token only in the environment. It writes `store.json` once and prints the store URL last. A second run pushes onto the same game id. proof: `pnpm exec vitest run packages/create-threenative/__tests__/deploy-native.spec.ts` (fake site, fake `tn-store`) — Evidence: pending.
+- [x] AC-2 [local]: `threenative deploy --target desktop` on a game without `store.json` downloads `tn-store`, refuses a wrong sha256 and runs `games create` then `push` with the token only in the environment. It writes `store.json` once and prints the store URL last. A second run pushes onto the same game id. proof: `pnpm exec vitest run packages/create-threenative/__tests__/deploy-native.spec.ts` (fake site, fake `tn-store`) — Evidence: `pnpm exec vitest run packages/create-threenative/__tests__/deploy-native.spec.ts` passes 5 tests (fake site serves `cli.json` and a binary, fake `tn-store`): download once, mode 0755, wrong sha256 exits 4 with no cached file, token only in the child env, `games create` then `push` then `games show`, `store.json` written once, second run reuses the game id, missing `--shot` exits 2, store exit 3 passes through. The web specs `deploy.spec.ts` and `deploy-nolink.spec.ts` stay green.
 - [ ] AC-3 [local]: The real flow with a local site `wrangler dev` and a `tn-store` built from source: deploy Midway, the snapshot lands, and the second deploy sends only changed chunks. proof: run log in the PR — Evidence: pending.
 - [ ] AC-4 [shared]: `release-local.mjs` publishes `tn-store` for Linux and Windows, plus `launcher/cli/cli.json`, and `https://threenative.com/launcher/cli/cli.json` serves hashes that match the files. proof: release run log + `curl` + `sha256sum` — Evidence: pending.
 - [ ] AC-5 [shared]: From the Midway checkout, `npx threenative deploy --target desktop` against production. The farm builds `linux-x64`, the release goes live, and the launcher on this machine installs Midway from the store and starts it from the library, the way Steam does. proof: deploy log, the `build-game.yml` run link, a launcher screenshot in `~/Downloads/prd-924/` — Evidence: pending.
@@ -85,6 +85,8 @@ sequenceDiagram
 
 - 2026-11-26 (agent): run the published `tn-store` binary, not a TypeScript port. It reuses the client that Studio already runs in production, its secret scan included, and keeps one implementation of the store protocol.
 - 2026-11-26 (agent): `THREENATIVE_STORE_CLI=<path>` makes the command use a local `tn-store` instead of the download. AC-2 and AC-3 need it to test a source-built client before AC-4 publishes one. It is also how Studio's image can keep its own copy.
+- 2026-11-26 (agent): a `package.json` with no `version` (Midway) deploys as `0.0.0`. The store takes any 1 to 40 printable ASCII label and does not require it to be unique, so the default blocks nothing. A version outside that range exits 2.
+- 2026-11-26 (agent): the store page URL comes from `tn-store games show <id> --json`, whose `slug` the owner's listing carries before it is live. If that call fails, the last line falls back to `/games/game/?id=<id>`, which the site redirects once the game is live.
 - 2026-11-26 (agent): the first deploy needs `--shot`. The store listing requires a picture, and running the game to capture one costs more than the flag.
 
 ## Execution Phases
@@ -99,7 +101,7 @@ sequenceDiagram
 **Status:** NOT STARTED
 **Files:** `packages/create-threenative/src/deploy.ts` (target switch), `src/store-cli.ts` (fetch, verify, cache, spawn), `src/threenative.ts` (help text), `__tests__/deploy-native.spec.ts`.
 **Implementation:** as in Solution. The web path keeps its tests green, unchanged.
-- [ ] The unit contract passes — proof: AC-2 — covers AC-2.
+- [x] The unit contract passes — proof: AC-2 — covers AC-2.
 - [ ] The local end-to-end deploy of Midway works — proof: AC-3 — covers AC-3.
 
 #### Phase 3: Published client, live Midway
