@@ -31,6 +31,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The spec bakes every kit's Arbor art into scratch folders an afterAll removes, so a failed assertion leaves nothing behind.",
   ],
   [
+    "packages/create-threenative/__tests__/dashboard.spec.ts",
+    "The dashboard suite writes one project root per test, and its afterEach removes the root the test used.",
+  ],
+  [
     "packages/create-threenative/src/index.ts",
     "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
   ],
