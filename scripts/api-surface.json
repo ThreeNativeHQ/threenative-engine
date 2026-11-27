@@ -54,6 +54,7 @@
     "@threenative/core": {
       "exports": [
         ".",
+        "./bake",
         "./hot",
         "./net",
         "./package.json",
@@ -69,6 +70,11 @@
         "./world"
       ],
       "symbols": {
+        "@threenative/core/bake#addPart": "export function addPart( parent: Object3D, geometry: BufferGeometry, material: Material, placement: IPartPlacement = { … }",
+        "@threenative/core/bake#createEmissiveMaterial": "export function createEmissiveMaterial( color: ColorRepresentation, intensity = 1, options: IPbrMaterialOptions = { … }",
+        "@threenative/core/bake#createPbrMaterial": "export function createPbrMaterial( color: ColorRepresentation, options: IPbrMaterialOptions = { … }",
+        "@threenative/core/bake#exportProceduralGlb": "export async function exportProceduralGlb( root: Object3D, outPath: string, options: IExportProceduralGlbOptions, ): Promise<IProceduralGlbReceipt> { … }",
+        "@threenative/core/bake#prepareDonorWithoutMaterials": "export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T { … }",
         "@threenative/core/hot#acceptHotUpdate": "export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>( game: IGame<TState, TPhysics>, hot: IImportMeta[\"hot\"], ): void { … }",
         "@threenative/core/hot#assertPortableState": "export function assertPortableState(state: unknown): void { … }",
         "@threenative/core/net#connect": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
