@@ -158,7 +158,11 @@ describe.skipIf(process.platform !== "linux")("tn-store download", () => {
               files: [{ os: "linux", name: "tn-store-linux", size: bytes.length, sha256 }],
             }),
         );
-      } else if (request.url === "/launcher/cli/tn-store-linux") response.end(bytes);
+      } else if (
+        request.url === "/launcher/cli/tn-store-linux" ||
+        request.url === "/launcher/cli/tn-store-win.exe"
+      )
+        response.end(bytes);
       else {
         response.statusCode = 404;
         response.end();
@@ -292,6 +296,86 @@ describe.skipIf(process.platform !== "linux")("tn-store download", () => {
       } finally {
         site.close();
       }
+    }
+  });
+
+  /** The platform and arch the CLI sees, faked the way engine-desktop.spec.ts fakes win32. */
+  async function asPlatform(platform: string, arch: string, run: () => Promise<void>) {
+    const originalPlatform = Object.getOwnPropertyDescriptor(process, "platform");
+    const originalArch = Object.getOwnPropertyDescriptor(process, "arch");
+    Object.defineProperty(process, "platform", { configurable: true, value: platform });
+    Object.defineProperty(process, "arch", { configurable: true, value: arch });
+    try {
+      await run();
+    } finally {
+      if (originalPlatform) Object.defineProperty(process, "platform", originalPlatform);
+      if (originalArch) Object.defineProperty(process, "arch", originalArch);
+    }
+  }
+
+  it("on win32 x64 picks the windows file, caches it as .exe under LOCALAPPDATA, token in env", async () => {
+    const store = await fakeStoreFile();
+    const bytes = Buffer.from(FAKE_STORE);
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    const localAppData = await makeTempDir("tn-localappdata-");
+    vi.stubEnv("XDG_CACHE_HOME", "");
+    vi.stubEnv("LOCALAPPDATA", localAppData);
+    vi.stubEnv("FAKE_LOG", store.log);
+    // The linux entry carries a wrong hash: choosing it would exit 4.
+    const site = await fakeSite(
+      bytes,
+      sha,
+      JSON.stringify({
+        version: "0.2.0",
+        files: [
+          { os: "linux", name: "tn-store-linux", sha256: "0".repeat(64) },
+          { os: "windows", name: "tn-store-win.exe", sha256: sha },
+        ],
+      }),
+    );
+    try {
+      await asPlatform("win32", "x64", async () => {
+        await deploy({
+          cwd: await game(),
+          out: () => {},
+          shot: "cover.png",
+          site: site.origin,
+          target: "desktop",
+          token: "win-token",
+        });
+      });
+      expect(site.hits).toContain("/launcher/cli/tn-store-win.exe");
+      expect(site.hits).not.toContain("/launcher/cli/tn-store-linux");
+      const cached = path.join(localAppData, "threenative", "bin", "tn-store-0.2.0.exe");
+      expect((await stat(cached)).isFile()).toBe(true);
+      const all = await calls(store.log);
+      expect(all.length).toBeGreaterThan(0);
+      expect(all.every((c) => c.token === "win-token" && !c.args.includes("win-token"))).toBe(true);
+    } finally {
+      site.close();
+    }
+  });
+
+  it("on arm64 exits 2 and downloads nothing", async () => {
+    const site = await fakeSite(Buffer.from(FAKE_STORE), "0".repeat(64));
+    try {
+      await asPlatform("linux", "arm64", async () => {
+        const failure = await failureOf(
+          deploy({
+            cwd: await game(),
+            out: () => {},
+            shot: "cover.png",
+            site: site.origin,
+            target: "desktop",
+            token: "t",
+          }),
+        );
+        expect(failure.code).toBe(2);
+        expect(failure.message).toContain("arm64");
+      });
+      expect(site.hits).toEqual([]);
+    } finally {
+      site.close();
     }
   });
 });
