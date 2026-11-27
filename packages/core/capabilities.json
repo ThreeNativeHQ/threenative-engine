@@ -13441,6 +13441,19 @@
       ]
     },
     {
+      "blurb": "A floating grid stage, two fighters and a CPU: damage percent, knockback by percent and weight, double jump, fast fall, shield and roll, ledges, blast zones and stocks.",
+      "name": "platform-fighter",
+      "title": "Platform fighter",
+      "words": [
+        "fighting",
+        "smash",
+        "smash-bros",
+        "super-smash-bros",
+        "platform-fighter",
+        "brawler"
+      ]
+    },
+    {
       "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
       "name": "platformer",
       "title": "Fox Dash",

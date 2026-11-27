@@ -456,6 +456,38 @@
       }
     }
   },
+  "platform-fighter": {
+    "subject": "p1",
+    "move": ["KeyD", "KeyA", "Space", "KeyS"],
+    "explore": {
+      "actions": ["KeyJ", "KeyK", "KeyL", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "p1.stocks", "equals": 3 },
+        { "id": "state", "path": "cpu.stocks", "equals": 3 },
+        { "id": "state", "path": "p1.percent", "equals": 0 },
+        { "id": "state", "path": "time", "lte": 1 }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyJ",
+        "clip": "Punch_Jab",
+        "ticks": 19,
+        "contactTicks": 6,
+        "effect": { "signal": "strike" }
+      },
+      { "key": "KeyK", "clip": "Sword_Attack", "ticks": 44 },
+      { "key": "ShiftLeft", "clip": "Roll", "ticks": 34 }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "puzzle": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

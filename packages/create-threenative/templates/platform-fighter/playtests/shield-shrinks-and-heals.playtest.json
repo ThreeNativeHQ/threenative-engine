@@ -1,0 +1,113 @@
+{
+  "name": "shield-shrinks-and-heals",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": [
+        "KeyL"
+      ],
+      "holdTicks": 4,
+      "label": "raised",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": [
+        "KeyL"
+      ],
+      "holdTicks": 96,
+      "label": "held",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": [],
+      "holdTicks": 1,
+      "label": "shrunk",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 12,
+      "label": "lowered",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 130,
+      "label": "healed",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "raised",
+            "equals": "shield"
+          },
+          {
+            "label": "lowered",
+            "equals": "free"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.shield",
+        "atSteps": [
+          {
+            "label": "shrunk",
+            "lte": 51
+          },
+          {
+            "label": "healed",
+            "equals": 55
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.shieldSize",
+        "atSteps": [
+          {
+            "label": "shrunk",
+            "lte": 0.97
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.shieldSize",
+        "allowTrivial": "A shield bubble that never shrank also reads full size; the shrink is proven by the shield health sample above, and this row proves the bubble returns to full.",
+        "equals": 1
+      }
+    ]
+  }
+}

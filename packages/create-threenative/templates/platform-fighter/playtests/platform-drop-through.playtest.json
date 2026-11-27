@@ -1,0 +1,105 @@
+{
+  "name": "platform-drop-through",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": [
+        "ArrowLeft"
+      ],
+      "holdTicks": 12,
+      "label": "slide-left",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": [
+        "Space"
+      ],
+      "holdTicks": 8,
+      "label": "jump-up",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 48,
+      "label": "on-platform",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": [
+        "ArrowDown"
+      ],
+      "holdTicks": 3,
+      "label": "drop",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": [],
+      "holdTicks": 45,
+      "label": "dropped",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.y",
+        "atSteps": [
+          {
+            "label": "on-platform",
+            "equals": 2.6
+          },
+          {
+            "label": "dropped",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "on-platform",
+            "equals": 1
+          },
+          {
+            "label": "dropped",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

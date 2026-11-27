@@ -1,0 +1,144 @@
+{
+  "name": "blast-zone-ko-and-respawn",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": [
+        "Digit6"
+      ],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": [
+        "KeyK"
+      ],
+      "holdTicks": 1,
+      "label": "smash",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 110,
+      "label": "ko",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 70,
+      "label": "respawned",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 140,
+      "label": "vulnerable",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "cpu.stocks",
+        "atSteps": [
+          {
+            "label": "ko",
+            "equals": 2
+          },
+          {
+            "label": "respawned",
+            "equals": 2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.kos",
+        "atSteps": [
+          {
+            "label": "ko",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.mode",
+        "atSteps": [
+          {
+            "label": "ko",
+            "equals": "dead"
+          },
+          {
+            "label": "respawned",
+            "equals": "free"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.intangible",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 1
+          },
+          {
+            "label": "vulnerable",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.percent",
+        "atSteps": [
+          {
+            "label": "respawned",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.stocks",
+        "atSteps": [
+          {
+            "label": "vulnerable",
+            "equals": 3
+          }
+        ]
+      }
+    ]
+  }
+}
