@@ -1,7 +1,6 @@
 import {
   existsSync,
   mkdirSync,
-  mkdtempSync,
   readFileSync,
   readdirSync,
   rmSync,
@@ -15,6 +14,7 @@ import tsParser from "@typescript-eslint/parser";
 import { ESLint, Linter } from "eslint";
 import { MathUtils } from "three";
 import { describe, expect, it } from "vitest";
+import { makeTempDirSyncAt } from "../../../test-support/temp-dir.js";
 import { qualityConfig } from "../src/quality/index.js";
 import { threenativePlugin } from "../src/quality/plugin.js";
 import { REINVENTIONS, reinventionConfigs, reinventionRules } from "../src/quality/reinventions.js";
@@ -453,7 +453,7 @@ describe("threenative/no-native-incompatible-three", () => {
 
 describe("threenative/no-unused-assets", () => {
   it("errors once per unused asset or zip archive and skips wired files, LODs, and acquisitions metadata", async () => {
-    const tmp = mkdtempSync(path.join(import.meta.dirname, ".tmp-unused-assets-"));
+    const tmp = makeTempDirSyncAt(path.join(import.meta.dirname, ".tmp-unused-assets-"));
     try {
       const write = (rel: string, content = "") => {
         const file = path.join(tmp, rel);
