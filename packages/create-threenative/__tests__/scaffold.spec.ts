@@ -127,6 +127,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "02e9d1a6e035d9b76d3747debe43947f97ff7ee42a141708cd39b008b9e34761",
     kit: "c15f4836e8e3e106f1322b12044ae098ea76a0983b75f931758ca45f28dd3666",
   },
+  "board-party": {
+    shared: "02e9d1a6e035d9b76d3747debe43947f97ff7ee42a141708cd39b008b9e34761",
+    kit: "c15f4836e8e3e106f1322b12044ae098ea76a0983b75f931758ca45f28dd3666",
+  },
   collectathon: {
     shared: "2b58c42e4d1e62d089061a290c949407b226dbcb35ebbb5f3a21a33cc55b4285",
     kit: "d1545032c3d8f60bf7717985d23d020469f424e253c7f1ab858984e8ba672a64",
@@ -138,6 +142,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   farming: {
     shared: "1f789056329eeafd40871d9119d5dd19eed1a1e3f4c8c13e9e9e46e1467b4c0c",
     kit: "66da18905676b8e26d37a628c735e01f9f57a0dc7826433c514dd74becf5951a",
+  },
+  flight: {
+    shared: "d16f101b88402e64a2c65cbe6de574cd777c7557606b0e48cca72277e08f5dff",
+    kit: "f2b4454ece78413bb36e52813d49b8ac4e08de42983070bad29c8b5f981bfbad",
   },
   kart: {
     shared: "00d7b7465cff14233c1457c854baa1de29baad36433d59884dd783aa6adf6561",
@@ -166,6 +174,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   racing: {
     shared: "002abf8219870e4e6c9f79c85ad9e4e8236a4e37b73f66e9f959394e5c1ccd40",
     kit: "dfcbed50a36d132a585c8a9b1d084b93e1cfb493d3d743dc0b0e37fbbff1dc0f",
+  },
+  "rail-shooter": {
+    shared: "48bdbf002daf8b5c746999832a744a3fc72f31d52e5b0df0e426b29d8a675610",
+    kit: "fe5e9f44513d79f1f4cfd864c61c16a341e6869f8e442465d62f6f92f70f45f2",
   },
   "rail-shooter": {
     shared: "48bdbf002daf8b5c746999832a744a3fc72f31d52e5b0df0e426b29d8a675610",

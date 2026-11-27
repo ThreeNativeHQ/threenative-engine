@@ -1394,5 +1394,48 @@
       "effect-follows-contact": "no melee or timed hit with a contact window: a press is graded against a note, which the timing-windows scenario proves",
       "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
+  },
+  "flight": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "flying"
+        },
+        {
+          "id": "state",
+          "path": "ringsPassed",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "stalls",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "total",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 3
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the pilot hangs prone under the glider or stands on a thrust flame: no foot ever plants on the ground, so there is no sole to measure",
+      "action-clip-completes": "no key plays a one-shot clip: the pilot loops one idle clip and the controls fly the craft",
+      "effect-follows-contact": "no melee or timed hit with a contact window",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
   }
 }

@@ -1,0 +1,107 @@
+{
+  "name": "belt-hovers-burns-fuel-and-climbs",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "swap",
+      "press": "KeyV",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "belt",
+      "waitForResource": {
+        "id": "state",
+        "path": "ringsTotal",
+        "equals": 3
+      },
+      "release": true,
+      "timeoutMs": 8000
+    },
+    {
+      "label": "belt-up",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "hang",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hovering",
+      "waitTicks": 180,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "thrust",
+      "press": "Space",
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "label": "climbed",
+      "waitForResource": {
+        "id": "state",
+        "path": "altitude",
+        "gte": 45
+      },
+      "release": false,
+      "timeoutMs": 6000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "altitude",
+        "atSteps": [
+          {
+            "label": "hovering",
+            "lte": 33
+          }
+        ],
+        "allowTrivial": "The belt starts on the ground; this run proves the hover holds the 30 m the station put it at."
+      },
+      {
+        "id": "state",
+        "path": "fuel",
+        "atSteps": [
+          {
+            "label": "hovering",
+            "lte": 0.97
+          }
+        ],
+        "allowTrivial": "The tank starts full; this run proves the hover burned some."
+      }
+    ]
+  }
+}

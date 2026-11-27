@@ -1,0 +1,95 @@
+{
+  "name": "thermal-lifts-the-glider-up",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "in-column",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "rising-air",
+      "waitForResource": {
+        "id": "state",
+        "path": "airLift",
+        "gte": 3
+      },
+      "release": true,
+      "timeoutMs": 9000
+    },
+    {
+      "kind": "input",
+      "label": "circle",
+      "press": [
+        "ArrowRight",
+        "ArrowDown"
+      ],
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "label": "climbed",
+      "waitForResource": {
+        "id": "state",
+        "path": "altitude",
+        "gte": 80
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "stayed-up",
+      "waitForResource": {
+        "id": "state",
+        "path": "thermalTime",
+        "gte": 6
+      },
+      "release": false,
+      "timeoutMs": 9000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 2,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "altitude",
+        "atSteps": [
+          {
+            "label": "rising-air",
+            "lte": 70
+          }
+        ]
+      }
+    ]
+  }
+}
