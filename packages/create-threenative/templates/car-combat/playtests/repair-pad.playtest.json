@@ -1,0 +1,90 @@
+{
+  "name": "repair-pad",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "mid",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "done",
+      "waitTicks": 420,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "engine",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 60
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "engine",
+        "equals": 0
+      },
+      {
+        "entity": "player",
+        "component": "crushFront",
+        "equals": 0
+      },
+      {
+        "entity": "player",
+        "component": "brakeEfficiency",
+        "equals": 1
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "engine",
+        "atSteps": [
+          {
+            "label": "mid",
+            "lte": 50
+          }
+        ]
+      }
+    ]
+  }
+}

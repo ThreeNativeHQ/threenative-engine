@@ -21,9 +21,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit8"
-      ],
+      "press": ["Digit8"],
       "holdTicks": 1,
       "release": true
     },

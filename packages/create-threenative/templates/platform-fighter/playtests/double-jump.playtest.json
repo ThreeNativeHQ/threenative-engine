@@ -21,9 +21,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 8,
       "label": "hop",
       "release": true
@@ -35,9 +33,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 1,
       "label": "double",
       "release": true
@@ -55,9 +51,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 1,
       "label": "third",
       "release": true

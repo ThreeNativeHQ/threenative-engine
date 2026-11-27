@@ -63,7 +63,10 @@
       "marker": "\u2014",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
+        "farming",
+        "flight",
         "kart",
         "minimal",
         "open-world",
@@ -71,6 +74,7 @@
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "sailing",
         "shooter",
@@ -78,6 +82,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -114,7 +119,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -128,6 +135,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -171,12 +179,15 @@
       "marker": "updateRateReport",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -185,6 +196,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -194,7 +206,16 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure", "open-world", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "farming",
+        "open-world",
+        "rhythm",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "ground-snap",
@@ -205,14 +226,18 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "platform-fighter",
+        "rhythm",
         "runner",
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -222,7 +247,17 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "farming",
+        "open-world",
+        "rhythm",
+        "shooter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "scale",
@@ -233,16 +268,21 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
+        "flight",
         "minimal",
         "open-world",
         "platform-fighter",
         "racing",
+        "rhythm",
         "runner",
         "sailing",
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -261,13 +301,16 @@
       "marker": "boneContact",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "runner",
         "sailing",
         "shooter",
@@ -275,6 +318,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -303,13 +347,17 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
+        "flight",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -318,6 +366,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -337,11 +386,15 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
+        "flight",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -350,6 +403,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -370,13 +424,16 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -385,6 +442,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -469,7 +527,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -484,6 +544,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },

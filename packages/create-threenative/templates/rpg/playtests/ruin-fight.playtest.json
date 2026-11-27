@@ -1,0 +1,261 @@
+{
+  "name": "ruin-fight",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "on-the-road",
+      "press": "F5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "step-in",
+      "press": "ArrowUp",
+      "holdTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "raiders-come",
+      "waitTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-a-0",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-a-gap-0",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-a-1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-a-gap-1",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-a-2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-a-gap-2",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-a-3",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-a-gap-3",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "round-a",
+      "waitTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-b-0",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-b-gap-0",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-b-1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-b-gap-1",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-b-2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-b-gap-2",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-b-3",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-b-gap-3",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "round-b",
+      "waitTicks": 600,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-c-0",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-c-gap-0",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-c-1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-c-gap-1",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-c-2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-c-gap-2",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "volley-c-3",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "volley-c-gap-3",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "label": "ruin-cleared",
+      "waitForResource": {
+        "id": "state",
+        "path": "kills",
+        "gte": 3
+      },
+      "release": false,
+      "timeoutMs": 120000
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "ruin-cleared",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "inCombat",
+        "atSteps": [
+          {
+            "label": "raiders-come",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "gte": 3
+      }
+    ]
+  }
+}

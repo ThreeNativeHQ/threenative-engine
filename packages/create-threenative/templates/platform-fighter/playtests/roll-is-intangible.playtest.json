@@ -21,17 +21,13 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit1"
-      ],
+      "press": ["Digit1"],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "press": [
-        "Digit9"
-      ],
+      "press": ["Digit9"],
       "holdTicks": 1,
       "release": true
     },
@@ -43,9 +39,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit1"
-      ],
+      "press": ["Digit1"],
       "holdTicks": 1,
       "release": true
     },
@@ -56,9 +50,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "ShiftLeft"
-      ],
+      "press": ["ShiftLeft"],
       "holdTicks": 1,
       "label": "roll",
       "release": true
@@ -70,9 +62,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit9"
-      ],
+      "press": ["Digit9"],
       "holdTicks": 1,
       "release": true
     },

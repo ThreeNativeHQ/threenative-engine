@@ -1,0 +1,117 @@
+{
+  "name": "beat-clock",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "tick-a",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": -3
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "wait",
+      "label": "tick-b",
+      "waitTicks": 140,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tick-c",
+      "waitTicks": 140,
+      "release": true
+    },
+    {
+      "label": "downbeat",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 8
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "offbeat",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 8.5
+      },
+      "release": false,
+      "timeoutMs": 90000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "bpm",
+        "atSteps": [
+          {
+            "label": "tick-a",
+            "equals": 120
+          }
+        ],
+        "allowTrivial": "The tempo is a constant of the chart; the beat counts below prove the clock follows it."
+      },
+      {
+        "id": "state",
+        "path": "beatCount",
+        "atSteps": [
+          {
+            "label": "tick-a",
+            "equals": -3
+          },
+          {
+            "label": "tick-b",
+            "equals": 1
+          },
+          {
+            "label": "tick-c",
+            "equals": 6
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "stage",
+        "component": "lit",
+        "atSteps": [
+          {
+            "label": "downbeat",
+            "equals": 1
+          },
+          {
+            "label": "offbeat",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "hud": [
+      {
+        "id": "beat-bar",
+        "visible": true,
+        "allowTrivial": "The bar is drawn from the first snapshot; this proves it stays on screen while the beat runs."
+      }
+    ]
+  }
+}

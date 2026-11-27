@@ -122,3 +122,4 @@ Then run `pnpm --filter create-threenative test` and push. The pre-push hook run
 | Root lint | `pnpm exec biome check .` | Data keys in React lists, `<title>` in SVGs, a written reason on each `delete`. |
 | Performance | Per-block draws and crowds in the shadow map broke a streaming kit's budget | Measure per pass. Merge flat static geometry, use shadow level of detail. |
 | Contract `no-hitch` | Cheap kits had too few GPU samples on the counted clock | The row runs on the wall clock. Do not change it back. |
+| Waiting on a run | Seven lanes idled 30 to 80 minutes after their run had ended: the waiter never fired | Before you wait, check whether the log already ends. Wait with `until grep -q "^exit\|TN_TEMPLATE_PLAYTESTS" <log>`. |

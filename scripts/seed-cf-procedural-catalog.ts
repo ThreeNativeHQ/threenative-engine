@@ -1,17 +1,15 @@
 /**
  * PRD-120 (Studio). Seeds ThreeNative's public asset catalog on Cloudflare with the engine's procedural
- * assets that live outside `@threenative/procedural-environment`: the pinned Procedural Animals wolf, baked
- * here into a standard skinned GLB, and the adventure kit's baked forest-floor props.
+ * assets: the baked Procedural Animals wolf, the adventure kit's forest-floor props, and the full
+ * `@threenative/procedural-environment` Asset Library (242 bakeable + 208 runtime kit models).
  *
  *   pnpm tsx scripts/seed-cf-procedural-catalog.ts --dry-run          # bake and validate, upload nothing
- *   OPS_TOKEN=… pnpm tsx scripts/seed-cf-procedural-catalog.ts        # upsert into production
- *   OPS_TOKEN=… pnpm tsx scripts/seed-cf-procedural-catalog.ts --target http://127.0.0.1:8787
+ *   OPS_TOKEN=… pnpm tsx scripts/seed-cf-procedural-catalog.ts        # upsert missing/changed into production
+ *   OPS_TOKEN=… pnpm tsx scripts/seed-cf-procedural-catalog.ts --only tree,city,stylized
+ *   OPS_TOKEN=… pnpm tsx scripts/seed-cf-procedural-catalog.ts --force --target http://127.0.0.1:8787
  *
- * The operator route upserts by slug, so a rerun with the same bytes changes nothing. The wolf comes from
- * the MIT donor `procedural-animals` at its pinned revision (`pnpm-workspace.yaml` catalog), so the seeder
- * does not need the retired `@threenative/procedural-animals` package. The GLB keeps the rest-pose skeleton
- * and linear skin weights; the donor's dual-quaternion skin and procedural motion are runtime code and are
- * not part of the file.
+ * The operator route upserts by slug, so a rerun with the same bytes changes nothing. By default the
+ * seeder checks `public-catalog.json` first and skips unchanged slugs unless `--force` is passed.
  */
 import { createHash } from "node:crypto";
 import { readFile, writeFile } from "node:fs/promises";
@@ -19,19 +17,23 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildAnimalData, clearBuildCache } from "procedural-animals";
 import wolf from "procedural-animals/species/wolf";
+import {
+  type ISeedEntry,
+  assertValidSelfContainedGlb,
+  assetLibraryCatalog,
+  iterateAssetLibrarySeeds,
+} from "./seed-cf-asset-library.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const FLOOR = path.resolve(here, "../packages/create-threenative/template-assets/assets");
 export const OPS_PATH = "/ops/asset-cache/public";
+const PUBLIC_CATALOG_PATH = "/api/assets/public/catalog.json";
+const DEFAULT_OPS_TARGET = "https://studio.threenative.com";
+const DEFAULT_PUBLIC_ORIGIN = "https://gateway.threenative.com";
 const LICENSE = "CC0-1.0";
 const AUTHOR = "ThreeNative";
 
-export interface ISeed {
-  readonly slug: string;
-  readonly prompt: string;
-  readonly tags: string;
-  readonly bytes: Uint8Array;
-}
+export type ISeed = ISeedEntry;
 
 interface IBone {
   readonly name: string;
@@ -262,7 +264,7 @@ export async function upload(
     body: JSON.stringify({
       author: AUTHOR,
       glbBase64: Buffer.from(seed.bytes).toString("base64"),
-      license: LICENSE,
+      license: seed.license ?? LICENSE,
       origin: "procedural",
       prompt: seed.prompt,
       slug: seed.slug,
@@ -276,34 +278,154 @@ export async function upload(
   return (await reply.json()) as { id: string; updated: boolean };
 }
 
+interface IPublicCatalogSnapshotItem {
+  readonly slug: string;
+  readonly prompt: string;
+  readonly tags: string;
+  readonly license: string;
+  readonly contentHash: string;
+}
+
+async function fetchExistingCatalog(
+  publicOrigin: string,
+): Promise<Map<string, IPublicCatalogSnapshotItem>> {
+  try {
+    const response = await fetch(new URL(PUBLIC_CATALOG_PATH, publicOrigin));
+    if (!response.ok) return new Map();
+    const json = (await response.json()) as { items?: IPublicCatalogSnapshotItem[] };
+    return new Map((json.items ?? []).map((item) => [item.slug, item]));
+  } catch {
+    return new Map();
+  }
+}
+
+function isUnchanged(
+  seed: ISeed,
+  sha256: string,
+  existing: IPublicCatalogSnapshotItem | undefined,
+): boolean {
+  if (!existing) return false;
+  return (
+    existing.contentHash === sha256 &&
+    existing.prompt === seed.prompt &&
+    existing.tags === seed.tags &&
+    existing.license === (seed.license ?? LICENSE)
+  );
+}
+
+function parseOnlyFlag(value: string | undefined): readonly string[] | undefined {
+  if (!value) return undefined;
+  return value
+    .split(",")
+    .map((entry) => entry.trim().toLowerCase())
+    .filter(Boolean);
+}
+
+async function assertUniqueAllSlugs(only: readonly string[] | undefined): Promise<void> {
+  const seen = new Set<string>();
+  const coreSlugs = [
+    ...(only && !only.includes("wolf") ? [] : ["wolf-grey", "wolf-grey-high"]),
+    ...(only && !only.includes("floor") ? [] : FLOOR_PROPS.map(([slug]) => slug)),
+  ];
+  for (const slug of coreSlugs) seen.add(slug);
+  const lib = await assetLibraryCatalog();
+  for (const item of lib) {
+    if (only && !only.includes(item.kind)) continue;
+    if (seen.has(item.slug)) throw new Error(`Slug collision detected: "${item.slug}"`);
+    seen.add(item.slug);
+  }
+}
+
+async function* iterateCoreSeeds(only: readonly string[] | undefined): AsyncGenerator<ISeed> {
+  const wantWolf = !only || only.includes("wolf");
+  const wantFloor = !only || only.includes("floor");
+  if (!wantWolf && !wantFloor) return;
+  const base = await seeds();
+  for (const seed of base) {
+    const isWolf = seed.slug.startsWith("wolf-");
+    if ((isWolf && wantWolf) || (!isWolf && wantFloor)) yield seed;
+  }
+}
+
+async function* iterateAllSelectedSeeds(
+  only: readonly string[] | undefined,
+): AsyncGenerator<ISeed> {
+  for await (const seed of iterateCoreSeeds(only)) yield seed;
+  for await (const { seed } of iterateAssetLibrarySeeds({ only })) yield seed;
+}
+
+interface IRunContext {
+  readonly count: number;
+  readonly dryRun: boolean;
+  readonly force: boolean;
+  readonly out: string | undefined;
+  readonly target: string;
+  readonly token: string;
+  readonly existing: ReadonlyMap<string, IPublicCatalogSnapshotItem>;
+}
+
+async function processSeed(
+  seed: ISeed,
+  ctx: IRunContext,
+): Promise<"uploaded" | "skipped" | "dry-run"> {
+  if (!validGlb(seed.bytes)) throw new Error(`${seed.slug} is not a valid GLB`);
+  assertValidSelfContainedGlb(seed.slug, seed.bytes);
+  const sha256 = createHash("sha256").update(seed.bytes).digest("hex");
+  if (ctx.out !== undefined) await writeFile(path.join(ctx.out, `${seed.slug}.glb`), seed.bytes);
+  const kb = (seed.bytes.byteLength / 1024).toFixed(1).padStart(7);
+  if (ctx.dryRun) {
+    console.info(`[${ctx.count}] ${seed.slug.padEnd(32)} ${kb} KB  ${sha256.slice(0, 12)}`);
+    return "dry-run";
+  }
+  if (!ctx.force && isUnchanged(seed, sha256, ctx.existing.get(seed.slug))) {
+    console.info(`[${ctx.count}] skipped   ${seed.slug.padEnd(32)} ${kb} KB`);
+    return "skipped";
+  }
+  const { id, updated } = await upload(seed, ctx.target, ctx.token);
+  console.info(
+    `[${ctx.count}] ${updated ? "updated" : "created"}   ${seed.slug.padEnd(32)} ${kb} KB → ${id}`,
+  );
+  return "uploaded";
+}
+
 async function main(argv: string[]): Promise<void> {
   const dryRun = argv.includes("--dry-run");
+  const force = argv.includes("--force");
   const flag = (name: string): string | undefined =>
     argv.includes(name) ? argv[argv.indexOf(name) + 1] : undefined;
-  const target = flag("--target") ?? "https://studio.threenative.com";
+  const rawTarget = flag("--target") ?? DEFAULT_OPS_TARGET;
+  const target = rawTarget.includes("://") ? rawTarget : `https://${rawTarget}`;
+  const publicOrigin = rawTarget === DEFAULT_OPS_TARGET ? DEFAULT_PUBLIC_ORIGIN : target;
   const out = flag("--out");
-  const all = await seeds();
-  for (const seed of all) {
-    if (!validGlb(seed.bytes)) throw new Error(`${seed.slug} is not a valid GLB`);
-    const sha = createHash("sha256").update(seed.bytes).digest("hex").slice(0, 12);
-    console.info(`${seed.slug.padEnd(16)} ${String(seed.bytes.byteLength).padStart(9)} B  ${sha}`);
-    if (out !== undefined) await writeFile(path.join(out, `${seed.slug}.glb`), seed.bytes);
+  const only = parseOnlyFlag(flag("--only"));
+
+  await assertUniqueAllSlugs(only);
+
+  const token = process.env.OPS_TOKEN ?? "";
+  if (!dryRun && !token) throw new Error("OPS_TOKEN is required to upload (or pass --dry-run)");
+  const existing = dryRun || force ? new Map() : await fetchExistingCatalog(publicOrigin);
+
+  let count = 0;
+  let totalBytes = 0;
+  let uploadedCount = 0;
+  let skippedCount = 0;
+
+  for await (const seed of iterateAllSelectedSeeds(only)) {
+    count += 1;
+    totalBytes += seed.bytes.byteLength;
+    const outcome = await processSeed(seed, { count, dryRun, existing, force, out, target, token });
+    if (outcome === "uploaded") uploadedCount += 1;
+    else if (outcome === "skipped") skippedCount += 1;
   }
+
+  const totalMb = (totalBytes / (1024 * 1024)).toFixed(2);
   if (dryRun) {
-    console.info(`\n--dry-run: ${all.length} valid GLBs, nothing uploaded`);
+    console.info(`\n--dry-run: ${count} valid GLBs (${totalMb} MB total), nothing uploaded`);
     return;
   }
-  const token = process.env.OPS_TOKEN;
-  if (!token) throw new Error("OPS_TOKEN is required to upload (or pass --dry-run)");
-  for (const seed of all) {
-    // One upsert at a time: each one rebuilds the catalog.
-    const { id, updated } = await upload(
-      seed,
-      target.includes("://") ? target : `https://${target}`,
-      token,
-    );
-    console.info(`${updated ? "updated" : "created"} ${seed.slug} → ${id}`);
-  }
+  console.info(
+    `\nSeed complete: ${count} processed (${uploadedCount} uploaded, ${skippedCount} unchanged, ${totalMb} MB total)`,
+  );
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main(process.argv.slice(2));

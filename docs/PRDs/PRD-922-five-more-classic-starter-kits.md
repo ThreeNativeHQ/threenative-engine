@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-922 — Five more classic-mechanics starter kits: platform fighter, rail shooter, rhythm, farming, flight
 
-**Status:** IN PROGRESS — 2026-11-26.
+**Status:** PARTIAL — 2026-11-26. Shipped in #749: `farming`, `rail-shooter`, `board-party`, the `starter-kit-development` skill and the per-kit authoring-layer test.
+**Blocker:** owner, 2026-11-26: "push whatever is done to the repo" (token budget). The other seven kits are pushed as `kit/<name>` branches, not merged: platform-fighter (30/30 before Gemini fixes, rerun pending), tomb-explorer (16/16, camera row fixed, rerun pending), rhythm (registered, final sweep unconfirmed), flight (13/16 on FlightModel), rpg (camera fix not run), military-shooter (reruns pending), car-combat (no full run).
 **Priority:** P1 — owner request, 2026-11-26
 **Complexity:** 9 (HIGH) — five new kits in `packages/create-threenative/templates/`, contract rows, pins
 **Owner:** João
@@ -32,17 +33,42 @@ model or sound file. Mechanics borrow algorithms and defaults from the pinned re
 | `rail-shooter` | Star Fox 64 | ship on a rail path with a reticle-steered offset, boost and brake, barrel roll that deflects shots, charged lock-on shot, enemy waves on splines, shield gauge, hit count, a boss |
 | `rhythm` | PaRappa the Rapper 2 | call and response lines on a beat clock, timing windows (cool, good, bad, miss), a rating meter that moves a level up or down per line, a performer that animates on the beat |
 | `farming` | Harvest Moon 64 | day clock and sleep, till, plant, water, crops that grow only when watered, stamina, a shipping bin paid out overnight, tool switching, a calendar of seasons |
-| `flight` | Pilotwings 64 | glider with lift, drag and stall, thermals that climb, rings to pass, a landing pad scored on distance and impact, a time and score card |
+| `flight` | Pilotwings 64; flight model from Midway (engine `FlightModel`, owner 2026-11-26) | glider with lift, drag and stall, thermals that climb, rings to pass, a landing pad scored on distance and impact, a time and score card |
+
+### Wave 2 (owner /goal 2026-11-26: run the starter-kit-development skill in a loop over the common genres)
+
+Same rules, same PR (#749). Each pick is a common genre that no kit answers and that a reference card covers.
+
+| Kit | Reference cards | Core mechanics |
+| --- | --- | --- |
+| `military-shooter` | Call of Duty 4 (`call-of-duty-4-modern-warfare-kisakcod`), Halo CE (`halo-combat-evolved-opence`) | stance (stand, crouch, prone) speeds, sprint as a time budget, aim-down-sights spread, recoil, regenerating shield over health, grenades with a fuse, cover that blocks fire |
+| `board-party` | Mario Party (`mario-party-1`) | board spaces in a chain with junctions, dice roll and space-by-space move, landed-space coin effects, turn rotation over four players (three CPU), a star bought at a moving space, a minigame round after each turn |
+| `rpg` | KOTOR (`star-wars-knights-of-the-old-republic-reone`), Morrowind (`the-elder-scrolls-iii-morrowind-openmw`) | combat rounds with an action queue, d20 attack roll against defense with critical threat, a party leader and followers, a conversation tree with a skill check, stats and skills that rise with use, a quest log |
+| `tomb-explorer` | Tomb Raider I-II (`tomb-raider-i-ii`) | run with a turn ramp, standing and running jumps on a block grid, mid-air ledge grab, hang, shimmy and climb, swimming with an air meter, fall damage, a pickup in reach, a trap |
+| `car-combat` | Carmageddon (`carmageddon`) | tyre grip on a friction ellipse, engine torque and gearbox, per-panel damage and repair, impact damage dealt to rival cars, checkpoints with a time bonus, a win by wrecking all rivals or by laps |
+
+### Loop stop rule
+
+- **Done:** wave 2 lands in #749 under the same gates, and each genre in the waves has a kit.
+- **Next wave:** genres the MCP index does not cover yet (one-on-one fighting, sports, roguelike, survival
+  crafting, metroidvania, turn-based tactics) need a reference card first (add it to the reverse-engineering MCP,
+  release it). That is a separate decision for the owner.
+- **Stop early:** a lane that fails the same gate twice for the same cause stops, and its genre moves to the report.
 
 ## Phases
 
 ### Phase 1 — Kits (one lane per kit)
 
 - [ ] `platform-fighter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
-- [ ] `rail-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `rail-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `rhythm`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
-- [ ] `farming`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `farming`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `flight`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [ ] `military-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `board-party`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [ ] `rpg`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [ ] `tomb-explorer`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [ ] `car-combat`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 
 ### Phase 2 — Registration and review
 
@@ -51,7 +77,7 @@ model or sound file. Mechanics borrow algorithms and defaults from the pinned re
 
 ## Acceptance criteria
 
-- [ ] Five new kits, each on the minimal assets only: each scaffolded project's `assets/` holds only `mannequin-combat.glb`.
+- [ ] Ten new kits (two waves), each on the minimal assets only: each scaffolded project's `assets/` holds only `mannequin-combat.glb`.
 - [ ] Every mechanic is proven by a fail-closed playtest, the kit contract is green, and the performance scenario holds its budget.
 - [ ] Each kit's AGENTS.md says which reference games it borrows from, and its routing words match a request that names one.
 - [ ] Each kit is usable through the authoring layer: `create-threenative --genre <reference game>` scaffolds it,

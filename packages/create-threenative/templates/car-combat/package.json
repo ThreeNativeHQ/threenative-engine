@@ -1,0 +1,69 @@
+{
+  "name": "__PROJECT_NAME__",
+  "private": true,
+  "license": "MIT",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "threenative build",
+    "build:web": "threenative build --target web",
+    "build:desktop": "threenative build --target desktop",
+    "build:android": "threenative build --target android",
+    "build:ios": "threenative build --target ios",
+    "test:native": "pnpm build:desktop && node node_modules/@threenative/runtime-native/scripts/verify-starter-desktop.mjs",
+    "pretest": "playwright install chromium",
+    "test": "pnpm check && pnpm build:web && threenative-playtest --scenario \"playtests/*.playtest.json\" --browser-recipe webgpu --headed --server-command \"pnpm exec vite preview --host 127.0.0.1 --port $PORT --strictPort\"",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "check": "pnpm typecheck && pnpm lint && pnpm format:check",
+    "lint": "eslint src",
+    "format:check": "biome format src"
+  },
+  "dependencies": {
+    "@threenative/backend": ">=0.2.2",
+    "@threenative/core": ">=0.3.25",
+    "@threenative/physics": ">=0.3.25",
+    "@threenative/ui": ">=0.3.25",
+    "react": "19.2.0",
+    "react-dom": "19.2.0",
+    "three": "0.187.0"
+  },
+  "devDependencies": {
+    "@gltf-transform/cli": "4.4.2",
+    "@tailwindcss/vite": "4.3.3",
+    "@threenative/assets": ">=0.3.26",
+    "@threenative/playtest": ">=0.3.25",
+    "@types/react": "19.2.0",
+    "@types/react-dom": "19.2.0",
+    "@types/three": "0.187.0",
+    "@vitejs/plugin-react": "6.0.5",
+    "create-threenative": "0.2.30",
+    "esbuild": "0.27.0",
+    "playwright": "1.62.1",
+    "tailwindcss": "4.3.3",
+    "typescript": "7.0.2",
+    "vite": "8.2.0",
+    "@biomejs/biome": "1.9.4",
+    "eslint": "10.13.0"
+  },
+  "optionalDependencies": {
+    "@threenative/runtime-native": ">=0.3.25"
+  },
+  "overrides": {
+    "sharp": ">=0.35.4",
+    "@vitejs/devtools": "0.4.1"
+  },
+  "pnpm": {
+    "overrides": {
+      "sharp": ">=0.35.4"
+    },
+    "supportedArchitectures": {
+      "libc": ["current"]
+    },
+    "onlyBuiltDependencies": ["@threenative/core"],
+    "patchedDependencies": {
+      "three@0.187.0": "patches/three@0.187.0.patch",
+      "vite@8.2.0": "patches/vite@8.2.0.patch",
+      "@tailwindcss/node@4.3.3": "patches/@tailwindcss__node@4.3.3.patch"
+    }
+  }
+}

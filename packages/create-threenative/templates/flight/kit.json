@@ -1,0 +1,17 @@
+{
+  "name": "flight",
+  "title": "Flight",
+  "blurb": "A grey-grid island flown by a hang glider (lift, drag, stall, thermals, wind) and a rocket belt (thrust, fuel, hover), with rings, a scored landing pad and a score card.",
+  "genre": "flight",
+  "aliases": [
+    "pilotwings",
+    "pilotwings-64",
+    "flight",
+    "flight-sim",
+    "glider",
+    "hang-glider",
+    "rocket-belt",
+    "skydiving"
+  ],
+  "kit": true
+}

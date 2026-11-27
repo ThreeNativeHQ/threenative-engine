@@ -35,18 +35,19 @@ async function readDoc(relative: string): Promise<string> {
   return readFile(path.join(repoRoot, relative), "utf8");
 }
 
-/** The README's `## Templates` table as `name -> row`, so a missing row and a phantom row are both
- * one assertion rather than a grep nobody runs. */
+/** The README's kit table as `name -> row`, so a missing row and a phantom row are both one
+ * assertion rather than a grep nobody runs. The section is titled "Starter kits", and one row may
+ * introduce three kits, so every backticked name in a row's first cell is a row. */
 async function readmeTemplateTable(): Promise<Map<string, string>> {
   const readme = await readDoc("README.md");
-  const start = readme.indexOf("## Templates");
-  expect(start, "README.md has no ## Templates section").toBeGreaterThanOrEqual(0);
+  const start = readme.indexOf("## Starter kits");
+  expect(start, "README.md has no ## Starter kits section").toBeGreaterThanOrEqual(0);
   const end = readme.indexOf("\n## ", start + 1);
   const section = readme.slice(start, end === -1 ? undefined : end);
   const rows = new Map<string, string>();
   for (const line of section.split("\n")) {
-    const name = /^\| `([a-z0-9-]+)`/u.exec(line)?.[1];
-    if (name !== undefined) rows.set(name, line);
+    for (const match of (line.split("|")[1] ?? "").matchAll(/`([a-z0-9-]+)`/gu))
+      rows.set(match[1] ?? "", line);
   }
   return rows;
 }

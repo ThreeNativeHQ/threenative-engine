@@ -1,0 +1,17 @@
+{
+  "name": "rhythm",
+  "title": "Rhythm call and response",
+  "blurb": "A grid-material stage with a beat clock and a teacher who calls a line of button prompts: answer on the beat, graded cool, good, bad or miss, ride a rating meter up to freestyle or fall off the bottom.",
+  "genre": "rhythm",
+  "aliases": [
+    "parappa",
+    "parappa-the-rapper",
+    "parappa-the-rapper-2",
+    "rhythm",
+    "rhythm-game",
+    "music-game",
+    "beat-clock",
+    "dance"
+  ],
+  "kit": true
+}

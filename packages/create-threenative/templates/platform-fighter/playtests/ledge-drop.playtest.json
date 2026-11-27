@@ -21,9 +21,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit7"
-      ],
+      "press": ["Digit7"],
       "holdTicks": 1,
       "release": true
     },
@@ -40,9 +38,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "ArrowDown"
-      ],
+      "press": ["ArrowDown"],
       "holdTicks": 3,
       "label": "drop",
       "release": false
