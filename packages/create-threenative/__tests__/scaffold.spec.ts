@@ -129,7 +129,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "car-combat": {
     shared: "a811e9936826c88765ba96753a99a54aea8f0e2c61e0cfa20d9e46197d5a3454",
-    kit: "1f2722a73c69c5ac9518944bed781663f0033ac595e5bd172135ebd6e9b009ab",
+    kit: "c0cdf16ea9cc2db180375dc2e6de994eacaa49d3065f5e54acea3e2c9d46c80c",
   },
   collectathon: {
     shared: "2b58c42e4d1e62d089061a290c949407b226dbcb35ebbb5f3a21a33cc55b4285",
@@ -141,7 +141,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   flight: {
     shared: "1f26a60a8c9e65363bdc1242ed4cac3c86b79f1f567f10fdcffeaaa64af3a926",
-    kit: "549355143b4bdf2b181420490386b60d34d055c10d78b9f0d25904da7e684a52",
+    kit: "46c0247ab99b10e1be32e1333015f7e5bdcec0b390ce99f9864110b5c16f9877",
   },
   kart: {
     shared: "00d7b7465cff14233c1457c854baa1de29baad36433d59884dd783aa6adf6561",
@@ -149,7 +149,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "military-shooter": {
     shared: "00a6ad2008deb9aadb72ca85e05b89b4eeae0437354c76b8364548d6687e2bad",
-    kit: "2b875f39de09e43b639cd548e9a7fbf03bfe36025f2b719d899c019d17a1280d",
+    kit: "c37ad41181f2bf110fb7025f3a1da84b5afc9d00d9604b75094247a3580af73e",
   },
   minimal: {
     shared: "ec7fcdf0dd7c643ed8656af5e08677b11d87da06d9bd97d578b88c669f622d71",
@@ -161,7 +161,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "platform-fighter": {
     shared: "a55cbefc723f0ec25263fd6f3abbf3e177830d52d26eeb28fbe7bdfcf9f25066",
-    kit: "4c2ae643e191d733e30c16722b40ca59483bc11b699b52dd0024aba8162e3f59",
+    kit: "f9d97205807654f8932275dd316360cef7dc7718e1e68b2f94fcb2a694315a02",
   },
   platformer: {
     shared: "eee52271bc5f4a991dc431906fd40e88705eabddc32ccc29aa7ca65541a3d249",
@@ -189,7 +189,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   rpg: {
     shared: "39298643939a4481d81edd016d18f9bbcd1b7191892c43e52fd914216a9b8886",
-    kit: "7ae54dc89f75026cd8ecd2580ff2e5ec954e2f282ee60d25ed49b49466996f40",
+    kit: "c012b214bd019ed8c014ab2bbb5df2eed26e591911eee8466c119564af4b6ccb",
   },
   rts: {
     shared: "bc561f1af97760753e876b1cf7bba1219cfb374cf9fafe0f2db4199de464e66f",
