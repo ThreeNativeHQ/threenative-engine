@@ -242,6 +242,31 @@
       }
     }
   },
+  "military-shooter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyF", "KeyR", "KeyG", "ShiftLeft", "KeyC", "KeyZ"],
+      "pointer": true
+    },
+    "restart": {
+      "key": "Enter",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "health", "equals": 100 },
+        { "id": "state", "path": "shield", "equals": 100 },
+        { "id": "state", "path": "kills", "equals": 0 },
+        { "id": "state", "path": "shots", "equals": 0 },
+        { "id": "state", "path": "time", "lte": 1 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "first-person player with no visible feet; the soldiers hold their posts and no player key drives them",
+      "action-clip-completes": "no key plays an animation clip: the player is a rifle on the camera, and a soldier's clips follow its own fire",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a round is a ray that lands on the tick it leaves",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "minimal": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

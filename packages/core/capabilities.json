@@ -13405,6 +13405,22 @@
       "words": ["kart-racer", "mario-kart", "mariokart", "mk64", "kart"]
     },
     {
+      "blurb": "A grey-grid yard held by five soldiers: stances, a sprint budget, aim down sights, spread and recoil, a regenerating shield over health, grenades with a fuse, and cover that stops rounds.",
+      "name": "military-shooter",
+      "title": "Military shooter",
+      "words": [
+        "military-shooter",
+        "call-of-duty",
+        "cod",
+        "modern-warfare",
+        "cod4",
+        "halo",
+        "halo-ce",
+        "battlefield",
+        "military"
+      ]
+    },
+    {
       "blurb": "A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job.",
       "name": "open-world",
       "title": "Open-world crime",

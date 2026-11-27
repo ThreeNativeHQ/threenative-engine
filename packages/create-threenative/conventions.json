@@ -205,6 +205,7 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "military-shooter",
         "minimal",
         "open-world",
         "runner",
@@ -221,7 +222,15 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "military-shooter",
+        "open-world",
+        "shooter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "scale",
@@ -232,6 +241,7 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "military-shooter",
         "minimal",
         "open-world",
         "racing",
