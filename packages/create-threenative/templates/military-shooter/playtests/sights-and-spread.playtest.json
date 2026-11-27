@@ -1,0 +1,225 @@
+{
+  "name": "sights-and-spread",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit5",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "wait",
+      "label": "still-stand",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "strafe",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "moving",
+      "waitForResource": {
+        "id": "state",
+        "path": "spread",
+        "gte": 5
+      },
+      "release": false,
+      "timeoutMs": 4000
+    },
+    {
+      "kind": "input",
+      "label": "stop",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "settled-down",
+      "waitForResource": {
+        "id": "state",
+        "path": "spread",
+        "lte": 1.3
+      },
+      "release": false,
+      "timeoutMs": 4000
+    },
+    {
+      "kind": "input",
+      "label": "crouch",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "crouch-cone",
+      "waitForResource": {
+        "id": "state",
+        "path": "spread",
+        "lte": 1.0
+      },
+      "release": false,
+      "timeoutMs": 3000
+    },
+    {
+      "kind": "input",
+      "label": "prone",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "prone-cone",
+      "waitForResource": {
+        "id": "state",
+        "path": "spread",
+        "lte": 0.7
+      },
+      "release": false,
+      "timeoutMs": 3000
+    },
+    {
+      "kind": "input",
+      "label": "stand-up",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "standing-again",
+      "waitTicks": 60,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "aim",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "sights-cone",
+      "waitForResource": {
+        "id": "state",
+        "path": "spread",
+        "lte": 0.2
+      },
+      "release": false,
+      "timeoutMs": 3000
+    },
+    {
+      "label": "sights-zoom",
+      "waitForResource": {
+        "id": "state",
+        "path": "fov",
+        "lte": 46
+      },
+      "release": false,
+      "timeoutMs": 3000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "fov",
+        "atSteps": [
+          {
+            "label": "settled-down",
+            "equals": 70
+          },
+          {
+            "label": "sights-zoom",
+            "lte": 46
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "spread",
+        "atSteps": [
+          {
+            "label": "still-stand",
+            "lte": 1.3
+          },
+          {
+            "label": "settled-down",
+            "lte": 1.3
+          },
+          {
+            "label": "crouch-cone",
+            "lte": 1.0
+          },
+          {
+            "label": "prone-cone",
+            "lte": 0.7
+          },
+          {
+            "label": "sights-cone",
+            "lte": 0.2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "aiming",
+        "atSteps": [
+          {
+            "label": "still-stand",
+            "equals": 0
+          },
+          {
+            "label": "sights-zoom",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stance",
+        "atSteps": [
+          {
+            "label": "crouch-cone",
+            "equals": "crouch"
+          },
+          {
+            "label": "prone-cone",
+            "equals": "prone"
+          },
+          {
+            "label": "standing-again",
+            "equals": "stand"
+          }
+        ]
+      }
+    ]
+  }
+}
