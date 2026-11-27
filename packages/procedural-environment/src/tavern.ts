@@ -68,7 +68,7 @@ function timber(mesh: Part, rng: RNG, size: XYZ, center: XYZ, grain = 0, rotatio
   const colors = new Float32Array(p.count * 3);
   const shiftU = rng.range(0, 1);
   const shiftV = rng.range(0, 1);
-  const tone = rng.range(0.67, 1.04);
+  const tone = rng.range(0.67, 1);
   for (let i = 0; i < p.count; i++) {
     const [nx, ny, nz] = [Math.abs(n.getX(i)), Math.abs(n.getY(i)), Math.abs(n.getZ(i))];
     const facing = nx >= ny && nx >= nz ? 0 : ny >= nz ? 1 : 2;

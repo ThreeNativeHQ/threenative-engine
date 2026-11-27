@@ -1621,9 +1621,17 @@ function toGLB(tree, png = {}) {
     const uv = new Float32Array(p.uv.length);
     for (let i = 0; i < uv.length; i += 2) { uv[i] = p.uv[i]; uv[i + 1] = 1 - p.uv[i + 1]; }
     const idx = p.index instanceof Uint32Array ? p.index : new Uint32Array(p.index);
+    // ThreeNative: glTF needs COLOR_0 in 0..1 and unit NORMALs. A tint above 1 is capped (only the brightest
+    // vertices change) and a generator's off-length normal is renormalised (a zero one faces up).
+    const color = Float32Array.from(p.color, (c) => Math.min(1, Math.max(0, c)));
+    const normal = Float32Array.from(p.normal);
+    for (let i = 0; i < normal.length; i += 3) {
+      const l = Math.hypot(normal[i], normal[i + 1], normal[i + 2]);
+      if (l > 0) { normal[i] /= l; normal[i + 1] /= l; normal[i + 2] /= l; } else normal[i + 1] = 1;
+    }
     materials.push(material);
     prims.push({
-      attributes: { POSITION: acc(p.position, 'VEC3', 5126, { min: mn, max: mx }), NORMAL: acc(p.normal, 'VEC3', 5126), TEXCOORD_0: acc(uv, 'VEC2', 5126), COLOR_0: acc(p.color, 'VEC3', 5126), _WIND: acc(p.wind, 'VEC4', 5126) },
+      attributes: { POSITION: acc(p.position, 'VEC3', 5126, { min: mn, max: mx }), NORMAL: acc(normal, 'VEC3', 5126), TEXCOORD_0: acc(uv, 'VEC2', 5126), COLOR_0: acc(color, 'VEC3', 5126), _WIND: acc(p.wind, 'VEC4', 5126) },
       indices: acc(idx, 'SCALAR', 5125), material: materials.length - 1,
     });
   };
