@@ -30,7 +30,7 @@ function exportedNames(file: string, seen: Set<string> = new Set()): ReadonlySet
     }
   }
   for (const match of source.matchAll(
-    /export\s+(?:declare\s+)?(?:abstract\s+)?(?:const|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gu,
+    /export\s+(?:declare\s+)?(?:abstract\s+)?(?:async\s+)?(?:const|function|class|interface|type|enum)\s+([A-Za-z_$][\w$]*)/gu,
   )) {
     const name = match[1];
     if (name) names.add(name);

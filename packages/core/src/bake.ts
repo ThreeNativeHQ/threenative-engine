@@ -41,7 +41,6 @@ export interface IPbrMaterialOptions {
  * is the glTF material name and `inspect` lists it.
  * @requires import { createPbrMaterial } from "@threenative/core/bake"
  * @situation bake a procedural model to a glb: make a painted, metal or rubber material for a part
- * @alias bake material, glb material factory, standard material
  * @example const paint = createPbrMaterial(0xcc2222, { name: "paint", metalness: 0.6, roughness: 0.3 });
  */
 export function createPbrMaterial(
@@ -61,7 +60,6 @@ export function createPbrMaterial(
  * reads as a light source (a lamp, a screen, a neon strip).
  * @requires import { createEmissiveMaterial } from "@threenative/core/bake"
  * @situation bake a procedural model to a glb: make a lamp, neon strip, window or screen glow
- * @alias bake emissive, glow material, neon material
  * @example const neon = createEmissiveMaterial(0x33ffee, 2, { name: "neon" });
  */
 export function createEmissiveMaterial(
@@ -87,7 +85,6 @@ export interface IPartPlacement {
  * Add one primitive to a model: geometry, material and where it sits. Returns the mesh.
  * @requires import { addPart } from "@threenative/core/bake"
  * @situation add a box, cylinder or sphere primitive to the group a bake script is building
- * @alias bake add part, mesh part helper
  * @example addPart(root, new BoxGeometry(2, 0.5, 4), paint, { position: [0, 0.5, 0], name: "body" });
  */
 export function addPart(
@@ -113,7 +110,6 @@ export function addPart(
  * returns `root`.
  * @requires import { prepareDonorWithoutMaterials } from "@threenative/core/bake"
  * @situation strip a donor mesh of its materials, textures and vertex colours before a bake script repaints it
- * @alias donor mesh, strip materials, repaint imported mesh
  * @example prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: "base" }));
  */
 export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T {
@@ -175,12 +171,18 @@ function countTriangles(geometry: BufferGeometry): number {
   return Math.floor((geometry.index?.count ?? geometry.getAttribute("position")?.count ?? 0) / 3);
 }
 
+/** Three's writer typings leave out `json`, the glTF document it is building. */
+function hasAssetJson(
+  writer: object,
+): writer is { json: { asset: { extras?: Record<string, unknown> } } } {
+  return "json" in writer;
+}
+
 /**
  * Merge, ground, check and write a procedural model as a self-contained binary `.glb` whose
  * `asset.extras` carry `tnOrigin: "procedural"` and `tnPrompt`. Returns what it wrote.
  * @requires import { exportProceduralGlb } from "@threenative/core/bake"
  * @situation bake a procedural model to a glb under assets/ with a node script (scripts/bake-name.mjs)
- * @alias bake script, export glb, GLTFExporter, FileReader polyfill, tnOrigin procedural, ground to zero
  * @constraint node only (it writes a file); the model's look, colours and geometry come from the script
  * @example const receipt = await exportProceduralGlb(root, "assets/lamp.glb", { prompt: "street lamp" });
  */
@@ -228,10 +230,8 @@ export async function exportProceduralGlb(
   exporter.register((writer) => ({
     afterParse() {
       // `json` is the writer's document; three's typings leave it out.
-      const { json } = writer as unknown as {
-        json: { asset: { extras?: Record<string, unknown> } };
-      };
-      json.asset.extras = { tnOrigin: "procedural", tnPrompt: options.prompt };
+      if (!hasAssetJson(writer)) throw new Error("GLTFExporter writer carries no glTF document.");
+      writer.json.asset.extras = { tnOrigin: "procedural", tnPrompt: options.prompt };
     },
     name: "ThreeNativeProceduralOrigin",
   }));

@@ -4773,7 +4773,7 @@
       "symbol": "zenithTransmittance"
     },
     {
-      "aliases": ["bake add part, mesh part helper"],
+      "aliases": [],
       "constraints": [],
       "example": "addPart(root, new BoxGeometry(2, 0.5, 4), paint, { position: [0, 0.5, 0], name: \"body\" });",
       "importPath": "@threenative/core/bake",
@@ -4790,7 +4790,7 @@
       "symbol": "addPart"
     },
     {
-      "aliases": ["bake emissive, glow material, neon material"],
+      "aliases": [],
       "constraints": [],
       "example": "const neon = createEmissiveMaterial(0x33ffee, 2, { name: \"neon\" });",
       "importPath": "@threenative/core/bake",
@@ -4807,7 +4807,7 @@
       "symbol": "createEmissiveMaterial"
     },
     {
-      "aliases": ["bake material, glb material factory, standard material"],
+      "aliases": [],
       "constraints": [],
       "example": "const paint = createPbrMaterial(0xcc2222, { name: \"paint\", metalness: 0.6, roughness: 0.3 });",
       "importPath": "@threenative/core/bake",
@@ -4824,9 +4824,7 @@
       "symbol": "createPbrMaterial"
     },
     {
-      "aliases": [
-        "bake script, export glb, GLTFExporter, FileReader polyfill, tnOrigin procedural, ground to zero"
-      ],
+      "aliases": [],
       "constraints": [
         "node only (it writes a file); the model's look, colours and geometry come from the script"
       ],
@@ -4863,7 +4861,7 @@
       "symbol": "mergeByMaterial"
     },
     {
-      "aliases": ["donor mesh, strip materials, repaint imported mesh"],
+      "aliases": [],
       "constraints": [],
       "example": "prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: \"base\" }));",
       "importPath": "@threenative/core/bake",
@@ -12879,7 +12877,7 @@
       "supersedes": []
     },
     {
-      "aliases": ["Input.clear", "clear input", "reset held keys"],
+      "aliases": [],
       "constraints": [
         "It also drops latched presses, pointer buttons and gamepad claims, so call it on a pause, a focus loss or a scene change, not every frame."
       ],
@@ -12922,14 +12920,7 @@
       "supersedes": []
     },
     {
-      "aliases": [
-        "inspect glb",
-        "glb bounds",
-        "minY",
-        "grounded",
-        "assets.manifest audit",
-        "frame luma"
-      ],
+      "aliases": [],
       "constraints": [
         "Read-only: it never modifies an asset, a manifest or an image.",
         "`--manifest` and `--frame` exit 1 on a finding; `--frame` reads non-interlaced 8-bit PNG only.",
@@ -12954,7 +12945,7 @@
       "symbol": "threenative inspect"
     },
     {
-      "aliases": ["localExposure", "local exposure", "bilateral grid exposure"],
+      "aliases": [],
       "constraints": [
         "On by default in the shared look and off in the low quality tier; read `TN_FRAME_BUDGET` before leaving it on for a phone."
       ],
@@ -12974,7 +12965,7 @@
       "symbol": "localExposureEnabled"
     },
     {
-      "aliases": ["playtest summary", "playtest out", "no-observations", "parse playtest json"],
+      "aliases": [],
       "constraints": [
         "Exit codes are unchanged: 0 pass, 1 assertion failure, 2 runner failure, 75 capture lock busy.",
         "Without these flags stdout is still the full report; a report can pass 12 MB, so an agent should always pass --summary or --out.",
@@ -12998,7 +12989,7 @@
       "symbol": "threenative-playtest --summary"
     },
     {
-      "aliases": ["wait for resource", "IPlaytestEvent", "playtest step"],
+      "aliases": [],
       "constraints": [
         "A step needs `timeoutMs` (1 to 300000); the wait fails the scenario when the resource never matches.",
         "The game must expose the resource through the playtest bridge (`runtime.resources`)."
@@ -13284,7 +13275,7 @@
       "supersedes": []
     },
     {
-      "aliases": ["read contacts", "contact manifold"],
+      "aliases": [],
       "constraints": [
         "Optional on a backend: a missing method means no narrow-phase access, so fail closed.",
         "One PHYSICS_CONTACT_STRIDE record per manifold; a return larger than the buffer means grow it and read again before the next step."
