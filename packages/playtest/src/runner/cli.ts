@@ -30,7 +30,7 @@ import { audioCommand } from "./audioRun.js";
 import { assertCpuProfileTargetSupported } from "./cpuProfile.js";
 import { traceCommand } from "./traceRun.js";
 import { safePart } from "./shared.js";
-import { formatCompactReport } from "./scenario-summary.js";
+import { formatCompactSummary } from "./scenario-summary.js";
 
 export interface IRunnerDiagnostic {
   code: string;
@@ -345,11 +345,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       await writeFile(config.outPath, `${JSON.stringify(output, null, 2)}\n`);
     }
     const printed = config.summary === true
-      ? {
-          pass: reports.every(({ pass }) => pass),
-          ...(config.outPath === undefined ? {} : { out: config.outPath }),
-          scenarios: reports.map(formatCompactReport),
-        }
+      ? formatCompactSummary(reports, config.outPath)
       : output;
     process.stdout.write(`${JSON.stringify(printed, null, config.summary === true ? 0 : 2)}\n`);
     const exitCode = reports.reduce<0 | 1 | 2>((worst, report) => {

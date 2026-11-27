@@ -1622,12 +1622,12 @@ function toGLB(tree, png = {}) {
     for (let i = 0; i < uv.length; i += 2) { uv[i] = p.uv[i]; uv[i + 1] = 1 - p.uv[i + 1]; }
     const idx = p.index instanceof Uint32Array ? p.index : new Uint32Array(p.index);
     // ThreeNative: glTF needs COLOR_0 in 0..1 and unit NORMALs. A tint above 1 is capped (only the brightest
-    // vertices change) and a generator's off-length normal is renormalised (a zero one faces up).
+    // vertices change) and a generator's off-length normal is renormalised (a zero, NaN or infinite one faces up).
     const color = Float32Array.from(p.color, (c) => Math.min(1, Math.max(0, c)));
     const normal = Float32Array.from(p.normal);
     for (let i = 0; i < normal.length; i += 3) {
       const l = Math.hypot(normal[i], normal[i + 1], normal[i + 2]);
-      if (l > 0) { normal[i] /= l; normal[i + 1] /= l; normal[i + 2] /= l; } else normal[i + 1] = 1;
+      if (Number.isFinite(l) && l > 0) { normal[i] /= l; normal[i + 1] /= l; normal[i + 2] /= l; } else { normal[i] = 0; normal[i + 1] = 1; normal[i + 2] = 0; }
     }
     materials.push(material);
     prims.push({

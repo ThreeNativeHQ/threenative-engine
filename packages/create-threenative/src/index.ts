@@ -1253,6 +1253,17 @@ async function stripDemoPlaytests(target: string): Promise<void> {
   await strip(path.join(target, "playtests"));
   await strip(path.join(target, "native-playtests"));
   await rmdir(path.join(target, "native-playtests")).catch(() => undefined); // emptied above; gone if it never existed
+  // A script that runs a stripped scenario would fail on a fresh game: drop it with the files.
+  const manifestPath = path.join(target, "package.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  const dangling = Object.keys(manifest.scripts ?? {}).filter((name) =>
+    manifest.scripts?.[name]?.includes("native-playtests/"),
+  );
+  if (dangling.length === 0) return;
+  for (const name of dangling) delete manifest.scripts?.[name];
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
 
 export async function createProject(

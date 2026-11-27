@@ -168,4 +168,36 @@ describe("create-threenative --minimal", () => {
       await readdir(path.join(full.target, "src")),
     );
   });
+
+  it("leaves no package script that points at a stripped native-playtests scenario", async () => {
+    const root = makeTempDirSync("threenative-scaffold-minimal-scripts-");
+    for (const template of ["snow", "sailing", "racing"]) {
+      const full = await createProject(
+        { install: false, target: `${template}-full`, template },
+        root,
+      );
+      const lean = await createProject(
+        { install: false, minimal: true, target: `${template}-lean`, template },
+        root,
+      );
+      const scripts = async (target: string) =>
+        (
+          JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+            scripts: Record<string, string>;
+          }
+        ).scripts;
+      expect(
+        Object.values(await scripts(full.target)).some((script) =>
+          script.includes("native-playtests/"),
+        ),
+        template,
+      ).toBe(true);
+      expect(
+        Object.values(await scripts(lean.target)).some((script) =>
+          script.includes("native-playtests/"),
+        ),
+        template,
+      ).toBe(false);
+    }
+  });
 });
