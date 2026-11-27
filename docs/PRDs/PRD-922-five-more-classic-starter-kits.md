@@ -4,7 +4,8 @@ prd_contract: v1
 
 # PRD-922 — Five more classic-mechanics starter kits: platform fighter, rail shooter, rhythm, farming, flight
 
-**Status:** IN PROGRESS — 2026-11-26.
+**Status:** PARTIAL — 2026-11-26. Shipped in #749: `farming`, `rail-shooter`, `board-party`, the `starter-kit-development` skill and the per-kit authoring-layer test.
+**Blocker:** owner, 2026-11-26: "push whatever is done to the repo" (token budget). The other seven kits are pushed as `kit/<name>` branches, not merged: platform-fighter (30/30 before Gemini fixes, rerun pending), tomb-explorer (16/16, camera row fixed, rerun pending), rhythm (registered, final sweep unconfirmed), flight (13/16 on FlightModel), rpg (camera fix not run), military-shooter (reruns pending), car-combat (no full run).
 **Priority:** P1 — owner request, 2026-11-26
 **Complexity:** 9 (HIGH) — five new kits in `packages/create-threenative/templates/`, contract rows, pins
 **Owner:** João
@@ -59,12 +60,12 @@ Same rules, same PR (#749). Each pick is a common genre that no kit answers and 
 ### Phase 1 — Kits (one lane per kit)
 
 - [ ] `platform-fighter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
-- [ ] `rail-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `rail-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `rhythm`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
-- [ ] `farming`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `farming`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `flight`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `military-shooter`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
-- [ ] `board-party`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
+- [x] `board-party`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `rpg`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `tomb-explorer`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
 - [ ] `car-combat`: builds, typechecks, lints; one fail-closed playtest per mechanic; kit contract green.
