@@ -15,7 +15,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     target_link_libraries(tn_engine_player PUBLIC
         "${TN_PLAYER_UI_OVERLAY_DIR}/threenative_ui_overlay.lib"
         "${TN_PLAYER_UI_OVERLAY_DIR}/WebView2LoaderStatic.lib"
-        user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll)
+        user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll dcomp)
     return()
 endif()
 if(APPLE)

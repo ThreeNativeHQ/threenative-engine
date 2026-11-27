@@ -22,7 +22,8 @@ use wry::{Rect, WebView, WebViewBuilder};
 use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
 use objc2::{
-    declare_class, msg_send, msg_send_id, mutability::MainThreadOnly, ClassType, DeclaredClass,
+    declare_class, msg_send, msg_send_id, mutability::MainThreadOnly, runtime::AnyObject,
+    ClassType, DeclaredClass,
 };
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSView};
@@ -244,6 +245,28 @@ pub extern "C" fn tn_ui_overlay_attach(
 pub extern "C" fn tn_ui_overlay_pump() -> c_int {
     #[cfg(target_os = "macos")]
     {
+        // The engine player opens SDL's Metal view after the overlay attaches (run.cpp: `uiAttach`
+        // before `surfaceForWindow`), and AppKit puts a later subview on top, over the page. Keep the
+        // container the front child of the content view; its `hitTest:` still lets the game have
+        // every point outside the published rectangles.
+        OVERLAY.with(|slot| {
+            let borrowed = slot.borrow();
+            let Some(overlay) = borrowed.as_ref() else {
+                return;
+            };
+            let container: &NSView = &overlay.container;
+            let Some(content) = (unsafe { container.superview() }) else {
+                return;
+            };
+            unsafe {
+                let subviews = content.subviews();
+                let front: *mut AnyObject = msg_send![&subviews, lastObject];
+                if front.cast_const() != (container as *const NSView).cast() {
+                    // NSWindowAbove, relative to no sibling: the front of the content view.
+                    let _: () = msg_send![&content, addSubview: container, positioned: 1isize, relativeTo: std::ptr::null::<AnyObject>()];
+                }
+            }
+        });
         0
     }
 }
