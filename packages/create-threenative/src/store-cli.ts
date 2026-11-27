@@ -2,8 +2,8 @@
  * `tn-store`, the same client Studio runs. The store builds the native game itself, so this file
  * only fetches a checked copy of that client, creates the listing once and pushes. */
 import { spawn } from "node:child_process";
-import { createHash } from "node:crypto";
-import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
+import { createHash, randomUUID } from "node:crypto";
+import { chmod, lstat, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/promises";
 import { homedir } from "node:os";
 import path from "node:path";
 import { CliExit, request, serverMessage, siteOrigin } from "./account.js";
@@ -24,27 +24,102 @@ export interface IStoreDeployOptions {
 }
 
 interface ICliManifest {
-  files?: { name?: unknown; os?: unknown; sha256?: unknown }[];
+  files?: ({ name?: unknown; os?: unknown; sha256?: unknown } | null)[];
   version?: unknown;
 }
 
 function cacheHome(env: NodeJS.ProcessEnv): string {
   if (env.XDG_CACHE_HOME !== undefined && env.XDG_CACHE_HOME !== "") return env.XDG_CACHE_HOME;
-  if (process.platform === "win32") return env.LOCALAPPDATA ?? path.join(homedir(), ".cache");
+  if (process.platform === "win32" && env.LOCALAPPDATA !== undefined && env.LOCALAPPDATA !== "")
+    return env.LOCALAPPDATA;
   return path.join(homedir(), ".cache");
 }
 
-/** The store ships Linux and Windows clients only (`DECISIONS.md` row 9: no macOS store build). */
+/** The store ships x64 Linux and Windows clients only (`DECISIONS.md` row 9: no macOS store build). */
 function storeOs(): "linux" | "windows" {
-  if (process.platform === "linux") return "linux";
-  if (process.platform === "win32") return "windows";
-  throw new CliExit(
-    2,
-    "The store has no macOS build, so a native game cannot be published from this machine.",
-  );
+  if (process.platform === "darwin")
+    throw new CliExit(
+      2,
+      "The store has no macOS build, so a native game cannot be published from this machine.",
+    );
+  if ((process.platform !== "linux" && process.platform !== "win32") || process.arch !== "x64")
+    throw new CliExit(
+      2,
+      `The store ships tn-store for x64 Linux and Windows only, not ${process.platform} ${process.arch}. Set THREENATIVE_STORE_CLI to a tn-store built for this machine.`,
+    );
+  return process.platform === "linux" ? "linux" : "windows";
 }
 
-/** Downloads the `tn-store` for this OS once, refuses a wrong sha256 (exit 4) and caches it. */
+const sha256Of = (bytes: Buffer): string => createHash("sha256").update(bytes).digest("hex");
+
+/** The client entry for this OS, or exit 4 when `cli.json` is not the shape the release job writes
+ * (a captive-portal page and an empty body both reach here with status 200). */
+function clientEntry(body: unknown, os: string): { name: string; sha256: string; version: string } {
+  const manifest = body as ICliManifest | null | undefined;
+  const files = typeof manifest === "object" && manifest !== null ? manifest.files : undefined;
+  const file = Array.isArray(files)
+    ? files.find((entry) => typeof entry === "object" && entry !== null && entry.os === os)
+    : undefined;
+  const version = typeof manifest?.version === "string" ? manifest.version : "";
+  if (
+    typeof file?.name !== "string" ||
+    typeof file.sha256 !== "string" ||
+    !/^[a-f0-9]{64}$/u.test(file.sha256) ||
+    !/^[A-Za-z0-9._-]+$/u.test(version)
+  )
+    throw new CliExit(4, `cli.json lists no usable tn-store for ${os}.`);
+  return { name: file.name, sha256: file.sha256, version };
+}
+
+/** Is this path already a regular file holding exactly the bytes `cli.json` promises? A cached file
+ * runs with the push token in its environment, so it earns the same check as a fresh download. */
+async function cacheIsGood(target: string, sha256: string): Promise<boolean> {
+  try {
+    if (!(await lstat(target)).isFile()) return false;
+    return sha256Of(await readFile(target)) === sha256;
+  } catch {
+    return false;
+  }
+}
+
+async function download(site: string, name: string, sha256: string): Promise<Buffer> {
+  let bytes: Buffer;
+  try {
+    const response = await fetch(`${site}/launcher/cli/${encodeURIComponent(name)}`);
+    if (!response.ok) throw new CliExit(4, `Downloading ${name} answered ${response.status}.`);
+    bytes = Buffer.from(await response.arrayBuffer());
+  } catch (error) {
+    if (error instanceof CliExit) throw error;
+    throw new CliExit(
+      5,
+      `Could not reach ${site}: ${error instanceof Error ? error.message : String(error)}`,
+    );
+  }
+  const actual = sha256Of(bytes);
+  if (actual !== sha256)
+    throw new CliExit(
+      4,
+      `tn-store failed its checksum (expected ${sha256}, got ${actual}). Nothing was run.`,
+    );
+  return bytes;
+}
+
+/** Writes beside and renames over, so a crash never leaves a half-written file at `file`. */
+async function writeAtomic(file: string, data: string | Buffer, mode?: number): Promise<void> {
+  await mkdir(path.dirname(file), { recursive: true });
+  const tmp = `${file}.${randomUUID()}.tmp`;
+  try {
+    await writeFile(tmp, data, { flag: "wx", ...(mode === undefined ? {} : { mode }) });
+    if (mode !== undefined) await chmod(tmp, mode);
+    await rename(tmp, file);
+  } catch (error) {
+    await rm(tmp, { force: true });
+    throw error;
+  }
+}
+
+/** The `tn-store` for this OS: a cached copy whose sha256 matches `cli.json`, else a fresh download
+ * that is checked (exit 4 on a mismatch) and cached. */
 async function fetchStoreCli(site: string, env: NodeJS.ProcessEnv): Promise<string> {
   const os = storeOs();
   const manifestReply = await request(site, "/launcher/cli/cli.json");
@@ -56,57 +131,18 @@ async function fetchStoreCli(site: string, env: NodeJS.ProcessEnv): Promise<stri
         `${site} publishes no store client (cli.json answered ${manifestReply.status}).`,
       ),
     );
-  const manifest = manifestReply.body as ICliManifest;
-  const file = manifest.files?.find((entry) => entry.os === os);
-  const version = typeof manifest.version === "string" ? manifest.version : "";
-  if (
-    typeof file?.name !== "string" ||
-    typeof file.sha256 !== "string" ||
-    !/^[A-Za-z0-9._-]+$/u.test(version)
-  )
-    throw new CliExit(4, `cli.json lists no usable tn-store for ${os}.`);
+  const { name, sha256, version } = clientEntry(manifestReply.body, os);
   const target = path.join(
     cacheHome(env),
     "threenative",
     "bin",
     `tn-store-${version}${os === "windows" ? ".exe" : ""}`,
   );
-  if (
-    await stat(target).then(
-      () => true,
-      () => false,
-    )
-  )
-    return target;
-
-  let bytes: Buffer;
-  try {
-    const response = await fetch(`${site}/launcher/cli/${encodeURIComponent(file.name)}`);
-    if (!response.ok) throw new CliExit(4, `Downloading ${file.name} answered ${response.status}.`);
-    bytes = Buffer.from(await response.arrayBuffer());
-  } catch (error) {
-    if (error instanceof CliExit) throw error;
-    throw new CliExit(
-      5,
-      `Could not reach ${site}: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-  const actual = createHash("sha256").update(bytes).digest("hex");
-  if (actual !== file.sha256)
-    throw new CliExit(
-      4,
-      `tn-store failed its checksum (expected ${file.sha256}, got ${actual}). Nothing was run.`,
-    );
-  await mkdir(path.dirname(target), { recursive: true });
-  const tmp = `${target}.${process.pid}.tmp`;
-  try {
-    await writeFile(tmp, bytes, { mode: 0o755 });
-    await chmod(tmp, 0o755);
-    await rename(tmp, target);
-  } catch (error) {
-    await rm(tmp, { force: true });
-    throw error;
-  }
+  if (await cacheIsGood(target, sha256)) return target;
+  const bytes = await download(site, name, sha256);
+  // A directory or a bad file in the way is replaced; rename only overwrites a file.
+  await rm(target, { force: true, recursive: true });
+  await writeAtomic(target, bytes, 0o755);
   return target;
 }
 
@@ -129,15 +165,13 @@ function runStore(
       env,
       stdio: ["ignore", "pipe", "inherit"],
     });
-    let stdout = "";
-    child.stdout.on("data", (chunk) => {
-      stdout += String(chunk);
-    });
+    const chunks: Buffer[] = [];
+    child.stdout.on("data", (chunk: Buffer) => chunks.push(chunk));
     child.once("error", (error) =>
       reject(new CliExit(4, `Could not run tn-store: ${error.message}`)),
     );
-    child.once("exit", (code) => {
-      if (code === 0) resolve(stdout);
+    child.once("close", (code) => {
+      if (code === 0) resolve(Buffer.concat(chunks).toString("utf8"));
       else
         reject(
           new CliExit(
@@ -160,15 +194,21 @@ function parseObject(stdout: string, what: string): Record<string, unknown> {
 }
 
 async function storedGameId(cwd: string): Promise<string | undefined> {
+  let text: string;
   try {
-    const parsed = JSON.parse(await readFile(path.join(cwd, STORE_FILE), "utf8")) as {
-      gameId?: unknown;
-    };
-    return typeof parsed.gameId === "string" && parsed.gameId !== "" ? parsed.gameId : undefined;
+    text = await readFile(path.join(cwd, STORE_FILE), "utf8");
   } catch {
-    // No file, or one that does not parse: not a listing, the next deploy creates one.
     return undefined;
   }
+  // A file that is there but not a listing must stop the deploy: creating a second listing over a
+  // truncated or conflicted store.json would orphan the first one.
+  try {
+    const parsed = JSON.parse(text) as { gameId?: unknown };
+    if (typeof parsed.gameId === "string" && parsed.gameId !== "") return parsed.gameId;
+  } catch {
+    // Reported below with the rest.
+  }
+  throw new CliExit(2, `${STORE_FILE} holds no game id; fix or delete it.`);
 }
 
 /** First deploy: lists the game, then remembers its id in the file Studio reads too. */
@@ -200,26 +240,41 @@ async function createListing(
   const created = parseObject(await runStore(bin, args, options, site), "games create");
   if (typeof created.gameId !== "string" || created.gameId === "")
     throw new CliExit(4, "The store did not return a game id. Nothing was published.");
-  await mkdir(path.join(options.cwd, ".threenative"), { recursive: true });
-  await writeFile(
+  await writeAtomic(
     path.join(options.cwd, STORE_FILE),
     `${JSON.stringify({ gameId: created.gameId }, null, 2)}\n`,
   );
   return created.gameId;
 }
 
-export async function deployDesktop(
-  manifest: { name: string; version?: unknown },
+/** The page is /games/<slug>/; the owner's own listing carries the slug even before it is live. */
+async function storePageUrl(
+  bin: string,
+  gameId: string,
   options: IStoreDeployOptions,
-): Promise<{ gameId: string; url: string }> {
-  const env = process.env;
-  const site = siteOrigin(options.site);
-  // package.json first; a game with none (Midway) uses `app.version`, the version the native app is
-  // built with, so the release label matches what the player reports. Without either, the config
-  // loader supplies its own default.
-  let version = typeof manifest.version === "string" ? manifest.version : "";
+  site: string,
+): Promise<string> {
+  let slug: unknown;
+  try {
+    slug = parseObject(
+      await runStore(bin, ["games", "show", gameId, "--json"], options, site),
+      "games show",
+    ).slug;
+  } catch {
+    // The deploy worked; only the link falls back to the id form the site redirects.
+  }
+  return typeof slug === "string" && slug !== ""
+    ? `${site}/games/${encodeURIComponent(slug)}/`
+    : `${site}/games/game/?id=${encodeURIComponent(gameId)}`;
+}
+
+/** package.json first; a game with none (Midway) uses `app.version`, the version the native app is
+ * built with, so the release label matches what the player reports. Without either, the config
+ * loader supplies its own default. */
+async function releaseVersion(fromPackage: unknown, cwd: string): Promise<string> {
+  let version = typeof fromPackage === "string" ? fromPackage : "";
   if (version === "")
-    version = await loadConfig(options.cwd).then(
+    version = await loadConfig(cwd).then(
       (config) => config.app.version,
       (error: unknown) => {
         throw new CliExit(
@@ -230,6 +285,16 @@ export async function deployDesktop(
     );
   if (!/^[\x20-\x7e]{1,40}$/u.test(version))
     throw new CliExit(2, "The release version must be 1 to 40 printable ASCII characters.");
+  return version;
+}
+
+export async function deployDesktop(
+  manifest: { name: string; version?: unknown },
+  options: IStoreDeployOptions,
+): Promise<{ gameId: string; url: string }> {
+  const env = process.env;
+  const site = siteOrigin(options.site);
+  const version = await releaseVersion(manifest.version, options.cwd);
 
   let gameId = await storedGameId(options.cwd);
   // The store refuses a listing with no picture, so ask before downloading anything.
@@ -264,20 +329,7 @@ export async function deployDesktop(
   );
   options.out(`Release ${String(pushed.release)}${reason}.`);
 
-  // The page is /games/<slug>/; the owner's own listing carries the slug even before it is live.
-  let slug: unknown;
-  try {
-    slug = parseObject(
-      await runStore(bin, ["games", "show", gameId, "--json"], options, site),
-      "games show",
-    ).slug;
-  } catch {
-    // The deploy worked; only the link falls back to the id form the site redirects.
-  }
-  const url =
-    typeof slug === "string" && slug !== ""
-      ? `${site}/games/${slug}/`
-      : `${site}/games/game/?id=${encodeURIComponent(gameId)}`;
+  const url = await storePageUrl(bin, gameId, options, site);
   // The link alone, last: an agent parses this line, not the prose above it.
   options.out(url);
   return { gameId, url };

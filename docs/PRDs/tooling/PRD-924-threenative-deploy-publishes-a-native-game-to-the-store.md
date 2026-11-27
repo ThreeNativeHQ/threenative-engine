@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-924 — `threenative deploy --target desktop`: publish a native game to the store from the terminal, Midway first
 
-**Status:** NOT STARTED
-**Priority:** P1 — AC-1 to AC-5 are open: a ThreeNative game deploys to the web from the terminal, but its native build reaches players only through Studio or a hand-built `tn-store` (owner, 2026-11-26).
+**Status:** IN PROGRESS (AC-1 to AC-3 done; AC-4 and AC-5 open)
+**Priority:** P1 — AC-4 and AC-5 are open: a ThreeNative game deploys to the web from the terminal, but its native build reaches players only through Studio or a hand-built `tn-store` (owner, 2026-11-26).
 **Complexity:** 8 (HIGH) — 1-5 files (+1), new module (+2), crosses the engine/store/site release boundaries (+2), external API: the store API and the build farm (+1), a downloaded executable runs on the author's machine (+2, risk override: binary integrity).
 **Owner:** João
 **Depends on:** PRD-904 (done: `threenative login` and the device token)
@@ -92,20 +92,20 @@ sequenceDiagram
 ## Execution Phases
 
 #### Phase 1: Midway builds the way the farm builds it
-**Status:** NOT STARTED
+**Status:** DONE (AC-1)
 **Files:** none expected. A builder or engine refusal is fixed at its layer: a Midway lockfile problem in the sandbox repo, an engine-player gap in `packages/runtime-native`.
 **Implementation:** run the store's `local-farm.mjs` (the `build-game.yml` steps without Actions) on a clean Midway clone. Then run the packed player under the desktop playtest. Each refusal becomes a fix with its own test before Phase 3.
 - [x] Midway packs for `linux-x64` and the packed player runs 300 frames — proof: AC-1 — covers AC-1 and the PRD-805 and PRD-815 risks.
 
 #### Phase 2: `threenative deploy --target desktop`
-**Status:** NOT STARTED
+**Status:** DONE (AC-2, AC-3)
 **Files:** `packages/create-threenative/src/deploy.ts` (target switch), `src/store-cli.ts` (fetch, verify, cache, spawn), `src/threenative.ts` (help text), `__tests__/deploy-native.spec.ts`.
 **Implementation:** as in Solution. The web path keeps its tests green, unchanged.
 - [x] The unit contract passes — proof: AC-2 — covers AC-2.
 - [x] The local end-to-end deploy of Midway works — proof: AC-3 — covers AC-3.
 
 #### Phase 3: Published client, live Midway
-**Status:** NOT STARTED
+**Status:** NOT STARTED (AC-4, AC-5)
 **Files:** `threenative-store/scripts/release-local.mjs` (CLI binaries + `cli.json`).
 **Implementation:** publish the client, release the engine cohort with the new command, then deploy Midway against production and install it with the launcher.
 - [ ] `cli.json` and the binaries are live and match — proof: AC-4 — covers AC-4.

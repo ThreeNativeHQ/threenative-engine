@@ -128,20 +128,35 @@ describe.skipIf(!posix)("threenative deploy --target desktop", () => {
     );
     expect(failure.code).toBe(3);
   });
+
+  it("stops on a store.json that holds no game id instead of listing the game again", async () => {
+    const store = await fakeStoreFile();
+    vi.stubEnv("THREENATIVE_STORE_CLI", store.bin);
+    vi.stubEnv("FAKE_LOG", store.log);
+    const cwd = await game();
+    await mkdir(path.join(cwd, ".threenative"));
+    await writeFile(path.join(cwd, ".threenative", "store.json"), "<<<<<<< HEAD\n");
+    const failure = await failureOf(
+      deploy({ cwd, out: () => {}, shot: "cover.png", target: "desktop", token: "t" }),
+    );
+    expect(failure.code).toBe(2);
+    await expect(readFile(store.log, "utf8")).rejects.toThrow();
+  });
 });
 
 describe.skipIf(process.platform !== "linux")("tn-store download", () => {
-  async function fakeSite(bytes: Buffer, sha256: string) {
+  async function fakeSite(bytes: Buffer, sha256: string, cliJson?: string) {
     const hits: string[] = [];
     const server = createServer((request, response) => {
       hits.push(request.url ?? "");
       if (request.url === "/launcher/cli/cli.json") {
         response.setHeader("content-type", "application/json");
         response.end(
-          JSON.stringify({
-            version: "0.1.0",
-            files: [{ os: "linux", name: "tn-store-linux", size: bytes.length, sha256 }],
-          }),
+          cliJson ??
+            JSON.stringify({
+              version: "0.1.0",
+              files: [{ os: "linux", name: "tn-store-linux", size: bytes.length, sha256 }],
+            }),
         );
       } else if (request.url === "/launcher/cli/tn-store-linux") response.end(bytes);
       else {
@@ -208,6 +223,75 @@ describe.skipIf(process.platform !== "linux")("tn-store download", () => {
       await expect(readdir(path.join(badCache, "threenative", "bin"))).rejects.toThrow();
     } finally {
       bad.close();
+    }
+  });
+
+  it("never runs a cached tn-store whose hash is not the one cli.json names", async () => {
+    const store = await fakeStoreFile();
+    const bytes = Buffer.from(FAKE_STORE);
+    const sha = createHash("sha256").update(bytes).digest("hex");
+    const cache = await makeTempDir("tn-cache-");
+    const marker = path.join(cache, "tampered-ran");
+    const cached = path.join(cache, "threenative", "bin", "tn-store-0.1.0");
+    await mkdir(path.dirname(cached), { recursive: true });
+    await writeFile(
+      cached,
+      `#!/usr/bin/env node\nrequire("node:fs").writeFileSync(${JSON.stringify(marker)}, "x");\n`,
+      { mode: 0o755 },
+    );
+    vi.stubEnv("XDG_CACHE_HOME", cache);
+    vi.stubEnv("FAKE_LOG", store.log);
+    const site = await fakeSite(bytes, sha);
+    try {
+      await deploy({
+        cwd: await game(),
+        out: () => {},
+        shot: "cover.png",
+        site: site.origin,
+        target: "desktop",
+        token: "t",
+      });
+      await expect(stat(marker)).rejects.toThrow();
+      expect(
+        createHash("sha256")
+          .update(await readFile(cached))
+          .digest("hex"),
+      ).toBe(sha);
+      expect((await calls(store.log)).length).toBeGreaterThan(0);
+    } finally {
+      site.close();
+    }
+  });
+
+  it("exits 4, not a TypeError, when cli.json is not the release job's shape", async () => {
+    const bytes = Buffer.from(FAKE_STORE);
+    const good = createHash("sha256").update(bytes).digest("hex");
+    const bodies = [
+      "",
+      "null",
+      "<html>sign in to the wifi</html>",
+      '{"version":"0.1.0","files":{}}',
+      '{"version":"0.1.0","files":[null]}',
+      `{"version":"0.1.0","files":[{"os":"linux","name":"tn-store-linux","sha256":"${good.toUpperCase()}"}]}`,
+    ];
+    for (const body of bodies) {
+      vi.stubEnv("XDG_CACHE_HOME", await makeTempDir("tn-cache-"));
+      const site = await fakeSite(bytes, good, body);
+      try {
+        const failure = await failureOf(
+          deploy({
+            cwd: await game(),
+            out: () => {},
+            shot: "cover.png",
+            site: site.origin,
+            target: "desktop",
+            token: "t",
+          }),
+        );
+        expect(failure.code, body).toBe(4);
+      } finally {
+        site.close();
+      }
     }
   });
 });
