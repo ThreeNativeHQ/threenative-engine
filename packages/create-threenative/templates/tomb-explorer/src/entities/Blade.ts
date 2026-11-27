@@ -4,7 +4,7 @@ import { createBlade } from "../render/props.js";
 import { toWorld } from "../render/temple.js";
 import { BLADE_THICK, bladeLift } from "../sim/blade.js";
 import { CLICK, UNIT } from "../tuning.js";
-import type { GameCtx } from "./Lara.js";
+import type { GameCtx } from "./Explorer.js";
 
 /** The deck the blade hangs over, units: the same one `sim/blade.ts` measures from. */
 const DECK = 16 * CLICK;

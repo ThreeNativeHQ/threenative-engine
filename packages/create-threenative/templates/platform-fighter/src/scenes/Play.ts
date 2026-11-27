@@ -28,7 +28,7 @@ import { matchState, round } from "./snapshot.js";
 import { STATIONS } from "./stations.js";
 
 /** Frames the CPU stands still at the start of a match, so the player can take a breath. */
-const CPU_WAKE = 150;
+const CPU_WAKE = 300;
 const MESSAGE_TIME = 1.4;
 
 /**

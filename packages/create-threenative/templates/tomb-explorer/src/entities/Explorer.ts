@@ -4,8 +4,8 @@ import { type IRigConventions, prepareRigConventions } from "../conventions.js";
 import { SPAWN } from "../level.js";
 import { climberMaterial, dress } from "../render/props.js";
 import { toWorld } from "../render/temple.js";
-import { type IBody, type IInput, type LaraState, createBody } from "../sim/body.js";
-import { stepLara } from "../sim/step.js";
+import { type ExplorerState, type IBody, type IInput, createBody } from "../sim/body.js";
+import { stepExplorer } from "../sim/step.js";
 import type { GameState } from "../state.js";
 import { ANGLE, BODY_HEIGHT, TICK, UNIT } from "../tuning.js";
 
@@ -35,7 +35,7 @@ const CLIPS = {
 } as const;
 
 /** The clip each state plays, and whether it loops. A state not listed keeps what it plays. */
-const STATE_CLIP: Readonly<Record<LaraState, readonly [keyof typeof CLIPS, boolean]>> = {
+const STATE_CLIP: Readonly<Record<ExplorerState, readonly [keyof typeof CLIPS, boolean]>> = {
   idle: ["idle", true],
   walk: ["walk", true],
   run: ["run", true],
@@ -55,14 +55,14 @@ const STATE_CLIP: Readonly<Record<LaraState, readonly [keyof typeof CLIPS, boole
 };
 
 /** States that lie the body along its swim direction. */
-const SWIMMING = new Set<LaraState>(["swim", "glide", "tread"]);
+const SWIMMING = new Set<ExplorerState>(["swim", "glide", "tread"]);
 const LANDING_SECONDS = 0.3;
 
 /**
  * The climber: the simulation body (`src/sim/`) driven at the reference engine's 30 updates a
  * second, and the combat mannequin posed to match it. The body knows nothing about three.js.
  */
-export class Lara {
+export class Explorer {
   readonly mesh = new Group();
   readonly body: IBody;
   readonly character: SkeletalMesh3D;
@@ -112,7 +112,7 @@ export class Lara {
   }
 
   /** The state the HUD and the playtests read. */
-  get state(): LaraState {
+  get state(): ExplorerState {
     return this.body.state;
   }
 
@@ -153,13 +153,13 @@ export class Lara {
     };
     this.#jumpEdge = false;
     const before = this.body.state;
-    stepLara(this.body, input, this.#tick);
+    stepExplorer(this.body, input, this.#tick);
     this.#tick += 1;
     this.#note(before);
   }
 
   /** What an update reports, as counters and as a one-shot flinch or landing. */
-  #note(before: LaraState): void {
+  #note(before: ExplorerState): void {
     const { note, state } = this.body;
     if (note !== "") this.lastNote = note;
     if (note === "launch") this.jumps += 1;
@@ -244,7 +244,7 @@ export class Lara {
   }
 
   /** Back to the start: the scene restarts instead (`goto`), so this is for stations. */
-  place(x: number, y: number, z: number, yaw: number, state: LaraState, air = 1800): void {
+  place(x: number, y: number, z: number, yaw: number, state: ExplorerState, air = 1800): void {
     Object.assign(this.body, createBody(x, z, y, yaw), {
       relic: this.body.relic,
       health: this.body.health,

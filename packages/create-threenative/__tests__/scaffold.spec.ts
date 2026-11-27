@@ -161,7 +161,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "platform-fighter": {
     shared: "a55cbefc723f0ec25263fd6f3abbf3e177830d52d26eeb28fbe7bdfcf9f25066",
-    kit: "3e6521778e451f0d448ce298a5d096ad89118b30a0e9df1335d89b75bf9e663c",
+    kit: "79ea29f89dacc5ea58e2e478b0a330049c504f51bd2a7c0e07eabbc144006628",
   },
   platformer: {
     shared: "eee52271bc5f4a991dc431906fd40e88705eabddc32ccc29aa7ca65541a3d249",
@@ -225,7 +225,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "tomb-explorer": {
     shared: "e2428ab45ec9026ca20e44b7b73f9da1c84c8d0b951c2e27295e4d8f8ecf5ddc",
-    kit: "7c5e777db79c1ef92d42a81308eeb6504e4995a2daf066df22a484773c962ec4",
+    kit: "5a1ee3607649aa9e9b916572b5ba35bb58c493be9bd6c349043c7f1bce061784",
   },
   "tower-defense": {
     shared: "af3549304425161e1c03441da07659ec7ef7f794f13ec2d3f9ee0a4af998537d",
