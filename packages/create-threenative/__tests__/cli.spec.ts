@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { mkdirSync, writeFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
@@ -8,6 +8,7 @@ import { describe, expect, it } from "vitest";
 import { makeTempDirSync } from "../../../test-support/temp-dir.js";
 import {
   cliHelp,
+  createProject,
   discoverKitManifests,
   kitManifest,
   parseArgs,
@@ -123,7 +124,7 @@ describe("create-threenative CLI", () => {
       expect(commandHelp.stderr, command).toBe("");
       expect(commandHelp.stdout, command).toContain(`Usage: threenative ${command}`);
     }
-    expect(advertised).toEqual(["build", "doctor", "deploy", "login", "logout"]);
+    expect(advertised).toEqual(["build", "doctor", "deploy", "inspect", "login", "logout"]);
 
     for (const command of ["dev", "test", "ship"]) {
       await expect(
@@ -143,4 +144,28 @@ describe("create-threenative CLI", () => {
       expect(cliSurface, command).not.toContain(`\`${command}\``);
     }
   }, 30_000);
+});
+
+describe("create-threenative --minimal", () => {
+  it("parses --minimal and its alias", () => {
+    expect(parseArgs(["game", "--minimal"])).toMatchObject({ minimal: true });
+    expect(parseArgs(["game", "--strip-demo-playtests"])).toMatchObject({ minimal: true });
+    expect(parseArgs(["game"])).not.toHaveProperty("minimal");
+    expect(cliHelp()).toContain("--minimal");
+  });
+
+  it("keeps survives.playtest.json and drops the kit's other demo playtests", async () => {
+    const root = makeTempDirSync("threenative-scaffold-minimal-");
+    const full = await createProject({ install: false, target: "full", template: "starter" }, root);
+    const lean = await createProject(
+      { install: false, minimal: true, target: "lean", template: "starter" },
+      root,
+    );
+    expect((await readdir(path.join(full.target, "playtests"))).length).toBeGreaterThan(1);
+    expect(await readdir(path.join(lean.target, "playtests"))).toEqual(["survives.playtest.json"]);
+    await expect(readdir(path.join(lean.target, "native-playtests"))).rejects.toThrow();
+    expect(await readdir(path.join(lean.target, "src"))).toEqual(
+      await readdir(path.join(full.target, "src")),
+    );
+  });
 });

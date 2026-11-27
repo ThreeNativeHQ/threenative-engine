@@ -4773,6 +4773,95 @@
       "symbol": "zenithTransmittance"
     },
     {
+      "aliases": ["bake add part, place mesh part"],
+      "constraints": [],
+      "example": "addPart(root, new BoxGeometry(2, 0.5, 4), paint, { position: [0, 0.5, 0], name: \"body\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { addPart } from \"@threenative/core/bake\""],
+      "signature": "export function addPart( parent: Object3D, geometry: BufferGeometry, material: Material, placement: IPartPlacement = { … }",
+      "situations": [
+        "bake a procedural model to a glb: place a box, cylinder or sphere part on the model"
+      ],
+      "summary": "Add one primitive to a model: geometry, material and where it sits. Returns the mesh.",
+      "supersedes": [],
+      "symbol": "addPart"
+    },
+    {
+      "aliases": ["bake emissive, glow material, neon material"],
+      "constraints": [],
+      "example": "const neon = createEmissiveMaterial(0x33ffee, 2, { name: \"neon\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { createEmissiveMaterial } from \"@threenative/core/bake\""],
+      "signature": "export function createEmissiveMaterial( color: ColorRepresentation, intensity = 1, options: IPbrMaterialOptions = { … }",
+      "situations": [
+        "bake a procedural model to a glb: make a lamp, neon strip, window or screen glow"
+      ],
+      "summary": "A glowing material: the colour is emitted at `intensity`, with the surface itself dark so it reads as a light source (a lamp, a screen, a neon strip).",
+      "supersedes": [],
+      "symbol": "createEmissiveMaterial"
+    },
+    {
+      "aliases": ["bake material, glb material factory, standard material"],
+      "constraints": [],
+      "example": "const paint = createPbrMaterial(0xcc2222, { name: \"paint\", metalness: 0.6, roughness: 0.3 });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { createPbrMaterial } from \"@threenative/core/bake\""],
+      "signature": "export function createPbrMaterial( color: ColorRepresentation, options: IPbrMaterialOptions = { … }",
+      "situations": [
+        "bake a procedural model to a glb: make a painted, metal or rubber material for a part"
+      ],
+      "summary": "A plain PBR material (`MeshStandardMaterial`). Give each distinct finish its own `name`: the name is the glTF material name and `inspect` lists it.",
+      "supersedes": [],
+      "symbol": "createPbrMaterial"
+    },
+    {
+      "aliases": [
+        "bake script, export glb, GLTFExporter, FileReader polyfill, tnOrigin procedural, ground to zero"
+      ],
+      "constraints": [
+        "node only (it writes a file); the model's look, colours and geometry come from the script"
+      ],
+      "example": "const receipt = await exportProceduralGlb(root, \"assets/lamp.glb\", { prompt: \"street lamp\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { exportProceduralGlb } from \"@threenative/core/bake\""],
+      "signature": "export async function exportProceduralGlb( root: Object3D, outPath: string, options: IExportProceduralGlbOptions, ): Promise<IProceduralGlbReceipt> { … }",
+      "situations": [
+        "bake a procedural model to a glb under assets/ with a node script (scripts/bake-name.mjs)"
+      ],
+      "summary": "Merge, ground, check and write a procedural model as a self-contained binary `.glb` whose `asset.extras` carry `tnOrigin: \"procedural\"` and `tnPrompt`. Returns what it wrote.",
+      "supersedes": [],
+      "symbol": "exportProceduralGlb"
+    },
+    {
+      "aliases": ["donor model, strip materials, repaint imported glb"],
+      "constraints": [],
+      "example": "prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: \"base\" }));",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "requires": ["import { prepareDonorWithoutMaterials } from \"@threenative/core/bake\""],
+      "signature": "export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T { … }",
+      "situations": [
+        "bake a procedural model to a glb: reuse a donor glb's shape without its textures or materials"
+      ],
+      "summary": "Strip a donor model (a downloaded or Blender-exported scene) of its materials, textures and vertex colours and put one `material` on every mesh, so the script paints it. Mutates and returns `root`.",
+      "supersedes": [],
+      "symbol": "prepareDonorWithoutMaterials"
+    },
+    {
       "aliases": [],
       "constraints": ["use only in the web development entry"],
       "example": "acceptHotUpdate(game, import.meta.hot);",

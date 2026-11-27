@@ -11,6 +11,7 @@ import {
   readProject,
 } from "./doctor.js";
 import { fixAuthoringLayer } from "./index.js";
+import { inspectCommand, inspectHelp } from "./inspect.js";
 
 const DOCTOR_TARGETS: readonly DoctorTarget[] = ["web", "desktop", "android", "ios"];
 const DOCTOR_MODES: readonly DoctorMode[] = ["debug", "release"];
@@ -46,6 +47,8 @@ export function cliHelp(command?: PublicCommand): string {
       "Exits 0 when nothing failed, 1 when a check failed.",
     ].join("\n")}\n`;
   }
+  if (command === "inspect")
+    return inspectHelp().replaceAll("npx create-threenative inspect", "threenative inspect");
   if (command === "login") {
     return `${[
       "Usage: threenative login [--no-browser]",
@@ -208,6 +211,10 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
   }
   if (command === "deploy") {
     await deploy(parseDeployArgs(rest));
+    return;
+  }
+  if (command === "inspect") {
+    await inspectCommand(rest);
     return;
   }
   if (command === "logout") {

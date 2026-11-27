@@ -1,12 +1,13 @@
 /** The complete `threenative` command surface, in one place so the help text, the dispatcher and
  * the documentation checks cannot disagree. Adding a command means adding it here and teaching
  * `threenative.ts` to run it. */
-export type PublicCommand = "build" | "doctor" | "login" | "logout" | "deploy";
+export type PublicCommand = "build" | "doctor" | "login" | "logout" | "deploy" | "inspect";
 
 export const threenativeCommands: readonly PublicCommand[] = [
   "build",
   "doctor",
   "deploy",
+  "inspect",
   "login",
   "logout",
 ];
@@ -15,6 +16,8 @@ export const commandSummaries: Record<PublicCommand, string> = {
   build: "Build web or native output.",
   doctor: "Check this project and report what would break a build.",
   deploy: "Publish the game: a web share link, or with --target desktop the native store.",
+  inspect:
+    "Report a GLB's size, minY and triangles, audit assets against the manifest, or check a screenshot.",
   login: "Sign in to your threenative.com account.",
   logout: "Sign out and revoke this machine's token.",
 };

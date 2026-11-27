@@ -3,6 +3,7 @@ import { defineConfig } from "tsup";
 export default defineConfig({
   entry: [
     "src/index.ts",
+    "src/bake.ts",
     "src/playtest.ts",
     "src/hot.ts",
     "src/react.ts",

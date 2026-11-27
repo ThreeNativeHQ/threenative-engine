@@ -43,6 +43,10 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./bake": {
+      "types": "./dist/bake.d.ts",
+      "import": "./dist/bake.js"
+    },
     "./playtest": {
       "types": "./dist/playtest.d.ts",
       "import": "./dist/playtest.js"
