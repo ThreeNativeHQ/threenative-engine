@@ -129,7 +129,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "car-combat": {
     shared: "a811e9936826c88765ba96753a99a54aea8f0e2c61e0cfa20d9e46197d5a3454",
-    kit: "c0cdf16ea9cc2db180375dc2e6de994eacaa49d3065f5e54acea3e2c9d46c80c",
+    kit: "713990d23a397d0be34eab89e40e0e5a5e9fc1e01f3d012f351704ee575ce540",
   },
   collectathon: {
     shared: "2b58c42e4d1e62d089061a290c949407b226dbcb35ebbb5f3a21a33cc55b4285",

@@ -50,7 +50,7 @@
     },
     {
       "kind": "wait",
-      "label": "ready",
+      "label": "restaged-ready",
       "waitTicks": 2,
       "release": true
     },
