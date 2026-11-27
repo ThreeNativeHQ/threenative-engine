@@ -202,6 +202,41 @@ test("--summary prints a compact verdict, --out keeps the full report, exit code
   expect(full.observations.blob).toHaveLength(200_000);
 });
 
+test("--summary stays under 4 KB for a failing run with 50+ long error diagnostics and many failed assertions", async () => {
+  const diagnostics = Array.from({ length: 60 }, (_, index) => ({ code: `TN_ERR_${index}`, message: `error ${index} ${"m".repeat(500)}`, severity: "error" }));
+  const failing = {
+    ...bigReport(false),
+    assertionResults: Array.from({ length: 40 }, (_, index) => ({ details: { why: "d".repeat(500) }, id: `assertion-${index}-${"i".repeat(200)}`, pass: false })),
+    diagnostics,
+  };
+  runStandalonePlaytests.mockResolvedValueOnce([failing]);
+
+  const { stdout } = await runCapturing([...await scenarioArguments(), "--summary"]);
+
+  expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
+  const [scenario] = (JSON.parse(stdout) as { scenarios: Array<Record<string, unknown>> }).scenarios;
+  expect(scenario).not.toHaveProperty("reasons");
+  expect(scenario).not.toHaveProperty("diagnostics");
+  expect(scenario).toMatchObject({ failedTotal: 40, diagnosticKinds: 60 });
+});
+
+test("--summary over 10+ scenarios keeps stdout under 4 KB, failing scenarios first, with a count and an --out pointer", async () => {
+  const many = Array.from({ length: 14 }, (_, index) => ({ ...bigReport(index % 5 !== 0), scenario: `s${index}` }));
+  runStandalonePlaytests.mockResolvedValueOnce(many);
+  const outFile = join(await makeTempDir("playtest-cli-out-"), "full.json");
+
+  const { stdout } = await runCapturing([...await scenarioArguments(), "--summary", "--out", outFile]);
+
+  expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
+  const summary = JSON.parse(stdout) as { omitted: number; note: string; out: string; scenarios: Array<{ pass: boolean; scenario: string }> };
+  expect(summary.out).toBe(outFile);
+  expect(summary.omitted).toBeGreaterThan(0);
+  expect(summary.scenarios.length + summary.omitted).toBe(14);
+  expect(summary.note).toContain("--out");
+  expect(summary.scenarios.slice(0, 3).map(({ scenario }) => scenario).sort()).toEqual(["s0", "s10", "s5"]);
+  expect(summary.scenarios.slice(0, 3).every(({ pass }) => !pass)).toBe(true);
+});
+
 test("--no-observations drops observations from stdout and --out, exit code is kept", async () => {
   runStandalonePlaytests.mockResolvedValueOnce([bigReport(true)]);
   const outFile = join(await makeTempDir("playtest-cli-out-"), "slim.json");
