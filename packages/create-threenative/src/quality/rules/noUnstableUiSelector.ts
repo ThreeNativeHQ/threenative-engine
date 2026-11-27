@@ -1,34 +1,11 @@
 import type { Rule } from "eslint";
 import type * as ESTree from "estree";
+import { unwrapExpression } from "../unwrapExpression.js";
 
 const HOOK_NAMES = new Set(["useUiState", "useUiStateDuringStartup"]);
 
-interface ITypedNode {
-  readonly expression?: ESTree.Expression;
-  readonly type: string;
-}
-
-function unwrapExpr(node: ESTree.Node | null | undefined): ESTree.Node | undefined {
-  let cur: ESTree.Node | undefined = node ?? undefined;
-  while (cur !== undefined) {
-    const typed = cur as unknown as ITypedNode;
-    if (
-      (typed.type === "TSAsExpression" ||
-        typed.type === "TSSatisfiesExpression" ||
-        typed.type === "TSTypeAssertion" ||
-        typed.type === "ChainExpression") &&
-      typed.expression !== undefined
-    ) {
-      cur = typed.expression;
-      continue;
-    }
-    break;
-  }
-  return cur;
-}
-
 function isFreshCollection(node: ESTree.Node | null | undefined): boolean {
-  const inner = unwrapExpr(node);
+  const inner = unwrapExpression(node);
   return inner?.type === "ObjectExpression" || inner?.type === "ArrayExpression";
 }
 
