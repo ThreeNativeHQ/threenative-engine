@@ -3,13 +3,9 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { IPhysicsContext } from "@threenative/physics";
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
+import { type IMannequin, type IPilot, createPilot } from "../pilot.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
-import {
-  type ICraft,
-  type IMannequin,
-  createBeltCraft,
-  createGliderCraft,
-} from "../render/aircraft.js";
+import { type ICraft, createBeltCraft, createGliderCraft } from "../render/aircraft.js";
 import { createChaseCamera } from "../render/camera.js";
 import { cloudTextures, primeCloudTextures } from "../render/clouds.js";
 import { setupLighting } from "../render/lighting.js";
@@ -159,8 +155,8 @@ export class Play extends Scene<GameState, IPhysicsContext> {
     const rings = createRings(course);
     const thermals = createThermals();
     const socks = createWindSocks(LAUNCH);
-    const craft: ICraft =
-      vehicle === "glider" ? createGliderCraft(mannequin) : createBeltCraft(mannequin);
+    const pilot: IPilot = createPilot(mannequin, "Idle_Loop");
+    const craft: ICraft = vehicle === "glider" ? createGliderCraft(pilot) : createBeltCraft(pilot);
     ctx.add(world);
     ctx.add(rings.root);
     ctx.add(thermals.root);

@@ -7,13 +7,13 @@ import type { GameState } from "./state.js";
 
 const game = defineGame<GameState>({
   input: {
-    // Tank controls, as the reference game has them: up runs, down steps back, left and right turn.
-    // The axis is read relative to the explorer, never the screen.
+    // Tank controls on the axis every kit shares: y drives, as the reference game has it (up runs,
+    // down steps back), and x turns. A pad's left stick drives the same axis.
     move: {
+      up: ["ArrowUp", "KeyW"],
       down: ["ArrowDown", "KeyS"],
       left: ["ArrowLeft", "KeyA"],
       right: ["ArrowRight", "KeyD"],
-      up: ["ArrowUp", "KeyW"],
     },
     // Walking is slow and never steps off an edge.
     walk: { buttons: [5], keys: ["ShiftLeft", "ShiftRight"] },

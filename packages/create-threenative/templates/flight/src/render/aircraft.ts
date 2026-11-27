@@ -1,7 +1,6 @@
 // The two craft, built from boxes, tubes and one triangle on the grid materials, and the pilot who
 // hangs under the glider or stands in the rocket belt's straps. The pilot is the combat mannequin,
 // the one rigged asset in the kit; everything else is generated.
-import { SkeletalMesh3D } from "@threenative/core";
 import {
   BoxGeometry,
   BufferGeometry,
@@ -16,15 +15,8 @@ import {
   type Object3D,
   Vector3,
 } from "three";
-import type { AnimationClip } from "three";
-import { preparePilot } from "../conventions.js";
+import type { IPilot } from "../pilot.js";
 import { propMaterial, structureMaterial } from "./materials.js";
-
-/** What `ctx.assets.model("mannequin-combat.glb")` hands back. */
-export interface IMannequin {
-  readonly scene: Object3D;
-  readonly animations: readonly AnimationClip[];
-}
 
 const suit = new MeshStandardMaterial({ color: 0x3d4a5c, roughness: 0.5 });
 const sail = new MeshStandardMaterial({ color: 0x2a6cf0, roughness: 0.55, side: DoubleSide });
@@ -71,26 +63,10 @@ function createSail(): Mesh {
   return mesh;
 }
 
-export interface IPilot {
-  /** The rig, scaled to metres and ready to be placed in a craft. */
-  readonly root: Object3D;
-  readonly update: (dt: number) => void;
-}
-
-/** The mannequin on a looping clip, scaled to a 1.8 m person. */
-export function createPilot(model: IMannequin, clip: string): IPilot {
-  const character = new SkeletalMesh3D({
-    clips: model.animations,
-    requiredClips: [clip],
-    source: model.scene,
-  });
-  preparePilot(character.root);
-  dress(character.root, suit);
-  character.root.traverse((object) => {
-    object.castShadow = true;
-  });
-  character.play(clip, { fade: 0, mode: "loop" });
-  return { root: character.root, update: (dt) => character.update(dt) };
+/** Swaps the rig's skin for the suit and seats it in the craft. */
+function seat(pilot: IPilot): Object3D {
+  dress(pilot.root, suit);
+  return pilot.root;
 }
 
 export interface ICraft {
@@ -104,7 +80,7 @@ export interface ICraft {
  * The hang glider: a delta sail on a keel with an A-frame control bar. The pilot hangs prone below
  * it, head forward, in a harness slung from the keel.
  */
-export function createGliderCraft(model: IMannequin): ICraft {
+export function createGliderCraft(pilot: IPilot): ICraft {
   const root = new Group();
   root.name = "glider";
   root.add(createSail());
@@ -121,24 +97,22 @@ export function createGliderCraft(model: IMannequin): ICraft {
   );
   root.add(tube([0, 0, 0.4], [0, 0.9, 0.3]));
   root.add(tube([0, 0.9, 0.3], [-3, 0, -1], 0.02), tube([0, 0.9, 0.3], [3, 0, -1], 0.02));
-  const pilot = createPilot(model, "Idle_Loop");
   // Prone: the figure lies on its chest, head toward the nose, hung 1.2 m under the keel.
   const harness = new Group();
   harness.name = "harness";
   harness.rotation.x = Math.PI / 2;
   harness.position.set(0, -1.25, -1.3);
-  harness.add(pilot.root);
+  harness.add(seat(pilot));
   root.add(harness);
   root.add(tube([0, 0, -0.1], [0, -1.1, -0.1], 0.03), tube([0, 0, 0.7], [0, -1.1, 0.7], 0.03));
   return { pilot, root };
 }
 
 /** The rocket belt: twin tanks and a nozzle on the pilot's back, a flame under them. */
-export function createBeltCraft(model: IMannequin): ICraft {
+export function createBeltCraft(pilot: IPilot): ICraft {
   const root = new Group();
   root.name = "rocket-belt";
-  const pilot = createPilot(model, "Idle_Loop");
-  root.add(pilot.root);
+  root.add(seat(pilot));
   const back = new Group();
   for (const side of [-0.17, 0.17]) {
     const tank = new Mesh(new CylinderGeometry(0.11, 0.11, 0.7, 12), gunmetal);

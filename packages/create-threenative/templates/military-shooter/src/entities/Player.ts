@@ -2,6 +2,7 @@ import type { ICtx } from "@threenative/core";
 import { CharacterBody3D, CollisionShape3D, type IPhysicsContext } from "@threenative/physics";
 import { Group, MathUtils, type PerspectiveCamera, Vector3 } from "three";
 import { SPAWN } from "../level.js";
+import { syncEyeCamera } from "../render/camera.js";
 import {
   SPRINT_SPEED_SCALE,
   SPRINT_STRAFE_SCALE,
@@ -259,18 +260,15 @@ export class Player {
 
   /** Place the camera on the solved body, with the kick on the view and the field of view on the blend. */
   syncCamera(camera: PerspectiveCamera): void {
-    camera.position.copy(this.eye);
-    camera.rotation.set(
-      this.pitch + MathUtils.degToRad(this.kick.pitch),
-      this.yaw + MathUtils.degToRad(this.kick.yaw),
-      0,
-      "YXZ",
-    );
-    const fov = MathUtils.lerp(RIFLE.hipFov, RIFLE.adsFov, this.ads);
-    if (Math.abs(camera.fov - fov) > 0.01) {
-      camera.fov = fov;
-      camera.updateProjectionMatrix();
-    }
+    syncEyeCamera(camera, {
+      ads: this.ads,
+      eye: this.eye,
+      fov: { ads: RIFLE.adsFov, hip: RIFLE.hipFov },
+      kickPitch: this.kick.pitch,
+      kickYaw: this.kick.yaw,
+      pitch: this.pitch,
+      yaw: this.yaw,
+    });
   }
 
   debug(): Record<string, unknown> {

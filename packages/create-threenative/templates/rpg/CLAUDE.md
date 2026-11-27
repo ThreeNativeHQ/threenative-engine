@@ -79,6 +79,9 @@ Each is on by default with a named override. Detail: `node_modules/create-threen
 - **Loading curtain** `#startup`: `ctx.startup.hold(label, () => ready)`. Override: reveal on measured readiness only.
 - **Asset cache** `#asset-cache`: on, with idle fill. Override: `assets: { cache: false, backgroundFill: false }`. Marker: `ctx.assets.cache`.
 - **Asset cook** `#asset-cook`: compact, shared images. Override: `compact: false`; `assets.exclude`; `assets.budget`. Marker: `TN_ASSETS_CONFIG`.
+- **Feet on the floor** `#ground-snap`: `GroundSnap`. Override: `enabled: false`.
+- **Held prop** `#attach`: `attachToBone`. Override: a portable `Bone` named `RightHand`.
+- **One metre is one metre** `#scale`: `normaliseToMetres`. Override: per-call options.
 - **Rigged assets** `#rigged`: `.glb` in `assets/`; `AnimationPlayer` drives clips. Override: `ctx.assets.model("hero.glb")` in `Scene.load()`.
 - **Material backlight** `#backlight`: none, as in stock Unreal. Override: `rimGain`; `fillGain`.
 - **Static scenery** `#static`: unwritten transforms stay cheap. Override: `markStatic(root)`; `invalidateStatic(obj)`. Marker: `TN_RENDERLIST_VALIDATE`.

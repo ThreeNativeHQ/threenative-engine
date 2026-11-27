@@ -88,6 +88,7 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
   three: 3,
   twelve: 12,
   twenty: 20,
+  "twenty-nine": 29,
   "twenty-two": 22,
   two: 2,
 };
