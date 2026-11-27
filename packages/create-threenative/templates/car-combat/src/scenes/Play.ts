@@ -24,8 +24,8 @@ import { setupPost } from "../render/postprocessing.js";
 import { isWebGLFallbackRenderer, materialLightingEnabled } from "../render/quality.js";
 import { SUN_DIRECTION, setupSky } from "../render/sky.js";
 import { type GameState, INITIAL_STATE } from "../state.js";
-import { STATIONS } from "../systems/stations.js";
 import { World } from "../systems/World.js";
+import { STATIONS } from "../systems/stations.js";
 
 /**
  * True only under the playtest runner (it sets this global before any game code runs). The

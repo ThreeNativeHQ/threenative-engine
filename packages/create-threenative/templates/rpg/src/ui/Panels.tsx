@@ -1,4 +1,4 @@
-import { useField, keyed } from "./useField.js";
+import { keyed, useField } from "./useField.js";
 
 const ROUND = 3;
 

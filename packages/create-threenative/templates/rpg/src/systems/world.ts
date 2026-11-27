@@ -5,8 +5,8 @@ import { QUESTS, RUIN_QUEST, RUIN_RAIDERS, TREES } from "../content.js";
 import type { Actor, ICombatant } from "../entities/Actor.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { OBJECT_DEFENSE, abilityModifier, resolveAttack } from "../rules/d20.js";
-import type { Dice } from "../rules/dice.js";
 import { Conversation, type IWorld } from "../rules/dialogue.js";
+import type { Dice } from "../rules/dice.js";
 import { Party } from "../rules/party.js";
 import { QuestLog } from "../rules/quests.js";
 import { CombatRounds } from "../rules/rounds.js";
@@ -213,8 +213,7 @@ export class World implements IWorld {
     const word = result.outcome === "miss" ? "misses" : result.outcome === "hit" ? "hits" : "CRITS";
     const sign = result.bonus >= 0 ? "+" : "";
     this.note(
-      `${attacker.name} ${word} ${target.name}: d20 ${result.roll}${sign}${result.bonus} vs ${result.defense}` +
-        (result.damage > 0 ? `, ${result.damage} damage` : ""),
+      `${attacker.name} ${word} ${target.name}: d20 ${result.roll}${sign}${result.bonus} vs ${result.defense}${result.damage > 0 ? `, ${result.damage} damage` : ""}`,
     );
     if (attacker === this.leader) {
       this.last.roll = result.roll;

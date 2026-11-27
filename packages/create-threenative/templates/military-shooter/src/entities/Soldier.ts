@@ -1,10 +1,10 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
 import { MathUtils, type Object3D, Vector3 } from "three";
+import type { Post } from "../level.js";
+import { RIFLE_HOLD, createRifle, createTracer, dress, soldierMaterial } from "../render/props.js";
 import { BURST_GAP_SECONDS, BURST_SECONDS, MISS_CONE, soldierAccuracy } from "../rules/accuracy.js";
 import type { Stance } from "../rules/movement.js";
 import { TickClock, toTicks } from "../rules/ticks.js";
-import { RIFLE_HOLD, createRifle, createTracer, dress, soldierMaterial } from "../render/props.js";
-import type { Post } from "../level.js";
 import { Fighter, type GameCtx, type IMannequin } from "./Fighter.js";
 
 export const WORLD_LAYER = 1;

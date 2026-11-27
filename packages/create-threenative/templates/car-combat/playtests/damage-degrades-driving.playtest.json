@@ -31,10 +31,7 @@
     {
       "kind": "input",
       "label": "try-handbrake",
-      "press": [
-        "ArrowUp",
-        "Space"
-      ],
+      "press": ["ArrowUp", "Space"],
       "holdTicks": 60,
       "release": true
     },

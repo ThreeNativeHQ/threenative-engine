@@ -1,5 +1,5 @@
 import { CharacterBody3D, CollisionShape3D } from "@threenative/physics";
-import { MathUtils, Vector3 } from "three";
+import { MathUtils, type Vector3 } from "three";
 import { CLASS_ATTACK, type IStats } from "../content.js";
 import { GATE, type IActorSpec, type Team } from "../level.js";
 import { createWeapon, dress } from "../render/props.js";

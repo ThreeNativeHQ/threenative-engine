@@ -3,8 +3,8 @@
 // `update` before each physics step and `afterStep` after it.
 import { type IRandom, createRandom } from "@threenative/core";
 import type { Vector3 } from "three";
-import { PADS, pathAt, yawOf } from "../arena/layout.js";
 import { type IRivalControl, type Objective, RivalDriver } from "../ai/rival.js";
+import { PADS, pathAt, yawOf } from "../arena/layout.js";
 import { Car, type IControl } from "../entities/Car.js";
 import type { GameCtx } from "../entities/layers.js";
 import { emitPlaytestEvent } from "../playtest-events.js";

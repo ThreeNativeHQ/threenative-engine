@@ -1,4 +1,4 @@
-import { useField, keyed } from "./useField.js";
+import { keyed, useField } from "./useField.js";
 
 /** The conversation: the speaker's line and the numbered choices, with each skill check named. */
 export function Dialogue() {

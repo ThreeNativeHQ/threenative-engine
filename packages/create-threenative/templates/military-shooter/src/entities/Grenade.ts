@@ -1,6 +1,6 @@
 import { Vector3 } from "three";
-import { UNIT } from "../rules/movement.js";
 import { createGrenade } from "../render/props.js";
+import { UNIT } from "../rules/movement.js";
 
 /**
  * A grenade in flight: thrown fast and a little upward, bounced by walls and floor, blown after a fuse.
@@ -21,9 +21,10 @@ const RESTITUTION = 0.45;
 const SLIDE_KEEP = 0.7;
 const RADIUS = 0.06;
 
-export interface IWorldCast {
-  (from: Vector3, to: Vector3): { readonly point: Vector3; readonly normal: Vector3 } | undefined;
-}
+export type IWorldCast = (
+  from: Vector3,
+  to: Vector3,
+) => { readonly point: Vector3; readonly normal: Vector3 } | undefined;
 
 export class Grenade {
   readonly mesh = createGrenade();

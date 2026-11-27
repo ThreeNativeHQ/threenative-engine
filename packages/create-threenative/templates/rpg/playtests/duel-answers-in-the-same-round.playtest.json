@@ -22,11 +22,7 @@
     {
       "kind": "input",
       "label": "duel",
-      "press": [
-        "F6",
-        "F10",
-        "KeyF"
-      ],
+      "press": ["F6", "F10", "KeyF"],
       "holdTicks": 1,
       "release": true
     },

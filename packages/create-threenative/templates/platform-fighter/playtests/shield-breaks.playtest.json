@@ -21,36 +21,27 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit5"
-      ],
+      "press": ["Digit5"],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "press": [
-        "KeyL"
-      ],
+      "press": ["KeyL"],
       "holdTicks": 4,
       "label": "raise",
       "release": false
     },
     {
       "kind": "input",
-      "press": [
-        "KeyL",
-        "Digit9"
-      ],
+      "press": ["KeyL", "Digit9"],
       "holdTicks": 1,
       "label": "cpu-jab",
       "release": false
     },
     {
       "kind": "input",
-      "press": [
-        "KeyL"
-      ],
+      "press": ["KeyL"],
       "holdTicks": 12,
       "label": "broken",
       "release": false
@@ -64,9 +55,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit9"
-      ],
+      "press": ["Digit9"],
       "holdTicks": 1,
       "release": true
     },

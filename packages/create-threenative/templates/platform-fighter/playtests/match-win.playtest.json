@@ -21,17 +21,13 @@
     },
     {
       "kind": "input",
-      "press": [
-        "KeyX"
-      ],
+      "press": ["KeyX"],
       "holdTicks": 1,
       "release": true
     },
     {
       "kind": "input",
-      "press": [
-        "Digit6"
-      ],
+      "press": ["Digit6"],
       "holdTicks": 1,
       "release": true
     },
@@ -42,9 +38,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "KeyK"
-      ],
+      "press": ["KeyK"],
       "holdTicks": 1,
       "label": "smash",
       "release": true

@@ -5,8 +5,8 @@
 // (`systems/` calls `crumple`). Every number is in metres; the nose points down -z, which is the
 // direction `VehicleBody3D` drives by default.
 import { BoxGeometry, CylinderGeometry, Group, Mesh, MeshStandardMaterial } from "three";
-import { burntPaint } from "./materials.js";
 import type { Region } from "../vehicle/damage.js";
+import { burntPaint } from "./materials.js";
 
 export const CAR_SIZE = { height: 0.7, length: 4.2, width: 1.85 } as const;
 export const WHEEL_RADIUS = 0.36;

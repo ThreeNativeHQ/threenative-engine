@@ -7,8 +7,8 @@ import {
   buildStaticColliders,
 } from "@threenative/physics";
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
-import { Grenade, type IWorldCast, blastDamage } from "../entities/Grenade.js";
 import type { GameCtx, IMannequin } from "../entities/Fighter.js";
+import { Grenade, type IWorldCast, blastDamage } from "../entities/Grenade.js";
 import { Player } from "../entities/Player.js";
 import { PLAYER_LAYER, SOLDIER_LAYER, Soldier, WORLD_LAYER } from "../entities/Soldier.js";
 import { ARENA, POSTS } from "../level.js";
@@ -19,17 +19,17 @@ import { setupLighting } from "../render/lighting.js";
 import { createLoadingScreen } from "../render/loading.js";
 import { createMaterialLighting } from "../render/materialLighting.js";
 import { setupPost } from "../render/postprocessing.js";
+import { createTracer } from "../render/props.js";
 import {
   type QualityTier,
   isWebGLFallbackRenderer,
   materialLightingEnabled,
 } from "../render/quality.js";
-import { createTracer } from "../render/props.js";
 import { setupSky } from "../render/sky.js";
 import { createViewmodel } from "../render/viewmodel.js";
 import { RIFLE } from "../rules/weapon.js";
-import { STATIONS, STATION_NAMES, UNDER_PLAYTEST } from "../stations.js";
 import type { GameState } from "../state.js";
+import { STATIONS, STATION_NAMES, UNDER_PLAYTEST } from "../stations.js";
 
 /** How long a HUD message stays up, seconds. */
 const MESSAGE_TIME = 2.5;

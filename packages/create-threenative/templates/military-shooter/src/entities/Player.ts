@@ -6,8 +6,8 @@ import {
   SPRINT_SPEED_SCALE,
   SPRINT_STRAFE_SCALE,
   STANCES,
-  type Stance,
   SprintBudget,
+  type Stance,
   groundMove,
 } from "../rules/movement.js";
 import { Vitals } from "../rules/vitals.js";

@@ -1,11 +1,11 @@
 import { CollisionShape3D, type IVehicleWheel3D, VehicleBody3D } from "@threenative/physics";
 import { Group, MathUtils, Vector3 } from "three";
 import {
-  burn,
   CAR_SIZE,
   type ICarVisual,
   WHEEL_RADIUS,
   WHEEL_SPOTS,
+  burn,
   carVisual,
   crumple,
 } from "../render/car.js";

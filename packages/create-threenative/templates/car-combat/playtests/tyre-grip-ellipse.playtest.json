@@ -57,10 +57,7 @@
     {
       "kind": "input",
       "label": "corner",
-      "press": [
-        "ArrowUp",
-        "ArrowLeft"
-      ],
+      "press": ["ArrowUp", "ArrowLeft"],
       "holdTicks": 90,
       "release": true
     },

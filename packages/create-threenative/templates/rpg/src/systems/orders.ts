@@ -1,9 +1,9 @@
 // Orders: what each queued action does while it is the front of an actor's queue, and who queues
 // what for the followers and the raiders. The leader's queue is the player's own.
 import type { Actor } from "../entities/Actor.js";
-import { followStep } from "../rules/party.js";
-import { type Action, ARRIVAL_RADIUS, INTERACTION_DISTANCE } from "../rules/queue.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
+import { followStep } from "../rules/party.js";
+import { ARRIVAL_RADIUS, type Action, INTERACTION_DISTANCE } from "../rules/queue.js";
 import { AGGRO_RADIUS, HEAL_AMOUNT, MELEE_REACH, type World } from "./world.js";
 
 function distance(a: Actor, x: number, z: number): number {

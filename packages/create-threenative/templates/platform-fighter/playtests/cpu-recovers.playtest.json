@@ -21,9 +21,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Digit0"
-      ],
+      "press": ["Digit0"],
       "holdTicks": 1,
       "release": true
     },

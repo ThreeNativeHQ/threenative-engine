@@ -21,9 +21,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "ArrowLeft"
-      ],
+      "press": ["ArrowLeft"],
       "holdTicks": 12,
       "label": "slide-left",
       "release": true
@@ -35,9 +33,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "Space"
-      ],
+      "press": ["Space"],
       "holdTicks": 8,
       "label": "jump-up",
       "release": true
@@ -50,9 +46,7 @@
     },
     {
       "kind": "input",
-      "press": [
-        "ArrowDown"
-      ],
+      "press": ["ArrowDown"],
       "holdTicks": 3,
       "label": "drop",
       "release": false

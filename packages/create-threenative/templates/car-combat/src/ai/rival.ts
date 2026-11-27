@@ -1,8 +1,8 @@
+import { type IPathPoint, pathAt, trackDistance } from "../arena/layout.js";
 // Rival drivers (reference cards carmageddon/ai-objectives and ai-path-following).
 // A rival holds exactly one timed objective and writes the same pedals and curvature a player's
 // keys would. Its temperament (nastiness) and a grudge the player builds pick the next objective.
 import type { Car } from "../entities/Car.js";
-import { type IPathPoint, pathAt, trackDistance } from "../arena/layout.js";
 
 export type Objective = "race" | "pursue" | "backup" | "wait";
 

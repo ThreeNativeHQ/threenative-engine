@@ -55,7 +55,8 @@ export function buildArena(): IArena {
     mesh.castShadow = solid;
     root.add(mesh);
     if (solid) {
-      const box = geometry.boundingBox ?? (geometry.computeBoundingBox(), geometry.boundingBox);
+      if (geometry.boundingBox === null) geometry.computeBoundingBox();
+      const box = geometry.boundingBox;
       if (box)
         solids.push({
           center: {
