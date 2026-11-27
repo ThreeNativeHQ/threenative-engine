@@ -45,7 +45,7 @@ Exposure policy: `src/render/exposure.ts` (`node_modules/create-threenative/agen
 Kit notes: `node_modules/create-threenative/agent-docs/references/kit-flight.md`.
 <!-- /shared -->
 
-This game owns the flight models and the course (`src/sim/`: glider, belt, world, scoring); `src/game.ts` is portable.
+The glider flies on the engine `FlightModel`; this game owns the airframe, the belt and the course (`src/sim/`: glider, belt, world, scoring); `src/game.ts` is portable.
 Keys: up dive, down pull up, left/right bank; V swaps glider and rocket belt; belt: Space thrust, Shift sink; R restart.
 
 <!-- shared: kit-commands -->
