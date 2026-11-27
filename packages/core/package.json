@@ -111,7 +111,7 @@
     "chrome-devtools-mcp": "1.11.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
-    "threenative-asset-mcp": "0.21.2",
+    "threenative-asset-mcp": "0.21.3",
     "threenative-sculpt-mcp": "0.2.3",
     "zustand": "catalog:"
   },
