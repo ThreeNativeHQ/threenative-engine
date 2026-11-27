@@ -19,7 +19,7 @@ import { integrationGitSelection } from "./ci-integration-scope.mjs";
 export const ADMISSION_NAMESPACES = Object.freeze(["ci", "integration", "native"]);
 
 // The eligible HEAVY set: every Linux job on the TN_RUNNER heavy switch, per its matrix —
-// 56 ci + 13 integration + 4 native = 73 instances (one template-nonvisual and one
+// 62 ci + 13 integration + 4 native = 79 instances (one template-nonvisual and one
 // template-engine-cost leg per shipped kit, plus strata).
 // The order is the default admission preference (CPU-heavy lanes first); the caller
 // passes its own actual selected order instead.
