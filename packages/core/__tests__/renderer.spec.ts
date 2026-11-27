@@ -1126,42 +1126,33 @@ describe("createRenderer", () => {
     }
   });
 
-  it("reports a named boot failure when neither WebGPU nor the WebGL fallback can start", async () => {
-    // The native (Wasm) engine binds `WebGLRenderer` to a facade that refuses on use, so the
-    // fallback throws "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER" instead of a WebGL context error. The
-    // player must read a named, human message — never that internal facade code.
+  it("tells players how to recover when the Wasm engine cannot get a WebGPU adapter", async () => {
     const canvas = testCanvas();
-    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
-    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const report = vi.fn();
+    const adapterFailure =
+      "TN_WASM_ADAPTER: WebGPU not available on this browser (requestAdapter returned null)";
     const refusal = (): never => {
       throw new Error(
         "TN_NATIVE_UNCATALOGUED_WEBGLRENDERER: WebGLRenderer is not available on the Wasm engine.",
       );
     };
+    vi.stubGlobal("navigator", { gpu: {} });
     try {
       await expect(
         createRenderer({
           canvas,
-          preferWebGPU: true,
+          report,
           webgl2Factory: refusal,
-          webgpuFactory: () => {
-            throw new Error("no adapter");
-          },
+          webgpuFactory: () => ({ init: () => Promise.reject(new Error(adapterFailure)) }),
         }),
-      ).rejects.toThrow(/^TN_NO_RENDERER: WebGPU is not available on this device/u);
-      await expect(
-        createRenderer({
-          canvas,
-          preferWebGPU: true,
-          webgl2Factory: refusal,
-          webgpuFactory: () => {
-            throw new Error("no adapter");
-          },
-        }),
-      ).rejects.not.toThrow(/UNCATALOGUED|Wasm engine/u);
+      ).rejects.toThrow(
+        `TN_NO_RENDERER: This game requires WebGPU. Enable graphics acceleration and restart your browser, or open the game in a browser with WebGPU enabled. WebGPU failed: ${adapterFailure}`,
+      );
+      expect(report.mock.calls.some(([line]) => line.startsWith("TN_RENDERER_FALLBACK:"))).toBe(
+        false,
+      );
     } finally {
-      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
-      else Object.defineProperty(globalThis, "navigator", descriptor);
+      vi.unstubAllGlobals();
     }
   });
 
