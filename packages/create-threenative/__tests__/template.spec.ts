@@ -39,7 +39,7 @@ const authoringSkills = [
   ["prd-creator", ".agent/prd/PRD.md", "explicit approval"],
   ["threenative-capabilities", "engine_search_capabilities", "@threenative/physics/navigation"],
   ["threenative-playtest", "TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING", "doctor"],
-  ["threenative-assets", "asset_search_sources", "sculpt_spec_gate"],
+  ["threenative-assets", "asset_search", "sculpt_spec_gate"],
   ["threenative-visuals", "Budget real time for the look", "--browser-recipe webgpu"],
   ["threenative-performance", "TN_FRAME_BUDGET", "Unexecuted platforms stay unverified"],
   ["threenative-ui", "data-tn-interactive", "useUiState"],
@@ -809,8 +809,9 @@ describe("template contracts", () => {
       'engine_search_capabilities {situation, scope: "mechanic"}',
       "engine_capability_detail",
       "`prd-creator`",
-      "asset_search_sources",
-      "asset_download_file",
+      "`asset_search`",
+      "`asset_get`",
+      "`asset_download`",
       "sculpt_plan",
       "animation_inspect",
     ];
@@ -841,8 +842,11 @@ describe("template contracts", () => {
         expect(instructions, `${template}/${file}/explicit approval`).toMatch(
           /explicit approval/iu,
         );
-        expect(instructions, `${template}/${file}/borrow rule`).toContain(
-          "no code, level layouts, character names or art",
+        expect(instructions, `${template}/${file}/adaptation rule`).toContain(
+          "Build similar mechanics tuned to this game",
+        );
+        expect(instructions, `${template}/${file}/source rules`).toContain(
+          "Cite `file:line` per `threenative-capabilities`",
         );
         expect(instructions, `${template}/${file}/no-user route`).toContain("With no user");
       }
@@ -913,6 +917,28 @@ describe("template contracts", () => {
     }
   });
 
+  it("opens the router with the two mandatory searches, ahead of every step", async () => {
+    // Owner, 2026-11-26: searching the engine and the asset catalog is a must-have. The rule leads
+    // the router so a cold agent reads it before step 1, and it names the tools the servers serve.
+    for (const template of await templateNames()) {
+      for (const file of ["AGENTS.md", "CLAUDE.md"]) {
+        const instructions = await readFile(path.join(templateRoot, template, file), "utf8");
+        const rule = instructions.indexOf("Two searches are mandatory. Skipping one is a defect.");
+        expect(rule, `${template}/${file} carries the rule`).toBeGreaterThan(-1);
+        expect(rule, `${template}/${file} leads step 1`).toBeLessThan(
+          instructions.indexOf("1. **Kit**"),
+        );
+        const sentence = instructions.slice(rule, instructions.indexOf("1. **Kit**"));
+        for (const tool of [
+          "engine_search_capabilities",
+          "engine_capability_detail",
+          "asset_search",
+        ])
+          expect(sentence, `${template}/${file} rule names ${tool}`).toContain(`\`${tool}\``);
+      }
+    }
+  });
+
   it("selects required textures from mechanics and reference context before execution", async () => {
     const gate = await readFile(
       path.resolve(
@@ -925,8 +951,9 @@ describe("template contracts", () => {
       "mechanics matches",
       "reference image",
       "threenative-asset-mcp",
-      "asset_search_sources",
-      "asset_download_file",
+      "asset_search",
+      "asset_get",
+      "asset_download",
       "licen",
     ])
       expect(textures, item).toContain(item);
@@ -1387,6 +1414,49 @@ describe("template contracts", () => {
           /--browser-recipe webgpu|--enable-features=Vulkan/,
         );
       }
+    }
+  });
+
+  it("should document the asset MCP lean default and detailed AI projection modes", async () => {
+    const assetsSkill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-assets/SKILL.md",
+      ),
+      "utf8",
+    );
+    const capabilitiesSkill = await readFile(
+      path.resolve(
+        "packages/create-threenative/agent-files/.agents/skills/threenative-capabilities/SKILL.md",
+      ),
+      "utf8",
+    );
+    const projectionRef = await readFile(
+      path.resolve("packages/create-threenative/agent-docs/references/texture-projection.md"),
+      "utf8",
+    );
+    for (const [label, doc] of [
+      ["threenative-assets/SKILL.md", assetsSkill],
+      ["threenative-capabilities/SKILL.md", capabilitiesSkill],
+      ["texture-projection.md", projectionRef],
+    ] as const) {
+      expect(doc, `${label} lean default`).toMatch(/default.*\blean\b|\blean\b.*default/iu);
+      expect(doc, `${label} detailed mode`).toMatch(/\bdetailed\b/u);
+    }
+    for (const [label, doc] of [
+      ["threenative-assets/SKILL.md", assetsSkill],
+      ["texture-projection.md", projectionRef],
+    ] as const) {
+      expect(doc, `${label} CLI flag`).toContain("--mode lean");
+      expect(doc, `${label} env var`).toContain("THREENATIVE_TEXTURE_MODE");
+    }
+    for (const template of await templateNames()) {
+      const agents = await readFile(path.join(templateRoot, template, "AGENTS.md"), "utf8");
+      expect(agents, `${template} AGENTS.md lean default`).toMatch(
+        /default to `threenative-assets` `lean` mode/u,
+      );
+      expect(agents, `${template} AGENTS.md dual modes`).toMatch(
+        /`lean` default vs `detailed` AI mode/u,
+      );
     }
   });
 });

@@ -88,6 +88,8 @@ const NUMBER_WORDS: Readonly<Record<string, number>> = {
   three: 3,
   twelve: 12,
   twenty: 20,
+  "twenty-nine": 29,
+  "twenty-two": 22,
   two: 2,
 };
 
@@ -144,7 +146,8 @@ describe("the guides cover what ships", () => {
       path.join("packages", "create-threenative", "README.md"),
     ]) {
       const text = await readFile(path.join(repoRoot, relative), "utf8");
-      const stated = /(\w+) templates ship/u.exec(text)?.[1];
+      // A hyphen is part of the number word: "Twenty-two templates ship" is 22, not 20.
+      const stated = /([\w-]+) templates ship/u.exec(text)?.[1];
       expect(stated, `${relative} states no template count`).toBeDefined();
       expect(
         NUMBER_WORDS[(stated ?? "").toLowerCase()],

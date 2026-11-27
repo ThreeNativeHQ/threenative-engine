@@ -108,6 +108,72 @@
       }
     }
   },
+  "board-party": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "start": [
+      {
+        "label": "ready",
+        "waitForResource": {
+          "id": "state",
+          "path": "time",
+          "gte": 0.5
+        },
+        "release": false,
+        "timeoutMs": 5000
+      }
+    ],
+    "explore": {
+      "actions": ["Space", "KeyY", "KeyN"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "turn",
+          "equals": 1
+        },
+        {
+          "id": "state",
+          "path": "die",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "players.0.stars",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "players.0.coins",
+          "equals": 10
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Interact",
+        "ticks": 48
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a turn is a die roll and a walk between spaces, and a minigame ends on a finish line or a bar sweep",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "collectathon": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
@@ -163,6 +229,29 @@
         },
         "windows": 1
       }
+    }
+  },
+  "farming": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyE", "KeyQ", "KeyR"]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Sword_Attack",
+        "ticks": 42,
+        "contactTicks": 21,
+        "effect": {
+          "signal": "tilled"
+        }
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "restart-resets": "a farm has no failure to retry: the day loop saves nothing between runs and a new run is a page reload",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "kart": {
@@ -296,6 +385,58 @@
       }
     }
   },
+  "open-world": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["ShiftLeft", "Space", "KeyQ", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "stars",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "money",
+          "equals": 1200
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "mode",
+          "equals": "foot"
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "Space",
+        "clip": "Punch_Jab",
+        "ticks": 36,
+        "contactTicks": 9,
+        "effect": {
+          "signal": "punch"
+        }
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "platformer": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
@@ -367,6 +508,68 @@
         },
         "windows": 1
       }
+    }
+  },
+  "platform-fighter": {
+    "subject": "p1",
+    "move": ["KeyD", "KeyA", "Space", "KeyS"],
+    "explore": {
+      "actions": ["KeyJ", "KeyK", "KeyL", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "p1.stocks",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "cpu.stocks",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "p1.percent",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyJ",
+        "clip": "Punch_Jab",
+        "ticks": 19,
+        "contactTicks": 6,
+        "effect": {
+          "signal": "strike"
+        }
+      },
+      {
+        "key": "KeyK",
+        "clip": "Sword_Attack",
+        "ticks": 44
+      },
+      {
+        "key": "ShiftLeft",
+        "clip": "Roll",
+        "ticks": 34
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "puzzle": {
@@ -561,6 +764,59 @@
         },
         "windows": 1
       }
+    }
+  },
+  "rail-shooter": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft", "KeyX", "KeyQ", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "shield",
+          "equals": 255
+        },
+        {
+          "id": "state",
+          "path": "score",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "kills",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "wave",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "gauge",
+          "lte": 10
+        },
+        {
+          "id": "state",
+          "path": "railS",
+          "lte": 40
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the ship has no feet: it flies a spline rail and the pilot is not drawn",
+      "action-clip-completes": "no key plays an animation clip: the ship is procedural geometry and a barrel roll is a transform, proven by the barrel-roll-deflects scenario",
+      "effect-follows-contact": "no melee or timed contact window: lasers fly and hit, proven by the laser-hit-count scenario",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
   "rts": {
@@ -872,6 +1128,209 @@
       }
     }
   },
+  "rpg": {
+    "subject": "hero",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyF", "KeyG", "KeyT", "KeyE", "Digit1", "Escape", "KeyJ"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "leader",
+          "equals": "hero"
+        },
+        {
+          "id": "state",
+          "path": "partySize",
+          "equals": 2
+        },
+        {
+          "id": "state",
+          "path": "kills",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "coins",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "questStage",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "medpacks",
+          "equals": 3
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "an attack first walks to its target and then waits for the 3 s round, so no key plays a clip from a standstill; roll-vs-defense and combat-round-timing prove the swing",
+      "effect-follows-contact": "damage lands at the half mark of a 3 s round, not at a clip contact frame; combat-round-timing proves the timing",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "stealth": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["ShiftLeft", "KeyC", "KeyQ", "KeyF", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "alertPhase",
+          "equals": "infiltration"
+        },
+        {
+          "id": "state",
+          "path": "alerts",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "takedowns",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "keycard",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "no key plays a clip from a standstill: a knock needs a wall press and a grab needs a guard's back, each proven by its own scenario (wall-knock-lures, takedown)",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a takedown is a choke hold counted in pumps",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "survival-horror": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["KeyE", "KeyJ", "ShiftLeft", "KeyR"]
+    },
+    "restart": {
+      "key": "KeyN",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "shots",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "doorsOpened",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
+      ]
+    },
+    "actions": [
+      {
+        "key": "KeyR",
+        "clip": "Pistol_Reload",
+        "ticks": 110
+      }
+    ],
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "effect-follows-contact": "no melee or timed hit with a contact window: the only attack is a handgun round, which needs the aim key held, and aim-fire-auto-target proves each shot reaches its target",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "tomb-explorer": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["ShiftLeft", "Space", "KeyE"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 1000
+        },
+        {
+          "id": "state",
+          "path": "air",
+          "equals": 1800
+        },
+        {
+          "id": "state",
+          "path": "relic",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "grabs",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "climbs",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "jumps",
+          "equals": 0
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "a jump, a grab and a pick-up each need a ledge, a wall or the relic in reach, so no key plays a clip from a standstill; each is proven by its own scenario (standing-jump-clears-one-gap, ledge-grab-hang-shimmy-climb, relic-pickup-reach)",
+      "effect-follows-contact": "the blade is a procedural mesh with a timed damage window and no hit effect to follow; blade-rhythm proves the timing",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "tower-defense": {
     "subject": "camera.main",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
@@ -954,6 +1413,110 @@
         },
         "windows": 1
       }
+    }
+  },
+  "rhythm": {
+    "subject": "player",
+    "move": ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"],
+    "explore": {
+      "actions": ["KeyZ", "KeyX"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "rung",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "songBeat",
+          "lte": -2
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the performers dance in place on a fixed pad and never walk, so there is no ground speed to slip against",
+      "action-clip-completes": "the clip a press plays depends on its grade and the beat it lands on, not on its key; grade-poses proves each reaction clip",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a press is graded against a note, which the timing-windows scenario proves",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "flight": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": {
+      "actions": ["Space", "ShiftLeft"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "flying"
+        },
+        {
+          "id": "state",
+          "path": "ringsPassed",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "stalls",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "total",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 3
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the pilot hangs prone under the glider or stands on a thrust flame: no foot ever plants on the ground, so there is no sole to measure",
+      "action-clip-completes": "no key plays a one-shot clip: the pilot loops one idle clip and the controls fly the craft",
+      "effect-follows-contact": "no melee or timed hit with a contact window",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "car-combat": {
+    "subject": "player",
+    "move": ["ArrowUp", "KeyW", "ArrowDown", "KeyS", "ArrowLeft", "KeyA", "ArrowRight", "KeyD"],
+    "explore": {
+      "actions": ["Space"]
+    },
+    "optOut": {
+      "engine-cost": "the kit ships a performance ceiling but no measured engine-cost counters yet; the PRD-922 follow-up list owns the bounds",
+      "foot-slip": "the car is boxes, tubes and wheels, so there is no skinned rig with a foot to measure",
+      "restart-resets": "the kit restarts by re-entering its play scene and publishes no `state` entity for the row's reset paths",
+      "action-clip-completes": "no key starts a skinned clip: ramming and the handbrake are physics, and the cars carry no rig",
+      "effect-follows-contact": "no key starts a skinned clip, so there is no contact window to sample"
+    }
+  },
+  "military-shooter": {
+    "subject": "player",
+    "move": ["ArrowUp", "KeyW", "ArrowDown", "KeyS", "ArrowLeft", "KeyA", "ArrowRight", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyF", "KeyR", "KeyG"]
+    },
+    "optOut": {
+      "engine-cost": "the kit ships a performance ceiling but no measured engine-cost counters yet; the PRD-922 follow-up list owns the bounds",
+      "foot-slip": "the mannequin's sole nodes are not named, so footSlip cannot measure a planted foot yet",
+      "restart-resets": "the kit restarts by re-entering its play scene and publishes no `state` entity for the row's reset paths",
+      "action-clip-completes": "the rifle is hitscan and the weapon is a procedural viewmodel, so no skinned clip plays on a key press",
+      "effect-follows-contact": "no skinned clip plays on a key press, so there is no contact window to sample"
     }
   }
 }

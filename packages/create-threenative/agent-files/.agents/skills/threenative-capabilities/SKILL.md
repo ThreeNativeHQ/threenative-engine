@@ -36,9 +36,10 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
 2. **Mechanics** — threenative-reverse-engineer is the mechanics-reference role: the
    `threenative-engine` MCP serves it through `engine_search_references` and
    `engine_reference_detail`. Search named games and the implied mechanics, inspect relevant
-   matches, and record pinned sources and feel rules. For Tier-2 matches, read the pinned repo
-   and use `engine_save_reference` for the nodes/cards actually walked; unavailable references
-   remain `none: references unavailable`, not fabricated matches.
+   matches, and record pinned sources and feel rules in your own words. Start with the card. If a
+   detail is unclear, read only the relevant pinned lines when you are authorized to use the source.
+   For Tier-2 matches, apply the same source rule and use `engine_save_reference` for the actual
+   findings. Record `none: references unavailable` when you cannot verify a reference.
    A card states the numbers, never the arc. When the plan turns on how a mechanic looks moving
    (jump arc, parry window, camera lag, hit reaction), watch a reference instead of inventing the
    motion: `engine_watch_reference {query: "<game> <mechanic>", duration, frames}` returns a
@@ -61,11 +62,17 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    from both discovery passes, with controls, camera, state, acceptance checks, target platforms
    and appearance/asset needs. With a user, get explicit approval and an instruction to implement
    before downloads or game-source edits. Required texture selection follows the plan.
-5. **Assets** — use threenative-asset-mcp (configured as `threenative-assets`).
-   From the mechanics matches and reference image, if provided, identify only the textures needed by the plan. Call
-   `asset_search_sources`, the returned source's search/list-files tools, then
-   `asset_download_file`; verify the returned licence and record downloaded paths/source/licence
-   in `CREDITS.md`. Follow `.agents/skills/threenative-assets/SKILL.md`; no unrelated downloads or
+5. **Assets** — use `threenative-asset-mcp` (configured as `threenative-assets`). Remember the two
+   MCP modes (`lean` vs `detailed`): default to `lean` mode (keyless CC0 Poly Haven PBR textures and
+   3D models matched to the reference image(s), with neutral tint/procedural fallbacks where
+   unmatched), and switch to `detailed` AI texture projection only when the user explicitly requests
+   it and `OPENROUTER_API_KEY` is configured. From the mechanics matches and reference image, if
+   provided, identify only the assets needed by the plan. Call `asset_search` (provider `threenative`
+   first), `asset_get`, then `asset_download` for a model, texture, HDRI or animation. Sound or
+   another type: `asset_search_sources`, the returned source's search/list-files tools
+   (`polyhaven_search_assets`, `polyhaven_list_files`), then `asset_download_file`. Skipping the
+   search is a defect. Verify the returned licence and record downloaded paths/source/licence in
+   `CREDITS.md`. Follow `.agents/skills/threenative-assets/SKILL.md`; no unrelated downloads or
    invented tool results. If no textures are required, record `none` and why. Reuse existing files.
 6. **Build** — execute the plan, delegate to subagents focused on specific areas. Give each a
    bounded task, explicit file ownership, relevant context and an acceptance check; preserve other
@@ -73,8 +80,9 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    before step 7, resolving interfaces and failures rather than trusting worker reports. Use the
    chosen kit, discovered capabilities and downloaded textures. Keep appearance in game-owned
    `src/render/`; use stock `WorldEnvironment` defaults or explicitly report named overrides.
-   Borrow mechanics only: no code, level layouts, character names or art; cite pinned `file:line`
-   sources.
+   Build a similar mechanic with ThreeNative and adapt its timing, controls, and tuning to this game.
+   Cite pinned `file:line` sources. Keep upstream code, close translations, level layouts, character
+   names, and distinctive audiovisual elements out of the game.
 7. **Prove** — follow `.agents/skills/threenative-playtest/SKILL.md`. Execute a fail-closed
    scenario for each core mechanic with observable state, real input actions and assertions. An
    empty assertion set or missing observation fails; a screenshot is not mechanics proof. Repair

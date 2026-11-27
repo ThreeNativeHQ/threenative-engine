@@ -116,68 +116,120 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "5e7d152b7314daf58791341a82bc0c64dd20018b426ff7beda8bf6ad69ffcb36",
-    kit: "e51f76daef57b803b2e5d17a21e323148d4388774ac9c8f755bb400f45815fac",
+    shared: "4cc2ec07a92225b6168d7a77efa0e8cbf0537f03f0990472ca34ba07b50b4946",
+    kit: "767d2807fa24307ddb93357676d76ed6c2277c23bb474ffbe40d5a81ba99d974",
   },
   adventure: {
-    shared: "af80c24d021bd348a052d6ff59546caf4675a6926d56e8286b3a65a3ccac7ebd",
-    kit: "8f915d295997bc4cc169583badd1eb21ef169d53febd161560a33d2a7b504479",
+    shared: "dd0953add36e7ce19efa20995ed30ea10046737d3be55daba006a0d251584795",
+    kit: "54693c599ecece3ae83baceaa0c943114d748ff7076397f8121cf2f488ff2ca5",
+  },
+  "board-party": {
+    shared: "8ca8c9a958bcc935741ad13b904b4e820711cd43ed2a40f7dfc5d2082cb75335",
+    kit: "ba9d1fb7899dcea781470b4947c6b5ba10d9b0d79c2da415b983f3e0d561f9be",
+  },
+  "car-combat": {
+    shared: "6bf8d11c90c82982ea30ed7949f18df69919d66cd2d684d3ff35fa33d05213d8",
+    kit: "713990d23a397d0be34eab89e40e0e5a5e9fc1e01f3d012f351704ee575ce540",
   },
   collectathon: {
-    shared: "59b734873b6ee1b694503384fc99499f92e021e9852a04b81b3e3272f6e8f08c",
-    kit: "c737f892b156be6558b4a135f851cac91f184fa47c9e8a31dffe5ea733a1604e",
+    shared: "1f869f3b18f7250844e4082ab540e0786dee8afe8a674a6d43814d71aba80551",
+    kit: "d1545032c3d8f60bf7717985d23d020469f424e253c7f1ab858984e8ba672a64",
+  },
+  farming: {
+    shared: "80bf99cfb34ebbcfe139c2ce2c82006fb1a716460d848e278b3db12daf96e41c",
+    kit: "1bc5863d31140884206a9b8750bc842f57753abdbff72d4ad9c61b5ab497a759",
+  },
+  flight: {
+    shared: "6872b2098902427199a8908ab1b91aa8066f2f789f1e7201e87c4f46d430cddc",
+    kit: "280c65df5b193a149d614ca658926d83cfe06d51e3287ac71c8931e56a0c1dba",
   },
   kart: {
-    shared: "7564a550ad3c1ea7710d95bd471255f919f29d478fd0ba0b1108c8f7553ac794",
-    kit: "6b6c274bed72fc1f38490fab23adf541db900b6cb65af1131dba84ff56d8bfee",
+    shared: "569637a895d87732019029c803ad9f7acdb544408c906d31d9464fab17ee3c32",
+    kit: "edaeba671940d66643cd7e7aaef6d14d08a9e4e7aeab819fcedcd53bc5d5898a",
+  },
+  "military-shooter": {
+    shared: "a9abb2f7b8325ee07085e9bfe355b497cf05246a065c244ba4b54c9746bc3b07",
+    kit: "ae8cd0554e7e445aa86d0d31e5f7745c5336ec826560195ae5e7ed7edd6056f4",
   },
   minimal: {
-    shared: "f33390309223c7d77ef2b1cc7f87cec76ccddfbee8c6490f308e83376d18f0f3",
-    kit: "86bb32afc45a874aa0ae1aff7a1510da816f3a72d9851199624ad68c03c80b87",
+    shared: "4d950a19093038a9ceb833599bb3dbb6c9eec81cf824580b1a0a82f89406c9fc",
+    kit: "e60581d80df2681ef14aa1e95a249bbbdf7927cecf44291e9287528c6723843a",
+  },
+  "open-world": {
+    shared: "9e834e19a807f8bd3bb2749e9f940c1bb300ce36824ea885f031bc7d6d886da2",
+    kit: "cd8b722c194a1cd32f1e95bd1ffc1f52750f8a96832b1dbbd50dbd02eb290f90",
+  },
+  "platform-fighter": {
+    shared: "14a048cc938e18d333ae80cf06341096e7dd43c9a046e67231088ccb01422590",
+    kit: "79ea29f89dacc5ea58e2e478b0a330049c504f51bd2a7c0e07eabbc144006628",
   },
   platformer: {
-    shared: "eba695fb07242da10915e56d312c116ffd7822a69e67352d1faaa0683b35f6f1",
-    kit: "08d1aa7a06985636555571d204c6ba9d64553f6bc4e2f7b5a65fa7c4aae9e086",
+    shared: "abfb5f958d30b14475e4ef5c5f2daf0196029518f4fee3498074443d3b9aed89",
+    kit: "14b5dc6d63e8b940e48decca6c73901531a180a611a00352d6ca80a7f0201269",
   },
   puzzle: {
-    shared: "1676012a3d1ebadff0e38cff200c3a065f4423b834ac2022a396bb010464d89a",
-    kit: "e94602dd830a9196f41f482587cd330b8cc9d4ef038202ad96487b26185ce2b0",
+    shared: "6bd403b094ef9aa54c4e08797dc88c7a899a8cd9bdaa263339b8f310f9b3a24b",
+    kit: "26ecdf6a149f7d45416b342fd6b6121034c34d8e122c25fcd8c851d75b343378",
   },
   racing: {
-    shared: "b622baad055dbc113a0fbc2df35c525e69fb91cf9a3bd018e3d5a153630c3df3",
-    kit: "168211b706b260813b33c53536c74fd5a70985747d180074f7d696ebe3641e4e",
+    shared: "7643dbb0004fa8b8f3f687a39e8fff6a2f046bdd7bb8e76c46f471d0c49822dc",
+    kit: "dfcbed50a36d132a585c8a9b1d084b93e1cfb493d3d743dc0b0e37fbbff1dc0f",
+  },
+  "rail-shooter": {
+    shared: "8e5cad27c8975d80a6fad7d2c4fd19502c72fa7547f37ac9965dcea531a6ff09",
+    kit: "28c04b0f84909f0d4011b8bc6aad4bc253c022716476ede2e4b20eb5e5384f02",
   },
   rain: {
-    shared: "427d0c7773e370c40954a96849e235750ddc94786240634854dfe0be4f24e432",
-    kit: "b608c218cfc582c4fccc4e307b7390dec817730527b4571a85974236e2ebaabd",
+    shared: "d8f8c5c458e4174cb93be861b56962a05d5e825633733eb2fd3f919af9c1b06a",
+    kit: "e63629f2c9f6d0eba951c39136e361e297fc989e90a9531e84138491d1a7ae24",
+  },
+  rhythm: {
+    shared: "671d6b2c6381d783a3c97ca59f15f775d51ae6f1207d95381e9cb5248b4b5d24",
+    kit: "0b7f341c63b24acb6abb2a7dd94f8bdde8105db1629a9f450d73373bae72cbe3",
+  },
+  rpg: {
+    shared: "ce2a8690ceda9601d8a44f3010a52230d4f6918b1a29f5b0da126aa8f6162e00",
+    kit: "c012b214bd019ed8c014ab2bbb5df2eed26e591911eee8466c119564af4b6ccb",
   },
   rts: {
-    shared: "a9b6215e207c7c129d5d565a9b245eca9a6c285c18826c319f2a558e482b0124",
-    kit: "3d890d6dfef0c4e9c00129af8838f5bf646a7d14e21228ea1c692cbdf97dee95",
+    shared: "2c006b09658fbaa546ab73a5b317af24406589aaaddff0def7b40e488db9eaec",
+    kit: "b2402e3cda3d475dfcb44cc7775910ded541814d026bb58f3bef99e60cbd99fb",
   },
   runner: {
-    shared: "33bb05c8e14de6215badd6a805c40118861581362e94cce5bce32377af0e128d",
-    kit: "46770ca21119ae593b37cf6e8b24db5874b201b0de228dfc5d9a9fc8b84f2b87",
+    shared: "7ccd74d5f682ffc3294b59d2dcbd8484d887810b629625611e616aec9dcb9e22",
+    kit: "82d78616ab22901918c2d3f64939a951398f8de21fd7019362786f0dce41efc6",
   },
   sailing: {
-    shared: "5079127fc3405eaed0dea27cb36653c08e099d6d49ef6af90f6860c2b8ef6d5d",
-    kit: "e5fe5613d980d5ae6ce11de6f394982e238b235346de53975dad4fe0f439d37b",
+    shared: "b64c70677a1da8e2212d57d3b673db0967766285dd4e40eff6ed7f0e3580b51b",
+    kit: "8b02769e80c32cb72e5d742dd5c9f2c8ce46cd0db18c1697d689ca1cd5f4365d",
   },
   shooter: {
-    shared: "32cb757541be8e8a51c03564da04a74119f5cd653739250ec41e932e003f93ec",
-    kit: "c86caa6c731c8faecfb7f669b76fc834ca4a896c167e4141cacab3bf7fd9f242",
+    shared: "45ee032942a2b72cd4d6695c900187758f2b85d8d519f1a5aa768465b4d456a9",
+    kit: "5ff0b785a0af89a855be164e7a4f3cf426c79b251190d00e38bbeeda065bbfcf",
   },
   snow: {
-    shared: "d24d8fd5b700b6894a0bba37de180b636b4e2bccd9f0849117285571636550a2",
-    kit: "117654d5a74c499b2fbabc040d8748f9bac288751707fc1468d68872429de3ae",
+    shared: "5b87e572d5487ef7e5809286038f01083438002390e28f7d0c84803c65b93a51",
+    kit: "768bf9a4e94873152f1f923fbeab3f333a8a14be18fbc364e39d0554d223a7f2",
   },
   starter: {
-    shared: "b101986abc46eb84a5c7740f352a172209b7a1ab622f10bed3542d0c603f0251",
-    kit: "028e3b859efab30f51ce255d087d94a3a355028829a64b4df084277f1296a54d",
+    shared: "e754407db7cfa11013209dce0a3f70cc4b476169a92b8ffd135572f8ec3ad70d",
+    kit: "20edbe2e86d4d65343d299a3d574f41bb8ac9eb161dc7a308a63804f8ca31dac",
+  },
+  stealth: {
+    shared: "e517201d3f4c98280bcd009f0639fb94dfd30a07b7b30803e26207929af96bb7",
+    kit: "c5dec86518f2c014140b2b35a9129a349b1666408ca6379ba4bd697f0c239383",
+  },
+  "survival-horror": {
+    shared: "2cd2a5816e0b4f1be00ea0e7a4e4d558f524257d8264b51da17159688d824b5f",
+    kit: "e8f38bcc4ff5840a8742f6102c2aaf94e400c4a263c0d9fd5693dfb419dc1c79",
+  },
+  "tomb-explorer": {
+    shared: "cf70f2fae306bc031f443c9ff4b0b4da65262ffc6381ab9aada3606d32b66d4f",
+    kit: "5a1ee3607649aa9e9b916572b5ba35bb58c493be9bd6c349043c7f1bce061784",
   },
   "tower-defense": {
-    shared: "a82390a371eee2a12a1cf6a33f0cf629200da85c47918bbed0804f950061991b",
-    kit: "35a83b5e0258a2e8fa4cbb186f45e710734076ba4b2f737e78cf6e7d54ee4eac",
+    shared: "024dbfddd3fa05d817c8f8cf7552ccf31bff003b180ceb8f7ec4ab944b27638a",
+    kit: "8cd7fdaa97dfc6363f866d2f4ba5464eedf9eec2a764e39f63188c6b093008a4",
   },
   // scaffold-pin:end
 };
@@ -364,47 +416,53 @@ describe("create-threenative", () => {
     },
   );
 
-  it("stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)", async () => {
-    const root = await makeTempDir("threenative-scaffold-stamp-");
-    try {
-      const { target } = await createProject(
-        { install: false, target: "stamped", template: "shooter" },
-        root,
-      );
-      const stamp = JSON.parse(
-        await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
-      ) as { createThreenative: string; kit: string; files: Record<string, string> };
-      const own = JSON.parse(
-        await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
-      ) as { version: string };
-      expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
-        version: own.version,
-        kit: "shooter",
-      });
-      for (const file of [
-        "AGENTS.md",
-        "CLAUDE.md",
-        ".claude/settings.json",
-        ".claude/hooks/discovery-gate.mjs",
-        ".agents/skills/threenative-capabilities/SKILL.md",
-      ])
-        expect(Object.keys(stamp.files)).toContain(file);
-      for (const [file, hash] of Object.entries(stamp.files))
-        expect(
-          createHash("sha256")
-            .update(await readFile(path.join(target, file)))
-            .digest("hex"),
-          file,
-        ).toBe(hash);
-      const { diagnoseProject, readProject } = await import("../src/doctor.js");
-      const report = diagnoseProject(await readProject(target));
-      expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
-        status: "ok",
-      });
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 60_000);
+  // Every kit, not one: a kit is usable only when its scaffold carries the whole authoring layer and
+  // doctor reads it back as ok (PRD-922).
+  it.each(ALL_TEMPLATES)(
+    "stamps the %s authoring layer it wrote, and doctor reports it ok (PRD-829)",
+    async (template) => {
+      const root = await makeTempDir("threenative-scaffold-stamp-");
+      try {
+        const { target } = await createProject(
+          { install: false, target: "stamped", template },
+          root,
+        );
+        const stamp = JSON.parse(
+          await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
+        ) as { createThreenative: string; kit: string; files: Record<string, string> };
+        const own = JSON.parse(
+          await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
+        ) as { version: string };
+        expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
+          version: own.version,
+          kit: template,
+        });
+        for (const file of [
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".claude/settings.json",
+          ".claude/hooks/discovery-gate.mjs",
+          ".agents/skills/threenative-capabilities/SKILL.md",
+        ])
+          expect(Object.keys(stamp.files)).toContain(file);
+        for (const [file, hash] of Object.entries(stamp.files))
+          expect(
+            createHash("sha256")
+              .update(await readFile(path.join(target, file)))
+              .digest("hex"),
+            file,
+          ).toBe(hash);
+        const { diagnoseProject, readProject } = await import("../src/doctor.js");
+        const report = diagnoseProject(await readProject(target));
+        expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
+          status: "ok",
+        });
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    60_000,
+  );
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");

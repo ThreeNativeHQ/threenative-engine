@@ -1,0 +1,230 @@
+{
+  "name": "a-dragged-body-is-found-and-the-base-searches",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "behind",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "down",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drag-east",
+      "press": ["KeyE", "ArrowRight"],
+      "holdTicks": 170,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": ["ArrowRight"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drag-north",
+      "press": ["KeyE", "ArrowUp"],
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "crouch",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "slip-away",
+      "press": "ArrowDown",
+      "holdTicks": 200,
+      "release": true
+    },
+    {
+      "label": "found",
+      "waitForResource": {
+        "id": "state",
+        "path": "bodiesFound",
+        "gte": 1
+      },
+      "release": false,
+      "timeoutMs": 30000
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "release": true,
+      "label": "searching"
+    },
+    {
+      "kind": "wait",
+      "label": "searched",
+      "waitTicks": 180,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "takedowns",
+        "atSteps": [
+          {
+            "label": "down",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "dragging",
+        "atSteps": [
+          {
+            "label": "down",
+            "equals": 0
+          },
+          {
+            "label": "drag-east",
+            "equals": 1
+          },
+          {
+            "label": "slip-away",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bodiesFound",
+        "atSteps": [
+          {
+            "label": "down",
+            "equals": 0
+          },
+          {
+            "label": "searched",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bodiesFound",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "alertPhase",
+        "atSteps": [
+          {
+            "label": "slip-away",
+            "equals": "infiltration"
+          },
+          {
+            "label": "searching",
+            "equals": "evasion"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "evasion",
+        "entity": "director",
+        "minCount": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,105 @@
+{
+  "name": "jab-frame-data",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["KeyJ"],
+      "holdTicks": 1,
+      "label": "press",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "label": "startup",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 5,
+      "label": "active",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 6,
+      "label": "recovery",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 10,
+      "label": "done",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.phase",
+        "atSteps": [
+          {
+            "label": "startup",
+            "equals": "startup"
+          },
+          {
+            "label": "active",
+            "equals": "active"
+          },
+          {
+            "label": "recovery",
+            "equals": "recovery"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "done",
+            "equals": "free"
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "atStep": "startup",
+        "entity": "p1",
+        "name": "strike",
+        "maxCount": 0
+      },
+      {
+        "atStep": "active",
+        "entity": "p1",
+        "name": "strike",
+        "minCount": 1
+      }
+    ]
+  }
+}

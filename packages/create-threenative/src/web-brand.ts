@@ -18,7 +18,7 @@ export interface IWebBrandVitePlugin {
     html: string,
     context?: { readonly bundle?: Readonly<Record<string, IBundleFile>> },
   ): string;
-  configureServer(server: IMiddlewareServer): void;
+  configureServer(server: IDevServer): void;
   configurePreviewServer(server: IMiddlewareServer): void;
   generateBundle(this: {
     emitFile(asset: { fileName: string; source: string; type: "asset" }): void;
@@ -33,6 +33,19 @@ type Middleware = (
 
 interface IMiddlewareServer {
   readonly middlewares: { use(handler: Middleware): void };
+}
+
+/** The dev server's watcher, socket and restart: present in `pnpm dev`, absent in preview. */
+interface IDevServer extends IMiddlewareServer {
+  readonly watcher?: {
+    add(file: string): void;
+    on(event: "change" | "add", listener: (file: string) => void): void;
+  };
+  readonly ws?: { send(payload: { type: "full-reload"; path?: string }): void };
+  readonly config?: {
+    readonly logger?: { info(message: string): void; error(message: string): void };
+  };
+  restart?(): Promise<void>;
 }
 
 /**
@@ -140,13 +153,20 @@ export function withBuildId(html: string): string {
  */
 export function withBootGlobals(
   html: string,
-  config: Pick<IResolvedThreeNativeConfig, "app" | "engine">,
+  config: Pick<IResolvedThreeNativeConfig, "app" | "engine"> &
+    Partial<Pick<IResolvedThreeNativeConfig, "telemetry">>,
 ): string {
   const write = (name: string, value: string): string =>
     `globalThis.${name} = ${JSON.stringify(value).replaceAll("<", "\\u003c")}; `;
+  // `telemetry: { crashReports: false }` (PRD-918): the dev-run reporter's off switch; a launch
+  // that asks with `?tnTelemetry=1` still turns it back on.
+  const telemetry =
+    config.telemetry?.crashReports === false
+      ? "if (!/[?&]tnTelemetry=1(?:&|$)/u.test(location.search)) globalThis.__THREENATIVE_TELEMETRY__ = false; "
+      : "";
   return html.replace(
     /<script/iu,
-    `<script>${write("__TN_GAME__", config.app.name)}${write("__TN_ENGINE__", config.engine)}</script>\n    <script`,
+    `<script>${write("__TN_GAME__", config.app.name)}${write("__TN_ENGINE__", config.engine)}${telemetry}</script>\n    <script`,
   );
 }
 
@@ -382,6 +402,33 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     // with index.html, which the browser reports as a manifest syntax error on each load.
     configureServer(server) {
       if (config?.engine === "threenative") server.middlewares.use(isolationMiddleware);
+      // A saved `threenative.config.ts` applies at once (PRD-918): the boot globals, title and
+      // manifest re-read it on the next page load, and an engine switch restarts the server,
+      // since the dep optimizer and the worker resolver were chosen for the old engine.
+      const file = path.join(root, "threenative.config.ts");
+      server.watcher?.add(file);
+      const reload = async (changed: string): Promise<void> => {
+        if (path.resolve(changed) !== file) return;
+        const before = config;
+        try {
+          config = await loadConfig(root);
+        } catch (error) {
+          server.config?.logger?.error(
+            `threenative.config.ts did not load; keeping the last good config. ${(error as Error).message}`,
+          );
+          return;
+        }
+        if (before !== undefined && before.engine !== config.engine && server.restart) {
+          server.config?.logger?.info(
+            `  ➜  engine changed to "${config.engine}": restarting the dev server`,
+          );
+          await server.restart();
+          return;
+        }
+        server.ws?.send({ type: "full-reload" });
+      };
+      server.watcher?.on("change", (changed) => void reload(changed));
+      server.watcher?.on("add", (changed) => void reload(changed));
       server.middlewares.use((req, res, next) => {
         if (req.url?.split("?")[0] !== "/manifest.webmanifest" || config === undefined)
           return next();

@@ -1,0 +1,88 @@
+{
+  "name": "wanted-evades",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Equal",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hiding",
+      "waitTicks": 420,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "evaded",
+      "waitTicks": 420,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stars",
+        "atSteps": [
+          {
+            "label": "hiding",
+            "equals": 1
+          },
+          {
+            "label": "evaded",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "starsFlashing",
+        "atSteps": [
+          {
+            "label": "hiding",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "evasions",
+        "atSteps": [
+          {
+            "label": "evaded",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "evaded",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,67 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle-start",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": "ArrowUp",
+      "holdTicks": 30,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "movement": {
+      "entity": "p1",
+      "minDistance": 0.5
+    },
+    "visibility": [
+      {
+        "entity": "p1",
+        "minProjectedPixels": 20,
+        "allowTrivial": "The side camera frames both fighters at spawn."
+      },
+      {
+        "entity": "cpu",
+        "minProjectedPixels": 20,
+        "allowTrivial": "The side camera frames both fighters at spawn."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

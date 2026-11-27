@@ -1,0 +1,248 @@
+{
+  "name": "zombie-grab-bite-and-break-free",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": true,
+      "timeoutMs": 45000
+    },
+    {
+      "kind": "input",
+      "label": "open-door",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "in-hall",
+      "waitForResource": {
+        "id": "state",
+        "path": "room",
+        "equals": "East hall"
+      },
+      "release": true,
+      "timeoutMs": 25000
+    },
+    {
+      "kind": "wait",
+      "label": "hall-settled",
+      "waitTicks": 40,
+      "release": true
+    },
+    {
+      "label": "grabbed-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "grabbed",
+        "equals": 1
+      },
+      "release": true,
+      "timeoutMs": 65000
+    },
+    {
+      "label": "released-1",
+      "waitForResource": {
+        "id": "state",
+        "path": "grabbed",
+        "equals": 0
+      },
+      "release": true,
+      "timeoutMs": 25000
+    },
+    {
+      "label": "grabbed-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "grabbed",
+        "equals": 1
+      },
+      "release": true,
+      "timeoutMs": 65000
+    },
+    {
+      "kind": "input",
+      "label": "mash-0",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-1",
+      "press": "KeyA",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-2",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-3",
+      "press": "KeyD",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-4",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-5",
+      "press": "KeyA",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-6",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-7",
+      "press": "KeyD",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-8",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-9",
+      "press": "KeyA",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-10",
+      "press": "KeyE",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "mash-11",
+      "press": "KeyD",
+      "holdTicks": 2,
+      "release": true
+    },
+    {
+      "label": "released-2",
+      "waitForResource": {
+        "id": "state",
+        "path": "grabbed",
+        "equals": 0
+      },
+      "release": true,
+      "timeoutMs": 25000
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 5,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "bites",
+        "atSteps": [
+          {
+            "label": "released-1",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "released-1",
+            "equals": 80
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "escapes",
+        "atSteps": [
+          {
+            "label": "after",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bites",
+        "atSteps": [
+          {
+            "label": "after",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "after",
+            "equals": 80
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "zombie.hall",
+        "component": "state",
+        "atSteps": [
+          {
+            "label": "grabbed-1",
+            "equals": "grab"
+          }
+        ]
+      }
+    ]
+  }
+}

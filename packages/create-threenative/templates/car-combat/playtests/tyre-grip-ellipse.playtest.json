@@ -1,0 +1,109 @@
+{
+  "name": "tyre-grip-ellipse",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "coast-turn",
+      "press": "ArrowLeft",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "coasted",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "restaged",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "restaged-ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "corner",
+      "press": ["ArrowUp", "ArrowLeft"],
+      "holdTicks": 90,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 1,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "player",
+        "component": "slippingRear",
+        "atSteps": [
+          {
+            "label": "coasted",
+            "equals": false
+          },
+          {
+            "label": "corner",
+            "equals": true
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "tractionScale",
+        "atSteps": [
+          {
+            "label": "coasted",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "player",
+        "component": "tractionScale",
+        "lte": 0.8
+      }
+    ]
+  }
+}

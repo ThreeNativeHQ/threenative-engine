@@ -1,0 +1,74 @@
+{
+  "name": "rival-grudge-pursues",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Minus",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "pursuing",
+      "waitTicks": 150,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rival.0",
+        "component": "objective",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": "race"
+          }
+        ]
+      },
+      {
+        "entity": "rival.0",
+        "component": "objective",
+        "equals": "pursue"
+      },
+      {
+        "entity": "rival.0",
+        "component": "grudge",
+        "gte": 80
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "pursuing",
+        "gte": 1
+      }
+    ]
+  }
+}

@@ -8,8 +8,12 @@ description: Find, import, license, or sculpt assets for a portable ThreeNative 
 Use tools for conventional textures, materials, HDRIs, sounds, and models; write bespoke visuals
 in `src/render/`. Start the session from the game root so the project-scoped MCP config is read.
 
-1. Run `asset_search_sources` to learn what is reachable, then search with
-   `polyhaven_search_assets`, `ambientcg_search_assets`, or `audio_search_assets`.
+0. **Search first. Skipping `asset_search` is a defect.** For a model, texture, HDRI or animation,
+   call `asset_search` (`providers: ["threenative"]` first), then `asset_get` on the best result for
+   its terms and an expiring file plan, then `asset_download` with that `planToken` and
+   `acceptLicense: true`. Then go to step 4.
+1. For sound or another type, run `asset_search_sources` to learn what is reachable, then search
+   with `audio_search_assets`, `polyhaven_search_assets`, or `ambientcg_search_assets`.
 2. List files with `polyhaven_list_files`/`ambientcg_list_files` before downloading; read the
    license and choose a sane resolution.
 3. Download with `asset_download_file`/`audio_download_asset` and `acceptLicense: true`; tools
@@ -37,11 +41,9 @@ the reference below. Never read, copy, print, or persist browser cookies or toke
 entitlement and accepts only Fab Standard or CC-BY; it never claims or buys. Full arguments:
 `node_modules/create-threenative/agent-docs/references/finding-assets.md`.
 
-For a gray blockout level or environment, follow `node_modules/create-threenative/agent-docs/references/texture-projection.md`.
-Call `texture_project_quote` first (free, no key), paint one `promptTestView` before the full run,
-and read the `texture_project_inspect` contact sheet before the cook. It spends `OPENROUTER_API_KEY`
-credit per view; the cook keeps the painted atlas at its own size and UASTC, and the game sets
-anisotropy 8 on its base-colour map.
+`threenative-assets` offers two texture/level-projection modes (`--mode lean|detailed` or `THREENATIVE_TEXTURE_MODE=lean|detailed`; read `node_modules/create-threenative/agent-docs/references/texture-projection.md`):
+- **Default to `lean` mode** (`--mode lean` or `THREENATIVE_TEXTURE_MODE=lean`, keyless): match level surfaces and 3D props against the reference image(s) using CC0 Poly Haven PBR textures and models (`polyhaven_search_assets`, `polyhaven_list_files`, `asset_download_file`, and `texture_project_match_materials`) plus neutral tinted/procedural fallbacks where unmatched. Never ask for `OPENROUTER_API_KEY` or run AI image projection unless requested.
+- **Use `detailed` mode** (`--mode detailed` or `THREENATIVE_TEXTURE_MODE=detailed`, requires `OPENROUTER_API_KEY`) only when the user asks for AI texture projection on a gray blockout level or environment: call `texture_project_quote` first (free, no key), paint one `promptTestView` before the full run, and read the `texture_project_inspect` contact sheet before the cook. The cook keeps the painted atlas at its own size and UASTC, and the game sets anisotropy 8 on its base-colour map.
 
 For a bespoke animated creature, follow `node_modules/create-threenative/agent-docs/references/creating-creatures.md`. Call the five
 `creature_*` tools through the project asset server, keep the editable spec and claims in

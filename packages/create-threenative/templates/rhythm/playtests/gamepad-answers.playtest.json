@@ -1,0 +1,153 @@
+{
+  "name": "gamepad-answers",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "call-done",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.5
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "pad-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "pad-n0",
+      "gamepad": {
+        "buttons": [14]
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "label": "pad-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 4.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "pad-n1",
+      "gamepad": {
+        "buttons": [15]
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "label": "pad-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 5.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "pad-n2",
+      "gamepad": {
+        "buttons": [12]
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "label": "pad-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 6.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "pad-n3",
+      "gamepad": {
+        "buttons": [13]
+      },
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "label": "answered",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 7.6
+      },
+      "release": false,
+      "timeoutMs": 90000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "matched",
+        "atSteps": [
+          {
+            "label": "call-done",
+            "equals": 0
+          },
+          {
+            "label": "answered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cool",
+        "atSteps": [
+          {
+            "label": "answered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastGrade",
+        "atSteps": [
+          {
+            "label": "answered",
+            "equals": "cool"
+          }
+        ]
+      }
+    ]
+  }
+}

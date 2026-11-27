@@ -1,0 +1,253 @@
+{
+  "name": "rating-rises",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "answer-1-opens",
+      "waitForResource": {
+        "id": "state",
+        "path": "part",
+        "equals": "player"
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "l1-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n0",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 4.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n1",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 5.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n2",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 6.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n3",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "line-1-judged",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 8.1
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "l2-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 11.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n0",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 12.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n1",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 13.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n2",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 14.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n3",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "line-2-judged",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 16.1
+      },
+      "release": false,
+      "timeoutMs": 90000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "rung",
+        "atSteps": [
+          {
+            "label": "answer-1-opens",
+            "equals": 3
+          },
+          {
+            "label": "line-1-judged",
+            "equals": 2
+          },
+          {
+            "label": "line-2-judged",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "level",
+        "atSteps": [
+          {
+            "label": "answer-1-opens",
+            "equals": "good"
+          },
+          {
+            "label": "line-1-judged",
+            "equals": "good"
+          },
+          {
+            "label": "line-2-judged",
+            "equals": "cool"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lineScore",
+        "atSteps": [
+          {
+            "label": "line-1-judged",
+            "equals": 4
+          },
+          {
+            "label": "line-2-judged",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "freestyleOpen",
+        "atSteps": [
+          {
+            "label": "line-1-judged",
+            "equals": 0
+          },
+          {
+            "label": "line-2-judged",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

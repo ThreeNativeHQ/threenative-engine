@@ -1,0 +1,795 @@
+{
+  "name": "stage-clear",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "l1-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n0",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 4.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n1",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 5.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n2",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l1-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 6.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l1-n3",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 11.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n0",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 12.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n1",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 13.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n2",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l2-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 14.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l2-n3",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l3-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 19.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l3-n0",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l3-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 20.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l3-n1",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l3-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 21.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l3-n2",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l3-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 22.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l3-n3",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l4-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 27.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l4-n0",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l4-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 28.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l4-n1",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l4-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 29.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l4-n2",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l4-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 29.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l4-n3",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l4-n4-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 30.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l4-n4",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l5-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 35.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l5-n0",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l5-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 36.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l5-n1",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l5-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 37.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l5-n2",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l5-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 38.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l5-n3",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l5-n4-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 38.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l5-n4",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 43.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n0",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 44.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n1",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 44.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n2",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 45.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n3",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n4-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 46.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n4",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l6-n5-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 46.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l6-n5",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 51.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n0",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 52.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n1",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 53.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n2",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 53.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n3",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n4-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 54.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n4",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l7-n5-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 55.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l7-n5",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 59.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n0",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 60.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n1",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 60.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n2",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 61.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n3",
+      "press": "KeyX",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n4-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 61.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n4",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n5-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 62.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n5",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "l8-n6-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 63.46
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "l8-n6",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "cleared",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "cleared"
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "wait",
+      "label": "result-shown",
+      "waitTicks": 10,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "result-shown",
+            "equals": "cleared"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "part",
+        "atSteps": [
+          {
+            "label": "result-shown",
+            "equals": "result"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "linesJudged",
+        "atSteps": [
+          {
+            "label": "result-shown",
+            "equals": 8
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "level",
+        "atSteps": [
+          {
+            "label": "result-shown",
+            "equals": "cool"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "miss",
+        "atSteps": [
+          {
+            "label": "result-shown",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "A perfect song has no miss; the cleared phase above could not be reached with the rating this low otherwise."
+      }
+    ],
+    "hud": [
+      {
+        "id": "stage-result",
+        "textIncludes": "STAGE CLEAR",
+        "visible": true,
+        "allowTrivial": "The result panel exists only after the song ends; the cleared phase above proves the order."
+      }
+    ]
+  }
+}

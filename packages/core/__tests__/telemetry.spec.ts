@@ -240,11 +240,39 @@ describe("telemetry", () => {
     await Promise.resolve();
   });
 
-  it("marks the event prod when the page carries a build id", () => {
+  it("installs nothing in production: a page that carries a build id (PRD-918)", () => {
+    const warn = console.warn;
     vi.stubGlobal("__TN_BUILD_ID__", "/assets/index-A1.js");
+    installTelemetry(undefined);
+    expect(bootLine()).toBe("TN_TELEMETRY off (prod)");
+    expect(console.warn).toBe(warn);
+    console.warn("TN_PROD: x");
+    expect(beacon).not.toHaveBeenCalled();
+    expect(sent()).toEqual([]);
+  });
+
+  it("installs nothing in production: a bundle whose launch is not a dev one (PRD-918)", async () => {
+    vi.resetModules();
+    vi.doMock("../src/game-dev-tools.js", () => ({ isDevLaunch: () => false }));
+    try {
+      const prod = await import("../src/telemetry.js");
+      const warn = console.warn;
+      prod.installTelemetry(undefined);
+      expect(bootLine()).toBe("TN_TELEMETRY off (prod)");
+      expect(console.warn).toBe(warn);
+      console.warn("TN_PROD: x");
+      expect(beacon).not.toHaveBeenCalled();
+      prod.uninstallTelemetry();
+    } finally {
+      vi.doUnmock("../src/game-dev-tools.js");
+      vi.resetModules();
+    }
+  });
+
+  it("marks a dev-run event dev and names the renderer", () => {
     vi.stubGlobal("__TN_ENGINE__", "threenative");
     installTelemetry(undefined);
-    console.warn("TN_PROD: x");
-    expect(sent()[0]).toMatchObject({ backend: "threenative", mode: "prod" });
+    console.warn("TN_DEV: x");
+    expect(sent()[0]).toMatchObject({ backend: "threenative", mode: "dev" });
   });
 });

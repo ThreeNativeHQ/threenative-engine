@@ -13393,16 +13393,110 @@
       "words": ["adventure", "zelda", "ocarina", "action-adventure"]
     },
     {
+      "blurb": "A dice board for four: ring spaces, a shortcut junction, coin spaces, a moving star, three CPU rivals and a minigame after every turn.",
+      "name": "board-party",
+      "title": "Board party",
+      "words": ["board-game", "mario-party", "marioparty", "mario-party-1"]
+    },
+    {
+      "blurb": "A grey-grid arena of rival cars: friction-ellipse tyres, an automatic gearbox, per-panel damage and repair, ramming that wrecks rivals, checkpoints that add time.",
+      "name": "car-combat",
+      "title": "Car combat",
+      "words": [
+        "car-combat",
+        "carmageddon",
+        "twisted-metal",
+        "destruction-derby",
+        "demolition-derby",
+        "vehicular-combat",
+        "wreck"
+      ]
+    },
+    {
       "blurb": "A stout sprout-keeper in a knit beanie runs one free-roam island with a triple jump, long jump, backflip, side flip, wall kick, dive, ground pound and ledge grab, collecting three Sunseeds past bumblets, hoppers and spiked thornbacks.",
       "name": "collectathon",
       "title": "Hop Garden",
       "words": ["collectathon", "mario", "sm64", "super-mario", "3d-platformer"]
     },
     {
+      "blurb": "A grey-grid farm on a day clock: till, plant and water a tile field, grow seasonal crops, ship them, sleep.",
+      "name": "farming",
+      "title": "Farm life",
+      "words": [
+        "farming",
+        "harvest-moon",
+        "harvest-moon-64",
+        "stardew",
+        "stardew-valley",
+        "farm-sim",
+        "life-sim"
+      ]
+    },
+    {
+      "blurb": "A grey-grid island flown by a hang glider (lift, drag, stall, thermals, wind) and a rocket belt (thrust, fuel, hover), with rings, a scored landing pad and a score card.",
+      "name": "flight",
+      "title": "Flight",
+      "words": [
+        "flight",
+        "pilotwings",
+        "pilotwings-64",
+        "flight-sim",
+        "glider",
+        "hang-glider",
+        "rocket-belt",
+        "skydiving"
+      ]
+    },
+    {
       "blurb": "Eight karts race three laps of Clover Loop, a figure-8 with a bridge, a jump over a creek and boost pads, with a hop into a power-slide, mini-turbo sparks, item boxes with burrs, acorns and nitro cans, and seven CPU drivers on a rubber band.",
       "name": "kart",
       "title": "Clover Cup",
       "words": ["kart-racer", "mario-kart", "mariokart", "mk64", "kart"]
+    },
+    {
+      "blurb": "Inspired by modern military shooters: a grey-grid yard held by five soldiers: stances, a sprint budget, aim down sights, spread and recoil, a regenerating shield over health, grenades with a fuse, and cover that stops rounds.",
+      "name": "military-shooter",
+      "title": "Military shooter",
+      "words": [
+        "military-shooter",
+        "call-of-duty",
+        "cod",
+        "modern-warfare",
+        "cod4",
+        "halo",
+        "halo-ce",
+        "battlefield",
+        "military"
+      ]
+    },
+    {
+      "blurb": "A grey-grid city on foot or by car: carjacking, traffic, pedestrians, five-star police pursuit and a timed job.",
+      "name": "open-world",
+      "title": "Open-world crime",
+      "words": [
+        "open-world",
+        "gta",
+        "grand-theft-auto",
+        "gta3",
+        "vice-city",
+        "san-andreas",
+        "driver",
+        "crime",
+        "sandbox"
+      ]
+    },
+    {
+      "blurb": "A floating grid stage, two fighters and a CPU: damage percent, knockback by percent and weight, double jump, fast fall, shield and roll, ledges, blast zones and stocks.",
+      "name": "platform-fighter",
+      "title": "Platform fighter",
+      "words": [
+        "fighting",
+        "smash",
+        "smash-bros",
+        "super-smash-bros",
+        "platform-fighter",
+        "brawler"
+      ]
     },
     {
       "blurb": "A fox runs ninety-seven metres of floating meadow, rope bridges and stompable walkers to a goal flag, with three hearts, five gems and a double jump.",
@@ -13423,10 +13517,53 @@
       "words": ["racing"]
     },
     {
+      "blurb": "A ship flies a spline rail while you steer a bounded offset: boost and brake, a barrel roll that turns shots back, rapid lasers, a charged lock-on shot, enemy waves and a boss with weak points.",
+      "name": "rail-shooter",
+      "title": "Rail shooter",
+      "words": [
+        "rail-shooter",
+        "star-fox",
+        "starfox",
+        "star-fox-64",
+        "on-rails",
+        "space-shooter",
+        "arwing-like"
+      ]
+    },
+    {
       "blurb": "A real-time coastal weather study: shape rain, cloud, wind, fog and wetness, and watch a coastline answer.",
       "name": "rain",
       "title": "Rain",
       "words": ["rain"]
+    },
+    {
+      "blurb": "A grid-material stage with a beat clock and a teacher who calls a line of button prompts: answer on the beat, graded cool, good, bad or miss, ride a rating meter up to freestyle or fall off the bottom.",
+      "name": "rhythm",
+      "title": "Rhythm call and response",
+      "words": [
+        "rhythm",
+        "parappa",
+        "parappa-the-rapper",
+        "parappa-the-rapper-2",
+        "rhythm-game",
+        "music-game",
+        "beat-clock",
+        "dance"
+      ]
+    },
+    {
+      "blurb": "A grey-grid camp and ruin: three-second combat rounds with a d20 roll against defense, a party of three that follows its leader, a conversation with a skill check, skills that rise with use and a quest log.",
+      "name": "rpg",
+      "title": "Party RPG",
+      "words": [
+        "rpg",
+        "kotor",
+        "knights-of-the-old-republic",
+        "morrowind",
+        "elder-scrolls",
+        "crpg",
+        "party-rpg"
+      ]
     },
     {
       "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
@@ -13457,6 +13594,40 @@
       "name": "snow",
       "title": "Snow glade",
       "words": ["snow"]
+    },
+    {
+      "blurb": "A grey-grid compound of patrolling guards: vision cones, suspicion, alert phases, noise, takedowns, bodies that raise the alarm, a radar and an extraction.",
+      "name": "stealth",
+      "title": "Stealth infiltration",
+      "words": [
+        "stealth",
+        "metal-gear",
+        "metal-gear-solid",
+        "mgs",
+        "splinter-cell",
+        "tenchu",
+        "infiltration"
+      ]
+    },
+    {
+      "blurb": "A grey-grid mansion wing under fixed cameras: tank controls, aimed shots, scarce ammo, grabbing zombies, a six-slot case, herbs, keys and typewriter saves.",
+      "name": "survival-horror",
+      "title": "Survival horror",
+      "words": [
+        "survival-horror",
+        "resident-evil",
+        "residentevil",
+        "biohazard",
+        "silent-hill",
+        "horror",
+        "zombie"
+      ]
+    },
+    {
+      "blurb": "A grey-grid temple of block-grid jumps: run with a turn ramp, standing and running jumps, mid-air ledge grab, hang, shimmy, climb, swimming on an air meter, fall damage, a relic and a blade trap.",
+      "name": "tomb-explorer",
+      "title": "Tomb explorer",
+      "words": ["tomb-explorer", "tomb-raider", "tombraider", "lara-croft", "tomb-exploration"]
     },
     {
       "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",

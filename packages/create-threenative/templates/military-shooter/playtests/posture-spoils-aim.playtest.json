@@ -1,0 +1,101 @@
+{
+  "name": "posture-spoils-aim",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "label": "standing",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastAccuracy",
+        "gte": 0.4
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "crouch",
+      "press": "KeyC",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "crouching",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastAccuracy",
+        "lte": 0.4
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "kind": "input",
+      "label": "lying",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": false
+    },
+    {
+      "label": "prone",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastAccuracy",
+        "lte": 0.3
+      },
+      "release": false,
+      "timeoutMs": 12000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lastAccuracy",
+        "atSteps": [
+          {
+            "label": "standing",
+            "equals": 0.5
+          },
+          {
+            "label": "crouching",
+            "equals": 0.375
+          },
+          {
+            "label": "prone",
+            "equals": 0.25
+          }
+        ]
+      }
+    ]
+  }
+}

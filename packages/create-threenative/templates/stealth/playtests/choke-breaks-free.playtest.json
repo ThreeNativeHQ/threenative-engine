@@ -1,0 +1,102 @@
+{
+  "name": "an-unpumped-hold-breaks-free",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "behind",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "grab",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "holding",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "broke-free",
+      "waitTicks": 200,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "guard.courtyard",
+        "component": "state",
+        "atSteps": [
+          {
+            "label": "holding",
+            "equals": "held"
+          },
+          {
+            "label": "broke-free",
+            "equals": "alert"
+          }
+        ]
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "alerts",
+        "atSteps": [
+          {
+            "label": "holding",
+            "equals": 0
+          },
+          {
+            "label": "broke-free",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "radarJammed",
+        "atSteps": [
+          {
+            "label": "holding",
+            "equals": 0
+          },
+          {
+            "label": "broke-free",
+            "equals": 1
+          }
+        ]
+      }
+    ]
+  }
+}

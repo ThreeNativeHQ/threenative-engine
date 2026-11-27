@@ -1,0 +1,124 @@
+{
+  "name": "job-delivers",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "phone",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "offered",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit0",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "seated",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": "KeyW",
+      "holdTicks": 110,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "brake",
+      "press": "KeyS",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "delivered",
+      "waitTicks": 30,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "job",
+        "atSteps": [
+          {
+            "label": "offered",
+            "equals": "pickup"
+          },
+          {
+            "label": "seated",
+            "equals": "deliver"
+          },
+          {
+            "label": "delivered",
+            "equals": "passed"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "money",
+        "atSteps": [
+          {
+            "label": "delivered",
+            "equals": 2700
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "jobsDone",
+        "atSteps": [
+          {
+            "label": "delivered",
+            "equals": 1
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "job-started",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "job-passed",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

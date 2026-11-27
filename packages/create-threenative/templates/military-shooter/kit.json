@@ -1,0 +1,17 @@
+{
+  "name": "military-shooter",
+  "title": "Military shooter",
+  "blurb": "Inspired by modern military shooters: a grey-grid yard held by five soldiers: stances, a sprint budget, aim down sights, spread and recoil, a regenerating shield over health, grenades with a fuse, and cover that stops rounds.",
+  "genre": "military-shooter",
+  "aliases": [
+    "call-of-duty",
+    "cod",
+    "modern-warfare",
+    "cod4",
+    "halo",
+    "halo-ce",
+    "battlefield",
+    "military"
+  ],
+  "kit": true
+}

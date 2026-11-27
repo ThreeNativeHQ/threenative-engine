@@ -3,8 +3,12 @@
  * player hits reaches the team without a bug report: a `console.warn` / `console.error` carrying a
  * `TN_` code, an `error` event or an `unhandledrejection` sends one small event.
  *
- * On by default wherever a game runs, with a named opt-out per seam: `defineGame({ telemetry:
- * false })`, `TN_TELEMETRY=0` (environment, `?tnTelemetry=0`, `__THREENATIVE_TELEMETRY__`) and
+ * Dev runs only (PRD-918): a production build (a page carrying `__TN_BUILD_ID__`, or a bundle
+ * whose launch is not a dev one) prints `TN_TELEMETRY off (prod)` and installs nothing, so no
+ * player's machine ever sends an event. On by default in dev, with a named opt-out per seam:
+ * `defineGame({ telemetry: false })`, `telemetry: { crashReports: false }` in
+ * `threenative.config.ts` (the Dev Dashboard's switch, written as `__THREENATIVE_TELEMETRY__`),
+ * `TN_TELEMETRY=0` (environment, `?tnTelemetry=0`, `__THREENATIVE_TELEMETRY__`) and
  * `DO_NOT_TRACK=1`. A playtest runner's launch is off unless it asks with `tnTelemetry=1`. The one
  * boot line names the seam that turned it off.
  *
@@ -13,6 +17,7 @@
  * person. Telemetry never throws, never sends one event twice and never sends more than 50 a session.
  */
 import { type ILaunchFlagSpec, readLaunchFlag } from "./debug.js";
+import { isDevLaunch } from "./game-dev-tools.js";
 import { getPlatform } from "./platform.js";
 import { CORE_VERSION } from "./version.js";
 
@@ -102,6 +107,10 @@ let sending = false;
  */
 export function installTelemetry(options: ITelemetryOptions | undefined): void {
   if (installed !== undefined) return;
+  if (globalValue("__TN_BUILD_ID__") !== undefined || !isDevLaunch()) {
+    console.info("TN_TELEMETRY off (prod)");
+    return;
+  }
   const override = offReason(options);
   if (override !== undefined) {
     console.info(`TN_TELEMETRY off (${override})`);
@@ -152,7 +161,7 @@ export function installTelemetry(options: ITelemetryOptions | undefined): void {
           game: capped(globalString("__TN_GAME__") ?? "unknown", MAX_NAME),
           level,
           message,
-          mode: globalValue("__TN_BUILD_ID__") === undefined ? "dev" : "prod",
+          mode: "dev",
           platform,
           session: state.session,
         }),

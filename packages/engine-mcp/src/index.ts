@@ -281,7 +281,7 @@ const MAX_NEAR_MATCHES = 3;
 /** Chosen by the current-manifest threshold sweep: the highest recalled candidate at 0.27. */
 export const RELEVANCE_FLOOR = 0.27;
 const AUTHORING_INSTRUCTIONS =
-  "Follow the Authoring flow in the game's AGENTS.md (the threenative-capabilities skill holds the detail): search capabilities and references before the first new src/ file, for a new game and for every change to an existing game. Follow binding capability constraints. Execute with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before mechanics playtests. References borrow mechanics only: no code, level layouts, character names or art; cite pinned file:line sources.";
+  "Follow the Authoring flow in the game's AGENTS.md (the threenative-capabilities skill holds the detail): search capabilities and references before the first new src/ file, for a new game and for every change to an existing game. Follow binding capability constraints. Execute with subagents focused on specific areas: bounded tasks, file ownership, then coordinator integration before mechanics playtests. Use reference cards to build similar mechanics tuned to this game. Read relevant pinned source only for open questions and when authorized. Cite file:line. Keep upstream code, close translations, level layouts, character names, and distinctive audiovisual elements out of the game.";
 const GENERIC_GUIDANCE =
   "No installed engine capability matches this situation. Decompose it into concrete mechanics and write the game-owned behavior in your project's src/; inspect the relevant template AGENTS.md before adding a package.";
 
@@ -1649,7 +1649,7 @@ export async function handleLine(line: string, manifestFile: string): Promise<st
         capabilities: { tools: { listChanged: false } },
         instructions: AUTHORING_INSTRUCTIONS,
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.24" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.25" },
       });
     }
     if (request.method === "tools/list") {

@@ -1,0 +1,119 @@
+{
+  "name": "crime-brings-police",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "draw",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "drawn",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "aim",
+      "press": "KeyE",
+      "holdTicks": 10,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "fire",
+      "press": ["KeyE", "Space"],
+      "holdTicks": 150,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "let-go",
+      "press": ["KeyE", "Space"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "wanted",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "dispatch",
+      "waitTicks": 600,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "stars",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stars",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "policeCars",
+        "gte": 1
+      }
+    ],
+    "signals": [
+      {
+        "name": "wanted-up",
+        "entity": "player",
+        "minCount": 1
+      },
+      {
+        "name": "police-dispatched",
+        "entity": "world",
+        "minCount": 1
+      }
+    ]
+  }
+}

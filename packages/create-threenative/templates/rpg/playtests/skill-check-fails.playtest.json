@@ -1,0 +1,116 @@
+{
+  "name": "skill-check-fails",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "to-elder",
+      "press": "F2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "talk",
+      "press": "KeyE",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "talking",
+      "waitForResource": {
+        "id": "state",
+        "path": "shot",
+        "equals": "dialogue"
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "rig-fail",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "pay-me",
+      "press": "Digit2",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "failed",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lastCheckPassed",
+        "atSteps": [
+          {
+            "label": "failed",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastCheck",
+        "atSteps": [
+          {
+            "label": "failed",
+            "equals": "Persuasion d20 2 + 1 vs 12"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "coins",
+        "atSteps": [
+          {
+            "label": "failed",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "questStage",
+        "atSteps": [
+          {
+            "label": "failed",
+            "equals": 0
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,132 @@
+{
+  "name": "shield-recharges-health-stays",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "wait",
+      "label": "full",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "hurt",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "hit",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "stunned",
+      "waitTicks": 120,
+      "release": true
+    },
+    {
+      "label": "recharging",
+      "waitForResource": {
+        "id": "state",
+        "path": "shield",
+        "gte": 50
+      },
+      "release": false,
+      "timeoutMs": 12000
+    },
+    {
+      "label": "recharged",
+      "waitForResource": {
+        "id": "state",
+        "path": "shield",
+        "gte": 100
+      },
+      "release": false,
+      "timeoutMs": 6000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "shield",
+        "atSteps": [
+          {
+            "label": "full",
+            "equals": 100
+          },
+          {
+            "label": "hit",
+            "equals": 0
+          },
+          {
+            "label": "stunned",
+            "equals": 0
+          },
+          {
+            "label": "recharged",
+            "equals": 100
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "full",
+            "equals": 100
+          },
+          {
+            "label": "hit",
+            "equals": 70
+          },
+          {
+            "label": "stunned",
+            "equals": 70
+          },
+          {
+            "label": "recharging",
+            "equals": 70
+          },
+          {
+            "label": "recharged",
+            "equals": 70
+          }
+        ]
+      }
+    ]
+  }
+}

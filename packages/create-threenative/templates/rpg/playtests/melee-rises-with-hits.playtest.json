@@ -1,0 +1,189 @@
+{
+  "name": "melee-rises-with-hits",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "at-post",
+      "press": "F1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-1",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-2",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-3",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-4",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-5",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-6",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a3",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a4",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "before",
+      "waitTicks": 30,
+      "release": true
+    },
+    {
+      "label": "batch-two",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 13.5
+      },
+      "release": false,
+      "timeoutMs": 30000
+    },
+    {
+      "kind": "input",
+      "label": "a5",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "a6",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "swung",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 21
+      },
+      "release": false,
+      "timeoutMs": 40000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "attackBonus",
+        "atSteps": [
+          {
+            "label": "before",
+            "equals": 3
+          },
+          {
+            "label": "swung",
+            "equals": 4
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "hero",
+        "component": "melee",
+        "atSteps": [
+          {
+            "label": "before",
+            "equals": 9
+          },
+          {
+            "label": "swung",
+            "equals": 10
+          }
+        ]
+      },
+      {
+        "entity": "hero",
+        "component": "attacks",
+        "atSteps": [
+          {
+            "label": "swung",
+            "equals": 6
+          }
+        ]
+      }
+    ]
+  }
+}

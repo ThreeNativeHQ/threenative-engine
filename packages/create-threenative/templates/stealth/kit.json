@@ -1,0 +1,16 @@
+{
+  "name": "stealth",
+  "title": "Stealth infiltration",
+  "blurb": "A grey-grid compound of patrolling guards: vision cones, suspicion, alert phases, noise, takedowns, bodies that raise the alarm, a radar and an extraction.",
+  "genre": "stealth",
+  "aliases": [
+    "metal-gear",
+    "metal-gear-solid",
+    "mgs",
+    "splinter-cell",
+    "tenchu",
+    "stealth",
+    "infiltration"
+  ],
+  "kit": true
+}

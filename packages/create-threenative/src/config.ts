@@ -62,6 +62,8 @@ export interface IResolvedThreeNativeConfig {
   };
   readonly bootSplash?: IThreeNativeBootSplash;
   readonly nativeEntry: string;
+  /** Dev-run crash and engine-error reporting (PRD-918); production builds never report. */
+  readonly telemetry?: { readonly crashReports: boolean };
   /** Which cook profile produced this configuration, and whether the flag or the default chose it. */
   readonly buildProfile?: {
     readonly name: string;
@@ -450,12 +452,17 @@ export function configTempName(cwd: string, pid: number, now: number, sequence: 
   return path.join(cwd, `.threenative.config.${pid}.${now}.${sequence}.mjs`);
 }
 
-async function importConfig(cwd: string): Promise<Record<string, unknown> | undefined> {
+async function importConfig(
+  cwd: string,
+  candidate?: string,
+): Promise<Record<string, unknown> | undefined> {
   const sourcePath = path.join(cwd, CONFIG_FILE);
-  try {
-    await access(sourcePath);
-  } catch {
-    return undefined;
+  if (candidate === undefined) {
+    try {
+      await access(sourcePath);
+    } catch {
+      return undefined;
+    }
   }
 
   const esbuildPath = resolveEsbuild(cwd);
@@ -492,7 +499,7 @@ async function importConfig(cwd: string): Promise<Record<string, unknown> | unde
   const context = loadingContext(cwd, sourcePath);
   let source: string;
   try {
-    source = await readFile(sourcePath, "utf8");
+    source = candidate ?? (await readFile(sourcePath, "utf8"));
   } catch (error) {
     configFailure(
       "TN_CONFIG_LOAD_FAILED",
@@ -981,6 +988,16 @@ const UI_RENDERERS: readonly ThreeNativeUiRenderer[] = ["native", "native-css", 
  * a platform composites a sibling layer or renders to a texture — is the host's business, so a
  * typo here fails naming the valid values rather than defaulting to one of them.
  */
+/** `telemetry: { crashReports }` (PRD-918): dev-run crash reporting, on unless set false. */
+function validateTelemetry(raw: unknown): IResolvedThreeNativeConfig["telemetry"] {
+  if (raw === undefined) return { crashReports: true };
+  if (!isRecord(raw)) fail("TN_CONFIG_TELEMETRY_INVALID", "telemetry must be an object.");
+  assertKeys(raw, "telemetry", ["crashReports"]);
+  if (raw.crashReports !== undefined && typeof raw.crashReports !== "boolean")
+    fail("TN_CONFIG_TELEMETRY_INVALID", "telemetry.crashReports must be a boolean.");
+  return { crashReports: raw.crashReports !== false };
+}
+
 function validateUi(raw: unknown): IResolvedThreeNativeConfig["ui"] {
   const ui = assertRecord(raw, "ui");
   assertKeys(ui, "ui", ["renderer"]);
@@ -2022,6 +2039,7 @@ function assertProfileCapReachable(
 async function loadConfigInternal(
   root: string,
   selection?: IProfileSelection,
+  candidate?: string,
 ): Promise<IResolvedThreeNativeConfig> {
   const packagePath = path.join(root, "package.json");
   const sourcePath = path.join(root, CONFIG_FILE);
@@ -2036,7 +2054,7 @@ async function loadConfigInternal(
     "TN_CONFIG_PACKAGE_INVALID",
     () => packageNativeEntry(manifest),
   );
-  const raw = await importConfig(root);
+  const raw = await importConfig(root, candidate);
   const sources = packageEntry === undefined ? [sourcePath] : [sourcePath, packagePath];
   return withConfigContext(
     validationContext(root, sources),
@@ -2054,6 +2072,7 @@ async function loadConfigInternal(
           "ui",
           "assets",
           "buildProfiles",
+          "telemetry",
         ]);
       }
       const configuredEntry = raw?.nativeEntry;
@@ -2082,6 +2101,7 @@ async function loadConfigInternal(
         nativeEntry: validateNativeEntry(configuredEntry ?? packageEntry ?? "src/game.ts", root),
         renderer: validateRenderer(raw?.renderer),
         ui: validateUi(raw?.ui),
+        telemetry: validateTelemetry(raw?.telemetry),
         ...(bootSplash === undefined ? {} : { bootSplash }),
         ...(assets === undefined ? {} : { assets }),
         ...(profile === undefined
@@ -2104,14 +2124,19 @@ async function loadConfigInternal(
   );
 }
 
+/**
+ * `options.source` validates candidate text as if it were the project's `threenative.config.ts`
+ * (the Dev Dashboard checks an edit this way before it writes anything).
+ */
 export async function loadConfig(
   cwd: string,
   selection?: IProfileSelection,
+  options: { readonly source?: string } = {},
 ): Promise<IResolvedThreeNativeConfig> {
   const root = path.resolve(cwd);
   return withConfigContext(
     validationContext(root, [path.join(root, CONFIG_FILE), path.join(root, "package.json")]),
     "TN_CONFIG_VALIDATION_FAILED",
-    () => loadConfigInternal(root, selection),
+    () => loadConfigInternal(root, selection, options.source),
   );
 }

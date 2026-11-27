@@ -2,7 +2,7 @@
 // each `src/**/*.story.ts`, and the Scene Bundler. It reads the cook's `assets.manifest.json` for
 // the Raw-vs-Cooked rows and `inspectAsset` for the health badges; it writes only on a bundle save.
 import { existsSync } from "node:fs";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { open, readFile, readdir, stat } from "node:fs/promises";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { inspectAsset } from "../inspect.js";
@@ -182,8 +182,50 @@ export function projectSource(options: IProjectSourceOptions): IAssetLibrarySour
     return existsSync(file) ? { entry, file } : undefined;
   };
 
+  /** Whether a model carries skins or clips, read from its glTF JSON only; cached by mtime. */
+  const rigged = new Map<string, { mtime: number; animated: boolean }>();
+  async function animatedModel(relative: string): Promise<boolean> {
+    if (!/\.(glb|gltf)$/iu.test(relative)) return false;
+    const file = path.join(root, relative);
+    try {
+      const { mtimeMs } = await stat(file);
+      const hit = rigged.get(file);
+      if (hit?.mtime === mtimeMs) return hit.animated;
+      let json: { animations?: unknown[]; skins?: unknown[] };
+      if (relative.toLowerCase().endsWith(".gltf")) json = JSON.parse(await readFile(file, "utf8"));
+      else {
+        const handle = await open(file, "r");
+        try {
+          const head = Buffer.alloc(20);
+          await handle.read(head, 0, 20, 0);
+          const length = head.readUInt32LE(12);
+          if (head.readUInt32LE(0) !== 0x46546c67 || length > 64 * 1024 * 1024) return false;
+          const chunk = Buffer.alloc(length);
+          await handle.read(chunk, 0, length, 20);
+          json = JSON.parse(chunk.toString("utf8"));
+        } finally {
+          await handle.close();
+        }
+      }
+      const animated = (json.animations?.length ?? 0) > 0 || (json.skins?.length ?? 0) > 0;
+      rigged.set(file, { mtime: mtimeMs, animated });
+      return animated;
+    } catch {
+      return false;
+    }
+  }
+
   async function catalog(): Promise<IAssetCatalog> {
     const files = await walk(root, source, (file) => kindOf(file) !== undefined);
+    const animated = new Set(
+      (
+        await Promise.all(
+          files.map(async (file) =>
+            kindOf(file) === "model" && (await animatedModel(file)) ? file : "",
+          ),
+        )
+      ).filter(Boolean),
+    );
     const stories = await walk(root, "src", (file) => STORY.test(file));
     const folder = (file: string, base: string) => {
       const dir = path.posix.dirname(path.posix.relative(base, file));
@@ -197,6 +239,7 @@ export function projectSource(options: IProjectSourceOptions): IAssetLibrarySour
         source: "project",
         styleTags: ["project"],
         path: file,
+        ...(animated.has(file) ? { animated: true } : {}),
         ...folder(file, source),
       })),
       ...stories.map((file) => ({

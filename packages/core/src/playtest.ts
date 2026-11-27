@@ -682,24 +682,32 @@ function drainContacts<TState extends Record<string, unknown>, TPhysics>(
   tick: number | undefined,
 ): IPlaytestContactObservation[] {
   // Build the value→id index without extracting debug fields. First id wins per value, matching
-  // the insertion-order find it replaced.
-  const idsByEntity = new Map<object, string>();
-  ctx.entities.forEach((id, registered) => {
-    for (const value of objectGraphValues(registered))
-      if (!idsByEntity.has(value)) idsByEntity.set(value, id);
-  });
+  // the insertion-order find it replaced. Built on the first event only: this runs every tick,
+  // and walking every entity's graph on a tick with no contact was a frame hitch of its own.
+  let index: Map<object, string> | undefined;
+  const idsByEntity = (): Map<object, string> => {
+    if (index !== undefined) return index;
+    const built = new Map<object, string>();
+    ctx.entities.forEach((id, registered) => {
+      for (const value of objectGraphValues(registered))
+        if (!built.has(value)) built.set(value, id);
+    });
+    index = built;
+    return built;
+  };
   ctx.entities.forEach((_id, registered) => {
     for (const source of entitySources(registered)) {
       for (const event of source.drainContacts()) {
-        const entity = idsByEntity.get(event.body);
+        const ids = idsByEntity();
+        const entity = ids.get(event.body);
         // The area's own `entity` option names the far side of the contact. A game that
         // registered the area under a scene-registry id has already named it, and requiring the
         // option again meant a demonstrably firing trigger reported no contact at all — a green
         // `contacts` assertion over a run whose own state proved the overlap happened.
         const other =
           event.entity ??
-          (event.area === undefined ? undefined : idsByEntity.get(event.area)) ??
-          idsByEntity.get(source);
+          (event.area === undefined ? undefined : ids.get(event.area)) ??
+          ids.get(source);
         if (entity === undefined || other === undefined) continue;
         history.push({
           entity,

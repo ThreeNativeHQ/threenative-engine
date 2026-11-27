@@ -1,0 +1,132 @@
+{
+  "name": "knockback-scales-with-weight",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit3"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit2"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyK"],
+      "holdTicks": 1,
+      "label": "strong-heavy",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 40,
+      "label": "heavy-hit",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit4"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit2"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyK"],
+      "holdTicks": 1,
+      "label": "strong-light",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 40,
+      "label": "light-hit",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "last.weight",
+        "atSteps": [
+          {
+            "label": "heavy-hit",
+            "equals": 1.6
+          },
+          {
+            "label": "light-hit",
+            "equals": 0.7
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "last.knockback",
+        "atSteps": [
+          {
+            "label": "heavy-hit",
+            "equals": 126.2
+          },
+          {
+            "label": "light-hit",
+            "equals": 178.2
+          }
+        ]
+      }
+    ]
+  }
+}

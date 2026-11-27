@@ -31,6 +31,10 @@ const allowedProductionCreators = new Map<string, string>([
     "The spec bakes every kit's Arbor art into scratch folders an afterAll removes, so a failed assertion leaves nothing behind.",
   ],
   [
+    "packages/create-threenative/__tests__/dashboard.spec.ts",
+    "The dashboard suite writes one project root per test, and its afterEach removes the root the test used.",
+  ],
+  [
     "packages/create-threenative/src/index.ts",
     "Rendering the authoring layer writes one scratch folder per run, for the scaffold that stamps it and for doctor --fix that copies from it, and both remove it in finally.",
   ],
@@ -75,6 +79,10 @@ const allowedProductionCreators = new Map<string, string>([
   [
     "scripts/check-publish-state.ts",
     "The tarball gate packs into a scratch directory removed in finally.",
+  ],
+  [
+    "scripts/seed-cf-asset-library.ts",
+    "A seed bake stages one scratch directory per run and the generator removes it in finally, whether its consumer finishes or fails.",
   ],
   ["scripts/profile-starter.ts", "The production profile removes its root in finally."],
   [

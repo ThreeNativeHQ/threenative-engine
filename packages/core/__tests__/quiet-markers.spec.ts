@@ -88,3 +88,58 @@ describe("quiet markers", () => {
     expect(console.log).toBe(originals.log);
   });
 });
+
+describe("dev worker marker relay (PRD-923)", () => {
+  class FakeChannel {
+    static opened: FakeChannel[] = [];
+    posts: unknown[] = [];
+    closed = false;
+    constructor(readonly name: string) {
+      FakeChannel.opened.push(this);
+    }
+    postMessage(message: unknown) {
+      this.posts.push(message);
+    }
+    close() {
+      this.closed = true;
+    }
+  }
+  beforeEach(() => {
+    FakeChannel.opened = [];
+    vi.stubGlobal("BroadcastChannel", FakeChannel);
+  });
+
+  it("relays a worker's TN_ lines once each to the page in dev, and restores the console", () => {
+    vi.stubGlobal("importScripts", () => undefined);
+    installQuietMarkers();
+    console.log("TN_FRAME_BUDGET:{}");
+    console.warn("TN_SCENE_WARNING:x");
+    console.log("plain line");
+    const [channel] = FakeChannel.opened;
+    expect(channel?.name).toBe("threenative-dev-markers");
+    expect(channel?.posts).toEqual([
+      { level: "debug", text: "TN_FRAME_BUDGET:{}" },
+      { level: "warn", text: "TN_SCENE_WARNING:x" },
+    ]);
+    uninstallQuietMarkers();
+    expect(channel?.closed).toBe(true);
+    for (const method of methods) expect(console[method]).toBe(originals[method]);
+  });
+
+  it("opens no channel on the page itself", () => {
+    installQuietMarkers();
+    expect(FakeChannel.opened).toEqual([]);
+  });
+
+  it("opens no channel in a production worker", async () => {
+    vi.stubGlobal("importScripts", () => undefined);
+    vi.resetModules();
+    vi.doMock("../src/game-dev-tools.js", () => ({ isDevLaunch: () => false }));
+    const fresh = await import("../src/quiet-markers.js");
+    fresh.installQuietMarkers();
+    console.log("TN_FRAME_BUDGET:{}");
+    fresh.uninstallQuietMarkers();
+    vi.doUnmock("../src/game-dev-tools.js");
+    expect(FakeChannel.opened).toEqual([]);
+  });
+});

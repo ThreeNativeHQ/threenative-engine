@@ -1,0 +1,133 @@
+{
+  "name": "junction-takes-the-shortcut",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "set-up",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "roll",
+      "press": "Space",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "asked",
+      "waitForResource": {
+        "id": "state",
+        "path": "turnPhase",
+        "equals": "junction"
+      },
+      "release": false,
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "input",
+      "label": "yes",
+      "press": "KeyY",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "landed",
+      "waitForResource": {
+        "id": "state",
+        "path": "players.0.space",
+        "gte": 26
+      },
+      "release": false,
+      "timeoutMs": 10000
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "release": true,
+      "label": "after"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "prompt",
+        "atSteps": [
+          {
+            "label": "asked",
+            "equals": "junction"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "players.0.space",
+        "atSteps": [
+          {
+            "label": "asked",
+            "equals": 4
+          },
+          {
+            "label": "landed",
+            "equals": 26
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "stepsLeft",
+        "atSteps": [
+          {
+            "label": "asked",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "players.0.chain",
+        "atSteps": [
+          {
+            "label": "landed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "players.0.coins",
+        "atSteps": [
+          {
+            "label": "landed",
+            "equals": 13
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -5,6 +5,7 @@ import * as three from "three";
 import "./style.css";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
 import { RoomEnvironment } from "three/addons/environments/RoomEnvironment.js";
+import { MeshoptDecoder } from "three/addons/libs/meshopt_decoder.module.js";
 import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
 import type {
@@ -17,6 +18,7 @@ import type {
   IAssetReport,
   IAssetViewContext,
 } from "../types.js";
+import { currentSection, initDashboard, onSection } from "./dashboard.js";
 import { BUILT_IN_KINDS, builtInView, createViewerHost, fileUrl } from "./viewers.js";
 
 export interface IShellConfig {
@@ -24,6 +26,10 @@ export interface IShellConfig {
   readonly base: string;
   readonly title: string;
   readonly clients: Readonly<Record<string, IAssetLibraryClient>>;
+  /** The Dev Dashboard's path (`/__dashboard/`), PRD-918. */
+  readonly dashboard?: string;
+  /** False when no game project backs the library (the engine's standalone library). */
+  readonly project?: boolean;
 }
 
 const config = (Reflect.get(globalThis, "__TN_ASSET_LIBRARY__") as IShellConfig | undefined) ?? {
@@ -50,6 +56,7 @@ const title = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
 document.title = config.title;
 $("library-title").textContent = config.title;
 if (embed) document.documentElement.toggleAttribute("data-embed", true);
+if (sheetMode) document.documentElement.toggleAttribute("data-sheet", true);
 
 // ── scene ──
 const canvas = $<HTMLCanvasElement>("view");
@@ -127,6 +134,7 @@ const facet = (id: (typeof facetIds)[number]) => $<HTMLSelectElement>(id).value;
 let route: { kind: string; id?: string; category?: string; tiled?: string } = { kind: "" };
 let token = 0;
 const loader = new GLTFLoader();
+loader.setMeshoptDecoder(MeshoptDecoder);
 const status = $("status");
 const say = (text: string, error = false) => {
   status.textContent = text;
@@ -343,11 +351,20 @@ const ICONS: Record<string, string> = {
   doc: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8",
   story: "M6 3h12v18l-6-5-6 5z",
   group: "M3 3h18v18H3zM12 3v18M3 12h18",
+  play: "M6 4l13 8-13 8z",
+  pulse: "M3 12h4l3 8 4-16 3 8h4",
+  flask: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3",
+  gamepad:
+    "M7 6h10a4 4 0 0 1 4 4v4a3 3 0 0 1-5.3 2H8.3A3 3 0 0 1 3 14v-4a4 4 0 0 1 4-4zM7 10v4M5 12h4M15 11h.01M18 13h.01",
+  check: "M5 12l5 5 9-10",
+  cross: "M6 6l12 12M18 6 6 18",
+  dock: "M3 3h18v18H3zM3 16h18",
 };
 const svg = (name: string, size = 16) =>
   `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] ?? ""}"/></svg>`;
-$("logo").innerHTML =
-  `<svg viewBox="0 4.5 100 91" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="${TN_MARK}"/></svg>`;
+for (const id of ["logo", "rail-logo"])
+  $(id).innerHTML =
+    `<svg viewBox="0 4.5 100 91" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="${TN_MARK}"/></svg>`;
 const iconEl = (name: string, className = "", size = 14) => {
   const span = el("span", `inline-flex shrink-0 ${className}`);
   span.innerHTML = svg(name, size);
@@ -434,19 +451,35 @@ function renderDocs(element: IAssetElement, baked: IAssetReport, model: three.Ob
     ...(file ? [["File", file] as [string, string]] : []),
   ]);
   const call = baked.call ?? `await ${callFor(element)};`;
+  const actions: HTMLElement[] = [copyButton(runtime ? "Copy code" : "Copy bake call", () => call)];
+  const rawSave = (baked as { readonly save?: unknown }).save;
+  if (typeof rawSave === "string") {
+    const saveUrl = rawSave;
+    const saveButton = el(
+      "button",
+      "tool w-auto justify-self-start px-2 text-ink",
+      "Save to assets/",
+    );
+    saveButton.onclick = () => {
+      void fetch(saveUrl, { method: "POST" })
+        .then(async (res) => (await res.json()) as { written?: string; error?: string })
+        .then((body) =>
+          say(
+            body.written ? `Saved ${body.written}` : (body.error ?? "Save failed"),
+            !body.written,
+          ),
+        )
+        .catch((error: Error) => say(error.message, true));
+    };
+    actions.push(saveButton);
+  }
   const parts = el(
     "label",
     "grid gap-1 font-bold text-muted",
     runtime ? "Mesh attributes" : "GLB primitives and attributes",
   );
   parts.append(el("pre", PRE, attributesOf(model)));
-  $("docs").replaceChildren(
-    head,
-    dl,
-    el("pre", PRE, call),
-    copyButton(runtime ? "Copy code" : "Copy bake call", () => call),
-    parts,
-  );
+  $("docs").replaceChildren(head, dl, el("pre", PRE, call), ...actions, parts);
 }
 
 // ── background: the source's sky, or a flat dark or light backdrop ──
@@ -618,7 +651,44 @@ async function assetOf(element: IAssetElement, lod = state.lod): Promise<IAssetL
   }
   const baked = await bakeOf(element, lod);
   const { model, windy } = await modelOf(element, baked);
+  if (baked.triangles === 0) {
+    let triangles = 0;
+    model.traverse((node) => {
+      const mesh = node as three.Mesh & three.InstancedMesh;
+      if (!mesh.isMesh) return;
+      const count = mesh.isInstancedMesh ? mesh.count : 1;
+      const verts =
+        mesh.geometry.index?.count ?? mesh.geometry.getAttribute("position")?.count ?? 0;
+      triangles += (verts / 3) * count;
+    });
+    const box = new three.Box3().setFromObject(model);
+    return {
+      model,
+      animated: windy,
+      report: {
+        ...baked,
+        triangles: Math.round(triangles),
+        bounds: box.isEmpty() ? baked.bounds : { min: box.min.toArray(), max: box.max.toArray() },
+      },
+    };
+  }
   return { model, animated: windy, report: baked };
+}
+
+function renderLazyOverview(name: string, shown: IAssetElement[]): void {
+  const grid = viewerHost.overlay(
+    "inset-0 grid auto-rows-min grid-cols-[repeat(auto-fill,minmax(12rem,1fr))] gap-3 overflow-y-auto bg-app p-4",
+  );
+  for (const e of shown) {
+    const card = el("a", "grid gap-1 rounded border border-line p-3 text-xs hover:border-accent");
+    card.href = hashOf(e.kind, e.id);
+    card.append(
+      el("span", "truncate font-semibold text-ink", e.name),
+      el("span", "truncate text-muted", e.category ? `${e.category} · ${e.id}` : e.id),
+    );
+    grid.append(card);
+  }
+  say(`${name} · ${plural(shown.length, "asset")} · pick one to lazy-load`);
 }
 
 /** The overview story: every visible element of the kind (or category) on one line, at its true size. */
@@ -647,6 +717,10 @@ async function overview(mine: number, kindRows: IAssetElement[]): Promise<boolea
     ),
     list,
   );
+  if (kindInfo(route.kind).lazy) {
+    renderLazyOverview(name, shown);
+    return false;
+  }
   const lineup = shown.filter((row) => !row.backdrop && !BUILT_IN_KINDS.has(row.kind));
   if (BUILT_IN_KINDS.has(route.kind) && route.kind !== "model") {
     // A 2D kind has no 3D lineup: its overview is a card per file over the stage, not an empty floor.
@@ -772,6 +846,7 @@ async function show(): Promise<void> {
 
 // ── sidebar ──
 function visible(e: IAssetElement): boolean {
+  if (currentSection() === "animations" && !e.animated) return false;
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const biome = facet("biome");
   const setting = facet("setting");
@@ -889,8 +964,8 @@ function elementNode(e: IAssetElement) {
   const at = hashOf(e.kind, e.id);
   const biome = controlsFor(e.kind, e.id).find((c) => c.key === "biome" && c.type === "select");
   const tile = tileControl(e.kind, e.id);
-  // A project file has one story: it is a leaf. A source element keeps its Docs and Default nodes.
-  if (BUILT_IN_KINDS.has(e.kind) && !biome && !tile)
+  // A project file or lazy catalog item has one story: it is a leaf row loaded on demand.
+  if ((BUILT_IN_KINDS.has(e.kind) || kindInfo(e.kind).lazy) && !biome && !tile)
     return leaf(at, e.name, "story", story, "pl-10", "controls");
   const group = node(`${e.kind}/${e.id}`, e.name, current, "pl-5");
   group.append(
@@ -1564,6 +1639,25 @@ async function visibleOnce(): Promise<void> {
     document.addEventListener("visibilitychange", onShow);
   });
 }
+
+// ── Dev Dashboard (PRD-918): Animations narrows the tree; Stage / Bundler opens the Stage ──
+initDashboard(config, embed || !!sheetMode);
+/** The empty-stage card names the section the side menu shows. */
+function introFor(section: string): void {
+  const animations = section === "animations";
+  $("intro-title").textContent = animations ? "Animations" : "Asset Library";
+  $("intro-body").textContent = animations
+    ? "Pick a rigged or animated model to play its clips. Its Animation panel opens Pose Lab."
+    : "Pick an asset in the list to inspect it, or open an overview to see a whole section.";
+}
+introFor(currentSection());
+onSection((next, previous) => {
+  introFor(next);
+  if (next === "stage") {
+    if (!location.hash.startsWith("#/stage")) location.hash = "#/stage/stage";
+  } else if (previous === "stage" && route.kind === "stage") location.hash = "";
+  if (next === "assets" || next === "animations") renderTree();
+});
 
 try {
   await visibleOnce();

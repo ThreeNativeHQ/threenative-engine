@@ -1,0 +1,138 @@
+{
+  "name": "knockback-scales-with-percent",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyK"],
+      "holdTicks": 1,
+      "label": "strong-0",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 110,
+      "label": "recovered-0",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit2"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyK"],
+      "holdTicks": 1,
+      "label": "strong-100",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 150,
+      "label": "recovered-100",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "last.knockback",
+        "atSteps": [
+          {
+            "label": "recovered-0",
+            "equals": 41.9
+          },
+          {
+            "label": "recovered-100",
+            "equals": 141.5
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "last.hitstun",
+        "atSteps": [
+          {
+            "label": "recovered-0",
+            "equals": 22
+          },
+          {
+            "label": "recovered-100",
+            "equals": 75
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "last.measuredHitstun",
+        "atSteps": [
+          {
+            "label": "recovered-0",
+            "equals": 22
+          },
+          {
+            "label": "recovered-100",
+            "equals": 75
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cpu.percent",
+        "atSteps": [
+          {
+            "label": "recovered-100",
+            "equals": 114
+          }
+        ]
+      }
+    ]
+  }
+}

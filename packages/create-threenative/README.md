@@ -6,7 +6,7 @@ Scaffold a ThreeNative game:
 pnpm create threenative my-game
 ```
 
-The default template is `starter`. Sixteen templates ship, and `pnpm create threenative --help`
+The default template is `starter`. Twenty-nine templates ship, and `pnpm create threenative --help`
 lists every one with its title, blurb and `--genre` aliases. Name one with `--template`, or name a
 genre with `--genre`:
 

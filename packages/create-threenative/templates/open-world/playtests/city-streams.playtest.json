@@ -1,0 +1,54 @@
+{
+  "name": "city-streams",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": { "width": 1280, "height": 720 },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    { "kind": "wait", "label": "settle", "waitTicks": 20, "release": true },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "BracketRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    { "kind": "wait", "label": "arrived", "waitTicks": 360, "release": true },
+    { "kind": "input", "label": "walk", "press": "ArrowUp", "holdTicks": 60, "release": true }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "city",
+        "component": "downtown",
+        "atSteps": [{ "label": "settle", "equals": true }, { "label": "arrived", "equals": false }]
+      },
+      {
+        "entity": "city",
+        "component": "farCorner",
+        "atSteps": [{ "label": "settle", "equals": false }, { "label": "arrived", "equals": true }]
+      },
+      {
+        "entity": "city",
+        "component": "resident",
+        "lte": 21,
+        "allowTrivial": "The bound holds from the first tick by design: it proves the city never builds all 81 blocks: at most the 21 within `keep`."
+      },
+      {
+        "entity": "world",
+        "component": "strays",
+        "atSteps": [{ "label": "arrived", "equals": 0 }]
+      }
+    ],
+    "movement": {
+      "entity": "player",
+      "minDistance": 150
+    }
+  }
+}
