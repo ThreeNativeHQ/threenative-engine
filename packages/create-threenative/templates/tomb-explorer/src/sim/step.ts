@@ -10,7 +10,7 @@ import { stepClimb, stepHang } from "./hang.js";
 import { stepPickup, tryPickup } from "./pickup.js";
 import { stepSwim } from "./swim.js";
 
-export function stepLara(body: IBody, input: IInput, tick: number): void {
+export function stepExplorer(body: IBody, input: IInput, tick: number): void {
   body.note = "";
   if (body.state === "dead") return;
   switch (body.state) {

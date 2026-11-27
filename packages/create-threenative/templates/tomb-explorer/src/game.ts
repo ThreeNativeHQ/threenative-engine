@@ -8,10 +8,13 @@ import type { GameState } from "./state.js";
 const game = defineGame<GameState>({
   input: {
     // Tank controls, as the reference game has them: up runs, down steps back, left and right turn.
-    forward: { buttons: [12], keys: ["ArrowUp", "KeyW"] },
-    back: { buttons: [13], keys: ["ArrowDown", "KeyS"] },
-    left: { buttons: [14], keys: ["ArrowLeft", "KeyA"] },
-    right: { buttons: [15], keys: ["ArrowRight", "KeyD"] },
+    // The axis is read relative to the explorer, never the screen.
+    move: {
+      down: ["ArrowDown", "KeyS"],
+      left: ["ArrowLeft", "KeyA"],
+      right: ["ArrowRight", "KeyD"],
+      up: ["ArrowUp", "KeyW"],
+    },
     // Walking is slow and never steps off an edge.
     walk: { buttons: [5], keys: ["ShiftLeft", "ShiftRight"] },
     // Held: grab a ledge in mid-air, hold a hang, take an item.

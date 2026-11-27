@@ -1,4 +1,4 @@
-// Every number the Lara-style body runs on, in one place.
+// Every number the Explorer-style body runs on, in one place.
 //
 // The simulation runs in the reference engine's own units at its own rate: 30 updates per second
 // (`simulationRate`, TRX src/trx/game/const.h:5). Speeds are "units per update", angles are 1/65536

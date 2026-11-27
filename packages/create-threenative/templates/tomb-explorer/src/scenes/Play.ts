@@ -3,7 +3,7 @@ import { PLAYTEST_RUNNER_EXPECTED_GLOBAL } from "@threenative/core/playtest";
 import { type IEnvironmentSample, sampleEnvironment } from "@threenative/core/render/environment";
 import type { PerspectiveCamera } from "three";
 import { Blade } from "../entities/Blade.js";
-import { type GameCtx, type IMannequin, Lara } from "../entities/Lara.js";
+import { Explorer, type GameCtx, type IMannequin } from "../entities/Explorer.js";
 import { RELIC, SPAWN, STATIONS } from "../level.js";
 import { emitPlaytestEvent } from "../playtest-events.js";
 import { createChaseCamera } from "../render/camera.js";
@@ -130,7 +130,7 @@ export class Play extends Scene<GameState> {
     relic.group.position.set(rx, ry, rz);
     ctx.add(relic.group);
 
-    const lara = new Lara(ctx, mannequin);
+    const lara = new Explorer(ctx, mannequin);
     ctx.entities.add("player", lara);
     const blade = ctx.entities.add("blade", new Blade(ctx));
     cameraRig.snap(lara.body.x, lara.body.y, lara.body.z, lara.body.yaw);
@@ -238,7 +238,7 @@ export class Play extends Scene<GameState> {
 }
 
 /** The hint under the picture: what the keys do right now. */
-function promptFor(lara: Lara, playing: boolean): string {
+function promptFor(lara: Explorer, playing: boolean): string {
   const { body } = lara;
   if (!playing) return "R  RESTART";
   switch (body.state) {

@@ -12,7 +12,7 @@ import {
   TURN_UNDO,
 } from "../tuning.js";
 
-export type LaraState =
+export type ExplorerState =
   | "idle"
   | "walk"
   | "run"
@@ -57,7 +57,7 @@ export interface IHang {
 }
 
 export interface IBody {
-  state: LaraState;
+  state: ExplorerState;
   x: number;
   z: number;
   /** Feet height on land and in the air; body centre height while swimming. */

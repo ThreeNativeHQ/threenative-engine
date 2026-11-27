@@ -1,4 +1,4 @@
-import type { LaraState } from "./sim/body.js";
+import type { ExplorerState } from "./sim/body.js";
 
 export type GamePhase = "playing" | "won" | "lost";
 
@@ -9,7 +9,7 @@ export type GameState = {
   uiReady: boolean;
   phase: GamePhase;
   /** The body's state machine: idle, run, jump, hang, climb, swim, dead, ... */
-  mode: LaraState;
+  mode: ExplorerState;
   /** Health out of 1000 and air out of 1800: the reference engine's own pools. */
   health: number;
   air: number;
