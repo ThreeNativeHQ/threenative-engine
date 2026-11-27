@@ -10,11 +10,11 @@ export const FIELD = { halfWidth: 22, halfDepth: 18, wallHeight: 1.6 } as const;
 
 /** The ruin in the north: a walled yard with one gap in its south wall, facing the camp. */
 export const RUIN_WALLS: readonly Box[] = [
-  [-6.5, -7.5, 11, 2.2, 0.5],
-  [6.5, -7.5, 11, 2.2, 0.5],
-  [0, -16.5, 24, 2.2, 0.5],
-  [-12, -12, 0.5, 2.2, 9],
-  [12, -12, 0.5, 2.2, 9],
+  [-6.5, -7.5, 11, 1.8, 0.5],
+  [6.5, -7.5, 11, 1.8, 0.5],
+  [0, -16.5, 24, 1.8, 0.5],
+  [-12, -12, 0.5, 1.8, 9],
+  [12, -12, 0.5, 1.8, 9],
   [-3, -12, 1.2, 1.2, 1.2],
   [3.5, -13.5, 1.8, 1.2, 1.2],
 ];

@@ -13445,6 +13445,20 @@
       "words": ["rain"]
     },
     {
+      "blurb": "A grey-grid camp and ruin: three-second combat rounds with a d20 roll against defense, a party of three that follows its leader, a conversation with a skill check, skills that rise with use and a quest log.",
+      "name": "rpg",
+      "title": "Party RPG",
+      "words": [
+        "rpg",
+        "kotor",
+        "knights-of-the-old-republic",
+        "morrowind",
+        "elder-scrolls",
+        "crpg",
+        "party-rpg"
+      ]
+    },
+    {
       "blurb": "Three commanders, a seeded world, fog of war and a deterministic 0.05 s simulation headless in src/sim/.",
       "name": "rts",
       "title": "Real-time strategy",

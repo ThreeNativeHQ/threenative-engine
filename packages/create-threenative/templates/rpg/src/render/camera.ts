@@ -11,8 +11,8 @@
 // fixed at zero here, so up is north.
 import { MathUtils, type PerspectiveCamera, Vector3 } from "three";
 
-/** Where the camera sits relative to the leader's body centre: high and south. */
-const OFFSET = new Vector3(0, 9, 7);
+/** Where the camera sits relative to the leader's body centre: high and south. Steep, so a wall near the leader never stands in the line of sight. */
+const OFFSET = new Vector3(0, 12, 5);
 const AIM = new Vector3(0, 0, -1);
 const FOLLOW_RATE = 6;
 const CUT_RATE = 8;
