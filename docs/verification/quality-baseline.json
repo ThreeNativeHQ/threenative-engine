@@ -1,66 +1,283 @@
 {
   "version": 1,
-  "generatedAt": "2026-08-24T14:44:20.985Z",
+  "generatedAt": "2026-11-27T21:08:52.260Z",
   "counts": {
-    "file-length": 44,
-    "suppression/unknown-cast": 134,
-    "interface-in-disguise": 13,
-    "suppression/biome-ignore": 46,
-    "lint-coverage-hole": 1
+    "file-length": 253,
+    "suppression/unknown-cast": 217,
+    "interface-in-disguise": 37,
+    "suppression/biome-ignore": 103,
+    "suppression/ts-directive": 2
   },
   "findings": [
+    {
+      "file": "packages/animation-mcp/src/client/App.tsx",
+      "line": 1,
+      "signal": "file-length",
+      "value": 565,
+      "threshold": 400
+    },
+    {
+      "file": "packages/animation-mcp/src/client/scene.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 471,
+      "threshold": 400
+    },
+    {
+      "file": "packages/animation-mcp/src/index.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 452,
+      "threshold": 400
+    },
+    {
+      "file": "packages/animation-mcp/src/ops/log.ts",
+      "line": 210,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/assets/src/compile-config.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 739,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/compile-receipt.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 696,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/compile-rows.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 497,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/compile-types.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 416,
+      "threshold": 400
+    },
     {
       "file": "packages/assets/src/compile.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 783,
+      "value": 957,
+      "threshold": 800
+    },
+    {
+      "file": "packages/assets/src/image-quality.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 547,
       "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/lod/cards.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 677,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/lod/generate.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1688,
+      "threshold": 800
+    },
+    {
+      "file": "packages/assets/src/passes/audio.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 403,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/passes/compact.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 755,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/passes/lightmap-bake.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 443,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/passes/model-textures.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1152,
+      "threshold": 800
     },
     {
       "file": "packages/assets/src/passes/model.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 570,
-      "threshold": 400
+      "value": 1448,
+      "threshold": 800
     },
     {
-      "file": "packages/core/src/assets.ts",
+      "file": "packages/assets/src/passes/quantize-static.ts",
+      "line": 47,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/assets/src/passes/shared-images.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 502,
+      "value": 462,
       "threshold": 400
     },
     {
-      "file": "packages/core/src/assets.ts",
-      "line": 107,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
+      "file": "packages/assets/src/passes/texture.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 472,
+      "threshold": 400
     },
     {
-      "file": "packages/core/src/assets.ts",
-      "line": 110,
+      "file": "packages/assets/src/report.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 649,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/virtual/dag.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 539,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/world/proxy.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 791,
+      "threshold": 400
+    },
+    {
+      "file": "packages/assets/src/world/terrain-world.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1083,
+      "threshold": 800
+    },
+    {
+      "file": "packages/backend/src/client.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 423,
+      "threshold": 400
+    },
+    {
+      "file": "packages/backend/src/cloudflare.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 496,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/animation-pose-packet.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 537,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/animation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1824,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/app-lifecycle.ts",
+      "line": 65,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/asset-cache.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 719,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/asset-cache.ts",
+      "line": 76,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/asset-cache.ts",
+      "line": 82,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
       "file": "packages/core/src/assets.ts",
-      "line": 229,
+      "line": 1,
+      "signal": "file-length",
+      "value": 2051,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 494,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/core/src/assets.ts",
-      "line": 243,
+      "line": 497,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 665,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 747,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/core/src/assets.ts",
-      "line": 361,
+      "line": 762,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/assets.ts",
+      "line": 1595,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -69,61 +286,418 @@
       "file": "packages/core/src/audio.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 456,
-      "threshold": 400
+      "value": 964,
+      "threshold": 800
     },
     {
       "file": "packages/core/src/audio.ts",
-      "line": 79,
+      "line": 220,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
-      "file": "packages/core/src/game.ts",
+      "file": "packages/core/src/auto-batch.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 820,
+      "value": 971,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/clip-audit.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 401,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/clustered-batch.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 635,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/clustered-mesh.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1166,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/compressed-texture-preparation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1008,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/compute-timing.ts",
+      "line": 57,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/config.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 610,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/displaced-surface.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 428,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/flight.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 683,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/fluid-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 748,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/fluid-particles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1253,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/fluid-particles.ts",
+      "line": 21,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/fluid-particles.ts",
+      "line": 25,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/frame-budget.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1677,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/game-frame-loop.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 937,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/game-startup.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1174,
       "threshold": 800
     },
     {
       "file": "packages/core/src/game.ts",
-      "line": 107,
+      "line": 1,
+      "signal": "file-length",
+      "value": 815,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/geometry-capture.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1122,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/gpu-frame-observation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 447,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/gpu-scene-bvh.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 577,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/gpu-scene-bvh.ts",
+      "line": 88,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/grass-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 628,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/hair-strands.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 615,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/hair-strands.ts",
+      "line": 324,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/core/src/hot.ts",
-      "line": 13,
+      "line": 15,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
-      "file": "packages/core/src/hot.ts",
-      "line": 43,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
+      "file": "packages/core/src/index.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2219,
+      "threshold": 800
     },
     {
       "file": "packages/core/src/input.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 510,
+      "value": 1145,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/look/filmic-tone-mapping.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 870,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/look/local-exposure.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 504,
       "threshold": 400
     },
     {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2168,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 590,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 602,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 625,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 726,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 727,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 730,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 799,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/look/world-environment.ts",
+      "line": 1817,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/loop.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 662,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/merge-parts.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 838,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/merge-parts.ts",
+      "line": 178,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/merge-parts.ts",
+      "line": 612,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/merge-parts.ts",
+      "line": 625,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/model-lod.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1530,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/net-session.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 521,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/ocean/spectral.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 762,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/particle-kinds.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 515,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/particles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 657,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/pipeline-census.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1582,
+      "threshold": 800
+    },
+    {
       "file": "packages/core/src/playtest.ts",
-      "line": 149,
+      "line": 1,
+      "signal": "file-length",
+      "value": 934,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/playtest.ts",
+      "line": 202,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/core/src/playtest.ts",
-      "line": 215,
+      "line": 214,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/playtest.ts",
+      "line": 547,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/pointer-events.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 411,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/pose-measure.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 490,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/profiling/Spans.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 548,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/profiling/Spans.ts",
+      "line": 475,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/profiling/Spans.ts",
+      "line": 479,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -132,29 +706,78 @@
       "file": "packages/core/src/projection-apply.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 739,
-      "threshold": 400
+      "value": 1540,
+      "threshold": 800
     },
     {
       "file": "packages/core/src/projection-plan.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 558,
+      "value": 1512,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/projection-skinned.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1034,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/projection-stability.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 425,
       "threshold": 400
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 604,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 332,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 475,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 478,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 482,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-css.ts",
+      "line": 485,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
     },
     {
       "file": "packages/core/src/react-host.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 569,
+      "value": 576,
       "threshold": 400
-    },
-    {
-      "file": "packages/core/src/react-host.ts",
-      "line": 329,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
     },
     {
       "file": "packages/core/src/react-host.ts",
@@ -165,7 +788,7 @@
     },
     {
       "file": "packages/core/src/react-host.ts",
-      "line": 334,
+      "line": 333,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
@@ -179,38 +802,388 @@
     },
     {
       "file": "packages/core/src/react-host.ts",
-      "line": 364,
+      "line": 338,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
     },
     {
       "file": "packages/core/src/react-host.ts",
-      "line": 365,
+      "line": 371,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/react-host.ts",
+      "line": 372,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
+      "file": "packages/core/src/render-camera-cull.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1078,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render-camera-cull.ts",
+      "line": 236,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render-pass-budget.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 646,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/chain.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1103,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/depth-pyramid.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 588,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/depth-pyramid.ts",
+      "line": 287,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/foliage-alpha.ts",
+      "line": 79,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/probe-trace.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 872,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/probe-trace.ts",
+      "line": 237,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/probe-volume.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2574,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/probe-volume.ts",
+      "line": 92,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/render/rough-diffuse.ts",
+      "line": 19,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/rough-diffuse.ts",
+      "line": 30,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/rough-diffuse.ts",
+      "line": 36,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/rough-diffuse.ts",
+      "line": 153,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/rough-diffuse.ts",
+      "line": 175,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/scene-trace.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 532,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/screen-probe-gather.ts",
+      "line": 106,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/soft-shadow.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 620,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/soft-shadow.ts",
+      "line": 41,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/soft-shadow.ts",
+      "line": 49,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/soft-shadow.ts",
+      "line": 462,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/soft-shadow.ts",
+      "line": 464,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/surface-cache.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 418,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/traced-reflections.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 408,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/two-sided-foliage.ts",
+      "line": 14,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/render/two-sided-foliage.ts",
+      "line": 81,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/render/two-sided-foliage.ts",
+      "line": 107,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/velocity.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 442,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow-level.ts",
+      "line": 12,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow-level.ts",
+      "line": 193,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow-level.ts",
+      "line": 211,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow-level.ts",
+      "line": 217,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow-pages.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 932,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2903,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 1582,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 1660,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 1709,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 1955,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2032,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2034,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2172,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2283,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2303,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/virtual-shadow.ts",
+      "line": 2747,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/world-impostor-surface.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1300,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/render/world-impostor-surface.ts",
+      "line": 255,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/render/world-impostor.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 561,
+      "threshold": 400
+    },
+    {
       "file": "packages/core/src/renderer.ts",
-      "line": 6,
+      "line": 1,
+      "signal": "file-length",
+      "value": 2284,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/renderer.ts",
+      "line": 87,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
       "file": "packages/core/src/renderer.ts",
-      "line": 134,
-      "signal": "interface-in-disguise",
-      "value": "object type alias",
-      "threshold": "interface"
-    },
-    {
-      "file": "packages/core/src/renderer.ts",
-      "line": 223,
+      "line": 1551,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
+    },
+    {
+      "file": "packages/core/src/renderProjection.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 836,
+      "threshold": 800
     },
     {
       "file": "packages/core/src/replay-protocol.ts",
@@ -241,11 +1214,74 @@
       "threshold": "interface"
     },
     {
+      "file": "packages/core/src/resolution-scaler.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 878,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/ripple-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 432,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/scatter-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 497,
+      "threshold": 400
+    },
+    {
       "file": "packages/core/src/scene.ts",
-      "line": 45,
+      "line": 66,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
+    },
+    {
+      "file": "packages/core/src/snow-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 792,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/softbody-skinned.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1533,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/softbody-skinned.ts",
+      "line": 222,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/softbody-skinned.ts",
+      "line": 230,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/softbody.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 642,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/reaction-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 415,
+      "threshold": 400
     },
     {
       "file": "packages/core/src/spells/ultra/engine/camera.ts",
@@ -470,6 +1506,62 @@
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1195,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 248,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 251,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 532,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 538,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 976,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1151,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "line": 1179,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
     },
     {
       "file": "packages/core/src/spells/ultra/vfx/FluidVolume.ts",
@@ -855,6 +1947,27 @@
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 441,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 199,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
+      "line": 210,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
     },
     {
       "file": "packages/core/src/spells/ultra/vfx/Particles.ts",
@@ -1263,106 +2376,470 @@
       "threshold": 1
     },
     {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
+      "file": "packages/core/src/startup-readiness.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1195,
-      "threshold": 800
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 248,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 251,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 532,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 538,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 976,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 1151,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/common.ts",
-      "line": 1179,
-      "signal": "suppression/unknown-cast",
-      "value": "as unknown as",
-      "threshold": 10
-    },
-    {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 1,
-      "signal": "file-length",
-      "value": 441,
+      "value": 615,
       "threshold": 400
     },
     {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 199,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
+      "file": "packages/core/src/storage-buffer.ts",
+      "line": 81,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
     },
     {
-      "file": "packages/core/src/spells/ultra/vfx/noise.ts",
-      "line": 210,
-      "signal": "suppression/biome-ignore",
-      "value": "biome-ignore",
-      "threshold": 1
+      "file": "packages/core/src/streamed-textures.ts",
+      "line": 29,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/vfx/index.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 661,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/vfx/particles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 488,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/vfx/presets.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2003,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/vfx/presets.ts",
+      "line": 19,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/core/src/vfx/presets.ts",
+      "line": 27,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
     },
     {
       "file": "packages/core/src/viewport.ts",
-      "line": 184,
+      "line": 185,
       "signal": "suppression/biome-ignore",
       "value": "biome-ignore",
       "threshold": 1
     },
     {
-      "file": "packages/create-threenative/src/build.ts",
+      "file": "packages/core/src/warmup.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1503,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 180,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 300,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 348,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 351,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 363,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 366,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/water-surface.ts",
+      "line": 385,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/wave-field.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 524,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/wave-field.ts",
+      "line": 494,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/wave-field.ts",
+      "line": 515,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker-audio.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 579,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/worker-audio.ts",
+      "line": 405,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 906,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 267,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 281,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 349,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 513,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/worker.ts",
+      "line": 586,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/core/src/world-bundle-safety.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 446,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-batches.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1288,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-chunks.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1128,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-data.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1002,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-impostors.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1461,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-models.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1102,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-placements.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 798,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-prewarm.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 587,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-records.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 401,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-render-bundles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 462,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-render-gpu-dress.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 725,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-render-main-cull.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 540,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cell-render.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1501,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-cell-residency.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 754,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-cells.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1489,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-gpu-readback.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 881,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-gpu-reference.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 524,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-gpu-scene.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1324,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-gpu-types.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 409,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-gpu-types.ts",
+      "line": 90,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/world-gpu-types.ts",
+      "line": 355,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/core/src/world-gpu-validation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 518,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-heightfield.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 802,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-package.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 511,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-passes.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 582,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-terrain-splat.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 772,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-tile-geometry.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 469,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-tile-lod.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 408,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-tile-observation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 566,
+      "threshold": 400
+    },
+    {
+      "file": "packages/core/src/world-tiles.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2321,
+      "threshold": 800
+    },
+    {
+      "file": "packages/core/src/world-water-bodies.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 469,
+      "threshold": 400
+    },
+    {
+      "file": "packages/create-threenative/src/asset-library/client/main.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1701,
+      "threshold": 800
+    },
+    {
+      "file": "packages/create-threenative/src/asset-library/client/settings.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 535,
+      "threshold": 400
+    },
+    {
+      "file": "packages/create-threenative/src/asset-library/client/viewers.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 616,
+      "threshold": 400
+    },
+    {
+      "file": "packages/create-threenative/src/asset-library/plugin.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 678,
+      "threshold": 400
+    },
+    {
+      "file": "packages/create-threenative/src/asset-library/project-source.ts",
       "line": 1,
       "signal": "file-length",
       "value": 417,
       "threshold": 400
     },
     {
-      "file": "packages/create-threenative/src/config.ts",
+      "file": "packages/create-threenative/src/build.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1107,
+      "value": 2270,
       "threshold": 800
     },
     {
       "file": "packages/create-threenative/src/config.ts",
-      "line": 93,
+      "line": 1,
+      "signal": "file-length",
+      "value": 2142,
+      "threshold": 800
+    },
+    {
+      "file": "packages/create-threenative/src/config.ts",
+      "line": 215,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
@@ -1371,47 +2848,89 @@
       "file": "packages/create-threenative/src/doctor.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 467,
-      "threshold": 400
+      "value": 2819,
+      "threshold": 800
     },
     {
       "file": "packages/create-threenative/src/index.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 528,
-      "threshold": 400
+      "value": 1478,
+      "threshold": 800
     },
     {
       "file": "packages/create-threenative/src/inspect.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 410,
+      "value": 526,
       "threshold": 400
     },
     {
       "file": "packages/create-threenative/src/inspect.ts",
-      "line": 91,
+      "line": 120,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/create-threenative/src/inspect.ts",
-      "line": 92,
+      "line": 121,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
       "file": "packages/create-threenative/src/inspect.ts",
-      "line": 96,
+      "line": 125,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
+    },
+    {
+      "file": "packages/create-threenative/src/web-brand.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 497,
+      "threshold": 400
+    },
+    {
+      "file": "packages/create-threenative/src/web-engine.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 492,
+      "threshold": 400
     },
     {
       "file": "packages/engine-mcp/src/index.ts",
-      "line": 92,
+      "line": 1,
+      "signal": "file-length",
+      "value": 1736,
+      "threshold": 800
+    },
+    {
+      "file": "packages/engine-mcp/src/index.ts",
+      "line": 412,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/engine-mcp/src/references.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 665,
+      "threshold": 400
+    },
+    {
+      "file": "packages/metahuman/src/metahuman.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 626,
+      "threshold": 400
+    },
+    {
+      "file": "packages/metahuman/src/metahuman.ts",
+      "line": 196,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -1431,57 +2950,85 @@
       "threshold": "interface"
     },
     {
+      "file": "packages/physics/src/CharacterBody3D.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 538,
+      "threshold": 400
+    },
+    {
       "file": "packages/physics/src/native/host.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 606,
-      "threshold": 400
+      "value": 979,
+      "threshold": 800
+    },
+    {
+      "file": "packages/physics/src/native/wasm-host.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 954,
+      "threshold": 800
     },
     {
       "file": "packages/physics/src/navigation/NavigationAgent3D.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 452,
+      "value": 466,
       "threshold": 400
     },
     {
       "file": "packages/physics/src/plugin.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 453,
+      "value": 534,
       "threshold": 400
     },
     {
       "file": "packages/physics/src/simulation.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 1244,
+      "value": 1904,
       "threshold": 800
     },
     {
       "file": "packages/physics/src/simulation.ts",
-      "line": 532,
+      "line": 761,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
     },
     {
+      "file": "packages/physics/src/snow.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 638,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/assertion-report.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 448,
+      "threshold": 400
+    },
+    {
       "file": "packages/playtest/src/assertion-schema.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 514,
-      "threshold": 400
+      "value": 826,
+      "threshold": 800
     },
     {
       "file": "packages/playtest/src/evaluators/families-observation.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 403,
+      "value": 594,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/evaluators/families-observation.ts",
-      "line": 362,
+      "line": 553,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -1490,40 +3037,103 @@
       "file": "packages/playtest/src/evaluators/measures.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 576,
+      "value": 581,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/evaluators/movement-evidence.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 605,
+      "value": 612,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/evaluators/render-evidence.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 449,
+      "value": 639,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/evaluators/world-gameplay.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 628,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/protocol.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 781,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/android.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 424,
+      "value": 1218,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/audio.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 797,
       "threshold": 400
     },
     {
-      "file": "packages/playtest/src/runner/androidRunner.ts",
+      "file": "packages/playtest/src/runner/bridgeClient.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 688,
+      "value": 437,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/cli.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 500,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/config.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 550,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/desktop.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 403,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/deviceMetrics.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 456,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/deviceRunner.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1298,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/deviceTransport.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 435,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/deviceTransport.ts",
-      "line": 299,
+      "line": 375,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -1543,43 +3153,148 @@
       "threshold": 10
     },
     {
-      "file": "packages/playtest/src/runner/runner.ts",
+      "file": "packages/playtest/src/runner/linuxCpuWindow.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 630,
+      "value": 578,
       "threshold": 400
     },
     {
-      "file": "packages/playtest/src/runner/runner.ts",
-      "line": 162,
+      "file": "packages/playtest/src/runner/measure-resolution-scale.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 402,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/observationSampling.ts",
+      "line": 154,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
-      "file": "packages/playtest/src/runner/sampling.ts",
+      "file": "packages/playtest/src/runner/perf.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 649,
+      "value": 1812,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/pipeline-cache-observations.ts",
+      "line": 50,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/pipeline-summary.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1597,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/resolution-scale-probe.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 417,
       "threshold": 400
     },
     {
+      "file": "packages/playtest/src/runner/runner-support.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 512,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1085,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 820,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/runner.ts",
+      "line": 825,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
       "file": "packages/playtest/src/runner/sampling.ts",
-      "line": 233,
-      "signal": "interface-in-disguise",
-      "value": "object type alias",
-      "threshold": "interface"
+      "line": 1,
+      "signal": "file-length",
+      "value": 926,
+      "threshold": 800
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 366,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 460,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 534,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 536,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 589,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 639,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/sampling.ts",
+      "line": 742,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
     },
     {
       "file": "packages/playtest/src/runner/sceneOverview.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 568,
+      "value": 659,
       "threshold": 400
     },
     {
       "file": "packages/playtest/src/runner/sceneOverview.ts",
-      "line": 483,
+      "line": 572,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -1588,47 +3303,68 @@
       "file": "packages/playtest/src/runner/steps.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 710,
-      "threshold": 400
+      "value": 1068,
+      "threshold": 800
     },
     {
       "file": "packages/playtest/src/runner/steps.ts",
-      "line": 559,
+      "line": 717,
       "signal": "interface-in-disguise",
       "value": "object type alias",
       "threshold": "interface"
     },
     {
       "file": "packages/playtest/src/runner/steps.ts",
-      "line": 675,
+      "line": 908,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
+    },
+    {
+      "file": "packages/playtest/src/runner/trace.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 661,
+      "threshold": 400
+    },
+    {
+      "file": "packages/playtest/src/runner/traceRun.ts",
+      "line": 168,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/playtest/src/runner/traceRun.ts",
+      "line": 172,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
     },
     {
       "file": "packages/playtest/src/scenario/schema-accessors.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 660,
-      "threshold": 400
+      "value": 1390,
+      "threshold": 800
     },
     {
       "file": "packages/playtest/src/scenario/schema-base.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 422,
-      "threshold": 400
+      "value": 909,
+      "threshold": 800
     },
     {
       "file": "packages/playtest/src/scenario/schema-validate.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 946,
+      "value": 1544,
       "threshold": 800
     },
     {
       "file": "packages/playtest/src/three/device.ts",
-      "line": 321,
+      "line": 374,
       "signal": "suppression/unknown-cast",
       "value": "as unknown as",
       "threshold": 10
@@ -1648,11 +3384,102 @@
       "threshold": 10
     },
     {
-      "file": "packages/runtime-native/src",
+      "file": "packages/procedural-environment/src/asset-library.ts",
       "line": 1,
-      "signal": "lint-coverage-hole",
-      "value": "ignored",
-      "threshold": "linted"
+      "signal": "file-length",
+      "value": 844,
+      "threshold": 800
+    },
+    {
+      "file": "packages/procedural-environment/src/city.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 850,
+      "threshold": 800
+    },
+    {
+      "file": "packages/procedural-environment/src/dungeon/props.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 443,
+      "threshold": 400
+    },
+    {
+      "file": "packages/procedural-environment/src/dungeon/scene.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 402,
+      "threshold": 400
+    },
+    {
+      "file": "packages/procedural-environment/src/index.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1633,
+      "threshold": 800
+    },
+    {
+      "file": "packages/procedural-environment/src/toybox/kit.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 460,
+      "threshold": 400
+    },
+    {
+      "file": "packages/procedural-environment/src/toybox/parts.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1887,
+      "threshold": 800
+    },
+    {
+      "file": "packages/procedural-environment/src/village/buildings.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 442,
+      "threshold": 400
+    },
+    {
+      "file": "packages/procedural-environment/src/village/interiors.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 515,
+      "threshold": 400
+    },
+    {
+      "file": "packages/procedural-environment/src/workshop.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1391,
+      "threshold": 800
+    },
+    {
+      "file": "packages/raw-unreal/src/static-mesh.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 600,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/biome/biome.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 713,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/core/io.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 449,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/core/math.ts",
+      "line": 39,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
     },
     {
       "file": "packages/terrain/src/core/operations.ts",
@@ -1662,11 +3489,802 @@
       "threshold": 800
     },
     {
+      "file": "packages/terrain/src/core/terrain.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 458,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/core/terrain.ts",
+      "line": 23,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/terrain/src/core/types.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 594,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/core/validation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 587,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/app/evaluation.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 477,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/assets.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 548,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/assets.ts",
+      "line": 404,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/terrain/src/editor/cameras.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 439,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/saveQueue.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 433,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/selection.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 487,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/server.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 782,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/shell-layout.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 443,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/editor/spatialInspector.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 525,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/export.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 416,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/ground/ground.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 523,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/ground/massif.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 408,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/kit-world.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 524,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/mcp/tools.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 413,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/population/placement-edits.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 487,
+      "threshold": 400
+    },
+    {
       "file": "packages/terrain/src/population/scatter-ordered.ts",
       "line": 1,
       "signal": "file-length",
-      "value": 963,
+      "value": 846,
       "threshold": 800
+    },
+    {
+      "file": "packages/terrain/src/request/generate-request.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 432,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/runtime/diagnostics.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 565,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/runtime/measure.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 528,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/runtime/prop-world.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 712,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/starter.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 652,
+      "threshold": 400
+    },
+    {
+      "file": "packages/terrain/src/water/stages.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 444,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/addons/decal.ts",
+      "line": 58,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/decal.ts",
+      "line": 158,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/gltf-loader-web.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 433,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/addons/gltf-loader-web.ts",
+      "line": 13,
+      "signal": "suppression/ts-directive",
+      "value": "@ts-*",
+      "threshold": 0
+    },
+    {
+      "file": "packages/three-native/src/addons/hdr-loader.ts",
+      "line": 11,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/three-native/src/addons/hdr-loader.ts",
+      "line": 19,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/addons/lut-cube-loader-web.ts",
+      "line": 7,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/addons/merge-geometries.ts",
+      "line": 114,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/merge-geometries.ts",
+      "line": 117,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/post-effects-web.ts",
+      "line": 7,
+      "signal": "suppression/ts-directive",
+      "value": "@ts-*",
+      "threshold": 0
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 907,
+      "threshold": 800
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 22,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 28,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 31,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 34,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/addons/screen-space.ts",
+      "line": 37,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 618,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 33,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 36,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 39,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 75,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 150,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/audio.ts",
+      "line": 237,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-abi-types.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 663,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/browser-abi-types.ts",
+      "line": 288,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-abi-types.ts",
+      "line": 403,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-attribute-sync.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 428,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/browser-backend.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 2072,
+      "threshold": 800
+    },
+    {
+      "file": "packages/three-native/src/browser-entry.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 445,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/browser-entry.ts",
+      "line": 59,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-entry.ts",
+      "line": 227,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-entry.ts",
+      "line": 335,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-math.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 481,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/browser-renderer.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1384,
+      "threshold": 800
+    },
+    {
+      "file": "packages/three-native/src/browser-renderer.ts",
+      "line": 1335,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 1020,
+      "threshold": 800
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 447,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 640,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 676,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 678,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 732,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 791,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-tsl.ts",
+      "line": 889,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 634,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 80,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 83,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 86,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 99,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 119,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 132,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 148,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 168,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 486,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-value-views.ts",
+      "line": 526,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/browser-wasm-runtime.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 566,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/catalog.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 497,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/debug-telemetry.ts",
+      "line": 38,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/three-native/src/fixture-format.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 721,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/fixture-native.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 426,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/math-utils.ts",
+      "line": 13,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/math-utils.ts",
+      "line": 16,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/object-surface.ts",
+      "line": 169,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/object-surface.ts",
+      "line": 203,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/pass-node.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 720,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/pass-node.ts",
+      "line": 69,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/pass-node.ts",
+      "line": 276,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/pass-node.ts",
+      "line": 281,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/pass-node.ts",
+      "line": 438,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/property-binding.ts",
+      "line": 37,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/reflector.ts",
+      "line": 32,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/reflector.ts",
+      "line": 35,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/render-target.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 610,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/rtt.ts",
+      "line": 15,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/rtt.ts",
+      "line": 18,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/rtt.ts",
+      "line": 23,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/storage.ts",
+      "line": 55,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/three-native/src/temp-node.ts",
+      "line": 6,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/temp-node.ts",
+      "line": 9,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/temp-node.ts",
+      "line": 12,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/temp-node.ts",
+      "line": 15,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/tsl-extras.ts",
+      "line": 12,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/tsl-extras.ts",
+      "line": 70,
+      "signal": "suppression/biome-ignore",
+      "value": "biome-ignore",
+      "threshold": 1
+    },
+    {
+      "file": "packages/three-native/src/tsl-uniforms.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 672,
+      "threshold": 400
+    },
+    {
+      "file": "packages/three-native/src/tsl-uniforms.ts",
+      "line": 471,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
+    },
+    {
+      "file": "packages/three-native/src/tsl-uniforms.ts",
+      "line": 497,
+      "signal": "suppression/unknown-cast",
+      "value": "as unknown as",
+      "threshold": 10
+    },
+    {
+      "file": "packages/ueformat/src/three-adapter.ts",
+      "line": 1,
+      "signal": "file-length",
+      "value": 403,
+      "threshold": 400
+    },
+    {
+      "file": "packages/ui/src/DebugOverlay.tsx",
+      "line": 1,
+      "signal": "file-length",
+      "value": 501,
+      "threshold": 400
+    },
+    {
+      "file": "packages/ui/src/DebugOverlay.tsx",
+      "line": 10,
+      "signal": "interface-in-disguise",
+      "value": "object type alias",
+      "threshold": "interface"
     },
     {
       "file": "packages/ui/src/useGameState.ts",
