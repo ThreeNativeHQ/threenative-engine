@@ -13550,6 +13550,12 @@
       ]
     },
     {
+      "blurb": "A grey-grid temple of block-grid jumps: run with a turn ramp, standing and running jumps, mid-air ledge grab, hang, shimmy, climb, swimming on an air meter, fall damage, a relic and a blade trap.",
+      "name": "tomb-explorer",
+      "title": "Tomb explorer",
+      "words": ["tomb-explorer", "tomb-raider", "tombraider", "lara-croft", "tomb-exploration"]
+    },
+    {
       "blurb": "Four towers with three upgrade levels, twelve waves, two bosses and an orbital strike on a mossy diorama.",
       "name": "tower-defense",
       "title": "Tower defense",

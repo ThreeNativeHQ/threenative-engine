@@ -1,0 +1,130 @@
+{
+  "name": "run-turn-ramp",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "start",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 2,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "ramping",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 38,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "run-cap",
+      "press": ["ArrowUp", "ArrowRight"],
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "released",
+      "waitTicks": 40,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "walking",
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
+      "holdTicks": 50,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "walk-cap",
+      "press": ["ArrowUp", "ArrowRight", "ShiftLeft"],
+      "holdTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "turnRate",
+        "atSteps": [
+          {
+            "label": "start",
+            "lte": 818
+          },
+          {
+            "label": "run-cap",
+            "equals": 1456
+          },
+          {
+            "label": "released",
+            "equals": 0
+          },
+          {
+            "label": "walk-cap",
+            "equals": 728
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lean",
+        "atSteps": [
+          {
+            "label": "run-cap",
+            "equals": 2002
+          },
+          {
+            "label": "released",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "mode",
+        "atSteps": [
+          {
+            "label": "run-cap",
+            "equals": "run"
+          },
+          {
+            "label": "walk-cap",
+            "equals": "walk"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "yaw",
+        "changed": true
+      }
+    ]
+  }
+}

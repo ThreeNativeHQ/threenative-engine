@@ -80,6 +80,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -132,6 +133,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -191,6 +193,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -228,7 +231,8 @@
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -269,7 +273,8 @@
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -304,6 +309,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -349,6 +355,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -383,6 +390,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -420,6 +428,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -521,6 +530,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },

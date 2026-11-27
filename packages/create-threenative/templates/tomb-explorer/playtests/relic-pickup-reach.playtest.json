@@ -1,0 +1,139 @@
+{
+  "name": "relic-pickup-reach",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "too-far",
+      "press": "KeyE",
+      "holdTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "nothing",
+      "waitTicks": 10,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "take",
+      "press": "KeyE",
+      "holdTicks": 4,
+      "release": true
+    },
+    {
+      "label": "walking-up",
+      "waitForResource": {
+        "id": "state",
+        "path": "mode",
+        "equals": "pickup"
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "label": "taken",
+      "waitForResource": {
+        "id": "state",
+        "path": "relic",
+        "equals": 1
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "label": "done",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "won"
+      },
+      "release": false,
+      "timeoutMs": 8000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "relic",
+        "atSteps": [
+          {
+            "label": "nothing",
+            "equals": 0
+          },
+          {
+            "label": "taken",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "mode",
+        "atSteps": [
+          {
+            "label": "nothing",
+            "equals": "idle"
+          },
+          {
+            "label": "walking-up",
+            "equals": "pickup"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "done",
+            "equals": "won"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "player",
+        "component": "clip",
+        "atSteps": [
+          {
+            "label": "taken",
+            "equals": "PickUp_Table"
+          }
+        ]
+      }
+    ]
+  }
+}

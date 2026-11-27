@@ -1089,6 +1089,29 @@
       "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   },
+  "tomb-explorer": {
+    "subject": "player",
+    "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
+    "explore": { "actions": ["ShiftLeft", "Space", "KeyE"] },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "health", "equals": 1000 },
+        { "id": "state", "path": "air", "equals": 1800 },
+        { "id": "state", "path": "relic", "equals": 0 },
+        { "id": "state", "path": "grabs", "equals": 0 },
+        { "id": "state", "path": "climbs", "equals": 0 },
+        { "id": "state", "path": "jumps", "equals": 0 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
+      "action-clip-completes": "a jump, a grab and a pick-up each need a ledge, a wall or the relic in reach, so no key plays a clip from a standstill; each is proven by its own scenario (standing-jump-clears-one-gap, ledge-grab-hang-shimmy-climb, relic-pickup-reach)",
+      "effect-follows-contact": "the blade is a procedural mesh with a timed damage window and no hit effect to follow; blade-rhythm proves the timing",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "tower-defense": {
     "subject": "camera.main",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

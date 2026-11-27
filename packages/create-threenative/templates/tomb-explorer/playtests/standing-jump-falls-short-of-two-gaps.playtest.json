@@ -1,0 +1,102 @@
+{
+  "name": "standing-jump-falls-short-of-two-gaps",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit0",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "jump",
+      "press": ["ArrowUp", "Space"],
+      "holdTicks": 12,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fell",
+      "waitTicks": 100,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "playerY",
+        "atSteps": [
+          {
+            "label": "fell",
+            "equals": 2048
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "playerZ",
+        "atSteps": [
+          {
+            "label": "fell",
+            "lte": 10240
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "fell",
+            "equals": 1000
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "fallDamage",
+        "atSteps": [
+          {
+            "label": "fell",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "landingSpeed",
+        "atSteps": [
+          {
+            "label": "fell",
+            "lte": 139
+          }
+        ]
+      }
+    ]
+  }
+}
