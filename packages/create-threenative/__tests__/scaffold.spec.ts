@@ -129,7 +129,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "car-combat": {
     shared: "6bf8d11c90c82982ea30ed7949f18df69919d66cd2d684d3ff35fa33d05213d8",
-    kit: "713990d23a397d0be34eab89e40e0e5a5e9fc1e01f3d012f351704ee575ce540",
+    kit: "4c8d7aedd0a13fd9a02d95cd638d8983c99eda4005eb495009a94bb53e5edd59",
   },
   collectathon: {
     shared: "1f869f3b18f7250844e4082ab540e0786dee8afe8a674a6d43814d71aba80551",
@@ -141,7 +141,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   flight: {
     shared: "6872b2098902427199a8908ab1b91aa8066f2f789f1e7201e87c4f46d430cddc",
-    kit: "280c65df5b193a149d614ca658926d83cfe06d51e3287ac71c8931e56a0c1dba",
+    kit: "b8f195be34bc97fd768414707d89c6881143a43347d09c2c2ec624a9bb61f097",
   },
   kart: {
     shared: "569637a895d87732019029c803ad9f7acdb544408c906d31d9464fab17ee3c32",
@@ -149,7 +149,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "military-shooter": {
     shared: "a9abb2f7b8325ee07085e9bfe355b497cf05246a065c244ba4b54c9746bc3b07",
-    kit: "ae8cd0554e7e445aa86d0d31e5f7745c5336ec826560195ae5e7ed7edd6056f4",
+    kit: "73d1e0a70ff8fff499e9f69bb20ae36678e2426bea2016cc534af8b89f4f1487",
   },
   minimal: {
     shared: "4d950a19093038a9ceb833599bb3dbb6c9eec81cf824580b1a0a82f89406c9fc",
@@ -189,7 +189,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   rpg: {
     shared: "ce2a8690ceda9601d8a44f3010a52230d4f6918b1a29f5b0da126aa8f6162e00",
-    kit: "c012b214bd019ed8c014ab2bbb5df2eed26e591911eee8466c119564af4b6ccb",
+    kit: "0704e9f4c4507a8cc0ba76adee3e209b49b03a687b53028b893764554c67310b",
   },
   rts: {
     shared: "2c006b09658fbaa546ab73a5b317af24406589aaaddff0def7b40e488db9eaec",

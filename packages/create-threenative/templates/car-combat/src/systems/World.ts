@@ -67,6 +67,8 @@ export class World {
           nastiness: driver.nastiness,
           objective: driver.objective,
         }),
+        // The playtest bridge reads an entity's position off its `mesh`.
+        mesh: car.mesh,
       });
       const driver = new RivalDriver(car, NASTINESS[index] as number, slot.s, () => this.#random());
       this.rivals.push(driver);

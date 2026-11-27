@@ -77,7 +77,8 @@
       {
         "entity": "player",
         "component": "rpm",
-        "lte": 7500
+        "lte": 7500,
+        "changed": true
       }
     ]
   }

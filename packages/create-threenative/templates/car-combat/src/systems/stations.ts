@@ -52,19 +52,20 @@ export const STATIONS: readonly Station[] = [
     put(world.player, 6, 0, 24);
     target(world, 0, 32);
   },
-  // 4 wreck-last: one rival one hit from a wreck.
+  // 4 wreck-last: one rival one hit from a wreck. The player closes on its tail, so the tail's
+  // part, the transmission, is the one worn down.
   (world) => {
     isolate(world);
     put(world.player, 6, 0, 24);
     const rival = target(world, 0, 32);
-    rival.damage.parts.engine = 92;
+    rival.damage.parts.transmission = 92;
   },
   // 5 win-wreck: two rivals already wrecked, the third one hit from it.
   (world) => {
     isolate(world);
     put(world.player, 6, 0, 24);
     const rival = target(world, 0, 32);
-    rival.damage.parts.engine = 92;
+    rival.damage.parts.transmission = 92;
     for (const index of [1, 2]) world.rivals[index]?.car.wreck();
   },
   // 6 repair: stopped on a pad with damaged parts and a crumpled panel.
