@@ -4,7 +4,7 @@ prd_contract: v1
 
 # PRD-927 — Windows native builds pack on the Linux farm, so Windows Midway ships with no paid runner
 
-**Status:** NOT STARTED
+**Status:** NOT STARTED (Windows pixels proven by a probe; the Windows UI overlay is missing)
 **Priority:** P1 — Windows players get no native ThreeNative game until this ships. Owner, 2026-11-27: "sort out any blockers on windows too" and "ignore CI, i wont pay anything".
 **Complexity:** 7 (HIGH) — engine CLI option (+1), store builder and farm workflow (+2), crosses the engine/store release boundary (+2), a Windows binary packed on Linux must still start on Windows (+2, risk: no Windows machine on the LAN).
 **Owner:** João
@@ -17,6 +17,8 @@ prd_contract: v1
 - ❌ The store farm builds `windows-x64` on hosted `windows-latest`. Hosted Actions on the private store repo are unpaid, so the job never starts. Production has `settings.windows_builds_enabled=0` (site D1) so a release does not wait on it.
 - ✅ The trusted local runner (`tn-store-trusted`, Linux) builds admin-owned games today. It cannot run a Windows job.
 - ✅ The prebuilt download already takes a platform: `ensureNativeBinary(options.platform)` (`packages/runtime-native/scripts/install-prebuilt.mjs:322`), and the Windows engine player is `threenative-engine-player-win32-x64.exe` (`install-prebuilt.mjs:34`).
+- ✅ **Windows pixels, measured 2026-11-27**: Midway built natively on hosted `windows-2025` (temporary probe, `ThreeNativeHQ/threenative-sandbox` run 46071510937) renders the carrier deck, plane, crew, ocean and sky for 110 s with no crash: Dawn D3D12 on the Microsoft Basic Render Driver (no GPU), 383 frames. Screenshot: `~/Downloads/windows-midway-probe/desktop-110s.png`. Under Wine on Linux the same player loads and runs 150 s but draws nothing on Xvfb.
+- ❌ **Windows UI, the real blocker**: the published win32-x64 engine player has no web-UI overlay and no native-css backend. `threenative build --target desktop` refuses a game with `ui.renderer: "web"` on Windows (`TN_ENGINE_PLAYER_UI_UNSUPPORTED`, `packages/create-threenative/src/build.ts:1742`), and Midway's HUD is a web HUD. The probe reached pixels only by switching the HUD off in its CI copy.
 - ❌ `threenative build --target desktop` packs only for `process.platform` (`desktop-distribution.mjs:129` `desktopTargetKey()` defaults). A Windows game folder is game JS plus the engine player `.exe` and its DLLs (`desktop-distribution.mjs:268` reads `SystemRoot` for DLL discovery, which is Windows only).
 
 ## Solution
@@ -33,6 +35,7 @@ prd_contract: v1
 - [ ] AC-1 [local]: On Linux, `threenative build --target desktop --platform win32-x64` in Midway writes a folder whose file list and player sha256 match a Windows-host build of the same commit (the engine CI `clean-consumer-windows` artifact). proof: the file-list diff and the sha256 line.
 - [ ] AC-2 [local]: `tn-store-builder build --platform windows-x64` on Linux packs Midway, and the packed `.exe` starts the game under Wine for 300 frames, or, if Wine cannot run the WebGPU player, the AC records that and AC-3 carries the start proof. proof: the run log.
 - [ ] AC-3 [shared]: A Windows machine (owner's, a VM, or one paid hosted run the owner approves) installs Midway from the production launcher and starts it. proof: screenshot in `~/Downloads/prd-927`.
+- [ ] AC-5 [local]: The win32-x64 engine player attaches the web UI (WebView2) or native-css, so Midway builds for Windows with `ui.renderer: "web"` and its HUD shows on a hosted `windows-2025` desktop capture. proof: the capture and `TN_UI_OVERLAY` attached true.
 - [ ] AC-4 [shared]: Production: `windows_builds_enabled` is back on, a Midway deploy builds `windows-x64` on the trusted Linux runner, and the release reaches live with both platforms built. proof: the farm run ids.
 
 ## Blocked on
@@ -45,6 +48,8 @@ prd_contract: v1
 **Status:** NOT STARTED (AC-1)
 **Files:** `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/create-threenative/src/` (the `--platform` flag), one spec in `packages/runtime-native/__tests__/`.
 - [ ] A Linux pack of Midway for `win32-x64` matches the Windows-host folder — proof: AC-1 — covers AC-1.
+
+- [ ] The win32 player shows Midway's web HUD — proof: AC-5 — covers AC-5.
 
 #### Phase 2: Store builder and farm
 **Status:** NOT STARTED (AC-2)
