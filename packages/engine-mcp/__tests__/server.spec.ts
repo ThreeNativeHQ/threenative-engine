@@ -84,7 +84,7 @@ describe("threenative-engine-mcp stdio contract", async () => {
         capabilities: { tools: { listChanged: false } },
         instructions: expect.stringContaining("threenative-capabilities"),
         protocolVersion: "2025-06-18",
-        serverInfo: { name: "threenative-engine-mcp", version: "0.2.25" },
+        serverInfo: { name: "threenative-engine-mcp", version: "0.2.26" },
       },
     });
   });
