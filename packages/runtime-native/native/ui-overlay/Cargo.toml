@@ -32,14 +32,18 @@ webkit2gtk = { version = "2.0", features = ["v2_40"] }
 # names an existing crate rather than adding one.
 javascriptcore-rs = "1.1"
 
-# Windows shapes the wry container HWND itself, which needs the WebView2 controller and the
-# GDI region calls. Versions match wry 0.48's own so the `ICoreWebView2Controller` type is the
-# same one `WebViewExtWindows::controller` returns.
+# Windows hosts WebView2 as a DirectComposition visual over the game's swapchain (`src/windows.rs`)
+# and routes the pointer in the game's window procedure. Versions match wry 0.48's own, so the
+# WebView2 loader this build stages is the one wry would have linked.
 [target.'cfg(target_os = "windows")'.dependencies]
 webview2-com = "0.34"
 windows = { version = "0.58", features = [
     "Win32_Foundation",
+    "Win32_Graphics_DirectComposition",
+    "Win32_Graphics_Dxgi",
     "Win32_Graphics_Gdi",
+    "Win32_System_Com",
+    "Win32_System_WinRT",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_WindowsAndMessaging",
 ] }

@@ -5,9 +5,11 @@
 //!
 //! - Linux renders WebKit offscreen on its own thread; `abi` supplies its newest pixels to the
 //!   game's compositor and routes input through the page's published hit regions.
-//! - Windows and macOS composite a child web view themselves, so `desktop` attaches one straight
-//!   to the game window and implements the hit-region protocol where each OS puts it — a GDI
-//!   window region on Windows, an `NSView` hit test on macOS.
+//! - macOS composites a child web view itself, so `desktop` attaches one straight to the game
+//!   window and answers the hit-region protocol in an `NSView` hit test.
+//! - Windows hosts WebView2 as a DirectComposition visual over the game's swapchain (`windows`),
+//!   because a child window's transparent pixels show black over it, and routes the pointer in the
+//!   game's window procedure.
 //!
 //! Both implement the one C ABI in `include/mystral/platform/ui_overlay.h`, so the C++ host and
 //! the page see the same contract on every platform.
@@ -18,8 +20,11 @@ pub mod abi;
 #[cfg(target_os = "linux")]
 pub mod offscreen;
 
-#[cfg(not(target_os = "linux"))]
+#[cfg(target_os = "macos")]
 pub mod desktop;
+
+#[cfg(windows)]
+pub mod windows;
 
 use std::cell::RefCell;
 
