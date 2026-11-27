@@ -114,7 +114,11 @@
     "start": [
       {
         "label": "ready",
-        "waitForResource": { "id": "state", "path": "time", "gte": 0.5 },
+        "waitForResource": {
+          "id": "state",
+          "path": "time",
+          "gte": 0.5
+        },
         "release": false,
         "timeoutMs": 5000
       }
@@ -125,12 +129,36 @@
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "turn", "equals": 1 },
-        { "id": "state", "path": "die", "equals": 0 },
-        { "id": "state", "path": "players.0.stars", "equals": 0 },
-        { "id": "state", "path": "players.0.coins", "equals": 10 },
-        { "id": "state", "path": "time", "lte": 1 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "turn",
+          "equals": 1
+        },
+        {
+          "id": "state",
+          "path": "die",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "players.0.stars",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "players.0.coins",
+          "equals": 10
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
       ]
     },
     "actions": [
@@ -215,7 +243,9 @@
         "clip": "Sword_Attack",
         "ticks": 42,
         "contactTicks": 21,
-        "effect": { "signal": "tilled" }
+        "effect": {
+          "signal": "tilled"
+        }
       }
     ],
     "optOut": {
@@ -358,15 +388,37 @@
   "open-world": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
-    "explore": { "actions": ["ShiftLeft", "Space", "KeyQ", "KeyE"] },
+    "explore": {
+      "actions": ["ShiftLeft", "Space", "KeyQ", "KeyE"]
+    },
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "stars", "equals": 0 },
-        { "id": "state", "path": "money", "equals": 1200 },
-        { "id": "state", "path": "health", "equals": 100 },
-        { "id": "state", "path": "mode", "equals": "foot" }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "stars",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "money",
+          "equals": 1200
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        },
+        {
+          "id": "state",
+          "path": "mode",
+          "equals": "foot"
+        }
       ]
     },
     "actions": [
@@ -375,7 +427,9 @@
         "clip": "Punch_Jab",
         "ticks": 36,
         "contactTicks": 9,
-        "effect": { "signal": "punch" }
+        "effect": {
+          "signal": "punch"
+        }
       }
     ],
     "optOut": {
@@ -465,11 +519,31 @@
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "p1.stocks", "equals": 3 },
-        { "id": "state", "path": "cpu.stocks", "equals": 3 },
-        { "id": "state", "path": "p1.percent", "equals": 0 },
-        { "id": "state", "path": "time", "lte": 1 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "p1.stocks",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "cpu.stocks",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "p1.percent",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "time",
+          "lte": 1
+        }
       ]
     },
     "actions": [
@@ -478,10 +552,20 @@
         "clip": "Punch_Jab",
         "ticks": 19,
         "contactTicks": 6,
-        "effect": { "signal": "strike" }
+        "effect": {
+          "signal": "strike"
+        }
       },
-      { "key": "KeyK", "clip": "Sword_Attack", "ticks": 44 },
-      { "key": "ShiftLeft", "clip": "Roll", "ticks": 34 }
+      {
+        "key": "KeyK",
+        "clip": "Sword_Attack",
+        "ticks": 44
+      },
+      {
+        "key": "ShiftLeft",
+        "clip": "Roll",
+        "ticks": 34
+      }
     ],
     "optOut": {
       "foot-slip": "skinned rig whose sole nodes are not named, so footSlip cannot measure it yet; name the soles to join this row",
@@ -691,13 +775,41 @@
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "shield", "equals": 255 },
-        { "id": "state", "path": "score", "equals": 0 },
-        { "id": "state", "path": "kills", "equals": 0 },
-        { "id": "state", "path": "wave", "equals": 0 },
-        { "id": "state", "path": "gauge", "lte": 10 },
-        { "id": "state", "path": "railS", "lte": 40 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "shield",
+          "equals": 255
+        },
+        {
+          "id": "state",
+          "path": "score",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "kills",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "wave",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "gauge",
+          "lte": 10
+        },
+        {
+          "id": "state",
+          "path": "railS",
+          "lte": 40
+        }
       ]
     },
     "optOut": {
@@ -1025,12 +1137,36 @@
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "alertPhase", "equals": "infiltration" },
-        { "id": "state", "path": "alerts", "equals": 0 },
-        { "id": "state", "path": "takedowns", "equals": 0 },
-        { "id": "state", "path": "keycard", "equals": 0 },
-        { "id": "state", "path": "health", "equals": 100 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "alertPhase",
+          "equals": "infiltration"
+        },
+        {
+          "id": "state",
+          "path": "alerts",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "takedowns",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "keycard",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 100
+        }
       ]
     },
     "optOut": {
@@ -1092,17 +1228,47 @@
   "tomb-explorer": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],
-    "explore": { "actions": ["ShiftLeft", "Space", "KeyE"] },
+    "explore": {
+      "actions": ["ShiftLeft", "Space", "KeyE"]
+    },
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "health", "equals": 1000 },
-        { "id": "state", "path": "air", "equals": 1800 },
-        { "id": "state", "path": "relic", "equals": 0 },
-        { "id": "state", "path": "grabs", "equals": 0 },
-        { "id": "state", "path": "climbs", "equals": 0 },
-        { "id": "state", "path": "jumps", "equals": 0 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "health",
+          "equals": 1000
+        },
+        {
+          "id": "state",
+          "path": "air",
+          "equals": 1800
+        },
+        {
+          "id": "state",
+          "path": "relic",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "grabs",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "climbs",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "jumps",
+          "equals": 0
+        }
       ]
     },
     "optOut": {
@@ -1194,6 +1360,39 @@
         },
         "windows": 1
       }
+    }
+  },
+  "rhythm": {
+    "subject": "player",
+    "move": ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown"],
+    "explore": {
+      "actions": ["KeyZ", "KeyX"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "rung",
+          "equals": 3
+        },
+        {
+          "id": "state",
+          "path": "songBeat",
+          "lte": -2
+        }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "the performers dance in place on a fixed pad and never walk, so there is no ground speed to slip against",
+      "action-clip-completes": "the clip a press plays depends on its grade and the beat it lands on, not on its key; grade-poses proves each reaction clip",
+      "effect-follows-contact": "no melee or timed hit with a contact window: a press is graded against a note, which the timing-windows scenario proves",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
     }
   }
 }

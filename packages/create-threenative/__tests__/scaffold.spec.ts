@@ -135,6 +135,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "1f789056329eeafd40871d9119d5dd19eed1a1e3f4c8c13e9e9e46e1467b4c0c",
     kit: "66da18905676b8e26d37a628c735e01f9f57a0dc7826433c514dd74becf5951a",
   },
+  farming: {
+    shared: "1f789056329eeafd40871d9119d5dd19eed1a1e3f4c8c13e9e9e46e1467b4c0c",
+    kit: "66da18905676b8e26d37a628c735e01f9f57a0dc7826433c514dd74becf5951a",
+  },
   kart: {
     shared: "00d7b7465cff14233c1457c854baa1de29baad36433d59884dd783aa6adf6561",
     kit: "edaeba671940d66643cd7e7aaef6d14d08a9e4e7aeab819fcedcd53bc5d5898a",
@@ -170,6 +174,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   rain: {
     shared: "83e0f04b22c12e53dbca7d4440030aabcddf1007ab8fe4e1ca20cc8adca90627",
     kit: "e63629f2c9f6d0eba951c39136e361e297fc989e90a9531e84138491d1a7ae24",
+  },
+  rhythm: {
+    shared: "071c669ac4040dd00bae4460583b5a95fc6571eb15fd430dba3c150a5f356a4a",
+    kit: "d873b85613acb095ddc161bc073df88af447a19f9f840277b918b1a0c5ef56d8",
   },
   rts: {
     shared: "bc561f1af97760753e876b1cf7bba1219cfb374cf9fafe0f2db4199de464e66f",
