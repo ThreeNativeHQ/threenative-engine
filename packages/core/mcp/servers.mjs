@@ -51,9 +51,9 @@ export const MCP_SERVERS = Object.freeze({
  * separately. The pinned engine version remains an emergency fallback for a legacy development
  * checkout whose bundle has not been built. */
 export const MCP_PACKAGES = Object.freeze({
-  assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.21.1" }),
+  assets: Object.freeze({ name: "threenative-asset-mcp", version: "0.21.2" }),
   terrain: Object.freeze({ name: "@threenative/terrain", version: "0.1.21" }),
-  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.2" }),
+  sculpt: Object.freeze({ name: "threenative-sculpt-mcp", version: "0.2.3" }),
   engine: Object.freeze({ name: "threenative-engine-mcp", version: "0.2.25" }),
   animation: Object.freeze({ name: "threenative-animation-mcp", version: "0.1.22" }),
   // `args` fixes the launch for every host. The Chrome flags are `WEBGPU_BROWSER_ARGS` from

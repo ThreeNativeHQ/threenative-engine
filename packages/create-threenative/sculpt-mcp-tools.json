@@ -1,6 +1,6 @@
 {
-  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.2.2 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `inputSchemas` and `descriptions` come from that same response. `recommended` is the complete ordered authoring loop documented by every template. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`. The recorded surface serves 12 tools.",
-  "version": "0.2.2",
+  "comment": "The sculpt MCP surface a generated project actually gets. `tools` is set-equal to the live tools/list response of version 0.2.3 installed from the published npm tarball into a clean directory; that run also served 31 technique-safe grimoire resources. `inputSchemas` and `descriptions` come from that same response. `recommended` is the complete ordered authoring loop documented by every template. Regenerate with `pnpm tsx scripts/capture-asset-mcp-tools.ts`. The recorded surface serves 12 tools.",
+  "version": "0.2.3",
   "profile": null,
   "recommended": [
     "sculpt_plan",
@@ -41,6 +41,11 @@
           "default": "generic",
           "type": "string",
           "enum": ["generic", "character", "animated-character"]
+        },
+        "tier": {
+          "description": "Complexity tier for specTemplate; defaults to moderate (complex for character profiles).",
+          "type": "string",
+          "enum": ["simple", "moderate", "complex", "ultra-complex"]
         }
       },
       "required": ["referencePath", "intent"]
@@ -51,8 +56,170 @@
       "properties": {
         "spec": {
           "type": "object",
-          "propertyNames": {
-            "type": "string"
+          "properties": {
+            "schemaVersion": {
+              "description": "Contract version, e.g. \"2.1\".",
+              "type": "string"
+            },
+            "targetName": {
+              "type": "string"
+            },
+            "suitability": {
+              "type": "string",
+              "enum": ["pass", "conditional", "request-input", "stop"]
+            },
+            "coordinateFrame": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "silhouette": {
+              "type": "object",
+              "propertyNames": {
+                "type": "string"
+              },
+              "additionalProperties": {}
+            },
+            "componentTree": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "level": {
+                    "type": "string",
+                    "enum": ["macro", "meso", "micro"]
+                  },
+                  "localFeatures": {
+                    "type": "array",
+                    "items": {}
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": {}
+              }
+            },
+            "materials": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": {}
+              }
+            },
+            "repetitionSystems": {
+              "type": "array",
+              "items": {}
+            },
+            "proceduralStrategy": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            },
+            "preSpecAssessment": {
+              "description": "complexity.tier plus detailInventory.details array matching tier minimum.",
+              "type": "object",
+              "properties": {
+                "complexity": {
+                  "type": "object",
+                  "properties": {
+                    "tier": {
+                      "type": "string",
+                      "enum": ["simple", "moderate", "complex", "ultra-complex"]
+                    }
+                  },
+                  "required": ["tier"],
+                  "additionalProperties": {}
+                },
+                "detailInventory": {
+                  "type": "object",
+                  "properties": {
+                    "details": {
+                      "type": "array",
+                      "items": {}
+                    }
+                  },
+                  "required": ["details"],
+                  "additionalProperties": {}
+                }
+              },
+              "required": ["complexity", "detailInventory"],
+              "additionalProperties": {}
+            },
+            "qualityContract": {
+              "type": "object",
+              "properties": {
+                "minimumSpecDepth": {
+                  "type": "object",
+                  "properties": {
+                    "macroComponents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "mesoComponents": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "microFeatureGroups": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "materialLayers": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "repetitionSystems": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    },
+                    "reviewViewpoints": {
+                      "type": "integer",
+                      "minimum": 0,
+                      "maximum": 9007199254740991
+                    }
+                  },
+                  "required": [
+                    "macroComponents",
+                    "mesoComponents",
+                    "microFeatureGroups",
+                    "materialLayers",
+                    "repetitionSystems",
+                    "reviewViewpoints"
+                  ],
+                  "additionalProperties": {}
+                }
+              },
+              "required": ["minimumSpecDepth"],
+              "additionalProperties": {}
+            },
+            "qualityTargets": {
+              "type": "object",
+              "properties": {
+                "reviewViewpoints": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": ["reviewViewpoints"],
+              "additionalProperties": {}
+            }
           },
           "additionalProperties": {}
         }
@@ -513,7 +680,7 @@
     }
   },
   "descriptions": {
-    "sculpt_plan": "Validate a reference image and return the locked eight-pass sculpt order plus relevant technique-safe grimoire resources.",
+    "sculpt_plan": "Validate a reference image and return the locked eight-pass sculpt order, 2-4 essential grimoire resources (more under optionalTopics), and a specTemplate that passes sculpt_spec_gate once placeholders are filled.",
     "sculpt_spec_gate": "Validate the MCP runtime ObjectSculptSpec contract and canonical complexity depth thresholds before code is written.",
     "sculpt_compare": "Produce deterministic diagnostic evidence from an existing capture and reference, globally and per normalized region. Never launches a browser and never authorizes advancement.",
     "sculpt_pass_gate": "Return advance, retry, or stop. Semantic review controls advancement; deterministic scores supply corrections, while an explicitly ambiguous comparison blocks advancement.",
