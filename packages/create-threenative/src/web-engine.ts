@@ -27,21 +27,23 @@ export function webRuntimeDecoders(_config: {
 /** The module every `three`, `three/webgpu` and `three/tsl` import becomes under `engine: "threenative"`. */
 export const WEB_ENGINE_ID = "\0threenative:web-engine";
 const UPSTREAM = ["three", "three/webgpu", "three/tsl"] as const;
-const POST_EFFECT_ADDONS: readonly string[] = [
-  "GTAONode",
-  "DenoiseNode",
-  "SMAANode",
-  "BloomNode",
-  "TRAANode",
-  "FilmNode",
-  "Lut3DNode",
+const POST_EFFECT_EXPORTS: ReadonlyMap<string, string> = new Map([
+  ["GTAONode", "ao"],
+  ["DenoiseNode", "denoise"],
+  ["SMAANode", "smaa"],
+  ["BloomNode", "bloom"],
+  ["TRAANode", "traa"],
+  ["FilmNode", "film"],
+  ["Lut3DNode", "lut3D"],
   // Refused on use, as on the V8 player: upstream's copies run `Fn(...).setLayout(...)` at import.
-  "FXAANode",
-  "GodraysNode",
-  "SSGINode",
-  "SSRNode",
-  "SharpenNode",
-].map((node) => `three/addons/tsl/display/${node}.js`);
+  ["FXAANode", "fxaa"],
+  ["GodraysNode", "godrays"],
+  ["SSGINode", "ssgi"],
+  ["SSRNode", "ssr"],
+  ["SharpenNode", "sharpen"],
+]);
+const POST_EFFECT_PREFIX = "\0threenative:web-engine-post-effect:";
+const GLTF_LOADER_ID = "\0threenative:web-engine-gltf-loader";
 /**
  * Addons the engine binds as its own classes (as the V8 bundler maps them): the addon path becomes a
  * module re-exporting the engine class, so the upstream addon never extends an engine base it does
@@ -164,12 +166,17 @@ export function esmEntry(resolved: string): string {
   return resolved;
 }
 
+/** Resolves an upstream `three` entry or addon path from `root`'s installed package, ESM-first. */
+function resolveUpstreamEntry(root: string, specifier: string): string {
+  const require = createRequire(path.join(root, "package.json"));
+  return esmEntry(require.resolve(specifier));
+}
+
 /** Every export name of the project's own upstream three, which the game was written against. */
 async function upstreamNames(root: string): Promise<string[]> {
-  const require = createRequire(path.join(root, "package.json"));
   const modules = await Promise.all(
     UPSTREAM.map(
-      (id) => import(pathToFileURL(esmEntry(require.resolve(id))).href) as Promise<object>,
+      (id) => import(pathToFileURL(resolveUpstreamEntry(root, id)).href) as Promise<object>,
     ),
   );
   return [...new Set(modules.flatMap((module) => Object.keys(module)))]
@@ -313,12 +320,13 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         return browserModule("web-engine-hdr-loader.js", "addons/hdr-loader.ts");
       // GTAO, Denoise, SMAA and Bloom are the engine's live post effects (lane-531), shared with V8.
       // Models load through the engine's own glTF loader; upstream GLTFLoader never settles over it.
-      if (source === "three/addons/loaders/GLTFLoader.js")
-        return browserModule("web-engine-gltf-loader.js", "addons/gltf-loader-web.ts");
+      if (source === "three/addons/loaders/GLTFLoader.js") return GLTF_LOADER_ID;
       if (source === "three/addons/loaders/LUTCubeLoader.js")
         return browserModule("web-engine-lut-cube-loader.js", "addons/lut-cube-loader-web.ts");
-      if (POST_EFFECT_ADDONS.includes(source))
-        return browserModule("web-engine-post-effects.js", "addons/post-effects-web.ts");
+      if (source.startsWith("three/addons/tsl/display/") && source.endsWith(".js")) {
+        const node = source.slice("three/addons/tsl/display/".length, -".js".length);
+        if (POST_EFFECT_EXPORTS.has(node)) return POST_EFFECT_PREFIX + node;
+      }
       if (
         /^three\/(?:src|build)\//u.test(source) &&
         !(ENGINE_MATH_MODULES.has(source) && ENGINE_MATH_IMPORTER.test(importer))
@@ -329,12 +337,67 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
       return null;
     },
     async load(id) {
-      if (native && id.startsWith(ENGINE_ADDON_PREFIX))
-        return `export { ${id.slice(ENGINE_ADDON_PREFIX.length)} } from "three";\n`;
+      if (native && id.startsWith(ENGINE_ADDON_PREFIX)) {
+        const exportName = id.slice(ENGINE_ADDON_PREFIX.length);
+        const specifier = Object.entries(ENGINE_ADDON_CLASSES).find(
+          ([, name]) => name === exportName,
+        )?.[0];
+        if (specifier === undefined) return `export { ${exportName} } from "three";\n`;
+        const upstream = resolveUpstreamEntry(projectRoot(), specifier);
+        return [
+          'import * as __tn from "three";',
+          `export const ${exportName} = globalThis.__tnWebEngineFallback`,
+          `  ? (await import(${JSON.stringify(upstream)})).${exportName}`,
+          `  : __tn.${exportName};`,
+          "",
+        ].join("\n");
+      }
       if (native && id === RAPIER_COMPAT_ID)
         return 'throw new Error("TN_PHYSICS_COMPAT_EXCLUDED: engine \\"threenative\\" runs physics on the Rapier crate; rapier3d-compat loads only under engine \\"threejs\\".");\n';
-      if (native && id === SKELETON_UTILS_ID)
-        return 'import { SkeletonUtils } from "three";\nexport const clone = (source) => SkeletonUtils.clone(source);\n';
+      if (native && id === SKELETON_UTILS_ID) {
+        const upstream = resolveUpstreamEntry(projectRoot(), "three/addons/utils/SkeletonUtils.js");
+        return [
+          'import * as __tn from "three";',
+          "const __up = globalThis.__tnWebEngineFallback",
+          `  ? await import(${JSON.stringify(upstream)})`,
+          "  : undefined;",
+          "export const clone = __up ? __up.clone : (source) => __tn.SkeletonUtils.clone(source);",
+          "export const retarget = __up?.retarget;",
+          "export const retargetClip = __up?.retargetClip;",
+          "",
+        ].join("\n");
+      }
+      if (native && id === GLTF_LOADER_ID) {
+        const upstream = resolveUpstreamEntry(projectRoot(), "three/addons/loaders/GLTFLoader.js");
+        const engineGltf = browserModule("web-engine-gltf-loader.js", "addons/gltf-loader-web.ts");
+        return [
+          'import "three";',
+          "const __mod = globalThis.__tnWebEngineFallback",
+          `  ? await import(${JSON.stringify(upstream)})`,
+          `  : await import(${JSON.stringify(engineGltf)});`,
+          "export const { GLTFLoader } = __mod;",
+          "",
+        ].join("\n");
+      }
+      if (native && id.startsWith(POST_EFFECT_PREFIX)) {
+        const node = id.slice(POST_EFFECT_PREFIX.length);
+        const exported = POST_EFFECT_EXPORTS.get(node);
+        if (exported === undefined) return null;
+        const upstream = resolveUpstreamEntry(projectRoot(), `three/addons/tsl/display/${node}.js`);
+        const enginePost = browserModule(
+          "web-engine-post-effects.js",
+          "addons/post-effects-web.ts",
+        );
+        return [
+          'import "three/tsl";',
+          "const __mod = globalThis.__tnWebEngineFallback",
+          `  ? await import(${JSON.stringify(upstream)})`,
+          `  : await import(${JSON.stringify(enginePost)});`,
+          `export const { ${exported} } = __mod;`,
+          'export default Reflect.get(__mod, "default");',
+          "",
+        ].join("\n");
+      }
       if (!native || id !== WEB_ENGINE_ID) return null;
       // `__tnTsl` rides along for the post effects module: the engine TSL functions three does not
       // export by name (ao, bloom, ...).
@@ -351,6 +414,9 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         throw new Error(
           `TN_WASM_THREADS_MISSING: engine "threenative" needs the threaded Wasm engine at ${threads}; reinstall @threenative/runtime-native, or in a ThreeNative checkout run \`pnpm wasm:build\` (presets wasm and wasm-threads). ${OPT_OUT}`,
         );
+      const upstreamThree = resolveUpstreamEntry(projectRoot(), "three");
+      const upstreamWebgpu = resolveUpstreamEntry(projectRoot(), "three/webgpu");
+      const upstreamTsl = resolveUpstreamEntry(projectRoot(), "three/tsl");
       // Shared memory exists only on a cross-origin-isolated page (COOP + COEP: createWebBrandPlugin
       // sends them from the dev and preview servers, and a build's service worker adds them on a host
       // that sends none). `__tnIsolation` (web-brand's boot script) is pending while it reloads the page.
@@ -358,29 +424,69 @@ export function createWebEnginePlugin(options: IWebEngineOptions = {}): IWebEngi
         `${THREADS_OFF}: ${detail} Serve the game over https or localhost (the build's service worker adds Cross-Origin-Opener-Policy: same-origin and Cross-Origin-Embedder-Policy: require-corp), or send both headers; on itch.io enable "SharedArrayBuffer support".`;
       const head = [
         `import { bindWebEngine } from ${JSON.stringify(runtimeModule())};`,
-        "if (globalThis.crossOriginIsolated !== true) await globalThis.__tnIsolation;",
+        "const __tnProbeWebGpu = async () => {",
+        "  if (globalThis.__tnForceWebglFallback === true)",
+        '    return { ok: false, reason: "forced WebGL2 fallback" };',
+        '  if (/[?&]tnWebglFallback=1(?:&|$)/u.test(globalThis.location?.search ?? ""))',
+        '    return { ok: false, reason: "WebGPU device failed on previous attempt" };',
+        "  try {",
+        '    if (globalThis.sessionStorage?.getItem("tnWebglFallback") === "1")',
+        '      return { ok: false, reason: "WebGPU device failed on previous attempt" };',
+        "  } catch {}",
+        "  const gpu = globalThis.navigator?.gpu;",
+        '  if (!gpu || typeof gpu.requestAdapter !== "function")',
+        '    return { ok: false, reason: "WebGPU is not supported in this browser (navigator.gpu is unavailable)" };',
+        "  try {",
+        "    const adapter = await gpu.requestAdapter();",
+        "    if (!adapter)",
+        '      return { ok: false, reason: "WebGPU not available on this browser (requestAdapter returned null)" };',
+        "    // Retain adapter so Chromium Dawn does not tear down the wire instance on GC.",
+        "    globalThis.__tnProbedWebGpuAdapter = adapter;",
+        "    return { ok: true };",
+        "  } catch (error) {",
+        "    return { ok: false, reason: error instanceof Error ? error.message : String(error) };",
+        "  }",
+        "};",
+        "const __tnWebGpu = await __tnProbeWebGpu();",
+        "let engine;",
+        "if (__tnWebGpu.ok) {",
+        "  if (globalThis.crossOriginIsolated !== true) await globalThis.__tnIsolation;",
       ];
       const threadsReport = "${globalThis.__tnWebThreads}";
       const lines = strict
         ? [
-            "if (globalThis.crossOriginIsolated !== true)",
-            `  throw new Error(${JSON.stringify(off("this page is not cross-origin isolated, so the engine cannot start its worker threads."))});`,
-            `const createModule = (await import(${JSON.stringify(threads)})).default;`,
-            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
-            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
-            `  throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (${threadsReport}).\`);`,
+            "  if (globalThis.crossOriginIsolated !== true)",
+            `    throw new Error(${JSON.stringify(off("this page is not cross-origin isolated, so the engine cannot start its worker threads."))});`,
+            `  const createModule = (await import(${JSON.stringify(threads)})).default;`,
+            `  engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            '  if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `    throw new Error(\`${THREADS_OFF}: the engine's job pool started no worker thread (${threadsReport}).\`);`,
           ]
         : [
-            "const createModule = (",
-            "  globalThis.crossOriginIsolated === true",
-            `    ? await import(${JSON.stringify(threads)})`,
-            `    : await import(${JSON.stringify(single)})`,
-            ").default;",
-            `const engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
-            'if (!String(globalThis.__tnWebThreads).startsWith("on"))',
-            `  console.warn(\`${off(`the engine runs without worker threads (${threadsReport}), so frames cost more.`).replaceAll("`", "\\`")}\`);`,
+            "  const createModule = (",
+            "    globalThis.crossOriginIsolated === true",
+            `      ? await import(${JSON.stringify(threads)})`,
+            `      : await import(${JSON.stringify(single)})`,
+            "  ).default;",
+            `  engine = await bindWebEngine(createModule, ${JSON.stringify(names)});`,
+            '  if (!String(globalThis.__tnWebThreads).startsWith("on"))',
+            `    console.warn(\`${off(`the engine runs without worker threads (${threadsReport}), so frames cost more.`).replaceAll("`", "\\`")}\`);`,
           ];
-      return [...head, ...lines, `export const { ${names.join(", ")} } = engine;`, ""].join("\n");
+      const tail = [
+        "} else {",
+        "  globalThis.__tnWebEngineFallback = __tnWebGpu.reason;",
+        '  globalThis.__TN_ENGINE__ = "threejs";',
+        "  const [__tnThree, __tnWebgpu, __tnTslMod] = await Promise.all([",
+        `    import(${JSON.stringify(upstreamThree)}),`,
+        `    import(${JSON.stringify(upstreamWebgpu)}),`,
+        `    import(${JSON.stringify(upstreamTsl)}),`,
+        "  ]);",
+        "  engine = { ...__tnThree, ...__tnWebgpu, ...__tnTslMod, TSL: __tnWebgpu.TSL };",
+        "}",
+        `export const { ${names.join(", ")} } = engine;`,
+        "",
+      ];
+      return [...head, ...lines, ...tail].join("\n");
     },
   };
 }

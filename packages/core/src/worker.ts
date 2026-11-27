@@ -9,7 +9,12 @@
 
 import { readLaunchValue } from "./debug.js";
 import type { IGamePlatformSource } from "./game.js";
-import { reloadPageOnce, routeGpuMemoryReload } from "./launch-diagnostics.js";
+import {
+  reloadPageIntoWebglFallback,
+  reloadPageOnce,
+  routeGpuMemoryReload,
+  routeWebglFallbackReload,
+} from "./launch-diagnostics.js";
 import { hostDocument, hostResizeObserver, hostWindow } from "./platform.js";
 import { countDebug, debugRequested } from "./profiling/debug-telemetry.js";
 import { markerLogRequested } from "./quiet-markers.js";
@@ -78,6 +83,7 @@ type WorkerOutbound =
   | { type: "tn-worker-started" }
   | { type: "tn-worker-failed"; message: string }
   | { type: "tn-worker-gpu-memory-reload"; reason: string }
+  | { type: "tn-worker-webgl-fallback-reload"; reason: string }
   | { type: "tn-worker-pointer-lock"; lock: boolean }
   | { type: "tn-worker-attribute"; name: string; value: string }
   | {
@@ -292,6 +298,7 @@ export function serveWorkerGame(
   const ui = holdUiBridge(scope);
   // The page owns the reload and its once-per-tab guard; the worker only names why.
   routeGpuMemoryReload((reason) => post({ reason, type: "tn-worker-gpu-memory-reload" }));
+  routeWebglFallbackReload((reason) => post({ reason, type: "tn-worker-webgl-fallback-reload" }));
 
   const initialise = async (message: IWorkerInitMessage): Promise<void> => {
     try {
@@ -833,6 +840,9 @@ export function startWorkerGame(
         break;
       case "tn-worker-gpu-memory-reload":
         reloadPageOnce(message.reason);
+        break;
+      case "tn-worker-webgl-fallback-reload":
+        reloadPageIntoWebglFallback(message.reason);
         break;
       case "tn-worker-rpc-result": {
         const call = pending.get(message.id);

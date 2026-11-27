@@ -1156,6 +1156,67 @@ describe("createRenderer", () => {
     }
   });
 
+  it("forces WebGPURenderer's WebGL2 backend and reports TN_RENDERER_FALLBACK when web-engine fallback ran", async () => {
+    const canvas = testCanvas();
+    const lines: string[] = [];
+    const seenOptions: Array<Readonly<{ antialias: boolean; forceWebGL?: boolean }>> = [];
+    vi.stubGlobal("navigator", { gpu: {} });
+    vi.stubGlobal(
+      "__tnWebEngineFallback",
+      "WebGPU not available on this browser (requestAdapter returned null)",
+    );
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        report: (line) => lines.push(line),
+        webgpuFactory: (_c, options) => {
+          seenOptions.push(options);
+          return {
+            backend: { isWebGLBackend: true },
+            domElement: canvas,
+            init: async () => undefined,
+            render: () => undefined,
+            setSize: () => undefined,
+          };
+        },
+      });
+      expect(seenOptions[0]?.forceWebGL).toBe(true);
+      expect(renderer.kind).toBe("webgpu");
+      expect(lines).toContain(
+        "TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: WebGPU not available on this browser (requestAdapter returned null)",
+      );
+      renderer.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reports TN_RENDERER_FALLBACK when WebGPURenderer initializes with WebGLBackend internally", async () => {
+    const canvas = testCanvas();
+    const lines: string[] = [];
+    vi.stubGlobal("navigator", { gpu: {} });
+    try {
+      const renderer = await createRenderer({
+        canvas,
+        report: (line) => lines.push(line),
+        webgpuFactory: () => ({
+          backend: { isWebGLBackend: true },
+          domElement: canvas,
+          init: async () => undefined,
+          render: () => undefined,
+          setSize: () => undefined,
+        }),
+      });
+      expect(renderer.kind).toBe("webgpu");
+      expect(lines).toContain(
+        "TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: WebGPU not available; using WebGPURenderer WebGL2 backend",
+      );
+      renderer.dispose();
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("names the WebGPU failure in TN_NO_RENDERER instead of swallowing it (PRD-752)", async () => {
     // A worker boot fell back because the Wasm renderer called a DOM-only canvas method; the
     // boot error said only "WebGPU is not available", which hid the fix.
@@ -1344,6 +1405,41 @@ describe("createRenderer", () => {
       );
       renderer.dispose();
     } finally {
+      if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
+      else Object.defineProperty(globalThis, "navigator", descriptor);
+    }
+  });
+
+  it("routes mid-boot WebGL2 fallback reloads from a worker realm without throwing TN_NO_RENDERER", async () => {
+    const { reloadIntoWebglFallback, routeWebglFallbackReload } = await import(
+      "../src/launch-diagnostics.js"
+    );
+    const descriptor = Object.getOwnPropertyDescriptor(globalThis, "navigator");
+    Object.defineProperty(globalThis, "navigator", { configurable: true, value: { gpu: {} } });
+    const routed: string[] = [];
+    routeWebglFallbackReload((reason) => routed.push(reason));
+    try {
+      const outcome = await Promise.race([
+        createRenderer({
+          canvas: testCanvas(),
+          preferWebGPU: true,
+          webgl2Factory: () => {
+            throw new Error("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER: worker");
+          },
+          webgpuFactory: () => ({
+            init: () => Promise.reject(new Error("TN_WASM_ADAPTER: device failed")),
+          }),
+        }).then(
+          () => "resolved",
+          (error: unknown) => `rejected:${error instanceof Error ? error.message : String(error)}`,
+        ),
+        new Promise<string>((resolve) => setTimeout(() => resolve("reloading"), 30)),
+      ]);
+      expect(outcome).toBe("reloading");
+      expect(routed).toEqual(["TN_WASM_ADAPTER: device failed"]);
+      expect(reloadIntoWebglFallback("off", false)).toBe(false);
+    } finally {
+      routeWebglFallbackReload(undefined);
       if (descriptor === undefined) Reflect.deleteProperty(globalThis, "navigator");
       else Object.defineProperty(globalThis, "navigator", descriptor);
     }

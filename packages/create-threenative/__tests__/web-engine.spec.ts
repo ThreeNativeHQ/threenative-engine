@@ -67,11 +67,32 @@ async function project(withWasm: boolean): Promise<string> {
   return root;
 }
 
-async function bundle(
+function collectEagerNames(html: string, contents: ReadonlyMap<string, string>): Set<string> {
+  const eagerNames = new Set<string>();
+  for (const match of html.matchAll(/(?:src|href)="[^"]*\/assets\/([^"]+\.js)"/gu)) {
+    if (match[1] !== undefined) eagerNames.add(match[1]);
+  }
+  const queue = [...eagerNames];
+  while (queue.length > 0) {
+    const current = queue.pop();
+    const code = current === undefined ? undefined : contents.get(current);
+    if (code === undefined) continue;
+    for (const match of code.matchAll(/\bfrom\s*["']\.\/([^"']+\.js)["']/gu)) {
+      const dep = match[1];
+      if (dep !== undefined && contents.has(dep) && !eagerNames.has(dep)) {
+        eagerNames.add(dep);
+        queue.push(dep);
+      }
+    }
+  }
+  return eagerNames;
+}
+
+async function bundleAssets(
   root: string,
   native: boolean,
   configured: boolean | "baseline" = false,
-): Promise<string> {
+): Promise<{ eager: string; lazy: string; all: string }> {
   const brand = createWebBrandPlugin();
   const baseline = {
     name: brand.name,
@@ -93,11 +114,30 @@ async function bundle(
             ? [createWebEnginePlugin({ root, engine: "threenative" })]
             : [],
   });
+  const html = await readFile(path.join(root, "dist/index.html"), "utf8");
   const assets = path.join(root, "dist/assets");
   const files = (await readdir(assets)).filter((name) => name.endsWith(".js"));
-  return (await Promise.all(files.map((name) => readFile(path.join(assets, name), "utf8")))).join(
-    "\n",
+  const contents = new Map(
+    await Promise.all(
+      files.map(async (name) => [name, await readFile(path.join(assets, name), "utf8")] as const),
+    ),
   );
+  const eagerNames = collectEagerNames(html, contents);
+  const eager = [...eagerNames].map((name) => contents.get(name) ?? "").join("\n");
+  const lazy = files
+    .filter((name) => !eagerNames.has(name))
+    .map((name) => contents.get(name) ?? "")
+    .join("\n");
+  const all = files.map((name) => contents.get(name) ?? "").join("\n");
+  return { eager, lazy, all };
+}
+
+async function bundle(
+  root: string,
+  native: boolean,
+  configured: boolean | "baseline" = false,
+): Promise<string> {
+  return (await bundleAssets(root, native, configured)).all;
 }
 
 describe("esmEntry", () => {
@@ -137,9 +177,10 @@ describe("createWebEnginePlugin", () => {
       path.join(root, "threenative.config.ts"),
       'export default { engine: "threenative" };\n',
     );
-    const output = await bundle(root, false, true);
-    expect(output).toContain("is not available on the Wasm engine");
-    expect(output).not.toContain(UPSTREAM_OBJECT3D);
+    const output = await bundleAssets(root, false, true);
+    expect(output.eager).toContain("is not available on the Wasm engine");
+    expect(output.eager).not.toContain(UPSTREAM_OBJECT3D);
+    expect(output.lazy).toContain(UPSTREAM_OBJECT3D);
     // A host that sends no COOP/COEP headers (itch.io, GitHub Pages, a plain static server) still
     // starts the engine with threads: the build ships a worker that adds them, registered before
     // the game module runs. The legacy build below ships neither.
@@ -151,7 +192,7 @@ describe("createWebEnginePlugin", () => {
     expect(html.indexOf('register("tn-isolation-sw.js")')).toBeLessThan(
       html.indexOf('type="module"'),
     );
-    expect(output).toContain("await globalThis.__tnIsolation;");
+    expect(output.eager).toContain("await globalThis.__tnIsolation;");
     const server = await createServer({
       root,
       configFile: false,
@@ -264,6 +305,7 @@ describe("createWebEnginePlugin", () => {
     const root = await project(true);
     const source = await createWebEnginePlugin({ root, engine: "threenative" }).load(WEB_ENGINE_ID);
     expect(source).not.toBeNull();
+    expect(source).toContain("tnWebglFallback=1");
     await expect(transform(source ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
   });
 
@@ -404,13 +446,15 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
-  it("resolves three's RoundedBoxGeometry addon to the engine's own class, never upstream", async () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
+  it("resolves three's RoundedBoxGeometry addon to a dual-dispatch module for engine and fallback", async () => {
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ root, engine: "threenative" });
     const resolved = plugin.resolveId("three/addons/geometries/RoundedBoxGeometry.js");
     expect(resolved).toBe("\0threenative:web-engine-addon:RoundedBoxGeometry");
-    expect(await plugin.load(resolved as string)).toBe(
-      'export { RoundedBoxGeometry } from "three";\n',
-    );
+    const code = await plugin.load(resolved as string);
+    expect(code).toContain("globalThis.__tnWebEngineFallback");
+    expect(code).toContain("RoundedBoxGeometry");
+    await expect(transform(code ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
     expect(
       createWebEnginePlugin({ root: "/game" }).resolveId(
         "three/addons/geometries/RoundedBoxGeometry.js",
@@ -418,13 +462,15 @@ describe("createWebEnginePlugin", () => {
     ).toBeNull();
   });
 
-  it("resolves three's SkeletonUtils addon to the engine's SkeletonUtils namespace", async () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
+  it("resolves three's SkeletonUtils addon to a dual-dispatch module for engine and fallback", async () => {
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ root, engine: "threenative" });
     const resolved = plugin.resolveId("three/addons/utils/SkeletonUtils.js");
     expect(resolved).toBe("\0threenative:web-engine-skeleton-utils");
-    expect(await plugin.load(resolved as string)).toBe(
-      'import { SkeletonUtils } from "three";\nexport const clone = (source) => SkeletonUtils.clone(source);\n',
-    );
+    const code = await plugin.load(resolved as string);
+    expect(code).toContain("globalThis.__tnWebEngineFallback");
+    expect(code).toContain("SkeletonUtils.clone");
+    await expect(transform(code ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
     expect(
       createWebEnginePlugin({ root: "/game" }).resolveId("three/addons/utils/SkeletonUtils.js"),
     ).toBeNull();
@@ -456,37 +502,57 @@ describe("createWebEnginePlugin", () => {
     );
   });
 
-  it("resolves three's GTAO, Denoise, SMAA and Bloom addons to the engine's live effects", () => {
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
-    for (const node of [
-      "GTAONode",
-      "DenoiseNode",
-      "SMAANode",
-      "BloomNode",
-      "FilmNode",
-      "Lut3DNode",
-      "TRAANode",
-    ])
-      expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
-        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
+  it("resolves three's GTAO, Denoise, SMAA and Bloom addons to dual-dispatch post-effect modules", async () => {
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ root, engine: "threenative" });
+    for (const [node, fn] of [
+      ["GTAONode", "ao"],
+      ["DenoiseNode", "denoise"],
+      ["SMAANode", "smaa"],
+      ["BloomNode", "bloom"],
+      ["FilmNode", "film"],
+      ["Lut3DNode", "lut3D"],
+      ["TRAANode", "traa"],
+    ]) {
+      const resolved = plugin.resolveId(`three/addons/tsl/display/${node}.js`);
+      expect(resolved).toBe(`\0threenative:web-engine-post-effect:${node}`);
+      const code = await plugin.load(resolved as string);
+      expect(code).toContain("globalThis.__tnWebEngineFallback");
+      expect(code).toMatch(
+        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)/u,
       );
+      expect(code).toContain(`export const { ${fn} }`);
+      await expect(transform(code ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
+    }
   });
 
-  it("resolves the display addons the engine refuses to the same module, never upstream", () => {
+  it("resolves the display addons the engine refuses to dual-dispatch post-effect modules", async () => {
     // Upstream's SSRNode runs `Fn(...).setLayout(...)` at import, which the engine's Fn does not carry.
-    const plugin = createWebEnginePlugin({ root: "/game", engine: "threenative" });
-    for (const node of ["FXAANode", "GodraysNode", "SSGINode", "SSRNode", "SharpenNode"])
-      expect(plugin.resolveId(`three/addons/tsl/display/${node}.js`)).toMatch(
-        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)$/u,
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ root, engine: "threenative" });
+    for (const node of ["FXAANode", "GodraysNode", "SSGINode", "SSRNode", "SharpenNode"]) {
+      const resolved = plugin.resolveId(`three/addons/tsl/display/${node}.js`);
+      expect(resolved).toBe(`\0threenative:web-engine-post-effect:${node}`);
+      const code = await plugin.load(resolved as string);
+      expect(code).toContain("globalThis.__tnWebEngineFallback");
+      expect(code).toMatch(
+        /(?:three-native\/src\/addons\/post-effects-web\.ts|web-engine-post-effects\.js)/u,
       );
+      await expect(transform(code ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
+    }
   });
 
-  it("resolves three's GLTFLoader to the engine glTF loader, never upstream", () => {
-    expect(
-      createWebEnginePlugin({ root: "/game", engine: "threenative" }).resolveId(
-        "three/addons/loaders/GLTFLoader.js",
-      ),
-    ).toMatch(/(?:three-native\/src\/addons\/gltf-loader-web\.ts|web-engine-gltf-loader\.js)$/u);
+  it("resolves three's GLTFLoader to a dual-dispatch glTF loader module", async () => {
+    const root = await project(true);
+    const plugin = createWebEnginePlugin({ root, engine: "threenative" });
+    const resolved = plugin.resolveId("three/addons/loaders/GLTFLoader.js");
+    expect(resolved).toBe("\0threenative:web-engine-gltf-loader");
+    const code = await plugin.load(resolved as string);
+    expect(code).toContain("globalThis.__tnWebEngineFallback");
+    expect(code).toMatch(
+      /(?:three-native\/src\/addons\/gltf-loader-web\.ts|web-engine-gltf-loader\.js)/u,
+    );
+    await expect(transform(code ?? "", { loader: "js", format: "esm" })).resolves.toBeDefined();
   });
 
   it("fails the build when the Wasm engine is not installed", async () => {
@@ -496,13 +562,14 @@ describe("createWebEnginePlugin", () => {
     ).rejects.toThrow("pnpm wasm:build");
   });
 
-  it("bundles the Wasm engine binding instead of upstream three; legacy still bundles three", async () => {
+  it("bundles the Wasm engine binding eagerly and upstream three lazily; legacy bundles three eagerly", async () => {
     const root = await project(true);
-    const native = await bundle(root, true);
-    expect(native).toContain("is not available on the Wasm engine");
-    expect(native).toContain("createModule");
-    expect(native).toContain("__tnTsl");
-    expect(native).not.toContain(UPSTREAM_OBJECT3D);
+    const native = await bundleAssets(root, true);
+    expect(native.eager).toContain("is not available on the Wasm engine");
+    expect(native.eager).toContain("createModule");
+    expect(native.eager).toContain("__tnTsl");
+    expect(native.eager).not.toContain(UPSTREAM_OBJECT3D);
+    expect(native.lazy).toContain(UPSTREAM_OBJECT3D);
     await rm(path.join(root, "dist"), { recursive: true });
     const legacy = await bundle(root, false);
     expect(legacy).toContain(UPSTREAM_OBJECT3D);

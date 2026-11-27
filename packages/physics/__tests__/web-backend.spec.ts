@@ -3,7 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 // PRD-899: the web back end picks the Rapier crate on the owned engine (`bindWebEngine` sets
 // `__tnWebThreads`) and keeps rapier3d-compat for `engine: "threejs"` (no marker).
-const marker = globalThis as { __tnWebThreads?: string };
+const marker = globalThis as { __tnWebThreads?: string; __tnWebEngineFallback?: string };
 
 async function backendVersion(): Promise<string> {
   vi.resetModules();
@@ -20,11 +20,24 @@ async function backendVersion(): Promise<string> {
 describe("web physics back end", () => {
   afterEach(() => {
     marker.__tnWebThreads = undefined;
+    marker.__tnWebEngineFallback = undefined;
     vi.unstubAllGlobals();
   });
 
   it("runs on the Rapier crate's Wasm module under the default engine", async () => {
     marker.__tnWebThreads = "on (4)";
+    const bytes = readFileSync(new URL("../wasm/threenative_native_physics.wasm", import.meta.url));
+    const fetched: string[] = [];
+    vi.stubGlobal("fetch", async (url: URL) => {
+      fetched.push(String(url));
+      return new Response(bytes);
+    });
+    expect(await backendVersion()).toBe("0.30.0");
+    expect(fetched).toEqual([expect.stringMatching(/\/wasm\/threenative_native_physics\.wasm$/)]);
+  });
+
+  it("keeps the standalone Rapier crate when the owned engine falls back to WebGL2", async () => {
+    marker.__tnWebEngineFallback = "requestAdapter returned null";
     const bytes = readFileSync(new URL("../wasm/threenative_native_physics.wasm", import.meta.url));
     const fetched: string[] = [];
     vi.stubGlobal("fetch", async (url: URL) => {
