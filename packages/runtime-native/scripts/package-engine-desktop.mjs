@@ -35,6 +35,27 @@ export function launcher(width, height, title, priority = "game", fullscreen = t
 }
 
 /**
+ * `launch.cfg`, beside `game.js`: the game's window and priority as `KEY=value` lines the player reads
+ * itself at start (v8_main.cpp), so every way of starting the game applies them: the launchers here,
+ * the store launcher, which runs the player directly, and a double-click on the player. A value
+ * already in the environment or a `--fullscreen`/`--windowed` argument wins over the file.
+ */
+export function launchConfig({ width = 1280, height = 720, title, priority = "game", fullscreen = true, maximized = false, resizable = true } = {}) {
+  if (priority !== "game" && priority !== "normal") throw new Error(`TN_ENGINE_PACKAGE_ARGS: --priority must be game or normal, got ${priority}`);
+  return [
+    `TN_PLAYER_WIDTH=${width}`,
+    `TN_PLAYER_HEIGHT=${height}`,
+    // One line per key: a line break in the title would start a second key.
+    ...(title ? [`TN_PLAYER_TITLE=${title.replace(/[\r\n]+/gu, " ")}`] : []),
+    `TN_PLAYER_PRIORITY=${priority}`,
+    `TN_PLAYER_FULLSCREEN=${fullscreen ? 1 : 0}`,
+    `TN_PLAYER_MAXIMIZED=${maximized ? 1 : 0}`,
+    `TN_PLAYER_RESIZABLE=${resizable ? 1 : 0}`,
+    "",
+  ].join("\n");
+}
+
+/**
  * Writes `output` as a directory: `<name>` (launcher), the player, `game.js`, `native/assets.tnpk`
  * and, for a web UI, `ui/`. `bundle` and `cook` are the engine bundler's, injectable for the unit test.
  */
@@ -61,7 +82,7 @@ function samePath(left, right) {
 }
 
 export async function packageEngineDesktop(
-  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true, gameName, engine },
+  { project, entry, player, ui, output, buildReceipt, width = 1280, height = 720, title, priority = "game", fullscreen = true, maximized = false, resizable = true, gameName, engine },
   { bundle = bundleNativeEngine, cook = cookNativeEngineAssets } = {},
 ) {
   // An older CLI passes the canonical cache path without ever downloading it: this packager can
@@ -121,20 +142,11 @@ export async function packageEngineDesktop(
   // beside the player is what a person double-clicking the folder can actually start.
   const windows = process.platform === "win32";
   const start = windows ? join(output, `${basename(output)}.cmd`) : join(output, basename(output));
+  // The player reads the settings from `launch.cfg` itself, so the batch file only starts it: cmd
+  // would mangle a title with `%` or `^`, and a `set` here would override the person's own variable.
+  const settings = launchConfig({ width, height, title, priority, fullscreen, maximized, resizable });
   const startContents = windows
-    ? [
-        "@echo off",
-        `if exist "%~dp0title.txt" set /p TN_PLAYER_TITLE=<"%~dp0title.txt"`,
-        // The title never appears in the batch text: cmd expands `%…%` inside quoted `set` values
-        // and treats a caret as an escape. It is read from a sidecar as data instead, which is the
-        // one form a batch file cannot mangle.
-        `set "TN_PLAYER_WIDTH=${width}"`,
-        `set "TN_PLAYER_HEIGHT=${height}"`,
-        `set "TN_PLAYER_PRIORITY=${priority}"`,
-        `set "TN_PLAYER_FULLSCREEN=${fullscreen ? 1 : 0}"`,
-        `"%~dp0${PLAYER}" "%~dp0game.js" %*`,
-        "",
-      ].join("\r\n")
+    ? ["@echo off", `"%~dp0${PLAYER}" "%~dp0game.js" %*`, ""].join("\r\n")
     : launcher(width, height, title, priority, fullscreen);
   // Write the launcher exclusively: on a case-insensitive filesystem a name that differs only in
   // case is the packaged player, and opening it for writing would destroy the binary. Existence is
@@ -148,8 +160,7 @@ export async function packageEngineDesktop(
       );
     throw error;
   }
-  if (windows && title)
-    writeFileSync(join(output, "title.txt"), `${title}\n`, { encoding: "utf8", flag: "wx" });
+  writeFileSync(join(output, "launch.cfg"), settings, { encoding: "utf8", flag: "wx" });
   chmodSync(start, 0o755);
   if (buildReceipt) {
     const receipt = JSON.parse(readFileSync(buildReceipt, "utf8"));
@@ -180,7 +191,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   const args = process.argv.slice(2);
   const flags = new Map();
   for (let i = 0; i < args.length; i += 2) {
-    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority", "--fullscreen", "--game-name", "--engine-name"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
+    if (!["--project", "--entry", "--player", "--ui", "--output", "--build-receipt", "--width", "--height", "--title", "--priority", "--fullscreen", "--maximized", "--resizable", "--game-name", "--engine-name"].includes(args[i]) || !args[i + 1] || flags.has(args[i]))
       throw new Error(`TN_ENGINE_PACKAGE_ARGS: invalid or repeated option ${args[i]}`);
     flags.set(args[i], args[i + 1]);
   }
@@ -199,6 +210,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
       engine: flags.get("--engine-name"),
       priority: flags.get("--priority"),
       fullscreen: flags.has("--fullscreen") ? flags.get("--fullscreen") !== "false" : undefined,
+      maximized: flags.has("--maximized") ? flags.get("--maximized") === "true" : undefined,
+      resizable: flags.has("--resizable") ? flags.get("--resizable") !== "false" : undefined,
     });
   } catch (error) {
     console.error(error instanceof Error ? error.message : String(error));

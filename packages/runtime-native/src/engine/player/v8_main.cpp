@@ -2034,6 +2034,36 @@ int main(int argc, char** argv) {
     }
     if (gamePath.empty())
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;
+    // The packaged game's window and priority (`launch.cfg` beside `game.js`, package-engine-desktop.mjs):
+    // read here, so a launcher that starts the player directly (the store's) applies the game's config
+    // too. Only the window keys, and only where the environment or an argument above set nothing.
+    if (std::ifstream settings(std::filesystem::path(gamePath).parent_path() / "launch.cfg"); settings) {
+        for (std::string line; std::getline(settings, line);) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            const auto equals = line.find('=');
+            if (equals == std::string::npos) continue;
+            const std::string key = line.substr(0, equals), value = line.substr(equals + 1);
+            struct LaunchKey { const char* name; const char* (*read)(); };
+            static constexpr LaunchKey kLaunchKeys[] = {
+                {flags::PlayerWidth.name, &flags::read<flags::PlayerWidth>},
+                {flags::PlayerHeight.name, &flags::read<flags::PlayerHeight>},
+                {flags::PlayerTitle.name, &flags::read<flags::PlayerTitle>},
+                {flags::PlayerPriority.name, &flags::read<flags::PlayerPriority>},
+                {flags::PlayerFullscreen.name, &flags::read<flags::PlayerFullscreen>},
+                {flags::PlayerMaximized.name, &flags::read<flags::PlayerMaximized>},
+                {flags::PlayerResizable.name, &flags::read<flags::PlayerResizable>},
+            };
+            const auto found = std::find_if(std::begin(kLaunchKeys), std::end(kLaunchKeys),
+                                            [&](const LaunchKey& known) { return key == known.name; });
+            if (found == std::end(kLaunchKeys)) continue;
+            if (const char* set = found->read(); set != nullptr && set[0] != '\0') continue;
+#if defined(_WIN32)
+            _putenv_s(key.c_str(), value.c_str());
+#else
+            setenv(key.c_str(), value.c_str(), 1);
+#endif
+        }
+    }
     if (!checkRequest.empty() && !checkGame)
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
 

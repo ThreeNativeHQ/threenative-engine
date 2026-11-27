@@ -1778,6 +1778,10 @@ async function buildEngineDesktop(
       config.display.priority,
       "--fullscreen",
       String(config.display.fullscreen),
+      "--maximized",
+      String(config.window.maximized),
+      "--resizable",
+      String(config.window.resizable),
       "--output",
       output,
     ]);
