@@ -4845,6 +4845,24 @@
       "symbol": "exportProceduralGlb"
     },
     {
+      "aliases": [],
+      "constraints": [
+        "returns new unparented meshes in root's local space; the originals stay in the tree"
+      ],
+      "example": "const merged = mergeByMaterial(root, { label: \"lamp\" });",
+      "importPath": "@threenative/core/bake",
+      "kind": "function",
+      "overrides": [],
+      "package": "@threenative/core",
+      "signature": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+      "situations": [
+        "merge a baked model's many boxes and cylinders into one mesh per material before export"
+      ],
+      "summary": "`mergeByMaterial` from `@threenative/core`, re-exported so a bake script has one import. `exportProceduralGlb` already merges by material; call this only to merge before editing meshes.",
+      "supersedes": [],
+      "symbol": "mergeByMaterial"
+    },
+    {
       "aliases": ["donor mesh, strip materials, repaint imported mesh"],
       "constraints": [],
       "example": "prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: \"base\" }));",

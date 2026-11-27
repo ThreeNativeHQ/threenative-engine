@@ -20,7 +20,15 @@ import {
 import { GLTFExporter } from "three/addons/exporters/GLTFExporter.js";
 import { mergeByMaterial } from "./merge-parts.js";
 
-export { mergeByMaterial };
+/**
+ * `mergeByMaterial` from `@threenative/core`, re-exported so a bake script has one import.
+ * `exportProceduralGlb` already merges by material; call this only to merge before editing meshes.
+ *
+ * @situation merge a baked model's many boxes and cylinders into one mesh per material before export
+ * @constraint returns new unparented meshes in root's local space; the originals stay in the tree
+ * @example const merged = mergeByMaterial(root, { label: "lamp" });
+ */
+export { mergeByMaterial } from "./merge-parts.js";
 
 export interface IPbrMaterialOptions {
   readonly metalness?: number;
