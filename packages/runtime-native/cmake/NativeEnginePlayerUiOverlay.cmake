@@ -1,5 +1,5 @@
 # The desktop web-view UI overlay in the engine player: the same Rust staticlib the legacy host links
-# (CMakeLists.txt, TN_ENABLE_UI_OVERLAY), on system webkit2gtk (Linux) or WebView2 (Windows).
+# (CMakeLists.txt, TN_ENABLE_UI_OVERLAY), on system webkit2gtk (Linux), WebView2 (Windows) or WebKit (macOS).
 # Included by NativeEngine.cmake only with -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, after tn_engine_player exists.
 if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
     # As the legacy host links it (CMakeLists.txt, the WIN32 branch of TN_ENABLE_UI_OVERLAY):
@@ -18,8 +18,20 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
         user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll)
     return()
 endif()
+if(APPLE)
+    # As the legacy host links it (CMakeLists.txt, the APPLE branch of TN_ENABLE_UI_OVERLAY): the Rust
+    # staticlib reaches the system WebKit and AppKit, which the C++ link has to name.
+    set(TN_PLAYER_UI_OVERLAY_LIB "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a")
+    if(NOT EXISTS "${TN_PLAYER_UI_OVERLAY_LIB}")
+        message(FATAL_ERROR "UI overlay library is missing: ${TN_PLAYER_UI_OVERLAY_LIB}. Run node scripts/build-native-ui-overlay.mjs.")
+    endif()
+    target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=1 TN_ENABLE_CSS_UI=0)
+    target_link_libraries(tn_engine_player PUBLIC "${TN_PLAYER_UI_OVERLAY_LIB}"
+        "-framework WebKit" "-framework AppKit" "-framework Foundation" "-framework CoreFoundation")
+    return()
+endif()
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "TN_ENGINE_PLAYER_UI_OVERLAY is wired for Linux and Windows; the legacy host's CMakeLists.txt names the macOS libraries.")
+    message(FATAL_ERROR "TN_ENGINE_PLAYER_UI_OVERLAY is wired for Linux, Windows and macOS.")
 endif()
 set(TN_PLAYER_UI_OVERLAY_LIB "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a")
 if(NOT EXISTS "${TN_PLAYER_UI_OVERLAY_LIB}")
