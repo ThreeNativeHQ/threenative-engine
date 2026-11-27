@@ -1,0 +1,83 @@
+{
+  "name": "survives",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "set-up",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "lights-green",
+      "waitForResource": {
+        "id": "state",
+        "path": "miniGo",
+        "equals": 1
+      },
+      "release": false,
+      "timeoutMs": 15000
+    },
+    {
+      "kind": "input",
+      "label": "move",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 10,
+      "release": true,
+      "label": "settle"
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true,
+      "noRuntimeDiagnostics": true
+    },
+    "movement": {
+      "entity": "player",
+      "minDistance": 0.5
+    },
+    "visibility": [
+      {
+        "entity": "player",
+        "minProjectedPixels": 20,
+        "allowTrivial": "The arena camera frames the lanes, so the human runner is in view."
+      }
+    ],
+    "visual": [
+      {
+        "region": {
+          "x": 0,
+          "y": 0,
+          "width": 1280,
+          "height": 720,
+          "minNonblankPixelRatio": 0.01
+        }
+      }
+    ]
+  }
+}

@@ -1,0 +1,361 @@
+{
+  "name": "boss-falls-and-the-level-ends",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "to-arena",
+      "press": "Digit6",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "arrived",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-1",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-1",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-2",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-2",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "armoured",
+      "waitTicks": 1,
+      "release": true,
+      "screenshot": "armoured"
+    },
+    {
+      "kind": "input",
+      "label": "pods-station",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-3",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-3",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-4",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-4",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "label": "pods-down",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPods",
+        "equals": 0
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "core-open",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPhase",
+        "equals": 2
+      },
+      "release": false,
+      "timeoutMs": 300,
+      "screenshot": "core-open"
+    },
+    {
+      "kind": "input",
+      "label": "rage-station",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "raging",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossPhase",
+        "equals": 3
+      },
+      "release": false,
+      "timeoutMs": 4000,
+      "screenshot": "raging"
+    },
+    {
+      "label": "raging-alive",
+      "waitForResource": {
+        "id": "state",
+        "path": "bossHp",
+        "gte": 0.05
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "charge-5",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-5",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-6",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-6",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-7",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-7",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-8",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-8",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charge-9",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "fly-9",
+      "waitTicks": 50,
+      "release": true
+    },
+    {
+      "label": "victory",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "won"
+      },
+      "release": false,
+      "timeoutMs": 40000
+    },
+    {
+      "kind": "wait",
+      "label": "score-card",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "bossPhase",
+        "atSteps": [
+          {
+            "label": "arrived",
+            "equals": 1
+          },
+          {
+            "label": "armoured",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bossPods",
+        "atSteps": [
+          {
+            "label": "arrived",
+            "equals": 2
+          },
+          {
+            "label": "pods-down",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bossHp",
+        "atSteps": [
+          {
+            "label": "armoured",
+            "equals": 1
+          },
+          {
+            "label": "raging",
+            "lte": 0.4
+          },
+          {
+            "label": "score-card",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bossPhase",
+        "atSteps": [
+          {
+            "label": "core-open",
+            "equals": 2
+          },
+          {
+            "label": "raging",
+            "equals": 3
+          },
+          {
+            "label": "score-card",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "raging",
+            "equals": "playing"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "phase",
+        "atSteps": [
+          {
+            "label": "arrived",
+            "equals": "playing"
+          },
+          {
+            "label": "score-card",
+            "equals": "won"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "atSteps": [
+          {
+            "label": "arrived",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "score",
+        "gte": 4000
+      }
+    ],
+    "signals": [
+      {
+        "name": "pod-down",
+        "entity": "boss",
+        "minCount": 2
+      },
+      {
+        "name": "core-down",
+        "entity": "boss",
+        "minCount": 1
+      },
+      {
+        "name": "complete",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

@@ -1,0 +1,97 @@
+{
+  "name": "target-tile-follows-the-farmer",
+  "warmupFrames": 10,
+  "drawEvery": 6,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "playTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "north",
+      "press": "ArrowUp",
+      "holdTicks": 80,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "north-still",
+      "waitTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "east",
+      "press": "ArrowRight",
+      "holdTicks": 60,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "east-still",
+      "waitTicks": 6,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "targetRow",
+        "atSteps": [
+          {
+            "label": "north-still",
+            "equals": 3
+          },
+          {
+            "label": "east-still",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "targetCol",
+        "atSteps": [
+          {
+            "label": "north-still",
+            "equals": 4
+          },
+          {
+            "label": "east-still",
+            "equals": 6
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "targetKind",
+        "atSteps": [
+          {
+            "label": "north-still",
+            "equals": "plain"
+          }
+        ]
+      }
+    ]
+  }
+}

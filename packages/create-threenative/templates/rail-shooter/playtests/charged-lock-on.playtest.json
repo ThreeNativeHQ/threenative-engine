@@ -1,0 +1,189 @@
+{
+  "name": "charged-shot-locks-on-and-homes",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "dummy",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "placed",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "tap",
+      "press": "Space",
+      "holdTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "tapped",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "charging",
+      "press": "Space",
+      "holdTicks": 50,
+      "release": false,
+      "screenshot": "charging"
+    },
+    {
+      "label": "charging:locked",
+      "waitForResource": {
+        "id": "state",
+        "path": "locked",
+        "equals": "dummy.1"
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "label": "charging:charge",
+      "waitForResource": {
+        "id": "state",
+        "path": "charge",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 300
+    },
+    {
+      "kind": "input",
+      "label": "charge-ends",
+      "press": "Space",
+      "holdTicks": 6,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "released",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "homing",
+      "waitTicks": 90,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "homingShots",
+        "atSteps": [
+          {
+            "label": "tapped",
+            "equals": 0
+          },
+          {
+            "label": "released",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "locked",
+        "atSteps": [
+          {
+            "label": "tapped",
+            "equals": ""
+          },
+          {
+            "label": "charging",
+            "equals": "dummy.1"
+          },
+          {
+            "label": "released",
+            "equals": ""
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "hits",
+        "atSteps": [
+          {
+            "label": "released",
+            "equals": 0
+          },
+          {
+            "label": "homing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "kills",
+        "atSteps": [
+          {
+            "label": "released",
+            "equals": 0
+          },
+          {
+            "label": "homing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lockedKills",
+        "atSteps": [
+          {
+            "label": "released",
+            "equals": 0
+          },
+          {
+            "label": "homing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "charge",
+        "atSteps": [
+          {
+            "label": "tapped",
+            "lte": 0.01
+          }
+        ]
+      }
+    ]
+  }
+}

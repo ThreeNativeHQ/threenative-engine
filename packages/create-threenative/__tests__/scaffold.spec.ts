@@ -123,9 +123,17 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
     shared: "e8433d4938ef85bf7d0915800b540c669e0bd7a91e095d23283bde6389e56ab6",
     kit: "54693c599ecece3ae83baceaa0c943114d748ff7076397f8121cf2f488ff2ca5",
   },
+  "board-party": {
+    shared: "02e9d1a6e035d9b76d3747debe43947f97ff7ee42a141708cd39b008b9e34761",
+    kit: "c15f4836e8e3e106f1322b12044ae098ea76a0983b75f931758ca45f28dd3666",
+  },
   collectathon: {
     shared: "2b58c42e4d1e62d089061a290c949407b226dbcb35ebbb5f3a21a33cc55b4285",
     kit: "d1545032c3d8f60bf7717985d23d020469f424e253c7f1ab858984e8ba672a64",
+  },
+  farming: {
+    shared: "1f789056329eeafd40871d9119d5dd19eed1a1e3f4c8c13e9e9e46e1467b4c0c",
+    kit: "66da18905676b8e26d37a628c735e01f9f57a0dc7826433c514dd74becf5951a",
   },
   kart: {
     shared: "00d7b7465cff14233c1457c854baa1de29baad36433d59884dd783aa6adf6561",
@@ -150,6 +158,10 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   racing: {
     shared: "002abf8219870e4e6c9f79c85ad9e4e8236a4e37b73f66e9f959394e5c1ccd40",
     kit: "dfcbed50a36d132a585c8a9b1d084b93e1cfb493d3d743dc0b0e37fbbff1dc0f",
+  },
+  "rail-shooter": {
+    shared: "48bdbf002daf8b5c746999832a744a3fc72f31d52e5b0df0e426b29d8a675610",
+    kit: "fe5e9f44513d79f1f4cfd864c61c16a341e6869f8e442465d62f6f92f70f45f2",
   },
   rain: {
     shared: "83e0f04b22c12e53dbca7d4440030aabcddf1007ab8fe4e1ca20cc8adca90627",
@@ -376,47 +388,53 @@ describe("create-threenative", () => {
     },
   );
 
-  it("stamps the authoring layer it wrote, and doctor reports it ok (PRD-829)", async () => {
-    const root = await makeTempDir("threenative-scaffold-stamp-");
-    try {
-      const { target } = await createProject(
-        { install: false, target: "stamped", template: "shooter" },
-        root,
-      );
-      const stamp = JSON.parse(
-        await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
-      ) as { createThreenative: string; kit: string; files: Record<string, string> };
-      const own = JSON.parse(
-        await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
-      ) as { version: string };
-      expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
-        version: own.version,
-        kit: "shooter",
-      });
-      for (const file of [
-        "AGENTS.md",
-        "CLAUDE.md",
-        ".claude/settings.json",
-        ".claude/hooks/discovery-gate.mjs",
-        ".agents/skills/threenative-capabilities/SKILL.md",
-      ])
-        expect(Object.keys(stamp.files)).toContain(file);
-      for (const [file, hash] of Object.entries(stamp.files))
-        expect(
-          createHash("sha256")
-            .update(await readFile(path.join(target, file)))
-            .digest("hex"),
-          file,
-        ).toBe(hash);
-      const { diagnoseProject, readProject } = await import("../src/doctor.js");
-      const report = diagnoseProject(await readProject(target));
-      expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
-        status: "ok",
-      });
-    } finally {
-      await rm(root, { force: true, recursive: true });
-    }
-  }, 60_000);
+  // Every kit, not one: a kit is usable only when its scaffold carries the whole authoring layer and
+  // doctor reads it back as ok (PRD-922).
+  it.each(ALL_TEMPLATES)(
+    "stamps the %s authoring layer it wrote, and doctor reports it ok (PRD-829)",
+    async (template) => {
+      const root = await makeTempDir("threenative-scaffold-stamp-");
+      try {
+        const { target } = await createProject(
+          { install: false, target: "stamped", template },
+          root,
+        );
+        const stamp = JSON.parse(
+          await readFile(path.join(target, ".threenative/agent-files.json"), "utf8"),
+        ) as { createThreenative: string; kit: string; files: Record<string, string> };
+        const own = JSON.parse(
+          await readFile(path.resolve("packages/create-threenative/package.json"), "utf8"),
+        ) as { version: string };
+        expect({ version: stamp.createThreenative, kit: stamp.kit }).toEqual({
+          version: own.version,
+          kit: template,
+        });
+        for (const file of [
+          "AGENTS.md",
+          "CLAUDE.md",
+          ".claude/settings.json",
+          ".claude/hooks/discovery-gate.mjs",
+          ".agents/skills/threenative-capabilities/SKILL.md",
+        ])
+          expect(Object.keys(stamp.files)).toContain(file);
+        for (const [file, hash] of Object.entries(stamp.files))
+          expect(
+            createHash("sha256")
+              .update(await readFile(path.join(target, file)))
+              .digest("hex"),
+            file,
+          ).toBe(hash);
+        const { diagnoseProject, readProject } = await import("../src/doctor.js");
+        const report = diagnoseProject(await readProject(target));
+        expect(report.checks.find(({ name }) => name === "authoring layer")).toMatchObject({
+          status: "ok",
+        });
+      } finally {
+        await rm(root, { force: true, recursive: true });
+      }
+    },
+    60_000,
+  );
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
     const root = await makeTempDir("threenative-scaffold-stability-");

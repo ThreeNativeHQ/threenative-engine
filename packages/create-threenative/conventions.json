@@ -63,7 +63,9 @@
       "marker": "\u2014",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
+        "farming",
         "kart",
         "minimal",
         "open-world",
@@ -114,7 +116,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -171,6 +175,8 @@
       "marker": "updateRateReport",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -194,7 +200,15 @@
       "default": "on",
       "override": "`strideSync: false`",
       "marker": "\u2014",
-      "kits": ["action-rpg", "adventure", "open-world", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "farming",
+        "open-world",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "ground-snap",
@@ -205,6 +219,8 @@
       "symbol": "GroundSnap",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "runner",
@@ -221,7 +237,16 @@
       "override": "a portable `Bone` named `RightHand`",
       "marker": "\u2014",
       "symbol": "attachToBone",
-      "kits": ["action-rpg", "adventure", "open-world", "shooter", "stealth", "survival-horror"]
+      "kits": [
+        "action-rpg",
+        "adventure",
+        "board-party",
+        "farming",
+        "open-world",
+        "shooter",
+        "stealth",
+        "survival-horror"
+      ]
     },
     {
       "id": "scale",
@@ -232,6 +257,8 @@
       "symbol": "normaliseToMetres",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "racing",
@@ -259,7 +286,9 @@
       "marker": "boneContact",
       "kits": [
         "action-rpg",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -301,7 +330,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -335,6 +366,8 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "board-party",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -368,7 +401,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
@@ -467,7 +502,9 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "board-party",
         "collectathon",
+        "farming",
         "minimal",
         "open-world",
         "platformer",
