@@ -209,6 +209,8 @@ Run `pnpm create threenative my-game --template <name>`, or ask your agent for "
 | `racing` · `runner` · `sailing` | Three-lap circuit with boost pads · three-lane endless runner · wind, ocean waves, and buoyancy |
 | `snow` · `rain` · `puzzle` | Deformable snow footprints · coastal storm you control · 45-body physics vault |
 | `farming` · `rail-shooter` · `board-party` | Day-clock crop farm · spline-railed space shooter · four-player dice board with a minigame every turn |
+| `car-combat` · `flight` · `military-shooter` | Friction-ellipse arena cars with per-panel damage · hang glider and rocket belt over an island · stances, recoil and cover in a held yard |
+| `platform-fighter` · `rhythm` · `rpg` · `tomb-explorer` | Percent knockback on a floating stage · call-and-response beat clock · d20 party combat and a skill check · block-grid temple jumps and a relic |
 | `open-world` | **Open-world crime**: a city on foot or by car: carjacking, traffic, five-star police pursuit and a timed job |
 | `stealth` | **Stealth infiltration**: vision cones, suspicion, noise, takedowns, bodies that raise the alarm, and an extraction |
 | `survival-horror` | **Survival horror**: fixed cameras, tank controls, scarce ammo, a six-slot case, herbs, keys and typewriter saves |

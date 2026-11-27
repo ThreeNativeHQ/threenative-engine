@@ -1137,13 +1137,41 @@
     "restart": {
       "key": "KeyR",
       "resets": [
-        { "id": "state", "path": "phase", "equals": "playing" },
-        { "id": "state", "path": "leader", "equals": "hero" },
-        { "id": "state", "path": "partySize", "equals": 2 },
-        { "id": "state", "path": "kills", "equals": 0 },
-        { "id": "state", "path": "coins", "equals": 0 },
-        { "id": "state", "path": "questStage", "equals": 0 },
-        { "id": "state", "path": "medpacks", "equals": 3 }
+        {
+          "id": "state",
+          "path": "phase",
+          "equals": "playing"
+        },
+        {
+          "id": "state",
+          "path": "leader",
+          "equals": "hero"
+        },
+        {
+          "id": "state",
+          "path": "partySize",
+          "equals": 2
+        },
+        {
+          "id": "state",
+          "path": "kills",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "coins",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "questStage",
+          "equals": 0
+        },
+        {
+          "id": "state",
+          "path": "medpacks",
+          "equals": 3
+        }
       ]
     },
     "optOut": {
@@ -1461,6 +1489,34 @@
       "action-clip-completes": "no key plays a one-shot clip: the pilot loops one idle clip and the controls fly the craft",
       "effect-follows-contact": "no melee or timed hit with a contact window",
       "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
+  "car-combat": {
+    "subject": "player",
+    "move": ["ArrowUp", "KeyW", "ArrowDown", "KeyS", "ArrowLeft", "KeyA", "ArrowRight", "KeyD"],
+    "explore": {
+      "actions": ["Space"]
+    },
+    "optOut": {
+      "engine-cost": "the kit ships a performance ceiling but no measured engine-cost counters yet; the PRD-922 follow-up list owns the bounds",
+      "foot-slip": "the car is boxes, tubes and wheels, so there is no skinned rig with a foot to measure",
+      "restart-resets": "the kit restarts by re-entering its play scene and publishes no `state` entity for the row's reset paths",
+      "action-clip-completes": "no key starts a skinned clip: ramming and the handbrake are physics, and the cars carry no rig",
+      "effect-follows-contact": "no key starts a skinned clip, so there is no contact window to sample"
+    }
+  },
+  "military-shooter": {
+    "subject": "player",
+    "move": ["ArrowUp", "KeyW", "ArrowDown", "KeyS", "ArrowLeft", "KeyA", "ArrowRight", "KeyD"],
+    "explore": {
+      "actions": ["Space", "KeyF", "KeyR", "KeyG"]
+    },
+    "optOut": {
+      "engine-cost": "the kit ships a performance ceiling but no measured engine-cost counters yet; the PRD-922 follow-up list owns the bounds",
+      "foot-slip": "the mannequin's sole nodes are not named, so footSlip cannot measure a planted foot yet",
+      "restart-resets": "the kit restarts by re-entering its play scene and publishes no `state` entity for the row's reset paths",
+      "action-clip-completes": "the rifle is hitscan and the weapon is a procedural viewmodel, so no skinned clip plays on a key press",
+      "effect-follows-contact": "no skinned clip plays on a key press, so there is no contact window to sample"
     }
   }
 }

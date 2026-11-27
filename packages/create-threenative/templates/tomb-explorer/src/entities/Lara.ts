@@ -139,11 +139,13 @@ export class Lara {
 
   #step(ctx: GameCtx, frozen: boolean): void {
     const held = (name: string): boolean => !frozen && ctx.input.pressed(name);
+    // The tank controls read the shared axis: y drives, x turns.
+    const move = frozen ? { x: 0, y: 0 } : ctx.input.vector("move");
     const input: IInput = {
-      up: held("forward"),
-      down: held("back"),
-      left: held("left"),
-      right: held("right"),
+      up: move.y > 0.5,
+      down: move.y < -0.5,
+      left: move.x < -0.5,
+      right: move.x > 0.5,
       walk: held("walk"),
       action: held("action"),
       jump: held("jump"),
