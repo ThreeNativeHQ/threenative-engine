@@ -59,11 +59,9 @@ from the matching `_RM` donor), and confirm the result with `asset_preview_anima
 nonblank contact sheet before cooking. The 18-bone AETHER sample has no fingers or toes; the
 tools report those absent roles instead of inventing them.
 
-Choose the sculpt branch before coding: conventional → asset tools; trivial → portable geometry;
-bespoke with a reference → `sculpt_plan`, `sculpt_spec_gate` until every region passes, one
-factory per pass in `src/render/`, then `sculpt_compare` and `sculpt_pass_gate` against a real
-capture; bespoke without a reference → read `node_modules/create-threenative/agent-docs/references/dream-loop.md` and acquire a
-user-supplied or explicitly authorized target before sculpting. Use `node scripts/reference.mjs`
+Choose the sculpt branch before coding: conventional -> catalog asset tools (`providers: ["threenative"]` first); standalone procedural prop or bespoke hero (vehicles, characters, gates, rings, lamps, docks, landmarks) -> bake a self-contained `.glb` under `assets/` via `scripts/bake-<slug>.mjs` (`GLTFExporter` with `binary: true`, Node `FileReader` polyfill, and `asset.extras = { tnOrigin: "procedural", tnPrompt }`) and load via `ctx.assets.model(...)`, keeping inline `src/render/` geometry strictly for continuous surfaces (terrain, road splines, water, sky, VFX); bespoke with a reference -> `sculpt_plan`, `sculpt_spec_gate` until every region passes, bake each advancing pass into the `.glb`, then `sculpt_compare` and `sculpt_pass_gate` against a real capture; bespoke without a reference -> read `node_modules/create-threenative/agent-docs/references/dream-loop.md` and acquire a user-supplied or explicitly authorized target before sculpting.
+
+**Runtime/ABI rules for assets:** Never write straight into `public/` or suppress broken models with `assets.exclude`. `ctx.assets.model()` returns `{ scene, animations }`, not an `Object3D`: add `loaded.scene` (an `isObject3D` check drops it with `TN_ASSET_UNUSED`), and when instancing with `InstancedBatch` (`{ whole: true }`), always pass required `material` to `new InstancedBatch({ geometry, material, ... })` and copy `userData` onto each batch. Never call `InstancedMesh.clone()` (`TN_NATIVE_CLONE_UNSUPPORTED`). Await only spawn-sightline assets in `Scene.load()` and `ctx.assets.prefetch` distant assets so `TN_STARTUP_OFFSCREEN_BYTES` stays `< 10 MB`. Use `node scripts/reference.mjs`
 only when the user selected its provider/model; never invent a reference or hide a missing key.
 `sculpt_grimoire` supplies techniques. `threenative-sculpt-mcp` guides source and never launches
 a browser. A missing/blank capture fails; credit the reference before the turn ends. See
