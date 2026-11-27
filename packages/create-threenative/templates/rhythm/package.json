@@ -19,10 +19,10 @@
     "format:check": "biome format src"
   },
   "dependencies": {
-    "@threenative/backend": ">=0.2.1",
-    "@threenative/core": ">=0.3.24",
-    "@threenative/physics": ">=0.3.24",
-    "@threenative/ui": ">=0.3.24",
+    "@threenative/backend": ">=0.2.2",
+    "@threenative/core": ">=0.3.25",
+    "@threenative/physics": ">=0.3.25",
+    "@threenative/ui": ">=0.3.25",
     "react": "19.2.0",
     "react-dom": "19.2.0",
     "three": "0.187.0"
@@ -30,13 +30,13 @@
   "devDependencies": {
     "@gltf-transform/cli": "4.4.2",
     "@tailwindcss/vite": "4.3.3",
-    "@threenative/assets": ">=0.3.25",
-    "@threenative/playtest": ">=0.3.24",
+    "@threenative/assets": ">=0.3.26",
+    "@threenative/playtest": ">=0.3.25",
     "@types/react": "19.2.0",
     "@types/react-dom": "19.2.0",
     "@types/three": "0.187.0",
     "@vitejs/plugin-react": "6.0.5",
-    "create-threenative": "0.2.29",
+    "create-threenative": "0.2.30",
     "esbuild": "0.27.0",
     "playwright": "1.62.1",
     "tailwindcss": "4.3.3",
@@ -46,7 +46,7 @@
     "eslint": "10.13.0"
   },
   "optionalDependencies": {
-    "@threenative/runtime-native": ">=0.3.24"
+    "@threenative/runtime-native": ">=0.3.25"
   },
   "overrides": {
     "sharp": ">=0.35.4",
@@ -56,7 +56,9 @@
     "overrides": {
       "sharp": ">=0.35.4"
     },
-    "supportedArchitectures": { "libc": ["current"] },
+    "supportedArchitectures": {
+      "libc": ["current"]
+    },
     "onlyBuiltDependencies": ["@threenative/core"],
     "patchedDependencies": {
       "three@0.187.0": "patches/three@0.187.0.patch",
