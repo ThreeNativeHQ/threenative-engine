@@ -255,6 +255,39 @@ describe("packageEngineDesktop", () => {
     expect(start).toContain(':"${TN_PLAYER_PRIORITY:=game}"'.slice(1));
   });
 
+  it("packages a runnable Windows image: the player keeps its .exe name and a .cmd launcher starts it (#614)", async () => {
+    // PLAYER is read at import, so a win32 copy of the module is imported under a spoofed platform.
+    const real = Object.getOwnPropertyDescriptor(process, "platform") as PropertyDescriptor;
+    Object.defineProperty(process, "platform", { value: "win32" });
+    let windows: { packageEngineDesktop: typeof packageEngineDesktop };
+    try {
+      windows = await import(
+        // @ts-expect-error The packager is a plain .mjs script with no declaration file.
+        "../../runtime-native/scripts/package-engine-desktop.mjs?platform=win32"
+      );
+    } finally {
+      Object.defineProperty(process, "platform", real);
+    }
+    Object.defineProperty(process, "platform", { value: "win32" });
+    try {
+      const root = await temp("threenative-engine-package-win-");
+      const player = path.join(root, "player.exe");
+      await writeFile(player, "MZ");
+      const output = path.join(root, "dist-native", "midway");
+      await windows.packageEngineDesktop(
+        { project: root, entry: "src/game.ts", player, output },
+        stubs,
+      );
+      expect(existsSync(path.join(output, "tn-native-engine-player-v8.exe"))).toBe(true);
+      expect(existsSync(path.join(output, "midway"))).toBe(false);
+      const start = readFileSync(path.join(output, "midway.cmd"), "utf8");
+      expect(start).toContain('"%~dp0tn-native-engine-player-v8.exe" "%~dp0game.js" %*');
+      expect(start).not.toContain("#!/bin/sh");
+    } finally {
+      Object.defineProperty(process, "platform", real);
+    }
+  });
+
   it("hands the player the game's CPU priority (display.priority, PRD-859)", () => {
     expect(launcher(1280, 720, undefined, "normal")).toContain(
       ':"${TN_PLAYER_PRIORITY:=normal}"'.slice(1),

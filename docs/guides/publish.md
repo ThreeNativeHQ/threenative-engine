@@ -45,14 +45,33 @@ updates the same link instead of making a second one. Commit it with the game.
 
 `THREENATIVE_STUDIO` names another Studio origin, and `THREENATIVE_TOKEN` signs in for one run.
 
+## Deploy a native game to the store
+
+```sh
+pnpm exec threenative deploy --target desktop --shot cover.png
+```
+
+This pushes the game's **source** to the ThreeNative store. The store builds the native game itself
+(Linux now, Windows after threenative-engine#614). The command downloads the checked `tn-store`
+client once into `$XDG_CACHE_HOME/threenative/bin/`, and exits 4 when its sha256 does not match.
+`THREENATIVE_STORE_CLI=<path>` runs a client you built yourself instead.
+
+The first deploy needs `--shot <png>`, the cover picture, because the store refuses a listing with
+no picture. It writes `.threenative/store.json` with the game id, the file Studio also reads, so
+Studio and the terminal publish to one game. Commit it. Every deploy then pushes to that game with
+the `package.json` `version`, else `app.version` from `threenative.config.ts` (the version the native app is built with). It prints the release state, then
+the store page `https://threenative.com/games/<slug>/` alone on the last line.
+
+macOS exits 2: the store has no macOS build.
+
 ## Exit codes
 
 | Code | Meaning |
 | --- | --- |
 | 0 | Published, or signed in/out |
-| 2 | Bad arguments: no `build:web` script, no `package.json` name |
+| 2 | Bad arguments: no `build:web` script, no `package.json` name, a first native deploy with no `--shot`, macOS |
 | 3 | Sign in again: the token was refused |
-| 4 | The server refused it, or the build failed |
+| 4 | The server refused it, the build failed, or `tn-store` failed its checksum |
 | 5 | No network |
 
 ## What a share link is not
@@ -64,4 +83,5 @@ binary is signed with your own certificate — see [Native runtime](native-runti
 ## Source
 
 - [deploy.ts](../../packages/create-threenative/src/deploy.ts)
+- [store-cli.ts](../../packages/create-threenative/src/store-cli.ts)
 - [account.ts](../../packages/create-threenative/src/account.ts)

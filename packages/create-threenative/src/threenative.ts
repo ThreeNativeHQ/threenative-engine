@@ -2,7 +2,7 @@
 import { CliExit, login, logout } from "./account.js";
 import { build, buildHelp, parseBuildArgs } from "./build.js";
 import { type PublicCommand, commandSummaries, threenativeCommands } from "./commands.js";
-import { deploy } from "./deploy.js";
+import { deploy, parseDeployArgs } from "./deploy.js";
 import {
   type DoctorMode,
   type DoctorTarget,
@@ -75,7 +75,7 @@ export function cliHelp(command?: PublicCommand): string {
   }
   if (command === "deploy") {
     return `${[
-      "Usage: threenative deploy",
+      "Usage: threenative deploy [--target web|desktop] [--shot <png>]",
       "",
       "Runs this package's build:web script with its own package manager, then uploads dist/",
       "to studio.threenative.com and prints the share link on its own line, last.",
@@ -85,6 +85,13 @@ export function cliHelp(command?: PublicCommand): string {
       "  THREENATIVE_TOKEN signs in for one run without a saved token.",
       "Exits 0 published, 2 bad arguments (no build:web script), 3 sign in again, 4 the server",
       "  refused it or the build failed, 5 no network.",
+      "",
+      "--target desktop pushes the game's source to the ThreeNative store, which builds the native",
+      "  game, and prints the store page on its own line, last. It downloads the checked tn-store",
+      "  client once (THREENATIVE_STORE_CLI=<path> uses your own). The first deploy needs --shot <png>,",
+      "  the cover picture, and writes .threenative/store.json with the game id; commit it.",
+      "  The release version is package.json version, else app.version from threenative.config.ts. Linux and Windows",
+      "  only; macOS exits 2 because the store has no macOS build.",
     ].join("\n")}\n`;
   }
   return `${[
@@ -199,13 +206,13 @@ export async function main(argv = process.argv.slice(2)): Promise<void> {
     await runLoginCommand(rest);
     return;
   }
-  if (command === "logout" || command === "deploy") {
-    if (rest.length > 0) throw new CliExit(2, `${command} takes no arguments.`);
-    if (command === "logout") {
-      await logout();
-      return;
-    }
-    await deploy();
+  if (command === "deploy") {
+    await deploy(parseDeployArgs(rest));
+    return;
+  }
+  if (command === "logout") {
+    if (rest.length > 0) throw new CliExit(2, "logout takes no arguments.");
+    await logout();
     return;
   }
   if (command === "doctor") {
