@@ -128,6 +128,22 @@ from it waits on itself until the hold's budget runs out. A hold settles when it
 resolves or rejects, or after `budgetMs` (45 s by default). `hold()` throws if startup has
 already resolved.
 
+## Bake a procedural model to a GLB
+
+A Node script under `scripts/` can build a model from Three.js parts and write it as a `.glb` under
+`assets/`. `@threenative/core/bake` carries the plumbing: `createPbrMaterial`,
+`createEmissiveMaterial`, `addPart`, and `exportProceduralGlb`, which merges meshes by material,
+rests the model on `y = 0`, checks its bounds and writes `asset.extras.tnOrigin = "procedural"`.
+The script chooses every shape and colour.
+
+```ts
+import { exportProceduralGlb } from "@threenative/core/bake";
+
+const receipt = await exportProceduralGlb(root, "assets/lamp.glb", { prompt: "street lamp" });
+```
+
+Check the result with `threenative inspect assets/lamp.glb --json`.
+
 ## Custom loaders and cleanup
 
 For loaders ThreeNative does not wrap, such as an HDR sky or a font, call
