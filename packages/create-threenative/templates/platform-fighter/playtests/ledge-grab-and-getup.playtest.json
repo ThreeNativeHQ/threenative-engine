@@ -1,0 +1,166 @@
+{
+  "name": "ledge-grab-and-getup",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["Digit7"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "label": "grabbed",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["ArrowLeft"],
+      "holdTicks": 10,
+      "label": "climb",
+      "release": false
+    },
+    {
+      "kind": "input",
+      "press": [],
+      "holdTicks": 1,
+      "label": "climbing",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 45,
+      "label": "standing",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": "ledge"
+          },
+          {
+            "label": "climbing",
+            "equals": "getup"
+          },
+          {
+            "label": "standing",
+            "equals": "free"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.ledge",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.ledgeGrabs",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.intangible",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": 1
+          },
+          {
+            "label": "climbing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.jumps",
+        "atSteps": [
+          {
+            "label": "grabbed",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.getups",
+        "atSteps": [
+          {
+            "label": "climbing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.grounded",
+        "atSteps": [
+          {
+            "label": "standing",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.y",
+        "atSteps": [
+          {
+            "label": "standing",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.x",
+        "atSteps": [
+          {
+            "label": "standing",
+            "lte": 6.9
+          }
+        ]
+      }
+    ]
+  }
+}

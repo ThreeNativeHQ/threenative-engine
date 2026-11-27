@@ -1,0 +1,105 @@
+{
+  "name": "ram-damages-rival",
+  "target": "web",
+  "schemaVersion": 1,
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "player",
+  "steps": [
+    {
+      "kind": "wait",
+      "label": "settle",
+      "waitTicks": 20,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "staged",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "ready",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "drive",
+      "press": "ArrowUp",
+      "holdTicks": 120,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "after",
+      "waitTicks": 20,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "components": [
+      {
+        "entity": "rival.0",
+        "component": "engine",
+        "atSteps": [
+          {
+            "label": "ready",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "entity": "rival.0",
+        "component": "engine",
+        "gte": 5
+      },
+      {
+        "entity": "rival.0",
+        "component": "crushFront",
+        "gte": 0.05
+      },
+      {
+        "entity": "rival.0",
+        "component": "wrecked",
+        "equals": false,
+        "allowTrivial": "The rival survives one ram: only a finishing hit wrecks."
+      },
+      {
+        "entity": "player",
+        "component": "hits",
+        "gte": 1
+      }
+    ],
+    "resources": [
+      {
+        "id": "state",
+        "path": "rammed",
+        "gte": 1
+      },
+      {
+        "id": "state",
+        "path": "rivalsWrecked",
+        "equals": 0,
+        "allowTrivial": "One ram does not wreck a healthy rival."
+      }
+    ],
+    "signals": [
+      {
+        "name": "rammed-rival",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

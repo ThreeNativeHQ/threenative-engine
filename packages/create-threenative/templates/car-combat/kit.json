@@ -1,0 +1,16 @@
+{
+  "name": "car-combat",
+  "title": "Car combat",
+  "blurb": "A grey-grid arena of rival cars: friction-ellipse tyres, an automatic gearbox, per-panel damage and repair, ramming that wrecks rivals, checkpoints that add time.",
+  "genre": "car-combat",
+  "aliases": [
+    "carmageddon",
+    "twisted-metal",
+    "destruction-derby",
+    "car-combat",
+    "demolition-derby",
+    "vehicular-combat",
+    "wreck"
+  ],
+  "kit": true
+}

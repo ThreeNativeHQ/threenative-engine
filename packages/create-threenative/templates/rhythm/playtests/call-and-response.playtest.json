@@ -1,0 +1,252 @@
+{
+  "name": "call-and-response",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "call-opens",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 0.1
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "call-half",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 1.5
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "early-press",
+      "press": "KeyZ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "early-press-seen",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "label": "call-done",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.5
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "label": "answer-n0-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 3.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "answer-n0",
+      "press": "ArrowLeft",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "answer-n1-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 4.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "answer-n1",
+      "press": "ArrowRight",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "answer-n2-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 5.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "answer-n2",
+      "press": "ArrowUp",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "answer-n3-ready",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 6.96
+      },
+      "release": false,
+      "timeoutMs": 90000
+    },
+    {
+      "kind": "input",
+      "label": "answer-n3",
+      "press": "ArrowDown",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "answered",
+      "waitForResource": {
+        "id": "state",
+        "path": "songBeat",
+        "gte": 7.6
+      },
+      "release": false,
+      "timeoutMs": 90000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "noRuntimeDiagnostics": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "part",
+        "atSteps": [
+          {
+            "label": "call-opens",
+            "equals": "teacher"
+          },
+          {
+            "label": "answered",
+            "equals": "player"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "called",
+        "atSteps": [
+          {
+            "label": "call-opens",
+            "equals": 1
+          },
+          {
+            "label": "call-half",
+            "equals": 2
+          },
+          {
+            "label": "call-done",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "presses",
+        "atSteps": [
+          {
+            "label": "early-press-seen",
+            "equals": 0
+          },
+          {
+            "label": "answered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "matched",
+        "atSteps": [
+          {
+            "label": "call-done",
+            "equals": 0
+          },
+          {
+            "label": "answered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "cool",
+        "atSteps": [
+          {
+            "label": "answered",
+            "equals": 4
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "miss",
+        "atSteps": [
+          {
+            "label": "answered",
+            "equals": 0
+          }
+        ],
+        "allowTrivial": "A clean repeat of the call leaves no miss; the matched and cool counts above would not reach four otherwise."
+      }
+    ],
+    "components": [
+      {
+        "entity": "teacher",
+        "component": "move",
+        "atSteps": [
+          {
+            "label": "call-opens",
+            "equals": "left"
+          },
+          {
+            "label": "call-half",
+            "equals": "right"
+          },
+          {
+            "label": "call-done",
+            "equals": "down"
+          }
+        ]
+      }
+    ],
+    "hud": [
+      {
+        "id": "answer-track",
+        "visible": true,
+        "allowTrivial": "The answer bar is part of the first frame; it must remain once the answer opens."
+      }
+    ]
+  }
+}

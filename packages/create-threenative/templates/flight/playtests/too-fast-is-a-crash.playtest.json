@@ -1,0 +1,89 @@
+{
+  "name": "too-fast-is-a-crash",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.3
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "high",
+      "press": "Digit7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "dive",
+      "press": "ArrowUp",
+      "holdTicks": 30,
+      "release": false
+    },
+    {
+      "label": "crashed",
+      "waitForResource": {
+        "id": "state",
+        "path": "phase",
+        "equals": "crashed"
+      },
+      "release": false,
+      "timeoutMs": 20000
+    },
+    {
+      "kind": "wait",
+      "label": "end",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "crashReason",
+        "atSteps": [
+          {
+            "label": "crashed",
+            "equals": "fast"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "landPoints",
+        "atSteps": [
+          {
+            "label": "end",
+            "equals": 0
+          }
+        ]
+      }
+    ],
+    "signals": [
+      {
+        "name": "crashed",
+        "entity": "player",
+        "minCount": 1
+      }
+    ]
+  }
+}

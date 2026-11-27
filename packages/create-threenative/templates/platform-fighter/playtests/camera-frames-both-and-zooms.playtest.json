@@ -1,0 +1,93 @@
+{
+  "name": "camera-frames-both-and-zooms",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 100,
+      "label": "close",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["KeyC"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 100,
+      "label": "far",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "camera.distance",
+        "atSteps": [
+          {
+            "label": "close",
+            "lte": 11.2
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "camera.x",
+        "atSteps": [
+          {
+            "label": "far",
+            "lte": 0.5
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "camera.distance",
+        "gte": 14
+      }
+    ],
+    "visibility": [
+      {
+        "allowTrivial": "Both fighters start in frame; the far station must keep them in frame while the camera backs off.",
+        "entity": "p1",
+        "minProjectedPixels": 50
+      },
+      {
+        "allowTrivial": "Both fighters start in frame; the far station must keep them in frame while the camera backs off.",
+        "entity": "cpu",
+        "minProjectedPixels": 50
+      }
+    ]
+  }
+}

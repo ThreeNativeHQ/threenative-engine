@@ -1,0 +1,123 @@
+{
+  "name": "blade-rhythm",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "player",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "time",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "run",
+      "press": "ArrowUp",
+      "holdTicks": 62,
+      "release": true
+    },
+    {
+      "label": "past",
+      "waitForResource": {
+        "id": "state",
+        "path": "playerX",
+        "gte": 9300
+      },
+      "release": true,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "wait",
+      "label": "through",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "under",
+      "press": "Digit9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "cut",
+      "waitForResource": {
+        "id": "state",
+        "path": "health",
+        "lte": 600
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "wait",
+      "label": "hurt",
+      "waitTicks": 4,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "health",
+        "atSteps": [
+          {
+            "label": "through",
+            "equals": 1000
+          },
+          {
+            "label": "hurt",
+            "equals": 600
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "bladeHits",
+        "atSteps": [
+          {
+            "label": "through",
+            "equals": 0
+          },
+          {
+            "label": "hurt",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "message",
+        "atSteps": [
+          {
+            "label": "hurt",
+            "textIncludes": "Sliced"
+          }
+        ]
+      }
+    ]
+  }
+}

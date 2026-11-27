@@ -66,6 +66,7 @@
         "board-party",
         "collectathon",
         "farming",
+        "flight",
         "kart",
         "minimal",
         "open-world",
@@ -73,6 +74,7 @@
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "sailing",
         "shooter",
@@ -80,6 +82,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -132,6 +135,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -183,6 +187,7 @@
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -191,6 +196,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -206,6 +212,7 @@
         "board-party",
         "farming",
         "open-world",
+        "rhythm",
         "stealth",
         "survival-horror"
       ]
@@ -223,11 +230,14 @@
         "farming",
         "minimal",
         "open-world",
+        "platform-fighter",
+        "rhythm",
         "runner",
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -243,6 +253,7 @@
         "board-party",
         "farming",
         "open-world",
+        "rhythm",
         "shooter",
         "stealth",
         "survival-horror"
@@ -259,15 +270,19 @@
         "action-rpg",
         "board-party",
         "farming",
+        "flight",
         "minimal",
         "open-world",
+        "platform-fighter",
         "racing",
+        "rhythm",
         "runner",
         "sailing",
         "shooter",
         "starter",
         "stealth",
-        "survival-horror"
+        "survival-horror",
+        "tomb-explorer"
       ]
     },
     {
@@ -295,6 +310,7 @@
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "runner",
         "sailing",
         "shooter",
@@ -302,6 +318,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -333,12 +350,14 @@
         "board-party",
         "collectathon",
         "farming",
+        "flight",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -347,6 +366,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -368,11 +388,13 @@
         "action-rpg",
         "board-party",
         "farming",
+        "flight",
         "minimal",
         "open-world",
         "platformer",
         "puzzle",
         "racing",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -381,6 +403,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -410,6 +433,7 @@
         "puzzle",
         "racing",
         "rain",
+        "rhythm",
         "rts",
         "runner",
         "sailing",
@@ -418,6 +442,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },
@@ -519,6 +544,7 @@
         "starter",
         "stealth",
         "survival-horror",
+        "tomb-explorer",
         "tower-defense"
       ]
     },

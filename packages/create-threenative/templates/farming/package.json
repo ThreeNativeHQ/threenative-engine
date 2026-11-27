@@ -56,7 +56,9 @@
     "overrides": {
       "sharp": ">=0.35.4"
     },
-    "supportedArchitectures": { "libc": ["current"] },
+    "supportedArchitectures": {
+      "libc": ["current"]
+    },
     "onlyBuiltDependencies": ["@threenative/core"],
     "patchedDependencies": {
       "three@0.187.0": "patches/three@0.187.0.patch",

@@ -1,0 +1,148 @@
+{
+  "name": "roll-is-intangible",
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "warmupFrames": 10,
+  "subject": "p1",
+  "steps": [
+    {
+      "label": "ready",
+      "release": false,
+      "timeoutMs": 8000,
+      "waitForResource": {
+        "gte": 0.3,
+        "id": "state",
+        "path": "time"
+      }
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit9"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 30,
+      "label": "control-hit",
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit1"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 2,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["ShiftLeft"],
+      "holdTicks": 1,
+      "label": "roll",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "press": ["Digit9"],
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 3,
+      "label": "mid-roll",
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "waitTicks": 45,
+      "label": "after-roll",
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "p1.percent",
+        "atSteps": [
+          {
+            "label": "control-hit",
+            "equals": 3
+          },
+          {
+            "label": "after-roll",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.mode",
+        "atSteps": [
+          {
+            "label": "mid-roll",
+            "equals": "dodge"
+          },
+          {
+            "label": "after-roll",
+            "equals": "free"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.intangible",
+        "atSteps": [
+          {
+            "label": "mid-roll",
+            "equals": 1
+          },
+          {
+            "label": "after-roll",
+            "equals": 0
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.dodges",
+        "atSteps": [
+          {
+            "label": "after-roll",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "p1.x",
+        "gte": 1.5
+      }
+    ]
+  }
+}
