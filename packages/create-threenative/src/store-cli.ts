@@ -63,6 +63,7 @@ function clientEntry(body: unknown, os: string): { name: string; sha256: string;
   const version = typeof manifest?.version === "string" ? manifest.version : "";
   if (
     typeof file?.name !== "string" ||
+    file.name === "" ||
     typeof file.sha256 !== "string" ||
     !/^[a-f0-9]{64}$/u.test(file.sha256) ||
     !/^[A-Za-z0-9._-]+$/u.test(version)
@@ -186,7 +187,8 @@ function runStore(
 function parseObject(stdout: string, what: string): Record<string, unknown> {
   try {
     const parsed: unknown = JSON.parse(stdout.trim());
-    if (parsed !== null && typeof parsed === "object") return parsed as Record<string, unknown>;
+    if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed))
+      return parsed as Record<string, unknown>;
   } catch {
     // Falls through to the error below.
   }
@@ -197,8 +199,13 @@ async function storedGameId(cwd: string): Promise<string | undefined> {
   let text: string;
   try {
     text = await readFile(path.join(cwd, STORE_FILE), "utf8");
-  } catch {
-    return undefined;
+  } catch (error) {
+    // Only a missing file means "not listed yet"; a permission or I/O error must not start a second listing.
+    if ((error as NodeJS.ErrnoException).code === "ENOENT") return undefined;
+    throw new CliExit(
+      2,
+      `Could not read ${STORE_FILE}: ${error instanceof Error ? error.message : String(error)}`,
+    );
   }
   // A file that is there but not a listing must stop the deploy: creating a second listing over a
   // truncated or conflicted store.json would orphan the first one.
