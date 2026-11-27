@@ -51,7 +51,7 @@ async function scenarioArguments(): Promise<string[]> {
   return ["--project", project, "--scenario", "*.playtest.json"];
 }
 
-function report(pass: boolean, diagnostics: Array<{ code: string }> = []) {
+function report(pass: boolean, diagnostics: Array<{ code: string; message?: string; severity?: string }> = []) {
   return { assertionResults: [{ id: "movement", pass }], diagnostics, pass };
 }
 
@@ -188,7 +188,7 @@ test("--summary prints a compact verdict, --out keeps the full report, exit code
 
   expect(exitCode).toBe(1);
   expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
-  const summary = JSON.parse(stdout) as { out: string; pass: boolean; scenarios: Array<Record<string, any>> };
+  const summary = JSON.parse(stdout) as { out: string; pass: boolean; scenarios: Array<Record<string, unknown>> };
   expect(summary.pass).toBe(false);
   expect(summary.out).toBe(outFile);
   expect(summary.scenarios[0]).toMatchObject({

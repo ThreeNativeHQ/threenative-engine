@@ -78,8 +78,8 @@ export interface IPartPlacement {
 /**
  * Add one primitive to a model: geometry, material and where it sits. Returns the mesh.
  * @requires import { addPart } from "@threenative/core/bake"
- * @situation bake a procedural model to a glb: place a box, cylinder or sphere part on the model
- * @alias bake add part, place mesh part
+ * @situation add a box, cylinder or sphere primitive to the group a bake script is building
+ * @alias bake add part, mesh part helper
  * @example addPart(root, new BoxGeometry(2, 0.5, 4), paint, { position: [0, 0.5, 0], name: "body" });
  */
 export function addPart(
@@ -104,8 +104,8 @@ export function addPart(
  * vertex colours and put one `material` on every mesh, so the script paints it. Mutates and
  * returns `root`.
  * @requires import { prepareDonorWithoutMaterials } from "@threenative/core/bake"
- * @situation bake a procedural model to a glb: reuse a donor glb's shape without its textures or materials
- * @alias donor model, strip materials, repaint imported glb
+ * @situation strip a donor mesh of its materials, textures and vertex colours before a bake script repaints it
+ * @alias donor mesh, strip materials, repaint imported mesh
  * @example prepareDonorWithoutMaterials(donor.scene, createPbrMaterial(0x888888, { name: "base" }));
  */
 export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T {

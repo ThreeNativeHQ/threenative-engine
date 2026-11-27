@@ -281,6 +281,31 @@ describe("threenative-engine-mcp", () => {
     }
   });
 
+  it("finds the agent-token tooling by the words an author types (PRD-926)", () => {
+    const cases = [
+      ["stop writing a script to parse a playtest report", "threenative-playtest --summary"],
+      [
+        "read a playtest result without parsing megabytes of JSON",
+        "threenative-playtest --summary",
+      ],
+      ["check that a baked glb stands on the floor", "threenative inspect"],
+      ["audit the assets folder against the manifest", "threenative inspect"],
+      ["export a procedural model to a glb with a node script", "exportProceduralGlb"],
+      ["wait in a playtest until a game resource reaches a value", "waitForResource"],
+      ["release every held key when the window loses focus", "InputMap.clear"],
+      ["read the persistent contact points between two colliders", "readContacts"],
+      ["turn off the local exposure pass", "localExposureEnabled"],
+    ] as const;
+    for (const [situation, symbol] of cases) {
+      expect(
+        searchResults(situation, workspaceManifest)
+          .slice(0, 3)
+          .map((result) => result.symbol),
+        situation,
+      ).toContain(symbol);
+    }
+  });
+
   it("finds measured miss-list vocabulary across the owning packages", () => {
     const cases = [
       ["different props in each area", "createAssetLoader"],
