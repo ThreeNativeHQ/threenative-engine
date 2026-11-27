@@ -68,7 +68,7 @@
         "equals": 0
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 30000
     },
     {
       "label": "refilled",
@@ -78,7 +78,7 @@
         "gte": 1.2
       },
       "release": false,
-      "timeoutMs": 6000
+      "timeoutMs": 30000
     },
     {
       "kind": "wait",

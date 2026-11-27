@@ -174,6 +174,10 @@ export class Actor extends Fighter implements ICombatant {
     const along = (GATE.z - here.z) / (z - here.z);
     const crossing = here.x + (x - here.x) * along;
     if (Math.abs(crossing - GATE.x) <= GATE.halfWidth - 0.45) return { x, z };
+    // Lined up with the gap and at the wall: walk through it. Heading for the front of the gate
+    // from there would hold the actor at the front forever.
+    const lined = Math.abs(here.x - GATE.x) <= GATE.halfWidth - 0.45;
+    if (lined && (here.z - GATE.z) * side <= 1.5) return { x: GATE.x, z: GATE.z - side * 1.2 };
     return { x: GATE.x, z: GATE.z + side * 1.2 };
   }
 

@@ -58,7 +58,7 @@
     {
       "kind": "input",
       "label": "pull",
-      "press": "ArrowDown",
+      "press": ["ArrowDown"],
       "holdTicks": 30,
       "release": false
     },

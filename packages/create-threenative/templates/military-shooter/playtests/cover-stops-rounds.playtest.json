@@ -11,17 +11,23 @@
   "steps": [
     {
       "kind": "input",
-      "label": "place",
-      "press": "Digit3",
-      "holdTicks": 1,
-      "release": true
-    },
-    {
-      "kind": "input",
       "label": "crouch",
       "press": "KeyC",
       "holdTicks": 1,
       "release": false
+    },
+    {
+      "kind": "wait",
+      "label": "crouched",
+      "waitTicks": 20,
+      "release": false
+    },
+    {
+      "kind": "input",
+      "label": "place",
+      "press": "Digit3",
+      "holdTicks": 1,
+      "release": true
     },
     {
       "label": "settled",
