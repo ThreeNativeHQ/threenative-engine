@@ -2205,8 +2205,6 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
   }
 
   if (renderer === undefined) {
-    if (webgpuFailure !== undefined)
-      report(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${webgpuFailure}`);
     let raw: RendererInstance;
     try {
       raw = (
@@ -2218,12 +2216,14 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       // The Wasm engine has no WebGL fallback, so a GPU still full after the retry has one cure left.
       if (webgpuFailure !== undefined)
         reloadAfterGpuMemoryLoss(webgpuFailure, options.reloadOnGpuMemoryLoss ?? true);
-      // No WebGPU adapter and no WebGL fallback is a boot failure the player must read. The native
-      // engine binds `WebGLRenderer` to a facade that refuses on use, and reporting that refusal
-      // verbatim would show an internal "uncatalogued" code; a browser with no context throws
-      // three's own message. Neither belongs in front of a player, so both become one named failure.
+      // The Wasm facade refuses WebGLRenderer even when the browser supports WebGL2.
+      const webglUnavailable =
+        error instanceof Error && error.message.startsWith("TN_NATIVE_UNCATALOGUED_WEBGLRENDERER:");
+      const guidance = webglUnavailable
+        ? "This game requires WebGPU. Enable graphics acceleration and restart your browser, or open the game in a browser with WebGPU enabled."
+        : "WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.";
       throw new Error(
-        `TN_NO_RENDERER: WebGPU is not available on this device and the WebGL fallback could not start, so the game cannot run.${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
+        `TN_NO_RENDERER: ${guidance}${webgpuFailure === undefined ? "" : ` WebGPU failed: ${webgpuFailure}`}`,
         { cause: error },
       );
     }
@@ -2241,6 +2241,8 @@ export async function createRenderer(options: IRendererOptions = {}): Promise<IR
       false,
       gpuTimestampFrameInterval,
     );
+    if (webgpuFailure !== undefined)
+      report(`TN_RENDERER_FALLBACK: webgl2 after WebGPU failed: ${webgpuFailure}`);
   }
 
   const resizing = addResizeHandling(renderer, source, state, pixelRatio);
