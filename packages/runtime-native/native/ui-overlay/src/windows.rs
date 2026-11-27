@@ -291,32 +291,26 @@ fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) 
         point.x as f32 / width as f32,
         point.y as f32 / height as f32,
     );
-    let page = match overlay.press.get() {
-        Some(owner) => owner,
-        None if down => {
-            overlay.press.set(Some(over));
-            if over {
-                // The page holds the pointer for the whole press, and takes the keyboard.
-                unsafe { SetCapture(overlay.game) };
-                let _ = unsafe {
-                    overlay
-                        .controller
-                        .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
-                };
-            } else {
-                // A press on the game gives the keyboard back to it.
-                let _ = unsafe { SetFocus(overlay.game) };
-            }
-            over
+    let released = up && wparam.0 & ANY_BUTTON == 0;
+    let (page, after) = crate::pointer_owner(overlay.press.get(), down, released, over);
+    if overlay.press.get().is_none() && down {
+        if page {
+            // The page holds the pointer for the whole press, and takes the keyboard.
+            unsafe { SetCapture(overlay.game) };
+            let _ = unsafe {
+                overlay
+                    .controller
+                    .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
+            };
+        } else {
+            // A press on the game gives the keyboard back to it.
+            let _ = unsafe { SetFocus(overlay.game) };
         }
-        None => over,
-    };
-    if up && wparam.0 & ANY_BUTTON == 0 {
-        if overlay.press.get() == Some(true) {
-            let _ = unsafe { ReleaseCapture() };
-        }
-        overlay.press.set(None);
     }
+    if released && overlay.press.get() == Some(true) {
+        let _ = unsafe { ReleaseCapture() };
+    }
+    overlay.press.set(after);
     if !page {
         if overlay.hovering.replace(false) {
             let _ = unsafe {

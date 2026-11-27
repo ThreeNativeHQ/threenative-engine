@@ -54,6 +54,31 @@ pub(crate) fn hit_test(nx: f32, ny: f32) -> bool {
     HIT_REGIONS.with(|regions| point_in_regions(&regions.borrow(), nx, ny))
 }
 
+/// Who takes one Windows mouse message: `(to_page, press_after)`.
+///
+/// `press` is the owner of the press in progress (`Some(true)` the page, `Some(false)` the game),
+/// `down` says the message starts a press, `released` that it lifts the last held button, and `over`
+/// whether the pointer is over a published rectangle. Without a press the pointer goes where it is.
+/// A press goes to whoever it started on until the last button is up, so a drag that starts on the
+/// game is not taken by a button it crosses and one that starts on a button is not dropped.
+#[cfg(any(windows, test))]
+pub(crate) fn pointer_owner(
+    press: Option<bool>,
+    down: bool,
+    released: bool,
+    over: bool,
+) -> (bool, Option<bool>) {
+    let owner = press.unwrap_or(over);
+    let after = if released {
+        None
+    } else if press.is_some() || down {
+        Some(owner)
+    } else {
+        None
+    };
+    (owner, after)
+}
+
 /// A JSON string literal holding `value`, so no payload can end the script it is embedded in.
 ///
 /// Hand-rolled rather than pulled from a serialiser because the only thing being escaped is a
@@ -117,7 +142,31 @@ pub(crate) fn pointer_injection_script(
 
 #[cfg(test)]
 mod tests {
-    use super::{json_string, point_in_regions, pointer_injection_script};
+    use super::{json_string, point_in_regions, pointer_injection_script, pointer_owner};
+
+    // PRD-927: the Windows window procedure routes each mouse message by this rule.
+    #[test]
+    fn a_hover_goes_where_the_pointer_is() {
+        assert_eq!(pointer_owner(None, false, false, true), (true, None));
+        assert_eq!(pointer_owner(None, false, false, false), (false, None));
+    }
+
+    #[test]
+    fn a_press_keeps_its_owner_until_the_last_button_is_released() {
+        // A press on a button belongs to the page, and starts its ownership.
+        assert_eq!(pointer_owner(None, true, false, true), (true, Some(true)));
+        // Dragged off the button, the page keeps it.
+        assert_eq!(pointer_owner(Some(true), false, false, false), (true, Some(true)));
+        // The release still reaches the page, and ends the press.
+        assert_eq!(pointer_owner(Some(true), false, true, false), (true, None));
+    }
+
+    #[test]
+    fn a_drag_that_starts_on_the_game_is_not_taken_by_a_button_it_crosses() {
+        assert_eq!(pointer_owner(None, true, false, false), (false, Some(false)));
+        assert_eq!(pointer_owner(Some(false), false, false, true), (false, Some(false)));
+        assert_eq!(pointer_owner(Some(false), false, true, true), (false, None));
+    }
 
     #[test]
     fn a_non_ascii_character_survives_a_json_string_literal() {
