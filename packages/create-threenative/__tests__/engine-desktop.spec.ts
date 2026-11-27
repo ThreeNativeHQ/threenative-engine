@@ -24,12 +24,12 @@ async function temp(prefix: string): Promise<string> {
 }
 
 describe("engine player web-UI support", () => {
-  it("is Linux only, matching the release matrix's player_ui flags", () => {
-    // `native-release.yml` builds the player with TN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux and OFF
-    // on darwin and win32. A "web" HUD elsewhere would download the player and die at
+  it("is Linux and Windows, matching the release matrix's player_ui flags", () => {
+    // `native-release.yml` builds the player with TN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux and win32
+    // and OFF on darwin. A "web" HUD on macOS would download the player and die at
     // TN_UI_LOAD_FAILED, so the build refuses first.
     expect(enginePlayerSupportsWebUi("linux")).toBe(true);
-    expect(enginePlayerSupportsWebUi("win32")).toBe(false);
+    expect(enginePlayerSupportsWebUi("win32")).toBe(true);
     expect(enginePlayerSupportsWebUi("darwin")).toBe(false);
   });
 });

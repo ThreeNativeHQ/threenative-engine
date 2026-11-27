@@ -1,8 +1,25 @@
-# The desktop web-view UI overlay in the engine player: the same Rust staticlib and system webkit2gtk the
-# legacy host links (CMakeLists.txt, TN_ENABLE_UI_OVERLAY). Included by NativeEngine.cmake only with
-# -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, after tn_engine_player exists.
+# The desktop web-view UI overlay in the engine player: the same Rust staticlib the legacy host links
+# (CMakeLists.txt, TN_ENABLE_UI_OVERLAY), on system webkit2gtk (Linux) or WebView2 (Windows).
+# Included by NativeEngine.cmake only with -DTN_ENGINE_PLAYER_UI_OVERLAY=ON, after tn_engine_player exists.
+if(CMAKE_SYSTEM_NAME STREQUAL "Windows")
+    # As the legacy host links it (CMakeLists.txt, the WIN32 branch of TN_ENABLE_UI_OVERLAY):
+    # `native:build` builds the overlay and stages WebView2LoaderStatic.lib beside it
+    # (scripts/build-native-ui-overlay.mjs), plus the Win32 libraries a wry staticlib leaves unresolved.
+    set(TN_PLAYER_UI_OVERLAY_DIR "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release")
+    foreach(_tn_lib threenative_ui_overlay.lib WebView2LoaderStatic.lib)
+        if(NOT EXISTS "${TN_PLAYER_UI_OVERLAY_DIR}/${_tn_lib}")
+            message(FATAL_ERROR "UI overlay artifact is missing: ${TN_PLAYER_UI_OVERLAY_DIR}/${_tn_lib}. Run node scripts/build-native-ui-overlay.mjs.")
+        endif()
+    endforeach()
+    target_compile_definitions(tn_engine_player PRIVATE TN_ENABLE_UI_OVERLAY=1 TN_ENABLE_CSS_UI=0)
+    target_link_libraries(tn_engine_player PUBLIC
+        "${TN_PLAYER_UI_OVERLAY_DIR}/threenative_ui_overlay.lib"
+        "${TN_PLAYER_UI_OVERLAY_DIR}/WebView2LoaderStatic.lib"
+        user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll)
+    return()
+endif()
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Linux")
-    message(FATAL_ERROR "TN_ENGINE_PLAYER_UI_OVERLAY is wired for Linux only; the legacy host's CMakeLists.txt names the Windows and macOS libraries.")
+    message(FATAL_ERROR "TN_ENGINE_PLAYER_UI_OVERLAY is wired for Linux and Windows; the legacy host's CMakeLists.txt names the macOS libraries.")
 endif()
 set(TN_PLAYER_UI_OVERLAY_LIB "${CMAKE_CURRENT_SOURCE_DIR}/native/ui-overlay/target/release/libthreenative_ui_overlay.a")
 if(NOT EXISTS "${TN_PLAYER_UI_OVERLAY_LIB}")
