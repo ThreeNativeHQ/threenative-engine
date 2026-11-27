@@ -18,6 +18,7 @@ import type {
   IAssetReport,
   IAssetViewContext,
 } from "../types.js";
+import { currentSection, initDashboard, onSection } from "./dashboard.js";
 import { BUILT_IN_KINDS, builtInView, createViewerHost, fileUrl } from "./viewers.js";
 
 export interface IShellConfig {
@@ -25,6 +26,10 @@ export interface IShellConfig {
   readonly base: string;
   readonly title: string;
   readonly clients: Readonly<Record<string, IAssetLibraryClient>>;
+  /** The Dev Dashboard's path (`/__dashboard/`), PRD-918. */
+  readonly dashboard?: string;
+  /** False when no game project backs the library (the engine's standalone library). */
+  readonly project?: boolean;
 }
 
 const config = (Reflect.get(globalThis, "__TN_ASSET_LIBRARY__") as IShellConfig | undefined) ?? {
@@ -51,6 +56,7 @@ const title = (id: string) => id.charAt(0).toUpperCase() + id.slice(1);
 document.title = config.title;
 $("library-title").textContent = config.title;
 if (embed) document.documentElement.toggleAttribute("data-embed", true);
+if (sheetMode) document.documentElement.toggleAttribute("data-sheet", true);
 
 // ── scene ──
 const canvas = $<HTMLCanvasElement>("view");
@@ -345,11 +351,20 @@ const ICONS: Record<string, string> = {
   doc: "M6 2h9l5 5v15H6zM14 2v6h6M9 13h8M9 17h8",
   story: "M6 3h12v18l-6-5-6 5z",
   group: "M3 3h18v18H3zM12 3v18M3 12h18",
+  play: "M6 4l13 8-13 8z",
+  pulse: "M3 12h4l3 8 4-16 3 8h4",
+  flask: "M9 3h6M10 3v6l-5 9a2 2 0 0 0 2 3h10a2 2 0 0 0 2-3l-5-9V3",
+  gamepad:
+    "M7 6h10a4 4 0 0 1 4 4v4a3 3 0 0 1-5.3 2H8.3A3 3 0 0 1 3 14v-4a4 4 0 0 1 4-4zM7 10v4M5 12h4M15 11h.01M18 13h.01",
+  check: "M5 12l5 5 9-10",
+  cross: "M6 6l12 12M18 6 6 18",
+  dock: "M3 3h18v18H3zM3 16h18",
 };
 const svg = (name: string, size = 16) =>
   `<svg viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="${ICONS[name] ?? ""}"/></svg>`;
-$("logo").innerHTML =
-  `<svg viewBox="0 4.5 100 91" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="${TN_MARK}"/></svg>`;
+for (const id of ["logo", "rail-logo"])
+  $(id).innerHTML =
+    `<svg viewBox="0 4.5 100 91" width="18" height="18" fill="currentColor" aria-hidden="true"><path fill-rule="evenodd" d="${TN_MARK}"/></svg>`;
 const iconEl = (name: string, className = "", size = 14) => {
   const span = el("span", `inline-flex shrink-0 ${className}`);
   span.innerHTML = svg(name, size);
@@ -831,6 +846,7 @@ async function show(): Promise<void> {
 
 // ── sidebar ──
 function visible(e: IAssetElement): boolean {
+  if (currentSection() === "animations" && !e.animated) return false;
   const words = $<HTMLInputElement>("search").value.toLowerCase().split(/\s+/).filter(Boolean);
   const biome = facet("biome");
   const setting = facet("setting");
@@ -1623,6 +1639,25 @@ async function visibleOnce(): Promise<void> {
     document.addEventListener("visibilitychange", onShow);
   });
 }
+
+// ── Dev Dashboard (PRD-918): Animations narrows the tree; Stage / Bundler opens the Stage ──
+initDashboard(config, embed || !!sheetMode);
+/** The empty-stage card names the section the side menu shows. */
+function introFor(section: string): void {
+  const animations = section === "animations";
+  $("intro-title").textContent = animations ? "Animations" : "Asset Library";
+  $("intro-body").textContent = animations
+    ? "Pick a rigged or animated model to play its clips. Its Animation panel opens Pose Lab."
+    : "Pick an asset in the list to inspect it, or open an overview to see a whole section.";
+}
+introFor(currentSection());
+onSection((next, previous) => {
+  introFor(next);
+  if (next === "stage") {
+    if (!location.hash.startsWith("#/stage")) location.hash = "#/stage/stage";
+  } else if (previous === "stage" && route.kind === "stage") location.hash = "";
+  if (next === "assets" || next === "animations") renderTree();
+});
 
 try {
   await visibleOnce();

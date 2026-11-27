@@ -296,6 +296,28 @@ describe("web branding adapter", () => {
     expect(html.indexOf("__TN_GAME__")).toBeLessThan(html.indexOf('type="module"'));
   });
 
+  it("turns the dev-run crash reporter off when telemetry.crashReports is false (PRD-918)", async () => {
+    const root = await makeTempDir("threenative-web-brand-crash-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "quiet-game", type: "module" }),
+    );
+    const plugin = createWebBrandPlugin();
+    const page = '<head>\n    <script type="module" src="/src/main.ts"></script>\n</head>';
+    await writeFile(path.join(root, "threenative.config.ts"), "export default {};\n");
+    await plugin.configResolved({ root });
+    expect(plugin.transformIndexHtml(page)).not.toContain("__THREENATIVE_TELEMETRY__");
+    await writeFile(
+      path.join(root, "threenative.config.ts"),
+      "export default { telemetry: { crashReports: false } };\n",
+    );
+    await plugin.configResolved({ root });
+    const html = plugin.transformIndexHtml(page);
+    expect(html).toContain("globalThis.__THREENATIVE_TELEMETRY__ = false;");
+    expect(html.indexOf("__THREENATIVE_TELEMETRY__")).toBeLessThan(html.indexOf('type="module"'));
+  });
+
   it("starts the engine's Wasm with the page, then Rapier, instead of after the entry script ran (PRD-860)", () => {
     const html =
       '<head>\n    <script type="module" crossorigin src="/game/assets/index-A1.js"></script>\n</head>';

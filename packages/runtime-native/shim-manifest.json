@@ -219,6 +219,10 @@
     {
       "name": "queueMicrotask",
       "reason": "The worker audio proxy (core/src/worker-audio.ts, PRD-752) batches page messages with queueMicrotask inside a browser DedicatedWorker only; the native host plays audio directly."
+    },
+    {
+      "name": "BroadcastChannel",
+      "reason": "Dev-only worker marker relay (PRD-923, core/src/quiet-markers.ts) checks typeof BroadcastChannel and runs only in a browser DedicatedWorker under a dev launch; the native host has no Dev Dashboard and skips it."
     }
   ]
 }

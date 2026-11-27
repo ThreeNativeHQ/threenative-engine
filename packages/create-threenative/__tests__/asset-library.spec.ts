@@ -4,7 +4,7 @@
  * code stories, and the Scene Bundler's two outputs (a TypeScript module that typechecks and a
  * merged GLB that decodes and passes `inspectAsset`). The browser half is asset-library-browser.spec.ts.
  */
-import { copyFile, mkdir, readFile, rm, stat, symlink, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, readFile, readdir, rm, stat, symlink, writeFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { Document, NodeIO } from "@gltf-transform/core";
@@ -284,12 +284,19 @@ describe("asset library server", () => {
     const game = await (await fetch(`${base}/`)).text();
     expect(game).toContain('id = "tn-dev-shell"');
     expect((await get("")).body).not.toContain("tn-dev-shell");
-    // Nothing loads until the Asset Library tab is picked; automation and iframes never see it.
-    const script = devShellScript("/__assets/");
+    // Nothing loads until Dashboard is picked; automation and iframes never see it (PRD-918).
+    const script = devShellScript("/__assets/", "/__dashboard/");
     expect(script).toContain("navigator.webdriver");
     expect(script).toContain("window.self !== window.top");
     expect(script).toContain('"noDevShell"');
-    expect(script.indexOf("frame.src = mount")).toBeGreaterThan(script.indexOf("const show"));
+    expect(script).toContain('const dashboard = "/__dashboard/"');
+    expect(script.indexOf("frame.src = reopen ?? dashboard")).toBeGreaterThan(
+      script.indexOf("const show"),
+    );
+    expect(script).toContain('tab("Dashboard", true)');
+    // A worker game's markers reach the ring through core's dev relay (PRD-923).
+    expect(script).toContain('new BroadcastChannel("threenative-dev-markers")');
+    expect((await get("")).body).toContain('id="rail"');
     // The switch says it is dev-only, so nobody expects it in a shipped game.
     expect(script).toContain('badge.textContent = "DEV"');
     expect(script).toContain("not in production builds");
@@ -394,5 +401,12 @@ describe("production isolation", () => {
     const html = await readFile(path.join(out, "index.html"), "utf8");
     expect(html).not.toContain("tn-dev-shell");
     expect(html).not.toContain("tn-asset-library");
+    // No Dev Dashboard byte ships: shell, ring buffer, dock strip, routes (PRD-918, PRD-923).
+    const files = await readdir(out, { recursive: true, withFileTypes: true });
+    for (const file of files.filter((entry) => entry.isFile())) {
+      const text = await readFile(path.join(file.parentPath, file.name), "utf8");
+      for (const marker of ["tn-dev-dashboard", "__tnDevMarkers", "__dashboard", "tn-dev-dock"])
+        expect(text, `${file.name} carries ${marker}`).not.toContain(marker);
+    }
   }, 60_000);
 });
