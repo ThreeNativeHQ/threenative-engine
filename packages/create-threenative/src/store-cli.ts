@@ -7,14 +7,13 @@ import { chmod, mkdir, readFile, rename, rm, stat, writeFile } from "node:fs/pro
 import { homedir } from "node:os";
 import path from "node:path";
 import { CliExit, request, serverMessage, siteOrigin } from "./account.js";
+import { loadConfig } from "./config.js";
 
 /** Studio's listing defaults (`publish.ts`): a person edits genre and text on the shelf later.
  * The store wants a play address before the game has an id, so its own entry point stands in. */
 const STORE_GENRE = "Game";
 const STORE_PLAY_URL = "https://store.threenative.com/";
 const STORE_FILE = path.join(".threenative", "store.json");
-/** No `version` in package.json (Midway has none): the release still needs one label. */
-export const DEFAULT_VERSION = "0.0.0";
 
 export interface IStoreDeployOptions {
   cwd: string;
@@ -215,12 +214,22 @@ export async function deployDesktop(
 ): Promise<{ gameId: string; url: string }> {
   const env = process.env;
   const site = siteOrigin(options.site);
-  const version =
-    typeof manifest.version === "string" && manifest.version !== ""
-      ? manifest.version
-      : DEFAULT_VERSION;
+  // package.json first; a game with none (Midway) uses `app.version`, the version the native app is
+  // built with, so the release label matches what the player reports. Without either, the config
+  // loader supplies its own default.
+  let version = typeof manifest.version === "string" ? manifest.version : "";
+  if (version === "")
+    version = await loadConfig(options.cwd).then(
+      (config) => config.app.version,
+      (error: unknown) => {
+        throw new CliExit(
+          2,
+          `No package.json version, and threenative.config.ts did not load: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      },
+    );
   if (!/^[\x20-\x7e]{1,40}$/u.test(version))
-    throw new CliExit(2, "package.json version must be 1 to 40 printable ASCII characters.");
+    throw new CliExit(2, "The release version must be 1 to 40 printable ASCII characters.");
 
   let gameId = await storedGameId(options.cwd);
   // The store refuses a listing with no picture, so ask before downloading anything.

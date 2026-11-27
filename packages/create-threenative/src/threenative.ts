@@ -90,7 +90,7 @@ export function cliHelp(command?: PublicCommand): string {
       "  game, and prints the store page on its own line, last. It downloads the checked tn-store",
       "  client once (THREENATIVE_STORE_CLI=<path> uses your own). The first deploy needs --shot <png>,",
       "  the cover picture, and writes .threenative/store.json with the game id; commit it.",
-      "  The release version is package.json version, or 0.0.0 when it has none. Linux and Windows",
+      "  The release version is package.json version, else app.version from threenative.config.ts. Linux and Windows",
       "  only; macOS exits 2 because the store has no macOS build.",
     ].join("\n")}\n`;
   }

@@ -59,7 +59,7 @@ client once into `$XDG_CACHE_HOME/threenative/bin/`, and exits 4 when its sha256
 The first deploy needs `--shot <png>`, the cover picture, because the store refuses a listing with
 no picture. It writes `.threenative/store.json` with the game id, the file Studio also reads, so
 Studio and the terminal publish to one game. Commit it. Every deploy then pushes to that game with
-the `package.json` `version`, or `0.0.0` when the file has none. It prints the release state, then
+the `package.json` `version`, else `app.version` from `threenative.config.ts` (the version the native app is built with). It prints the release state, then
 the store page `https://threenative.com/games/<slug>/` alone on the last line.
 
 macOS exits 2: the store has no macOS build.

@@ -93,11 +93,15 @@ describe.skipIf(!posix)("threenative deploy --target desktop", () => {
     expect(all[0]?.site).toBe("http://site.test");
   });
 
-  it("exits 2 naming --shot on a first deploy, and defaults a missing version", async () => {
+  it("exits 2 naming --shot on a first deploy, and takes a missing version from app.version", async () => {
     const store = await fakeStoreFile();
     vi.stubEnv("THREENATIVE_STORE_CLI", store.bin);
     vi.stubEnv("FAKE_LOG", store.log);
     const cwd = await game();
+    await writeFile(
+      path.join(cwd, "threenative.config.ts"),
+      'export default { app: { version: "4.5.6" } };\n',
+    );
     const base = {
       cwd,
       out: () => {},
@@ -109,7 +113,7 @@ describe.skipIf(!posix)("threenative deploy --target desktop", () => {
     expect(missing.code).toBe(2);
     expect(missing.message).toContain("--shot");
     await deploy({ ...base, shot: "cover.png" });
-    expect((await calls(store.log))[1]?.args).toContain("0.0.0");
+    expect((await calls(store.log))[1]?.args).toContain("4.5.6");
   });
 
   it("passes the store's own exit codes through", async () => {
