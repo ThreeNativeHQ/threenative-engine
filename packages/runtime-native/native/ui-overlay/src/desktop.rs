@@ -23,28 +23,28 @@ use wry::http::{header, Response};
 use wry::{Rect, WebView, WebViewBuilder};
 
 #[cfg(windows)]
-use std::num::NonZeroIsize;
-#[cfg(windows)]
 use raw_window_handle::Win32WindowHandle;
+#[cfg(windows)]
+use std::num::NonZeroIsize;
 #[cfg(windows)]
 use wry::WebViewExtWindows;
 
-#[cfg(windows)]
-use std::cell::Cell;
-#[cfg(target_os = "macos")]
-use raw_window_handle::AppKitWindowHandle;
-#[cfg(target_os = "macos")]
-use std::ptr::NonNull;
 #[cfg(target_os = "macos")]
 use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
 use objc2::{
-    declare_class, mutability::MainThreadOnly, msg_send, msg_send_id, ClassType, DeclaredClass,
+    declare_class, msg_send, msg_send_id, mutability::MainThreadOnly, ClassType, DeclaredClass,
 };
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSView};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{CGPoint, MainThreadMarker, NSRect};
+#[cfg(target_os = "macos")]
+use raw_window_handle::AppKitWindowHandle;
+#[cfg(windows)]
+use std::cell::Cell;
+#[cfg(target_os = "macos")]
+use std::ptr::NonNull;
 
 /// `ui_root` was null or not a UTF-8 path.
 const BAD_ARGUMENT: c_int = -5;
@@ -62,17 +62,16 @@ thread_local! {
 struct Overlay {
     webview: WebView,
     inbound: Arc<Mutex<Vec<String>>>,
-    /// The window this process shapes. On Windows it is wry's container HWND, whose region decides
-    /// which pixels reach the web view. On macOS it is the `NSView` the web view is a child of and
-    /// whose `hitTest:` decides the same thing.
+    /// The window this process routes input around. On Windows it is wry's container HWND, enabled
+    /// only while the pointer is over a published rectangle. On macOS it is the `NSView` the web
+    /// view is a child of and whose `hitTest:` decides the same thing.
     #[cfg(windows)]
     container: *mut c_void,
     #[cfg(target_os = "macos")]
     container: Retained<TnUiOverlayView>,
-    /// The pixel size the Windows region was last cut for. A resize changes the pixel rectangles
-    /// while the published ones stay normalized, so this is how the region is kept current.
+    /// Whether the Windows container takes the pointer now (see [`route_pointer`]).
     #[cfg(windows)]
-    region_size: Cell<(u32, u32)>,
+    routed: Cell<bool>,
 }
 
 /// The window SDL owns, borrowed for the one call `wry` needs it in.
@@ -225,19 +224,21 @@ pub extern "C" fn tn_ui_overlay_attach(
         let Ok(webview) = build_overlay(&ui_root, width, height, inbound.clone(), &handle) else {
             return BUILD_REFUSED;
         };
-        // wry makes its own container HWND as a child of the game's; that container is what the
-        // region has to be set on, or the game's own window would be clipped instead.
+        // wry makes its own container HWND as a child of the game's; that container is what input
+        // is routed around, or the game's own window would be switched off instead.
         let mut window = windows::Win32::Foundation::HWND::default();
         if unsafe { webview.controller().ParentWindow(&mut window) }.is_err() {
             return NO_VIEW;
         }
         let container = window.0;
+        // No rectangle is published yet, so the game takes the pointer until one is.
+        let _ = unsafe { windows::Win32::UI::Input::KeyboardAndMouse::EnableWindow(window, false) };
         OVERLAY.with(|slot| {
             *slot.borrow_mut() = Some(Overlay {
                 webview,
                 inbound,
                 container,
-                region_size: Cell::new((width.max(1), height.max(1))),
+                routed: Cell::new(false),
             });
         });
         return 0;
@@ -297,31 +298,15 @@ pub extern "C" fn tn_ui_overlay_attach(
 /// Give the platform its slice of the frame, and follow the game window.
 ///
 /// Returns 0 while the overlay is healthy. On Windows the web view is a child of the game's HWND
-/// and tracks it, so the only work is re-cutting the region when a resize changes its pixels. On
-/// macOS AppKit drives the run loop and the hit test reads live geometry, so there is nothing to
-/// do.
+/// and tracks it, so the only work is routing the pointer for this frame. On macOS AppKit drives
+/// the run loop and the hit test reads live geometry, so there is nothing to do.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_pump() -> c_int {
     #[cfg(windows)]
     {
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
         OVERLAY.with(|slot| {
-            let borrowed = slot.borrow();
-            let Some(overlay) = borrowed.as_ref() else {
-                return 0;
-            };
-            let mut rect = RECT::default();
-            if unsafe { GetClientRect(HWND(overlay.container), &mut rect) }.is_ok() {
-                let size = (
-                    (rect.right - rect.left).max(1) as u32,
-                    (rect.bottom - rect.top).max(1) as u32,
-                );
-                if size != overlay.region_size.get() {
-                    overlay.region_size.set(size);
-                    let regions = crate::HIT_REGIONS.with(|regions| regions.borrow().clone());
-                    apply_region(overlay.container, &regions, size);
-                }
+            if let Some(overlay) = slot.borrow().as_ref() {
+                route_pointer(overlay);
             }
             0
         })
@@ -411,8 +396,8 @@ pub extern "C" fn tn_ui_overlay_set_bounds(x: i32, y: i32, width: u32, height: u
 /// Publish the interactive rectangles, normalized to the viewport, as the overlay's input shape.
 ///
 /// `count` is the number of rectangles; `regions` holds `count * 4` floats as x, y, width,
-/// height. On Windows the region is pushed now and re-cut on resize; on macOS the hit test reads
-/// these on the next pointer move.
+/// height. On Windows the next pump routes the pointer by them; on macOS the hit test reads these
+/// on the next pointer move.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32) -> c_int {
     if count > 0 && regions.is_null() {
@@ -427,15 +412,10 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
 
     #[cfg(windows)]
     {
-        OVERLAY.with(|slot| {
-            let borrowed = slot.borrow();
-            let Some(overlay) = borrowed.as_ref() else {
-                return NOT_ATTACHED;
-            };
-            let size = overlay.region_size.get();
-            apply_region(overlay.container, &published, size);
-            0
-        })
+        if OVERLAY.with(|slot| slot.borrow().is_none()) {
+            return NOT_ATTACHED;
+        }
+        0
     }
     #[cfg(target_os = "macos")]
     {
@@ -449,7 +429,7 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
 /// Whether a normalized point is inside a published interactive rectangle.
 ///
 /// The playtest input bridge asks this before dispatching a synthetic pointer, so the same list
-/// that cuts the Windows region and answers the macOS `hitTest:` also decides which side a
+/// that routes the Windows pointer and answers the macOS `hitTest:` also decides which side a
 /// synthetic press lands on.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_hit_test(nx: f32, ny: f32) -> c_int {
@@ -464,7 +444,7 @@ pub extern "C" fn tn_ui_overlay_hit_test(nx: f32, ny: f32) -> c_int {
 ///
 /// `kind` is a DOM pointer event type (`pointerdown`, `pointermove`, `pointerup`) and `nx`/`ny`
 /// are normalized to the viewport. The page scales the point to its own pixel viewport, so the
-/// event lands inside the same rectangle the OS region was cut from. Playtest input only: an
+/// event lands inside the same rectangle the OS routes the pointer by. Playtest input only: an
 /// OS-routed press needs no help, and this never runs outside the bridge.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_inject_pointer(
@@ -509,42 +489,61 @@ pub extern "C" fn tn_ui_overlay_detach() {
     });
 }
 
-/// Cut the container's window region to the union of the published rectangles.
+/// Route this frame's pointer: the container is enabled only while the cursor is over a published
+/// rectangle.
 ///
-/// Outside the region the window does not exist as far as the pointer is concerned, so a click
-/// there is delivered to the game underneath without this process forwarding anything. An empty
-/// set is a window that takes no pointer events at all, which is right for a UI with no islands.
+/// The whole page paints over the game. A window region would also clip what the page paints,
+/// leaving only the buttons on screen (PRD-927). A mouse message over a disabled child window goes
+/// to its parent instead, so outside the rectangles the game's window takes the pointer and this
+/// process forwards nothing. A press keeps its owner while a button is held: a drag that starts on
+/// the game is not taken by a button it crosses, and one that starts on a button is not dropped.
+/// Leaving the rectangles also hands the keyboard back to the game when the page held it.
 #[cfg(windows)]
-fn apply_region(container: *mut c_void, regions: &[f32], size: (u32, u32)) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Gdi::{
-        CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
+fn route_pointer(overlay: &Overlay) {
+    use windows::Win32::Foundation::{HWND, POINT, RECT};
+    use windows::Win32::Graphics::Gdi::ScreenToClient;
+    use windows::Win32::UI::Input::KeyboardAndMouse::{
+        EnableWindow, GetAsyncKeyState, SetFocus, VK_LBUTTON, VK_MBUTTON, VK_RBUTTON,
     };
-    let hwnd = HWND(container);
-    if regions.len() < 4 {
-        let empty = unsafe { CreateRectRgn(0, 0, 0, 0) };
-        unsafe { SetWindowRgn(hwnd, empty, true) };
+    use windows::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, GetCursorPos, GetGUIThreadInfo, GetParent, IsChild, GUITHREADINFO,
+    };
+    let hwnd = HWND(overlay.container);
+    let held = [VK_LBUTTON, VK_RBUTTON, VK_MBUTTON]
+        .iter()
+        .any(|key| unsafe { GetAsyncKeyState(i32::from(key.0)) } < 0);
+    if held {
         return;
     }
-    let (width, height) = (size.0 as f32, size.1 as f32);
-    let mut combined = None;
-    for region in regions.chunks_exact(4) {
-        let x1 = (region[0] * width).round() as i32;
-        let y1 = (region[1] * height).round() as i32;
-        let x2 = ((region[0] + region[2]) * width).round() as i32;
-        let y2 = ((region[1] + region[3]) * height).round() as i32;
-        let rect = unsafe { CreateRectRgn(x1, y1, x2, y2) };
-        match combined {
-            None => combined = Some(rect),
-            Some(accumulated) => unsafe {
-                let _ = CombineRgn(accumulated, accumulated, rect, RGN_OR);
-                let _ = DeleteObject(rect);
-            },
+    let mut rect = RECT::default();
+    let mut point = POINT::default();
+    let over = unsafe {
+        GetClientRect(hwnd, &mut rect).is_ok()
+            && GetCursorPos(&mut point).is_ok()
+            && ScreenToClient(hwnd, &mut point).as_bool()
+    } && {
+        let width = (rect.right - rect.left).max(1) as f32;
+        let height = (rect.bottom - rect.top).max(1) as f32;
+        crate::hit_test(point.x as f32 / width, point.y as f32 / height)
+    };
+    if over == overlay.routed.get() {
+        return;
+    }
+    overlay.routed.set(over);
+    if !over {
+        let mut info = GUITHREADINFO {
+            cbSize: std::mem::size_of::<GUITHREADINFO>() as u32,
+            ..Default::default()
+        };
+        let page_has_keys = unsafe { GetGUIThreadInfo(0, &mut info) }.is_ok()
+            && (info.hwndFocus == hwnd || unsafe { IsChild(hwnd, info.hwndFocus) }.as_bool());
+        if page_has_keys {
+            if let Ok(game) = unsafe { GetParent(hwnd) } {
+                let _ = unsafe { SetFocus(game) };
+            }
         }
     }
-    if let Some(region) = combined {
-        unsafe { SetWindowRgn(hwnd, region, true) };
-    }
+    let _ = unsafe { EnableWindow(hwnd, over) };
 }
 
 /// The `NSView` the macOS web view is a child of, answering `hitTest:` from the published
