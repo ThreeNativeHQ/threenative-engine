@@ -208,6 +208,7 @@ Run `pnpm create threenative my-game --template <name>`, or ask your agent for "
 | `platformer` | **Fox Dash**: a fox, rope bridges, stompable walkers, gems, and a double jump |
 | `racing` · `runner` · `sailing` | Three-lap circuit with boost pads · three-lane endless runner · wind, ocean waves, and buoyancy |
 | `snow` · `rain` · `puzzle` | Deformable snow footprints · coastal storm you control · 45-body physics vault |
+| `farming` · `rail-shooter` · `board-party` | Day-clock crop farm · spline-railed space shooter · four-player dice board with a minigame every turn |
 | `open-world` | **Open-world crime**: a city on foot or by car: carjacking, traffic, five-star police pursuit and a timed job |
 | `stealth` | **Stealth infiltration**: vision cones, suspicion, noise, takedowns, bodies that raise the alarm, and an extraction |
 | `survival-horror` | **Survival horror**: fixed cameras, tank controls, scarce ammo, a six-slot case, herbs, keys and typewriter saves |
