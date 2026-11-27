@@ -1,0 +1,133 @@
+{
+  "name": "leader-rotation",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "queue",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "queued",
+      "waitTicks": 4,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rotate",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "rotated",
+      "waitTicks": 8,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rotate-back",
+      "press": "KeyQ",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "wait",
+      "label": "back",
+      "waitTicks": 8,
+      "release": true
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "leader",
+        "atSteps": [
+          {
+            "label": "queued",
+            "equals": "hero"
+          },
+          {
+            "label": "rotated",
+            "equals": "ally"
+          },
+          {
+            "label": "back",
+            "equals": "hero"
+          }
+        ]
+      }
+    ],
+    "components": [
+      {
+        "entity": "hero",
+        "component": "queueLength",
+        "atSteps": [
+          {
+            "label": "queued",
+            "equals": 1
+          },
+          {
+            "label": "rotated",
+            "equals": 1
+          }
+        ]
+      },
+      {
+        "entity": "hero",
+        "component": "queued",
+        "atSteps": [
+          {
+            "label": "rotated",
+            "equals": "follow"
+          },
+          {
+            "label": "back",
+            "equals": ""
+          }
+        ]
+      },
+      {
+        "entity": "ally",
+        "component": "queued",
+        "atSteps": [
+          {
+            "label": "rotated",
+            "equals": ""
+          },
+          {
+            "label": "back",
+            "equals": "follow"
+          }
+        ]
+      }
+    ]
+  }
+}

@@ -1,0 +1,129 @@
+{
+  "name": "natural-20-and-1",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "at-post",
+      "press": "F1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-one",
+      "press": "F8",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "attack-1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "one",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastRoll",
+        "equals": 1
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "rig-twenty",
+      "press": "F7",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "attack-2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "twenty",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastRoll",
+        "equals": 20
+      },
+      "release": false,
+      "timeoutMs": 8000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "lastOutcome",
+        "atSteps": [
+          {
+            "label": "one",
+            "equals": "miss"
+          },
+          {
+            "label": "twenty",
+            "equals": "critical"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastAutomatic",
+        "atSteps": [
+          {
+            "label": "one",
+            "equals": "miss"
+          },
+          {
+            "label": "twenty",
+            "equals": "hit"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastDamage",
+        "atSteps": [
+          {
+            "label": "one",
+            "equals": 0
+          },
+          {
+            "label": "twenty",
+            "equals": 20
+          }
+        ]
+      }
+    ]
+  }
+}

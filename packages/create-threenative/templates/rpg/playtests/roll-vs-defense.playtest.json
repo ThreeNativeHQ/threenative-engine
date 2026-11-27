@@ -1,0 +1,145 @@
+{
+  "name": "roll-vs-defense",
+  "warmupFrames": 10,
+  "schemaVersion": 1,
+  "target": "web",
+  "viewport": {
+    "width": 1280,
+    "height": 720
+  },
+  "subject": "hero",
+  "steps": [
+    {
+      "label": "settled",
+      "waitForResource": {
+        "id": "state",
+        "path": "missionTime",
+        "gte": 0.5
+      },
+      "release": false,
+      "timeoutMs": 5000
+    },
+    {
+      "kind": "input",
+      "label": "at-post",
+      "press": "F1",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "rig-miss",
+      "press": "F9",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "attack-1",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "missed",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastRoll",
+        "equals": 6
+      },
+      "release": false,
+      "timeoutMs": 8000
+    },
+    {
+      "kind": "input",
+      "label": "rig-hit",
+      "press": "F10",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "kind": "input",
+      "label": "attack-2",
+      "press": "KeyF",
+      "holdTicks": 1,
+      "release": true
+    },
+    {
+      "label": "hit",
+      "waitForResource": {
+        "id": "state",
+        "path": "lastRoll",
+        "equals": 7
+      },
+      "release": false,
+      "timeoutMs": 8000
+    }
+  ],
+  "assert": {
+    "diagnostics": {
+      "noConsoleErrors": true,
+      "noNetworkErrors": true,
+      "runtimeReady": true
+    },
+    "resources": [
+      {
+        "id": "state",
+        "path": "targetDefense",
+        "atSteps": [
+          {
+            "label": "missed",
+            "equals": 10
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "attackBonus",
+        "atSteps": [
+          {
+            "label": "missed",
+            "equals": 3
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastOutcome",
+        "atSteps": [
+          {
+            "label": "missed",
+            "equals": "miss"
+          },
+          {
+            "label": "hit",
+            "equals": "hit"
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastDamage",
+        "atSteps": [
+          {
+            "label": "missed",
+            "equals": 0
+          },
+          {
+            "label": "hit",
+            "equals": 5
+          }
+        ]
+      },
+      {
+        "id": "state",
+        "path": "lastAutomatic",
+        "atSteps": [
+          {
+            "label": "hit",
+            "equals": ""
+          }
+        ]
+      }
+    ]
+  }
+}
