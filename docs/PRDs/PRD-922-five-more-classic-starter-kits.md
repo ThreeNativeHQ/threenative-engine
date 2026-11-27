@@ -4,8 +4,8 @@ prd_contract: v1
 
 # PRD-922 — Five more classic-mechanics starter kits: platform fighter, rail shooter, rhythm, farming, flight
 
-**Status:** PARTIAL — 2026-11-26. Shipped in #749: `farming`, `rail-shooter`, `board-party`, the `starter-kit-development` skill and the per-kit authoring-layer test.
-**Blocker:** owner, 2026-11-26: "push whatever is done to the repo" (token budget). The other seven kits are pushed as `kit/<name>` branches, not merged: platform-fighter (30/30 before Gemini fixes, rerun pending), tomb-explorer (16/16, camera row fixed, rerun pending), rhythm (registered, final sweep unconfirmed), flight (13/16 on FlightModel), rpg (camera fix not run), military-shooter (reruns pending), car-combat (no full run).
+**Status:** PARTIAL — 2026-11-26. All ten kits are in develop: #749 (farming, rail-shooter, board-party, verified) and #771 (seven more, merged at the owner's call before their headed runs finished).
+**Blocker:** owner, 2026-11-26: "fully finish this later, with follow up prs if necessary". Open per kit (last real run): platform-fighter 30/30 before five Gemini fixes, rerun pending; tomb-explorer 16/16, camera row fixed alone, full rerun + Gemini pending; rhythm survives fixed alone, final sweep pending; flight 13/16 on FlightModel; rpg camera fix never run; military-shooter partial reruns; car-combat no full run. Lane worktrees `.claude/worktrees/kit-<name>` and `kit/<name>` branches are kept for the follow-up.
 **Priority:** P1 — owner request, 2026-11-26
 **Complexity:** 9 (HIGH) — five new kits in `packages/create-threenative/templates/`, contract rows, pins
 **Owner:** João
