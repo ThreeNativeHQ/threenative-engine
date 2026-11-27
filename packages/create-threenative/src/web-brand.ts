@@ -116,7 +116,7 @@ const ISOLATION_BOOT = `<script>(() => {
   const key = "tnIsolationReload";
   const store = (use) => { try { return use(sessionStorage); } catch { return null; } };
   if (globalThis.crossOriginIsolated) return void store((s) => s.removeItem(key));
-  if (!isSecureContext || !("serviceWorker" in navigator) || /[?&]tnIsolation=0(?:&|$)/.test(location.search)) return;
+  if (!isSecureContext || !("serviceWorker" in navigator) || !("gpu" in navigator) || /[?&]tnIsolation=0(?:&|$)/.test(location.search)) return;
   globalThis.__tnIsolation = navigator.serviceWorker.register("${ISOLATION_WORKER_FILE}")
     .then(() => navigator.serviceWorker.ready)
     .then(() => {
@@ -170,6 +170,37 @@ export function withBootGlobals(
   );
 }
 
+/**
+ * Propagates `sessionStorage.tnWebglFallback` to same-origin `new Worker(...)` URLs so worker
+ * games that fell back to WebGL2 after a mid-boot WebGPU failure boot into WebGL2 cleanly.
+ */
+const WEBGL_FALLBACK_WORKER_BOOT = `<script>(() => {
+  try { if (sessionStorage.getItem("tnWebglFallback") !== "1") return; } catch { return; }
+  const NativeWorker = globalThis.Worker;
+  if (typeof NativeWorker !== "function") return;
+  globalThis.Worker = class extends NativeWorker {
+    constructor(url, options) {
+      try {
+        const target = new URL(String(url), location.href);
+        if (
+          (target.protocol === "http:" || target.protocol === "https:") &&
+          target.origin === location.origin &&
+          !target.searchParams.has("tnWebglFallback")
+        ) {
+          target.searchParams.set("tnWebglFallback", "1");
+          url = target.href;
+        }
+      } catch {}
+      super(url, options);
+    }
+  };
+})();</script>`;
+
+export function withWebglFallbackWorkerFlag(html: string): string {
+  if (!/<script\b[^>]*\btype="module"/iu.test(html)) return html;
+  return html.replace(/<script\b[^>]*\btype="module"/iu, `${WEBGL_FALLBACK_WORKER_BOOT}\n    $&`);
+}
+
 export interface IBundleFile {
   readonly fileName: string;
   readonly type: string;
@@ -214,6 +245,7 @@ export function withEnginePreload(
   const quote = (value: string | undefined) =>
     JSON.stringify(value ?? null).replaceAll("<", "\\u003c");
   const script = `<script>(() => {
+  if (globalThis.navigator && !("gpu" in globalThis.navigator)) return;
   const link = (rel, href, as) => {
     const tag = Object.assign(document.createElement("link"), { rel, href, crossOrigin: "anonymous" });
     if (as !== undefined) tag.as = as;
@@ -329,6 +361,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
   let engine: IWebEnginePlugin | undefined;
   // Set once the threaded engine is in the bundle: only then does the page need isolation at boot.
   let threaded = false;
+  let serve = false;
   const load = async (id: string): Promise<string | null> => {
     const code = (await engine?.load(id)) ?? null;
     if (id === WEB_ENGINE_ID && code !== null) threaded = true;
@@ -377,6 +410,7 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     load,
     async configResolved(resolved) {
       root = resolved.root;
+      serve = resolved.command === "serve";
       config = await loadConfig(root);
       // The Wasm engine is the browser's. `runtime-native/scripts/bundle.mjs` builds a native
       // bundle through the project's own Vite config and names its target here: that bundle is one
@@ -391,7 +425,11 @@ export function createWebBrandPlugin(): IWebBrandVitePlugin {
     },
     transformIndexHtml(html, context) {
       if (config === undefined) throw new Error("TN_WEB_BRAND_CONFIG_MISSING");
-      const output = withBootGlobals(withBuildId(updateLaunchMarkup(root, config, html)), config);
+      const booted = withBootGlobals(withBuildId(updateLaunchMarkup(root, config, html)), config);
+      const output =
+        config.engine === "threenative" && (threaded || serve)
+          ? withWebglFallbackWorkerFlag(booted)
+          : booted;
       // Before the first script, so it runs ahead of the game module.
       const isolated = threaded
         ? output.replace(/<script/iu, `${ISOLATION_BOOT}\n    <script`)

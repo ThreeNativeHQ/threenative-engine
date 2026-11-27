@@ -33,6 +33,7 @@ import {
   upgradeStreamedGeometry,
 } from "./model-lod.js";
 import { countDebug, debugRequested, measureDebug } from "./profiling/debug-telemetry.js";
+import { isWebGLFallbackRenderer } from "./render/environment/gate.js";
 import { streamedTextureUpgrade } from "./streamed-textures.js";
 import { openKtx2Stream } from "./texture-streaming.js";
 
@@ -631,7 +632,8 @@ async function loadBitmapTexture(
   // No renderer means the native host or a bare-node load, both of which flip at upload.
   const flipsAtUpload =
     renderer === undefined ||
-    (renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true;
+    ((renderer as { isWebGPURenderer?: boolean }).isWebGPURenderer === true &&
+      !isWebGLFallbackRenderer(renderer));
   const debug = debugRequested();
   const start = debug ? performanceNow() : 0;
   const pending = flipsAtUpload
@@ -749,7 +751,8 @@ export async function createKtx2Loader(options: {
   const supported = config === undefined ? [] : Object.values(config).filter(Boolean);
   if (supported.length === 0) {
     const kind =
-      (options.renderer as { isWebGPURenderer?: boolean } | undefined)?.isWebGPURenderer === true
+      (options.renderer as { isWebGPURenderer?: boolean } | undefined)?.isWebGPURenderer === true &&
+      !isWebGLFallbackRenderer(options.renderer)
         ? "webgpu"
         : "webgl2";
     throw new Error(

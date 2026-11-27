@@ -403,13 +403,41 @@ describe("threenative build", () => {
     await buildWeb(root, args);
     const cooked = JSON.parse(await readFile(path.join(root, "dist/assets.manifest.json"), "utf8"));
     expect(cooked.entries["hero.glb"].extensions ?? []).toContain("EXT_meshopt_compression");
+    const html = await readFile(path.join(root, "dist/index.html"), "utf8");
     const assets = path.join(root, "dist/assets");
     const chunks = (await readdir(assets)).filter((name) => name.endsWith(".js"));
-    const output = (
-      await Promise.all(chunks.map((name) => readFile(path.join(assets, name), "utf8")))
-    ).join("\n");
-    expect(output).toContain("is not available on the Wasm engine");
-    expect(output).not.toContain("Object3D.add: object not an instance of THREE.Object3D.");
+    const contents = new Map(
+      await Promise.all(
+        chunks.map(
+          async (name) => [name, await readFile(path.join(assets, name), "utf8")] as const,
+        ),
+      ),
+    );
+    const eagerNames = new Set<string>();
+    for (const match of html.matchAll(/(?:src|href)="[^"]*\/assets\/([^"]+\.js)"/gu)) {
+      if (match[1] !== undefined) eagerNames.add(match[1]);
+    }
+    const queue = [...eagerNames];
+    while (queue.length > 0) {
+      const current = queue.pop();
+      const code = current === undefined ? undefined : contents.get(current);
+      if (code === undefined) continue;
+      for (const match of code.matchAll(/\bfrom\s*["']\.\/([^"']+\.js)["']/gu)) {
+        const dep = match[1];
+        if (dep !== undefined && contents.has(dep) && !eagerNames.has(dep)) {
+          eagerNames.add(dep);
+          queue.push(dep);
+        }
+      }
+    }
+    const eager = [...eagerNames].map((name) => contents.get(name) ?? "").join("\n");
+    const lazy = chunks
+      .filter((name) => !eagerNames.has(name))
+      .map((name) => contents.get(name) ?? "")
+      .join("\n");
+    expect(eager).toContain("is not available on the Wasm engine");
+    expect(eager).not.toContain("Object3D.add: object not an instance of THREE.Object3D.");
+    expect(lazy).toContain("Object3D.add: object not an instance of THREE.Object3D.");
   });
 
   // PRD-448. The web build publishes the way a native artifact already does, so the last working

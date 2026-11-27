@@ -253,7 +253,7 @@ describe("web branding adapter", () => {
       JSON.stringify({ name: "compute-probe", type: "module" }),
     );
     const plugin = createWebBrandPlugin();
-    await plugin.configResolved({ root });
+    await plugin.configResolved({ root, command: "serve" });
     const html = plugin.transformIndexHtml(
       '<html><head><link rel="icon" href="data:," /></head><body></body></html>',
     );
@@ -286,7 +286,7 @@ describe("web branding adapter", () => {
       'export default { app: { name: "Branded <Quest>" } };\n',
     );
     const plugin = createWebBrandPlugin();
-    await plugin.configResolved({ root });
+    await plugin.configResolved({ root, command: "serve" });
     const html = plugin.transformIndexHtml(
       '<head>\n    <script type="module" src="/src/main.ts"></script>\n</head>',
     );
@@ -385,5 +385,42 @@ describe("web branding adapter", () => {
     expect(
       withEnginePreload(html, { "assets/index-A1.js": bundle["assets/index-A1.js"] }, true),
     ).toBe(html);
+  });
+
+  it("propagates tnWebglFallback=1 onto same-origin Worker URLs after a fallback reload", async () => {
+    const root = await makeTempDir("threenative-web-brand-worker-fallback-");
+    roots.push(root);
+    await writeFile(
+      path.join(root, "package.json"),
+      JSON.stringify({ name: "worker-fallback", type: "module" }),
+    );
+    await writeFile(path.join(root, "threenative.config.ts"), "export default {};\n");
+    const plugin = createWebBrandPlugin();
+    await plugin.configResolved({ root, command: "serve" });
+    const html = plugin.transformIndexHtml(
+      '<head><script type="module" src="/src/main.ts"></script></head>',
+    );
+    const match = html.match(
+      /<script>(\(\(\) => \{\s*try \{ if \(sessionStorage\.getItem\("tnWebglFallback"\)[\s\S]*?)<\/script>/u,
+    );
+    expect(match?.[1]).toBeTruthy();
+    const seen: string[] = [];
+    class FakeWorker {
+      constructor(url: string | URL) {
+        seen.push(String(url));
+      }
+    }
+    const g = { Worker: FakeWorker };
+    new Function("sessionStorage", "location", "globalThis", match?.[1] ?? "")(
+      { getItem: (key: string) => (key === "tnWebglFallback" ? "1" : null) },
+      { href: "https://example.test/", origin: "https://example.test" },
+      g,
+    );
+    new g.Worker("/assets/worker.js");
+    new g.Worker("blob:https://example.test/abc");
+    expect(seen).toEqual([
+      "https://example.test/assets/worker.js?tnWebglFallback=1",
+      "blob:https://example.test/abc",
+    ]);
   });
 });

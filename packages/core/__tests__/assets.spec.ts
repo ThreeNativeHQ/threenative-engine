@@ -273,6 +273,23 @@ describe("IAssetLoader", () => {
     expect(texture.flipY).toBe(false);
   });
 
+  it("should keep a WebGPURenderer WebGL2 fallback texture flipped like WebGL2", async () => {
+    const createBitmap = vi.fn(
+      async (_blob: Blob, _options?: ImageBitmapOptions) =>
+        ({ height: 4, width: 4 }) as ImageBitmap,
+    );
+    vi.stubGlobal("Image", class {});
+    vi.stubGlobal("createImageBitmap", createBitmap);
+    vi.stubGlobal("fetch", noManifestFetch());
+
+    const texture = await createAssetLoader({
+      renderer: { backend: { isWebGLBackend: true }, isWebGPURenderer: true },
+    }).texture("rock.png");
+
+    expect(createBitmap.mock.calls[0]?.[1]).toEqual({ imageOrientation: "flipY" });
+    expect(texture.flipY).toBe(false);
+  });
+
   it("should let a WebGPU renderer flip the texture at upload", async () => {
     // WebGPU's copyExternalImageToTexture takes flipY natively, so the bitmap arrives unflipped
     // and `flipY` stays true — which is also what the native host has always done.
