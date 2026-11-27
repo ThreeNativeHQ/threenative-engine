@@ -27,6 +27,7 @@ import {
 } from "../render/quality.js";
 import { setupSky } from "../render/sky.js";
 import { createViewmodel } from "../render/viewmodel.js";
+import { HEALTH_MAX, SHIELD_MAX } from "../rules/vitals.js";
 import { RIFLE } from "../rules/weapon.js";
 import type { GameState } from "../state.js";
 import { STATIONS, STATION_NAMES, UNDER_PLAYTEST } from "../stations.js";
@@ -295,6 +296,12 @@ export class Play extends Scene<GameState, IPhysicsContext> {
         if (station === undefined) continue;
         player.place(station.x, station.z, station.yaw);
         player.pitch = station.pitch ?? 0;
+        // A station isolates one mechanic, so the counters its scenario asserts start from zero: a
+        // round that landed while the player crossed the yard must not fail the row a station names.
+        player.hitsTaken = 0;
+        player.vitals.shield = SHIELD_MAX;
+        player.vitals.health = HEALTH_MAX;
+        player.vitals.stunTicks = 0;
         duel = station.duel;
         emitPlaytestEvent({ entity: "player", name });
       }

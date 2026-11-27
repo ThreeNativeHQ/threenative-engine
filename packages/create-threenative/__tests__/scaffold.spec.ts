@@ -149,7 +149,7 @@ const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   },
   "military-shooter": {
     shared: "9309b1ebaaddea1b6f79caec51be6e304e474e606ca803f2dc915176383f1341",
-    kit: "030182a7afaf14a91f23da33bab45fef0d1511684954d6702437bda527c2b091",
+    kit: "ae8cd0554e7e445aa86d0d31e5f7745c5336ec826560195ae5e7ed7edd6056f4",
   },
   minimal: {
     shared: "ec7fcdf0dd7c643ed8656af5e08677b11d87da06d9bd97d578b88c669f622d71",
