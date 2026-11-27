@@ -32,11 +32,11 @@
       "kind": "input",
       "label": "slide",
       "press": [
-        "ArrowUp",
+        "ArrowLeft",
         "Space"
       ],
       "holdTicks": 60,
-      "release": true
+      "release": false
     },
     {
       "kind": "wait",

@@ -13393,6 +13393,20 @@
       "words": ["adventure", "zelda", "ocarina", "action-adventure"]
     },
     {
+      "blurb": "A grey-grid arena of rival cars: friction-ellipse tyres, an automatic gearbox, per-panel damage and repair, ramming that wrecks rivals, checkpoints that add time.",
+      "name": "car-combat",
+      "title": "Car combat",
+      "words": [
+        "car-combat",
+        "carmageddon",
+        "twisted-metal",
+        "destruction-derby",
+        "demolition-derby",
+        "vehicular-combat",
+        "wreck"
+      ]
+    },
+    {
       "blurb": "A stout sprout-keeper in a knit beanie runs one free-roam island with a triple jump, long jump, backflip, side flip, wall kick, dive, ground pound and ledge grab, collecting three Sunseeds past bumblets, hoppers and spiked thornbacks.",
       "name": "collectathon",
       "title": "Hop Garden",

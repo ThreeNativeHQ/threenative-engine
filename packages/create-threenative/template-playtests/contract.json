@@ -108,6 +108,29 @@
       }
     }
   },
+  "car-combat": {
+    "subject": "player",
+    "move": ["ArrowUp", "ArrowLeft", "ArrowDown", "ArrowRight"],
+    "explore": {
+      "actions": ["Space"]
+    },
+    "restart": {
+      "key": "KeyR",
+      "resets": [
+        { "id": "state", "path": "phase", "equals": "playing" },
+        { "id": "state", "path": "rivalsWrecked", "equals": 0 },
+        { "id": "state", "path": "engine", "equals": 0 },
+        { "id": "state", "path": "lap", "equals": 1 },
+        { "id": "state", "path": "gatesPassed", "equals": 0 }
+      ]
+    },
+    "optOut": {
+      "foot-slip": "a vehicle with no skinned rig and no foot soles; the wheels are procedural cylinders",
+      "action-clip-completes": "no key plays a clip from a standstill: the car has no animation clips, and damage comes from the physics impact",
+      "effect-follows-contact": "no melee or timed hit with a contact window: damage comes from the physics impact",
+      "engine-cost": "new kit with no measured NVIDIA after-values yet; the bounds are a kit's own measurement, taken in a later round"
+    }
+  },
   "collectathon": {
     "subject": "player",
     "move": ["KeyW", "KeyA", "KeyS", "KeyD"],

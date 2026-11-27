@@ -26,6 +26,8 @@ export interface ITyreAxle {
   readonly lateralDemand: number;
   /** The drive force the engine asks this axle for, in newtons (0 on the undriven axle). */
   readonly driveDemand: number;
+  /** Share of the grip left by a handbrake or a damaged wheel; 1 on a healthy axle. */
+  readonly gripScale?: number;
 }
 
 export interface ITyreResult {
@@ -42,7 +44,7 @@ export function solveAxle(axle: ITyreAxle): ITyreResult {
   const blend = Math.min(1, Math.abs(axle.lateralSpeed) / TYRE.lateralBlendDivisor);
   const mu = TYRE.mu + (TYRE.slidingMu - TYRE.mu) * blend;
   const loadRatio = Math.max(0.05, axle.load / axle.staticLoad);
-  const budget = mu * axle.staticLoad * Math.sqrt(loadRatio);
+  const budget = mu * axle.staticLoad * Math.sqrt(loadRatio) * (axle.gripScale ?? 1);
   const length = (axle.lateralDemand + axle.driveDemand) / TYRE.vectorDivisor;
   const slipping = length > budget;
   // The surplus is lost: the drive force shrinks until the combined length just fits.

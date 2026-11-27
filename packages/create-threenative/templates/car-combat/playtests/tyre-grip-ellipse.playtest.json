@@ -33,7 +33,7 @@
       "label": "coast-turn",
       "press": "ArrowLeft",
       "holdTicks": 60,
-      "release": true
+      "release": false
     },
     {
       "kind": "wait",
@@ -50,7 +50,7 @@
     },
     {
       "kind": "wait",
-      "label": "ready",
+      "label": "reready",
       "waitTicks": 2,
       "release": true
     },
@@ -62,7 +62,7 @@
         "ArrowLeft"
       ],
       "holdTicks": 90,
-      "release": true
+      "release": false
     },
     {
       "kind": "wait",

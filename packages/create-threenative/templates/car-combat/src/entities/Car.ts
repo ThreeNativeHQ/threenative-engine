@@ -237,7 +237,10 @@ export class Car {
     const lateralAccel = (speed * speed * Math.abs(Math.tan(angle))) / WHEELBASE;
     const slipDemand = HANDLING.slipGain * Math.abs(lateralSpeed) * AXLE_MASS;
     const lateralDemand = AXLE_MASS * lateralAccel + slipDemand;
+    const rearScale = (wantsHandbrake ? HANDLING.handbrakeGrip : 1) * ((this.damage.wheelGrip(2) + this.damage.wheelGrip(3)) / 2);
+    const frontScale = (this.damage.wheelGrip(0) + this.damage.wheelGrip(1)) / 2;
     const rear = solveAxle({
+      gripScale: rearScale,
       driveDemand: Math.abs(out.driveForce),
       lateralDemand,
       lateralSpeed,
@@ -245,6 +248,7 @@ export class Car {
       staticLoad: AXLE_LOAD,
     });
     const front = solveAxle({
+      gripScale: frontScale,
       driveDemand: 0,
       lateralDemand,
       lateralSpeed,

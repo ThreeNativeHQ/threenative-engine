@@ -17,6 +17,7 @@
       "marker": "TN_WORLD_ENVIRONMENT",
       "kits": [
         "adventure",
+        "car-combat",
         "collectathon",
         "kart",
         "minimal",
@@ -63,6 +64,7 @@
       "marker": "\u2014",
       "kits": [
         "action-rpg",
+        "car-combat",
         "collectathon",
         "kart",
         "minimal",
@@ -114,6 +116,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "car-combat",
         "collectathon",
         "minimal",
         "open-world",
@@ -301,6 +304,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "car-combat",
         "collectathon",
         "minimal",
         "open-world",
@@ -335,6 +339,7 @@
       "marker": "TN_ENVIRONMENT_CONTRIBUTION",
       "kits": [
         "action-rpg",
+        "car-combat",
         "minimal",
         "open-world",
         "platformer",
@@ -467,6 +472,7 @@
       "kits": [
         "action-rpg",
         "adventure",
+        "car-combat",
         "collectathon",
         "minimal",
         "open-world",
