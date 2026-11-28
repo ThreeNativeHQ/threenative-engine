@@ -2037,11 +2037,23 @@ int main(int argc, char** argv) {
     }
     // No game named: the packaged one beside the executable (package-engine-desktop.mjs stages `game.js`
     // there), so double-clicking the player starts the game as its launch script would.
+    // Not on PS4: SDL_GetBasePath links SDL's sysctl() query, which the OpenOrbis libc lacks
+    // (scripts/ps4/shim/sys/sysctl.h), and a console launch always names its game.
+#if !defined(TN_PS4)
     if (gamePath.empty()) {
-        const char* base = SDL_GetBasePath();
-        if (base != nullptr && std::filesystem::exists(std::filesystem::path(base) / "game.js"))
-            gamePath = (std::filesystem::path(base) / "game.js").string();
+        // SDL answers in UTF-8; a narrow path would read it in the Windows ANSI code page.
+        if (const char* base = SDL_GetBasePath()) {
+            try {
+                const std::filesystem::path beside =
+                    std::filesystem::path(reinterpret_cast<const char8_t*>(base)) / "game.js";
+                std::error_code error;
+                if (std::filesystem::exists(beside, error)) gamePath = beside.string();
+            } catch (const std::exception&) {
+                // A folder name the narrow path cannot spell: no default, the error below says so.
+            }
+        }
     }
+#endif
     if (gamePath.empty())
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;
     // The packaged game's window and priority (`launch.cfg` beside `game.js`, package-engine-desktop.mjs):
@@ -2200,7 +2212,8 @@ int main(int argc, char** argv) {
                 renderer.setOverlay(ui.pixels, ui.width, ui.height, ui.counter, ui.stride, !ui.isRgba);
         };
         configured.uiPointer = [](const char* type, float x, float y, int buttons) {
-            return mystral::platform::uiOverlayAttached() && mystral::platform::uiOverlayRoutePointer(type, x, y, buttons, 1);
+            return mystral::platform::uiOverlayAttached() && !mystral::platform::uiOverlayTakesOsPointer() &&
+                   mystral::platform::uiOverlayRoutePointer(type, x, y, buttons, 1);
         };
         configured.uiResize = [](int width, int height) { mystral::platform::uiOverlaySetSize(width, height); };
         configured.uiDetach = [] {

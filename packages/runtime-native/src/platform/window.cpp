@@ -388,6 +388,7 @@ bool routePointerToUi(const SDL_Event& event) {
         x = event.button.x;
         y = event.button.y;
     }
+    if (uiOverlayTakesOsPointer()) return false;  // the page got this pointer from the OS already
     float nx = 0.0f;
     float ny = 0.0f;
     if (!uiViewportPoint(x, y, nx, ny)) return false;

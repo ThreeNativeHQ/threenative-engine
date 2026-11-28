@@ -335,23 +335,25 @@ pub extern "C" fn tn_ui_overlay_free(frame: *mut c_char) {
     drop(unsafe { CString::from_raw(frame) });
 }
 
-/// Move and resize the overlay to follow the game window.
+/// Follow the game window. The host passes pixels (`SDL_GetWindowSizeInPixels`), twice AppKit's
+/// points on a Retina display, so the arguments are not applied: the page is exactly its container,
+/// which tracks the content view, and the frame is set again from it in points.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_set_bounds(x: i32, y: i32, width: u32, height: u32) -> c_int {
+    let _ = (x, y, width, height);
     OVERLAY.with(|slot| {
         let borrowed = slot.borrow();
         let Some(overlay) = borrowed.as_ref() else {
             return NOT_ATTACHED;
         };
-        let bounds = Rect {
-            position: LogicalPosition::new(x, y).into(),
-            size: LogicalSize::new(width.max(1), height.max(1)).into(),
-        };
-        if overlay.webview.set_bounds(bounds).is_ok() {
-            0
-        } else {
-            BUILD_REFUSED
+        unsafe {
+            use wry::WebViewExtMacOS;
+            overlay
+                .webview
+                .webview()
+                .setFrame(overlay.container.bounds());
         }
+        0
     })
 }
 

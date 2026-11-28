@@ -301,26 +301,23 @@ function installLoopback(scope: IScope): void {
 }
 
 /**
- * Connect one end of the bridge.
- *
- * The transport is discovered, never configured: a game asks for `ui` or `game` and gets the
- * platform channel when one exists and the in-process broker when it does not. That is what
- * keeps the backend — which web view, which host API — out of every game's source.
- * @situation connect game code to a platform-owned UI realm
- * @situation share one UI bridge implementation across web, Android, iOS, and desktop
- * @example const bridge = connectUiBridge({ end: "game" });
- */
-/**
  * On a native host the page is the game window's HUD, and the browser's Fullscreen API would at most
  * fill the web view. A request goes to the host instead, which switches the game window. The page is
  * fullscreen while it fills the screen, so the state stays right whoever switched the window
  * (`display.fullscreen` at launch, the OS, or this page).
  */
-function installHostFullscreen(scope: IScope, outbound: (frame: string) => void): void {
+function installHostFullscreen(scope: IScope, outbound: (frame: string) => void): () => void {
   const document = scope.document as IScope | undefined;
   const root = document?.documentElement as IScope | undefined;
   const screen = scope.screen as { width?: unknown; height?: unknown } | undefined;
-  if (document === undefined || root === undefined || screen === undefined) return;
+  // The web loopback (`?tnUiLoopback=1`) is a browser page: its own Fullscreen API is the real one.
+  if (
+    document === undefined ||
+    root === undefined ||
+    screen === undefined ||
+    scope[LOOPBACK_KEY] !== undefined
+  )
+    return () => {};
   // ponytail: a geometry test, not a host query; a window sized exactly to the screen with a frame
   // would read as fullscreen. Ask the host for its state if a game ever needs that distinction.
   const filled = (): boolean =>
@@ -340,11 +337,9 @@ function installHostFullscreen(scope: IScope, outbound: (frame: string) => void)
   elements.requestFullscreen = () => request(true);
   document.exitFullscreen = () => request(false);
   const EventCtor = scope.Event as (new (type: string) => unknown) | undefined;
-  const listen = scope.addEventListener as
-    | ((type: string, listener: () => void) => void)
-    | undefined;
+  type Listen = ((type: string, listener: () => void) => void) | undefined;
   let was = filled();
-  listen?.call(scope, "resize", () => {
+  const onResize = (): void => {
     const now = filled();
     if (now === was) return;
     was = now;
@@ -354,9 +349,21 @@ function installHostFullscreen(scope: IScope, outbound: (frame: string) => void)
         new EventCtor("fullscreenchange"),
       );
     }
-  });
+  };
+  (scope.addEventListener as Listen)?.call(scope, "resize", onResize);
+  return () => (scope.removeEventListener as Listen)?.call(scope, "resize", onResize);
 }
 
+/**
+ * Connect one end of the bridge.
+ *
+ * The transport is discovered, never configured: a game asks for `ui` or `game` and gets the
+ * platform channel when one exists and the in-process broker when it does not. That is what
+ * keeps the backend — which web view, which host API — out of every game's source.
+ * @situation connect game code to a platform-owned UI realm
+ * @situation share one UI bridge implementation across web, Android, iOS, and desktop
+ * @example const bridge = connectUiBridge({ end: "game" });
+ */
 export function connectUiBridge(options: IConnectOptions): IUiBridge {
   const { end } = options;
   if (end !== "game" && end !== "ui") {
@@ -408,7 +415,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
   }
 
   const uninstall = installInbound(scope, inboundKey, deliver);
-  if (end === "ui") installHostFullscreen(scope, outbound);
+  const uninstallFullscreen = end === "ui" ? installHostFullscreen(scope, outbound) : () => {};
   // Android's injected object also raises `onmessage`; wiring it to the same entry point keeps
   // one inbound path on every host rather than one per host.
   const injected = scope[UI_BRIDGE_GLOBALS.uiHost] as { onmessage?: unknown } | undefined;
@@ -439,6 +446,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
       closed = true;
       listeners.clear();
       uninstall();
+      uninstallFullscreen();
       if (end === "ui" && injected !== undefined && typeof injected === "object") {
         injected.onmessage = undefined;
       }

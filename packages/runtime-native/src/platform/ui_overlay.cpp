@@ -26,7 +26,7 @@
 
 #if TN_ENABLE_UI_OVERLAY
 extern "C" {
-int tn_ui_overlay_attach(unsigned long parent, const char* url, uint32_t width, uint32_t height);
+int tn_ui_overlay_attach(uintptr_t parent, const char* url, uint32_t width, uint32_t height);
 int tn_ui_overlay_post(const char* frame);
 char* tn_ui_overlay_take();
 void tn_ui_overlay_free(char* frame);
@@ -475,8 +475,10 @@ bool applyUiHitRegionsFrame(const std::string& frame) {
  * the host switches its SDL window: desktop fullscreen, the mode `display.fullscreen` opens with.
  */
 bool applyUiFullscreenFrame(const std::string& frame) {
-    if (frame.find("\"tn:fullscreen\"") == std::string::npos) return false;
-    const bool on = frame.find("\"on\":true") != std::string::npos;
+    // core sends it through JSON.stringify, whose wire shape is canonical: match the whole frame, as
+    // isUiReadyIntent does, so a game message that merely mentions the type still reaches the game.
+    const bool on = frame == R"({"type":"tn:fullscreen","on":true})";
+    if (!on && frame != R"({"type":"tn:fullscreen","on":false})") return false;
     const bool applied = g_uiWindow != nullptr && SDL_SetWindowFullscreen(g_uiWindow, on);
     std::cout << "TN_UI_FULLSCREEN:{\"on\":" << (on ? "true" : "false")
               << ",\"applied\":" << (applied ? "true" : "false") << "}" << std::endl;
@@ -714,15 +716,15 @@ bool attachDesktopUiOverlay(const std::string& uiRoot) {
     // a child window occludes rather than blends — so there the overlay is an input-shaped
     // top-level, and a session without an X11 window says exactly that rather than "unsupported".
 #if defined(_WIN32)
-    const auto parent = reinterpret_cast<unsigned long>(
+    const auto parent = reinterpret_cast<uintptr_t>(
         SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr));
     const char* missing = "the game window is not a Win32 window";
 #elif defined(__APPLE__)
-    const auto parent = reinterpret_cast<unsigned long>(
+    const auto parent = reinterpret_cast<uintptr_t>(
         SDL_GetPointerProperty(properties, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr));
     const char* missing = "the game window is not a Cocoa window";
 #else
-    const auto parent = static_cast<unsigned long>(
+    const auto parent = static_cast<uintptr_t>(
         SDL_GetNumberProperty(properties, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0));
     const char* missing =
         "the game window is not an X11 window; run SDL under X11 (SDL_VIDEODRIVER=x11)";
@@ -926,6 +928,14 @@ void uiOverlaySetPointerKind(bool touch) {
 #endif
 }
 
+bool uiOverlayTakesOsPointer() {
+#if defined(_WIN32) || defined(__APPLE__)
+    return uiOverlayAttached();
+#else
+    return false;
+#endif
+}
+
 bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId) {
     if (!uiOverlayAttached() || type == nullptr) return false;
     // The arrival of a pointer action, before ownership is decided: this is the one function both
@@ -979,6 +989,7 @@ void uiOverlaySetSize(int width, int height) {
     (void)height;
 #endif
 }
+bool uiOverlayTakesOsPointer() { return false; }
 void setUiHitRegions(const std::vector<float>& regions) {
     // The CSS UI hit-tests its own tree, so there is no published-rectangle list to keep and no
     // second authority to disagree with the hit test `uiOverlayHitTest` already does.

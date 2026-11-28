@@ -5579,7 +5579,9 @@
       "signature": "export function connectUiBridge(options: IConnectOptions): IUiBridge { … }",
       "situations": [
         "write a UI that talks to the game on web and on a phone alike",
-        "send a message from a HUD rendered over the game surface"
+        "send a message from a HUD rendered over the game surface",
+        "connect game code to a platform-owned UI realm",
+        "share one UI bridge implementation across web, Android, iOS, and desktop"
       ],
       "summary": "Open the message channel between a game and its UI, whatever host is underneath.",
       "supersedes": [],

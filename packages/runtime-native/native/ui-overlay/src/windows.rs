@@ -18,7 +18,8 @@ use std::sync::{mpsc, Arc, Mutex};
 use webview2_com::Microsoft::Web::WebView2::Win32::*;
 use webview2_com::{
     take_pwstr, CreateCoreWebView2CompositionControllerCompletedHandler,
-    CreateCoreWebView2EnvironmentCompletedHandler, WebMessageReceivedEventHandler,
+    CreateCoreWebView2EnvironmentCompletedHandler, NavigationStartingEventHandler,
+    WebMessageReceivedEventHandler,
 };
 use windows::core::{Interface, HSTRING, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -31,12 +32,13 @@ use windows::Win32::Graphics::Dxgi::IDXGIDevice;
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::WinRT::EventRegistrationToken;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus};
+use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, GetClientRect, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR,
-    WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP,
-    WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP,
-    WM_SETCURSOR, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDPROC,
+    CallWindowProcW, GetClientRect, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR, HTCLIENT,
+    WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN,
+    WM_XBUTTONUP, WNDPROC,
 };
 
 /// `ui_root` was null or not a UTF-8 path.
@@ -49,6 +51,32 @@ const BUILD_REFUSED: c_int = -2;
 const NOT_ATTACHED: c_int = -1;
 /// The page's origin: WebView2 serves `ui/` here, the counterpart of the other hosts' `threenative://`.
 const HOST: &str = "threenative.localhost";
+/// The page's private answer to "do you hold the keyboard" (the script below), never queued for the game.
+const KEY_FOCUS_HELD: &str = "tn:key-focus:1";
+const KEY_FOCUS_FREE: &str = "tn:key-focus:0";
+/// Run in every document: the `window.ipc.postMessage` the page calls on every desktop host, and the
+/// keyboard rule the Linux host keeps (offscreen.rs): the page holds the keyboard only while an
+/// editable control or a select has focus, so a click on a HUD button leaves the game's keys alone.
+const PAGE_SCRIPT: &str = r#"
+Object.defineProperty(window, 'ipc', { value: Object.freeze({ postMessage: s => window.chrome.webview.postMessage(s) }) });
+(() => {
+  let held = false;
+  const holds = () => {
+    const a = document.activeElement;
+    return !!a && (a.isContentEditable || a.tagName === 'INPUT' || a.tagName === 'TEXTAREA' || a.tagName === 'SELECT');
+  };
+  const report = (always) => {
+    const now = holds();
+    if (always || now !== held) window.chrome.webview.postMessage(now ? 'tn:key-focus:1' : 'tn:key-focus:0');
+    held = now;
+  };
+  addEventListener('focusin', () => setTimeout(() => report(false)), true);
+  addEventListener('focusout', () => setTimeout(() => report(false)), true);
+  // Every press on the page answers again: a control that kept DOM focus while the game took the
+  // keyboard back gets it again on its next click.
+  addEventListener('pointerup', () => setTimeout(() => report(true)), true);
+})();
+"#;
 /// `MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2`.
 const ANY_BUTTON: usize = 0x0001 | 0x0002 | 0x0010 | 0x0020 | 0x0040;
 
@@ -101,11 +129,29 @@ fn build(
     // WebView2 needs a single-threaded apartment; an already-initialized thread answers S_FALSE.
     let _ = unsafe { CoInitializeEx(None, COINIT_APARTMENTTHREADED) };
 
+    // The browser profile goes under the user's local app data, one per game folder: with none named,
+    // WebView2 writes `<exe>.WebView2` beside the executable, which fails in a read-only install
+    // (Program Files) and litters the game folder everywhere else.
+    let profile = std::env::var_os("LOCALAPPDATA").map(|base| {
+        let game_name = ui_root
+            .parent()
+            .and_then(Path::file_name)
+            .map_or_else(|| "game".into(), |name| name.to_owned());
+        HSTRING::from(
+            PathBuf::from(base)
+                .join("ThreeNative")
+                .join(game_name)
+                .join("WebView2")
+                .as_os_str(),
+        )
+    });
     let (tx, rx) = mpsc::channel();
     unsafe {
         CreateCoreWebView2EnvironmentWithOptions(
             PCWSTR::null(),
-            PCWSTR::null(),
+            profile
+                .as_ref()
+                .map_or(PCWSTR::null(), |path| PCWSTR(path.as_ptr())),
             None::<&ICoreWebView2EnvironmentOptions>,
             &CreateCoreWebView2EnvironmentCompletedHandler::create(Box::new(
                 move |code, environment| {
@@ -177,22 +223,52 @@ fn build(
                 &folder,
                 COREWEBVIEW2_HOST_RESOURCE_ACCESS_KIND_ALLOW,
             )?;
-        // The same `window.ipc.postMessage` the page calls on every desktop host.
         webview.AddScriptToExecuteOnDocumentCreated(
-            &HSTRING::from(
-                "Object.defineProperty(window, 'ipc', { value: Object.freeze({ postMessage: s => window.chrome.webview.postMessage(s) }) });",
-            ),
+            &HSTRING::from(PAGE_SCRIPT),
             None::<&ICoreWebView2AddScriptToExecuteOnDocumentCreatedCompletedHandler>,
         )?;
+        // The page is the game's own `ui/` and nothing else: a link or redirect elsewhere is refused,
+        // and a message is taken only from that origin, so no other page can post host frames.
+        let origin = format!("https://{HOST}/");
+        let allowed = origin.clone();
+        let mut token = EventRegistrationToken::default();
+        webview.add_NavigationStarting(
+            &NavigationStartingEventHandler::create(Box::new(move |_, args| {
+                if let Some(args) = args {
+                    let mut uri = PWSTR::null();
+                    args.Uri(&mut uri)?;
+                    if !take_pwstr(uri).starts_with(&allowed) {
+                        args.SetCancel(true)?;
+                    }
+                }
+                Ok(())
+            })),
+            &mut token,
+        )?;
         let sink = inbound.clone();
+        let focus = controller.clone();
+        let game_window = game.0 as isize;
         let mut token = EventRegistrationToken::default();
         webview.add_WebMessageReceived(
             &WebMessageReceivedEventHandler::create(Box::new(move |_, args| {
                 if let Some(args) = args {
+                    let mut source = PWSTR::null();
+                    args.Source(&mut source)?;
+                    if !take_pwstr(source).starts_with(&origin) {
+                        return Ok(());
+                    }
                     let mut text = PWSTR::null();
                     args.TryGetWebMessageAsString(&mut text)?;
-                    if let Ok(mut queue) = sink.lock() {
-                        queue.push(take_pwstr(text));
+                    let text = take_pwstr(text);
+                    if text == KEY_FOCUS_HELD {
+                        let _ = focus.MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC);
+                    } else if text == KEY_FOCUS_FREE {
+                        // Only while this window has the keyboard at all: never pull focus from another app.
+                        if !GetFocus().is_invalid() {
+                            let _ = SetFocus(HWND(game_window as *mut c_void));
+                        }
+                    } else if let Ok(mut queue) = sink.lock() {
+                        queue.push(text);
                     }
                 }
                 Ok(())
@@ -250,8 +326,17 @@ unsafe extern "system" fn route(
 /// Deliver one mouse message to the page when it is the page's, and answer it; `None` leaves it
 /// to the game.
 fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) -> Option<LRESULT> {
+    // A press can end with no button-up (Alt+Tab, a modal, a mode change): forget its owner, or the
+    // next gesture would be decided by a press that is over.
+    if message == WM_CANCELMODE
+        || (message == WM_CAPTURECHANGED && lparam.0 != overlay.game.0 as isize)
+    {
+        overlay.press.set(None);
+        return None;
+    }
     if message == WM_SETCURSOR {
-        if !overlay.hovering.get() {
+        // The client area only: the frame's resize and title-bar cursors stay the system's.
+        if !overlay.hovering.get() || (lparam.0 & 0xffff) as u32 != HTCLIENT {
             return None;
         }
         let mut cursor = HCURSOR::default();
@@ -295,13 +380,9 @@ fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) 
     let (page, after) = crate::pointer_owner(overlay.press.get(), down, released, over);
     if overlay.press.get().is_none() && down {
         if page {
-            // The page holds the pointer for the whole press, and takes the keyboard.
+            // The page holds the pointer for the whole press. The keyboard stays the game's unless
+            // the page reports an editable control (KEY_FOCUS_HELD).
             unsafe { SetCapture(overlay.game) };
-            let _ = unsafe {
-                overlay
-                    .controller
-                    .MoveFocus(COREWEBVIEW2_MOVE_FOCUS_REASON_PROGRAMMATIC)
-            };
         } else {
             // A press on the game gives the keyboard back to it.
             let _ = unsafe { SetFocus(overlay.game) };

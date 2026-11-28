@@ -5,7 +5,8 @@ import { FULLSCREEN_MESSAGE, connectUiBridge } from "../src/ui-bridge.js";
  * A native host's UI page: the web view is the game window's HUD, so the page's Fullscreen API must
  * switch the game window through the host (the frame stops there), not fill the web view.
  *
- * The mutation that reddens this file: remove `installHostFullscreen` from `connectUiBridge`.
+ * The mutations that redden this file: remove `installHostFullscreen` from `connectUiBridge`, its
+ * loopback guard, or the resize listener's removal on `close()`.
  */
 function page(innerWidth: number, innerHeight: number) {
   const sent: string[] = [];
@@ -27,6 +28,8 @@ function page(innerWidth: number, innerHeight: number) {
     },
     addEventListener: (type: string, listener: () => void) =>
       type === "resize" && resize.push(listener),
+    removeEventListener: (type: string, listener: () => void) =>
+      type === "resize" && resize.splice(resize.indexOf(listener), 1),
   };
   return { scope, sent, events, root, document: document as Record<string, unknown>, resize };
 }
@@ -59,5 +62,24 @@ describe("ui bridge fullscreen on a native host", () => {
     scope.ipc = undefined;
     connectUiBridge({ end: "ui", scope });
     expect((root as Record<string, unknown>).requestFullscreen).toBeUndefined();
+  });
+
+  it("leaves the browser's Fullscreen API alone under the web loopback", () => {
+    const { scope, root } = page(1024, 700);
+    scope.ipc = undefined;
+    scope.location = { search: "?tnUiLoopback=1" };
+    const bridge = connectUiBridge({ end: "ui", scope });
+    expect(bridge.transport).toBe("host");
+    expect((root as Record<string, unknown>).requestFullscreen).toBeUndefined();
+    bridge.close();
+    (scope.__tnUiLoopback as { close: () => void }).close();
+  });
+
+  it("stops watching the window when the bridge closes", () => {
+    const { scope, resize } = page(1024, 700);
+    const bridge = connectUiBridge({ end: "ui", scope });
+    expect(resize).toHaveLength(1);
+    bridge.close();
+    expect(resize).toHaveLength(0);
   });
 });
