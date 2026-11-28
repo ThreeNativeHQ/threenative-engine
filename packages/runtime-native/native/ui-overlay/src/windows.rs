@@ -34,11 +34,11 @@ use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::WinRT::EventRegistrationToken;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, GetClientRect, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR, HTCLIENT,
-    WA_INACTIVE, WM_ACTIVATE, WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
-    WM_MOUSEWHEEL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDBLCLK,
-    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDPROC,
+    CallWindowProcW, GetClientRect, IsIconic, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR,
+    HTCLIENT, WA_INACTIVE, WM_ACTIVATE, WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SIZE, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDPROC,
 };
 
 /// `ui_root` was null or not a UTF-8 path.
@@ -107,6 +107,10 @@ struct Overlay {
     press: Cell<Option<bool>>,
     /// Whether the pointer was last over the page, so leaving it clears the page's hover.
     hovering: Cell<bool>,
+    /// The last WM_ACTIVATE said the window is active, and whether the page was last told it has focus
+    /// (active and not minimized), so only a real change reaches the page.
+    activated: Cell<bool>,
+    focused: Cell<bool>,
 }
 
 fn client_size(hwnd: HWND) -> (i32, i32) {
@@ -301,6 +305,8 @@ fn build(
         size: Cell::new(size),
         press: Cell::new(None),
         hovering: Cell::new(false),
+        activated: Cell::new(true),
+        focused: Cell::new(true),
     })
 }
 
@@ -341,18 +347,24 @@ fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) 
         overlay.press.set(None);
         return None;
     }
-    if message == WM_ACTIVATE {
-        let type_ = if wparam.0 & 0xffff == WA_INACTIVE as usize {
-            "blur"
-        } else {
-            "focus"
-        };
-        let script = HSTRING::from(format!("dispatchEvent(new FocusEvent('{type_}'))"));
-        let _ = unsafe {
+    if message == WM_ACTIVATE || message == WM_SIZE {
+        // A window can be activated while still minimized (HIWORD of WM_ACTIVATE), and a restore from
+        // the taskbar ends with WM_SIZE, not another WM_ACTIVATE: focus is active and not iconic.
+        if message == WM_ACTIVATE {
             overlay
-                .webview
-                .ExecuteScript(&script, None::<&ICoreWebView2ExecuteScriptCompletedHandler>)
-        };
+                .activated
+                .set(wparam.0 & 0xffff != WA_INACTIVE as usize);
+        }
+        let focused = overlay.activated.get() && !unsafe { IsIconic(overlay.game) }.as_bool();
+        if focused != overlay.focused.replace(focused) {
+            let type_ = if focused { "focus" } else { "blur" };
+            let script = HSTRING::from(format!("dispatchEvent(new FocusEvent('{type_}'))"));
+            let _ = unsafe {
+                overlay
+                    .webview
+                    .ExecuteScript(&script, None::<&ICoreWebView2ExecuteScriptCompletedHandler>)
+            };
+        }
         return None;
     }
     if message == WM_SETCURSOR {
