@@ -483,6 +483,9 @@ constexpr const char* kDocumentShim = R"JS(
       listeners.get(type).add(listener);
     },
     removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+    // Core's releaseMouse asks an event-target document for this, as a browser's document has it
+    // (and the legacy host's): the lock is the canvas's, which core-host.mjs installs.
+    exitPointerLock: () => globalThis.canvas?.exitPointerLock?.(),
     dispatchEvent(event) {
       // A copy: a listener that removes another must not skip it, as a browser's dispatch does not.
       for (const listener of [...(listeners.get(event.type) ?? [])]) {
