@@ -32,6 +32,9 @@ SLOTS_VARIABLE=TN_RUNNER_SLOTS
 LIGHT_VARIABLE=TN_RUNNER_LIGHT
 ENV_FILE="${TN_RUNNERS_ENV:-${XDG_CONFIG_HOME:-$HOME/.config}/threenative/runners.env}"
 STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/threenative/ci-runners"
+# One pool per host. The lock file lives in the user's state directory and never in a checkout, so
+# every `up` on this host resolves the same path; the lock itself is what makes the claim atomic.
+LOCK_FILE="$STATE_DIR/pool.lock"
 DEFAULT_SLOTS=3
 CORES_PER_SLOT=3
 LIGHT_CORES=1
@@ -78,6 +81,27 @@ need() {
   command -v "$1" >/dev/null 2>&1 || fail 2 "$1 is not on PATH"
 }
 
+# The host holds one pool. Two pools put two containers on every cpuset: on 2026-11-27 the systemd
+# unit's pool and a hand-started one ran together, so each job got half the cores its cpuset
+# promised and 60 s vitest tests timed out at 64 s on a 24-thread host. The claim is an exclusive
+# `flock` on $LOCK_FILE, inherited by the slot loops — the processes that own the containers — so it
+# lives exactly as long as the pool does. `flock -n` is atomic, and unlike the slots' docker label it
+# still answers while the first pool is building its image, so a second `up` cannot slip in there.
+acquire_pool_lock() {
+  need flock
+  mkdir -p "$STATE_DIR"
+  # Append, never truncate: the pool that already holds the lock wrote who it is, and the message
+  # below is the only place an operator can read it.
+  exec {POOL_LOCK}>>"$LOCK_FILE" || fail 1 "cannot open the pool lock at $LOCK_FILE"
+  if ! flock -n "$POOL_LOCK"; then
+    local owner
+    owner="$(cat "$LOCK_FILE" 2>/dev/null)"
+    fail 1 "a runner pool is already running on this host${owner:+: $owner}. Stop it with 'systemctl --user stop threenative-ci-runners.service', or 'scripts/ci-runners.sh down' in the checkout that started it, then run 'up' again (the pool holds $LOCK_FILE)"
+  fi
+  # What the next `up` reads back: the checkout to stop there, and when this pool claimed the host.
+  printf 'started %s from %s\n' "$(date -u +%FT%TZ)" "$PWD" >"$LOCK_FILE"
+}
+
 # Fail closed before anything is built or started. A pool that came up without a token would
 # register nothing and leave TN_RUNNER set for hosted jobs that never arrive.
 load_config() {
@@ -105,6 +129,8 @@ repo_name() {
 # one label the container registers with — `--no-default-labels` means that label is all it has.
 start_slot() {
   local slot="$1" state="$2" env_file="$3" repo="$4" shape="$5" labels="$6"
+  # The loop inherits the pool lock: a container that outlives its `up` still owns the host, so a
+  # second pool cannot start until `down` has stopped every one of them.
   setsid nohup bash -c '
     while [ ! -e "$1/stop" ]; do
       docker run --rm \
@@ -115,7 +141,7 @@ start_slot() {
         -e TN_RUNNER_LABELS="$5" \
         tn-ci-runner || sleep 10
     done
-  ' _ "$state" "$env_file" "$repo" "$shape" "$labels" >"$state/$slot.log" 2>&1 &
+  ' _ "$state" "$env_file" "$repo" "$shape" "$labels" 9>&"$POOL_LOCK" >"$state/$slot.log" 2>&1 &
   echo "$!" >"$state/$slot.pid"
 }
 
@@ -245,6 +271,8 @@ up() {
   local slots="${1:-${TN_RUNNERS:-$DEFAULT_SLOTS}}"
   case "$slots" in ''|*[!0-9]*) fail 2 "N must be a positive integer, got '$slots'" ;; esac
   [ "$slots" -ge 1 ] || fail 2 "N must be at least 1, got '$slots'"
+  # Before anything is pruned, built or started: a second pool is the bug this refuses.
+  acquire_pool_lock
   local allocation
   allocation="$(plan "$slots")" || return $?
   need docker
@@ -430,6 +458,13 @@ down() {
   done
   mkdir -p "$STATE_DIR"
   stop_slots
+  # The slot loops hold the pool lock, and systemd runs ExecStart (`up`) immediately after this
+  # ExecStop: wait, bounded, for the claim to be free, or the restart is refused as a second pool.
+  local tick
+  for tick in $(seq 1 50); do
+    if ( exec {free}>>"$LOCK_FILE" && flock -n "$free" ) 2>/dev/null; then break; fi
+    sleep 0.2
+  done
   forget_offline "$repo"
   printf '%s and %s cleared; runners stopping\n' "$VARIABLE" "$LIGHT_VARIABLE"
 }
