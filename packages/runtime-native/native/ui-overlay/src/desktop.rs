@@ -213,6 +213,10 @@ pub extern "C" fn tn_ui_overlay_attach(
         unsafe {
             use wry::WebViewExtMacOS;
             let view = webview.webview();
+            // wry built it at the host's size, which is in pixels (SDL_GetWindowSizeInPixels) and twice
+            // the points on a Retina display, and AppKit may already have shrunk a window that did not
+            // fit the screen. The page is exactly the container, whose rectangles the hit test reads.
+            view.setFrame(container.bounds());
             view.setAutoresizingMask(
                 NSAutoresizingMaskOptions::NSViewWidthSizable
                     | NSAutoresizingMaskOptions::NSViewHeightSizable,
