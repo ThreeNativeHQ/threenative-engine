@@ -280,7 +280,7 @@ function openView(input: z.output<typeof ViewInputSchema>) {
 }
 
 export function createAnimationServer(): McpServer {
-  const server = new McpServer({ name: "threenative-animation", version: "0.1.23" });
+  const server = new McpServer({ name: "threenative-animation", version: "0.1.24" });
 
   server.registerTool(
     "animation_inspect",
