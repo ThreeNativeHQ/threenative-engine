@@ -743,7 +743,7 @@ if(NOT MYSTRAL_PLATFORM STREQUAL "ios" AND NOT MYSTRAL_PLATFORM STREQUAL "androi
     # The UI seam is shared with the legacy host; the CSS backend is never linked here. The web view is
     # opt-in (a game with ui.renderer "web" draws its HUD through it), so the default graph stays JS- and
     # web-view-free.
-    option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux; needs node scripts/build-native-ui-overlay.mjs and webkit2gtk-4.1)" OFF)
+    option(TN_ENGINE_PLAYER_UI_OVERLAY "Link the desktop web-view UI overlay into the engine players (Linux and Windows; needs node scripts/build-native-ui-overlay.mjs, and webkit2gtk-4.1 on Linux)" OFF)
     if(TN_ENGINE_PLAYER_UI_OVERLAY)
         include(cmake/NativeEnginePlayerUiOverlay.cmake)
     elseif(TN_PS4 AND TN_ENABLE_CSS_UI)

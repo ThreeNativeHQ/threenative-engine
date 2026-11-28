@@ -34,8 +34,19 @@ List every asset under **Asset slots** in `.agent/prd/PRD.md`, one row each: nam
 
 - `procedural` (default): terrain, vegetation, simple or repeated shapes, and every first version.
 - `pre-made`: a generic prop that looks the same in any game, such as a wooden chair. Record its licence.
-- `custom`: an identity asset the player remembers this game by, such as the hero or a signature
-  vehicle. It is generated, then cleaned up, rigged and baked before it is `final`.
+- `custom`: an identity asset the player remembers this game by, such as the hero, a signature
+  vehicle, character, landmark, or standalone procedural prop. Bake a self-contained `.glb` under
+  `assets/` via `scripts/bake-<slug>.mjs` (`GLTFExporter` with `binary: true`, Node `FileReader`
+  polyfill, and `asset.extras = { tnOrigin: "procedural" }`) and load it with
+  `ctx.assets.model(...)`, keeping inline `src/render/` geometry strictly for continuous surfaces
+  (terrain, road splines, water, sky, VFX).
+
+**Anti-kit-anchoring:** The starter kit is a mechanics bootstrap, never a visual target. Require
+Task 1 (`world`) to declare and modify the kit's live scene, track/stage, sky, lighting, palette,
+and material entry files in place (e.g. `src/level/Stage.ts`, `src/track/Track.ts`,
+`src/render/{sky,lighting,materials}.ts`) rather than creating unimported sidecar modules under
+`src/world/` or `src/render/`, and explicitly delete or replace contradicting starter biome props
+before adding secondary scenery.
 
 The code loads each slot from one stable path, so a swap replaces the file and leaves gameplay code
 alone. Phase 1 (first playable) uses `procedural` and `pre-made` slots only. Phase 2 (polish) replaces
@@ -46,12 +57,16 @@ Write the concise plan to `.agent/prd/PRD.md`, its short player-facing summary t
 `.agent/prd/SUMMARY.md`, and implementation tasks to `.agent/tasks.json`. Tasks must be ordered,
 bounded to about 10 minutes each, carry a concrete pass check, and start with `"passes": false`.
 The first task verifies prerequisites and selects/downloads required textures from the mechanics
-matches and supplied reference. Step 6 delegates to subagents focused on specific areas: every
-bounded task names its area, file ownership and acceptance check. The coordinator reviews and
-integrates all returned changes before step 7 mechanics playtests; do not use a catch-all worker.
-Later tasks playtest mechanics with real actions and assertions, then require the reference-image
-visual judge gate from `threenative-capabilities`. Preserve the pre-planning capability decisions
-in the relevant task checks.
+matches and supplied reference. Delegation in the build step routes bounded tasks to subagents with disjoint
+file ownership and explicit acceptance checks; the coordinator reviews and integrates all returned
+changes before playtest verification (never use a catch-all worker). Multi-lap, multi-stage, or
+collection plans must include one deterministic full-loop playtest scenario covering start/countdown
+handover -> progression -> hazard/collision -> finish/end screen -> clean restart reset (deleting
+or adapting incompatible kit scenarios such as rival DNF checks in a solo game). Run
+`pnpm typecheck && pnpm lint` before invoking `threenative-playtest`, quote the exact passing JSON
+snippet (`"pass": true` plus terminal/restart metrics) in task `notes` before toggling
+`"passes": true`, and require the reference-image visual judge gate. Preserve the pre-planning
+capability decisions in the relevant task checks.
 
 ## Approval gate
 

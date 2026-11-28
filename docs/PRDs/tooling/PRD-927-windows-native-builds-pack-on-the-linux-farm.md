@@ -35,7 +35,9 @@ prd_contract: v1
 - [ ] AC-1 [local]: On Linux, `threenative build --target desktop --platform win32-x64` in Midway writes a folder whose file list and player sha256 match a Windows-host build of the same commit (the engine CI `clean-consumer-windows` artifact). proof: the file-list diff and the sha256 line.
 - [ ] AC-2 [local]: `tn-store-builder build --platform windows-x64` on Linux packs Midway, and the packed `.exe` starts the game under Wine for 300 frames, or, if Wine cannot run the WebGPU player, the AC records that and AC-3 carries the start proof. proof: the run log.
 - [ ] AC-3 [shared]: A Windows machine (owner's, a VM, or one paid hosted run the owner approves) installs Midway from the production launcher and starts it. proof: screenshot in `~/Downloads/prd-927`.
-- [ ] AC-5 [local]: The win32-x64 engine player attaches the web UI (WebView2) or native-css, so Midway builds for Windows with `ui.renderer: "web"` and its HUD shows on a hosted `windows-2025` desktop capture. proof: the capture and `TN_UI_OVERLAY` attached true.
+- [x] AC-5 [local]: The win32-x64 engine player attaches the web UI (WebView2) or native-css, so Midway builds for Windows with `ui.renderer: "web"` and its HUD shows on a hosted `windows-2025` desktop capture. proof: the capture and `TN_UI_OVERLAY` attached true. Done 2026-11-28: WebView2 visual hosting (a DirectComposition visual topmost over the swapchain, the pointer routed in the game window procedure by `pointer_owner`) plus `document.exitPointerLock` on the player document (TAKE THE DECK threw `TN_UI_RECEIVE_FAILED`). Red-green on hosted runners (sandbox branch `probe/windows-midway-web-ui`): red arms 3823f3fcf (region clip: no title) and 277c37588 (child window: black page) failed in run 46082063592; e29163c53 passed every check in runs 46086473520 and 46088450543 (title drawn, game through the page, TAKE THE DECK starts the sortie, `TN_UI_OVERLAY` attached true). Captures: `~/Downloads/windows-midway-web-ui/`.
+- [x] AC-6 [local]: The same Midway HUD works on macOS (wry WKWebView over the Metal view): drawn over the game, and a click on TAKE THE DECK starts the sortie. proof: run 46095158002 on `macos-15`, fix cb18bf948 passed (the page got pointerdown and click, `#briefing` hidden after), red arm 27aed3acb (before `with_accept_first_mouse`) kept the briefing. Fixes: overlay in front of the Metal view, AppKit hit test measured from the top, web view sized to the container, first click accepted. Captures: `~/Downloads/macos-midway-web-ui/`.
+- [x] AC-7 [local]: The packaged Windows `.exe` started alone (a double-click: no arguments, no environment) runs the game beside it and applies its `launch.cfg` (`display.fullscreen: true` opens fullscreen), and the HUD fullscreen toggle switches the real game window both ways (`tn:fullscreen` frame, `SDL_SetWindowFullscreen`). proof: run 46095240761 passed all checks (1024x768 fullscreen, windowed after one toggle, fullscreen after a second, `TN_UI_FULLSCREEN` applied true twice); red arm run 46093855157 (base player) exited 2, "a game bundle path is required". Captures: `~/Downloads/windows-midway-fullscreen/`.
 - [ ] AC-4 [shared]: Production: `windows_builds_enabled` is back on, a Midway deploy builds `windows-x64` on the trusted Linux runner, and the release reaches live with both platforms built. proof: the farm run ids.
 
 ## Blocked on
@@ -49,7 +51,9 @@ prd_contract: v1
 **Files:** `packages/runtime-native/scripts/desktop-distribution.mjs`, `packages/create-threenative/src/` (the `--platform` flag), one spec in `packages/runtime-native/__tests__/`.
 - [ ] A Linux pack of Midway for `win32-x64` matches the Windows-host folder — proof: AC-1 — covers AC-1.
 
-- [ ] The win32 player shows Midway's web HUD — proof: AC-5 — covers AC-5.
+- [x] The win32 player shows Midway's web HUD — proof: AC-5 (runs 46086473520, 46088450543) — covers AC-5.
+- [x] The macOS player's HUD takes clicks — proof: AC-6 (run 46095158002) — covers AC-6.
+- [x] The packaged player starts alone with the game's window settings and the HUD toggles fullscreen — proof: AC-7 (run 46095240761) — covers AC-7.
 
 #### Phase 2: Store builder and farm
 **Status:** NOT STARTED (AC-2)

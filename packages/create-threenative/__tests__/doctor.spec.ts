@@ -1669,23 +1669,23 @@ describe("threenative doctor edge coverage", () => {
       ),
     );
     expect(win32).toMatchObject({ status: "ok" });
-    // The same healthy receipt is not buildable for a web HUD on a platform whose player ships
-    // without the overlay, which is what the build itself refuses.
-    const win32Web = withPlatform("win32", () =>
-      status(
-        {
-          key: `win32-${process.arch}-engine-player`,
-          ok: true,
-          url: HEALTHY.runtimeManifestUrl,
-          version: "0.4.0",
-        },
-        {
-          config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } },
-          runtimeFileExists: (relative) => relative.endsWith(".exe"),
-        },
-      ),
-    );
-    expect(win32Web).toMatchObject({ status: "warn" });
+    const webHud = (platform: "win32" | "darwin") =>
+      withPlatform(platform, () =>
+        status(
+          {
+            key: `${platform}-${process.arch}-engine-player`,
+            ok: true,
+            url: HEALTHY.runtimeManifestUrl,
+            version: "0.4.0",
+          },
+          { config: { nativeEntry: "src/game.ts", ui: { renderer: "web" } } },
+        ),
+      );
+    expect(webHud("win32")).toMatchObject({ status: "ok" });
+    expect(webHud("darwin")).toMatchObject({
+      status: "warn",
+      detail: expect.stringContaining("TN_ENGINE_PLAYER_UI_UNSUPPORTED"),
+    });
   });
 
   it("fails closed when the installed host is older than the engine it must satisfy", () => {

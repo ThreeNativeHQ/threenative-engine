@@ -42,3 +42,8 @@ triviality fails `TN_PLAYTEST_SCENARIO_ASSERTS_NOTHING`. Use `holdTicks`/`waitTi
 time (`holdFrames`/`waitFrames` are compatibility aliases); `warmupFrames` means RAF warmup.
 Read `node_modules/create-threenative/agent-docs/references/assertion-reference.md` for assertion fields and `node_modules/create-threenative/agent-docs/references/debug-surface.md`
 for bridge globals. The JSON-safe bridge resource is `state`; `GameState` is a deprecated alias.
+
+**Lint, full-loop proof, and capture health:**
+- Run `pnpm typecheck && pnpm lint` **before** invoking `threenative-playtest` so static/unused-var errors never block playtests late in a round.
+- Every game with a multi-lap, multi-stage, or collection loop needs one deterministic playtest scenario covering start/countdown handover -> progression -> collision/hazard -> finish/end screen -> clean restart reset (adapting or deleting incompatible kit scenarios such as rival DNF checks in a solo race).
+- Never toggle `"passes": true` on code inspection alone: quote the exact passing JSON snippet (`"pass": true` plus key terminal/restart metrics) before closing a task, and verify a non-blank live frame (`npx @threenative/playtest doctor --url`) after edits, reverting breaking changes before ending the turn.

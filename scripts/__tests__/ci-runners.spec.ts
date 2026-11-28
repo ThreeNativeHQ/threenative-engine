@@ -1,5 +1,5 @@
-import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { makeTempDirSync } from "../../test-support/temp-dir.js";
@@ -395,5 +395,104 @@ describe.skipIf(process.platform !== "linux")("local runner balancer routing", (
     expect(torn.status).toBe(0);
     expect(torn.vars).not.toContain("TN_RUNNER=");
     expect(torn.vars).not.toContain("TN_RUNNER_SLOTS=");
+  });
+});
+
+// Two pools on one host is the 2026-11-27 incident: the systemd unit's pool and a hand-started one
+// ran together, so every heavy cpuset held two containers, each job got half the cores its cpuset
+// promised, and 60 s vitest tests timed out at 64 s on a 24-thread host. `up` must refuse — and the
+// pool it does start must keep the host after `up` exits, or the guard protects nothing.
+describe.skipIf(process.platform !== "linux")("one runner pool per host", () => {
+  it("refuses a second pool, then holds the host while its own pool runs", async () => {
+    const fixture = makeTempDirSync("runner-second-pool-");
+    const bin = path.join(fixture, "bin");
+    mkdirSync(bin);
+    const shapes = path.join(fixture, "shapes");
+    const calls = path.join(fixture, "calls");
+    const slotPids = path.join(fixture, "slot.pids");
+    const holderReady = path.join(fixture, "holder-ready");
+    const environment = path.join(fixture, "env");
+    writeFileSync(environment, "RUNNER_ADMIN_TOKEN=test-only-placeholder\n");
+    writeFileSync(calls, "");
+    // The host's own lock path: not derived from a checkout, so both pools resolve it.
+    const stateDir = path.join(fixture, "threenative", "ci-runners");
+    const lock = path.join(stateDir, "pool.lock");
+    mkdirSync(stateDir, { recursive: true });
+    const commands = {
+      lscpu: `cat <<'DATA'\n${topology.join("\n")}\nDATA`,
+      nproc: "echo 24",
+      docker: `printf 'docker %s\\n' "$*" >> '${calls}'`,
+      df: `printf 'Filesystem 1024-blocks Used Available Capacity Mounted\\n/dev/fake 1000 0 ${350 * 1024 * 1024} 1%% /fake\\n'`,
+      gh: `printf 'gh %s\\n' "$*" >> '${calls}'\ncase "$*" in *"repos/{owner}/{repo}"*) echo test/repo ;; *offline*) ;; *runners*) echo 3 ;; esac`,
+      // A slot is a host-side loop for the pool's lifetime, and it is what inherits the lock: this
+      // fake must inherit it too and stay up until the test stops it. The balancer exits at once.
+      setsid: `printf 'setsid %s\\n' "$*" >> '${calls}'\nprintf '%s\\n' "\${9:-balancer}" >> '${shapes}'\n[ "$3" = "-c" ] || exit 0\necho $$ >> '${slotPids}'\nexec sleep 60`,
+    };
+    for (const [name, body] of Object.entries(commands)) {
+      const command = path.join(bin, name);
+      writeFileSync(command, `#!/bin/sh\n${body}\n`);
+      chmodSync(command, 0o755);
+    }
+    const env = {
+      ...process.env,
+      PATH: `${bin}:${process.env.PATH}`,
+      TN_RUNNERS_ENV: environment,
+      XDG_STATE_HOME: fixture,
+    };
+    const probe = () => spawnSync("flock", ["-n", lock, "true"]).status;
+    const held = (expectation: string) =>
+      vi.waitFor(() => expect(probe(), expectation).not.toBe(0), { timeout: 15_000 });
+
+    // The other pool: it holds the lock for its lifetime, the way `up` and then its balancer do,
+    // and records the checkout an operator must stop.
+    const holder = spawn(
+      "bash",
+      [
+        "-c",
+        `exec {lock}>>'${lock}' && flock -n "$lock" || exit 3\nprintf 'started 2026-11-27T20:55:00Z from /elsewhere/threenative-engine\\n' > '${lock}'\n: > '${holderReady}'\nexec sleep 60`,
+      ],
+      { stdio: "ignore", detached: true },
+    );
+    try {
+      // The holder announces itself after locking; probing for the lock instead would race its own
+      // `flock` with a probe that holds the file for a microsecond.
+      await vi.waitFor(() => expect(existsSync(holderReady)).toBe(true), { timeout: 15_000 });
+      // Two checkouts: the primary one and a lane, both of which now refuse and start nothing.
+      for (const cwd of [fixture, makeTempDirSync("runner-other-checkout-")]) {
+        const result = spawnSync("bash", [script, "up", "3"], { encoding: "utf8", cwd, env });
+        expect(result.status, result.stdout).toBe(1);
+        expect(result.stderr).toContain("TN_CI_RUNNERS:");
+        expect(result.stderr).toContain("pool is already running");
+        // Names the pool that holds the host, and both ways to stop it.
+        expect(result.stderr).toContain("/elsewhere/threenative-engine");
+        expect(result.stderr).toContain("systemctl --user stop threenative-ci-runners.service");
+        expect(result.stderr).toContain("ci-runners.sh down");
+      }
+      // Nothing was built, run or routed: the refusal is the first thing `up` does.
+      expect(existsSync(shapes)).toBe(false);
+      expect(readFileSync(calls, "utf8")).not.toMatch(/^docker (build|run) /mu);
+    } finally {
+      // One process group, so the waiter cannot outlive the test.
+      try {
+        process.kill(-(holder.pid ?? 0), "SIGTERM");
+      } catch {
+        // Already gone: the refusal above is what the case is for.
+      }
+    }
+    await vi.waitFor(() => expect(probe()).toBe(0), { timeout: 15_000 });
+
+    // With the host free, the same checkout brings its own pool up and keeps the claim after the
+    // command returns: the balancer owns the routing, so it owns the lock.
+    const started = spawnSync("bash", [script, "up", "3"], { encoding: "utf8", env });
+    expect(started.status, started.stderr).toBe(0);
+    // The slots are backgrounded, so their launches land after `up` returns.
+    await vi.waitFor(
+      () => expect(readFileSync(shapes, "utf8").trim().split("\n")).toHaveLength(7),
+      { timeout: 15_000 },
+    );
+    await held("the pool keeps the host while its slots run");
+    // And the claim ends with the pool, so the next `up` (systemd's ExecStop/ExecStart pair) can take it.
+    for (const pid of readFileSync(slotPids, "utf8").trim().split("\n")) process.kill(Number(pid));
+    await vi.waitFor(() => expect(probe()).toBe(0), { timeout: 15_000 });
   });
 });

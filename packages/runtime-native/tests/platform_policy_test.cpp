@@ -36,12 +36,21 @@ int main() {
     platform::queueUiMessage(R"({"type":"intent","name":"slide"})");
     platform::queueUiMessage(R"({"type":"tn:hit-regions","regions":[{"x":1}]})");  // malformed: still the host's
     platform::queueUiMessage(R"({"type":"intent","name":"restart"})");
+    // The page's Fullscreen API is the host's too: it owns the window (no window here, so not applied).
+    platform::queueUiMessage(R"({"type":"tn:fullscreen","on":true})");
+    platform::queueUiMessage(R"({"type":"tn:fullscreen","on":false})");
+    // Only core's exact frame is the host's: a game message that mentions the type reaches the game.
+    platform::queueUiMessage(R"({"type":"intent","name":"say","payload":{"kind":"tn:fullscreen"}})");
     std::vector<std::string> forwarded;
     const size_t count = platform::drainUiFramesToGame([&](const std::string& frame) { forwarded.push_back(frame); });
-    CHECK(count == 2 && forwarded.size() == 2);
-    CHECK(forwarded.size() == 2 && forwarded[0].find("slide") != std::string::npos);
-    CHECK(forwarded.size() == 2 && forwarded[1].find("restart") != std::string::npos);
-    for (const auto& frame : forwarded) CHECK(frame.find("tn:hit-regions") == std::string::npos);
+    CHECK(count == 3 && forwarded.size() == 3);
+    CHECK(forwarded.size() == 3 && forwarded[0].find("slide") != std::string::npos);
+    CHECK(forwarded.size() == 3 && forwarded[1].find("restart") != std::string::npos);
+    CHECK(forwarded.size() == 3 && forwarded[2].find("\"say\"") != std::string::npos);
+    for (size_t i = 0; i < forwarded.size() && i < 2; ++i) {
+        CHECK(forwarded[i].find("tn:hit-regions") == std::string::npos);
+        CHECK(forwarded[i].find("tn:fullscreen") == std::string::npos);
+    }
 
     if (failures) return 1;
     std::cout << "native platform policy contract passed\n";

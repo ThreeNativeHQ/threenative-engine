@@ -27,8 +27,10 @@ through parents.
 `ctx.goto(name)` rebuilds the scene without resetting state; values in `ctx.state` survive. From a
 frame function, `goto` and then `return` immediately because the old scene is torn down. For a full
 restart, `game.goto("<scene-name>")` from React resets declared initial state first. A state reset
-uses `ctx.state.set({ /* copy this game's initial-state shape */ })` before the goto. `ctx.random` is
-deterministic only when `defineGame({ seed })` is configured.
+uses `ctx.state.set({ /* copy this game's initial-state shape */ })` before the goto. Keep
+`ctx.state` strictly JSON-shaped (`null`, never `undefined` -> `assertPortableState`), avoid
+declaring duplicate top-level constants across HMR edits, and await only spawn-sightline assets in
+`Scene.load()` (`ctx.assets.prefetch` distant assets so `TN_STARTUP_OFFSCREEN_BYTES` stays `< 10 MB`). `ctx.random` is deterministic only when `defineGame({ seed })` is configured.
 
 `ctx.beforeRender(fn)` runs once per actual world draw, after the frame's last fixed update and
 before the projection reconciles, so `fn` reads the frame's final state; a held, loader-only frame

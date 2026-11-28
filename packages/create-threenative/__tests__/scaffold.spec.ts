@@ -17,7 +17,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { read as readKTX2 } from "ktx-parse";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -54,6 +54,29 @@ const ENGINE_MCP = "threenative-engine-mcp";
 // the server packages themselves.
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
+
+/**
+ * Every template scaffolded once, into one root, for the corpus-wide assertions below: one scaffold
+ * is ~37 MB of writes and ~45 ms of CPU per kit, and these tests only read the tree. The hook is
+ * `beforeAll` because `makeTempDir`'s per-test cleanup would delete the root under the next test;
+ * `afterAll` removes it, and the helper's process cleanup covers a crash.
+ */
+let corpusRoot: string | undefined;
+let corpusTargets: Readonly<Record<string, string>> | undefined;
+
+beforeAll(async () => {
+  corpusRoot = await makeTempDir("threenative-scaffold-corpus-");
+  const targets: Record<string, string> = {};
+  for (const template of ALL_TEMPLATES)
+    targets[template] = (
+      await createProject({ install: false, target: template, template }, corpusRoot)
+    ).target;
+  corpusTargets = targets;
+});
+
+afterAll(async () => {
+  if (corpusRoot !== undefined) await rm(corpusRoot, { force: true, recursive: true });
+});
 const AGENT_ROLE_PATHS = [
   ".threenative/agents/builder.md",
   ".threenative/agents/verifier.md",
@@ -116,120 +139,120 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "59d4c4aa67b2d0e5c8b30a4ae07ecd8e315f041a11b268d2f7deaa762d0a9ead",
-    kit: "5570cd16bc2d5b9669ee903cfc9c019c150f0cb14822039f52ca4ee0f4a3b769",
+    shared: "00653a16c7497f1add5e9b5f65ce17699e113945420142c02ea6a35d4461b53f",
+    kit: "2696e8b698a5a7ec69cd9813de3706b120fdc884106c33e98271ef4c6661e630",
   },
   adventure: {
-    shared: "d97833aeca8d69bafab9a8649f92b652dd5ad3dda8ef9d836f9a02fdaa72950f",
-    kit: "7dd126a8f4ec2542c5eb8e41aa7d01768acbe110258cad35ec8bbf851ab2e839",
+    shared: "f9bd9c6667f0e4f867cb6f8b9ed398fd147e6bb8e8d60bdbdd5119fc4a98fb28",
+    kit: "24183c2bab2f2a9f9274fc51a864228514d46e59ba18154ded8643435770eb7a",
   },
   "board-party": {
-    shared: "d0258a7a03c575e6ff16ab1d43cb1b407a93380ece8b678b763f24bd0b7a19bc",
-    kit: "2201df2febbc30df9fbb3ad32448b921129ecd46ba20026d1529ab54b00eba96",
+    shared: "ca6c152157f3fa1592a28e7d68fe87b24931a60e594997b89fc109e276edc2fc",
+    kit: "5ae36061e28ed0158ad04cdfcb7dc4d2b20bbd5e9bf9540bcb7f193bdfeeba41",
   },
   "car-combat": {
-    shared: "a7ea7f5ac6268b2fa9d0dd1b2f68f1d7b5e6d16ea435a3e32089e01801688f8c",
-    kit: "ea8362582ef92ba1a7420d7e74133571162a6d88afc9a8b7eb63524d198579c3",
+    shared: "e56fdec86d3f7b135959559c74f46c6805f39fe392ea2691dc05c8e2733804e6",
+    kit: "01677d9ce5ea61aa4fb4334263197ddf92a1b60a0c0ae622c10e5f45650866ea",
   },
   collectathon: {
-    shared: "5c193b964974d3b7846c5bdd504f6ba5d3154192728b6624d45f9c60a7653999",
-    kit: "cce08ff8a8aa305e5f06ba2828932d2c863d286017bb864d1930d0a3861ee92a",
+    shared: "0a6362c44279ca6ab2f22afc27f226ffa5b5b58f4ca54bf3ff7b065724777df9",
+    kit: "d936da2ddc09727cdf30b2215be92c1210823f4cabf1ab4b1ce09ebe4c38b45e",
   },
   farming: {
-    shared: "52e79ca29546d4ea327783edc65eb1c0f10a8a3bd9d7c062bed4f2f00032a281",
-    kit: "acb8bb95036ef5660519181eb3ab877bc60a71e76b93e3799d2a4b4b1d709c7b",
+    shared: "5e3afef49987132d10ccc1a7d65a745e85e988d441b15ba0c9f233bdefe20ed0",
+    kit: "513470adc4d52b455c493e622f2486a35e22df3450c2d52fe40a86f8817d4227",
   },
   flight: {
-    shared: "c3495da284344459bc0b7832731839d0ada43a7adf3f760ba676dbf4646920ce",
-    kit: "7950ca4323482456419ccbd1c5e4bcf9532f79a32b8f2e0dd6e1616bf7ef61c0",
+    shared: "4c2b73541bd688bc310b9c80c8020e20a9d4962657db032dacae000852b36407",
+    kit: "fb7db94ae6853961cb96924370aba7466ba423fa12ae98077c3bc52e780d1de3",
   },
   kart: {
-    shared: "2e33679cd8ae3dc653192c7090fcc9aca5ce8e95c5f97e01560b0d3bb54d2313",
-    kit: "c4554982a394b152ca8b0c56d23f1b5e71ea17c30d892c784cee7a16dbfa0f60",
+    shared: "3b81d41a7c8bb6d67f03d06003c98b2661b19976d01d42b6efcc89194a69c30c",
+    kit: "d3cf859f3d8ec56d6de877e94d2ba2c681801104ecbee5ee3216e0bbdadbf706",
   },
   "military-shooter": {
-    shared: "d9eab8aae266a1fc59ffe9887f7d9032f6af31fdee814259881ebc5729512631",
-    kit: "75cd78ee8e2732d5cc4073ac55877692c781f4516d756c1190e22d3fac553135",
+    shared: "97c0acfaa9e544f12d98bf0514eea81de226c0fc452455b36297c9f41bf43bc7",
+    kit: "e336573e87a12b524e92502419194cd418a68af33c12870bb58cc72dfb437516",
   },
   minimal: {
-    shared: "0ce0a825a9ff5d60260817b78de95d64284bfd69e47f347469f0a9548ed57538",
-    kit: "cc903462fb4ecbc7380be6b5d172e48420f46876f1858d58206108ca7ad47a00",
+    shared: "6e51e858bfea30465661ba88561d2c580df1a64d417b2be859c769b4dc1ba637",
+    kit: "109e94c2cc97f6101d1e36b4c84e292218ac5ae73d8eb8775929d8d901e82da8",
   },
   "open-world": {
-    shared: "a0465437650c31d0a72bbc776ab9c3671f942a856942460c70f2d46ab46c0717",
-    kit: "ebb4554d51e7d3b0743ed2808c315ebee0ac3c04a04f0be3e25548717c857df2",
+    shared: "0384563bd4aa4afc2076c4f6475388afa34d2e47eb7bafa23c72e1ae92925e57",
+    kit: "4c87bd560e9517c282e68e7045325835f27505ed531cedb6157285639ee134b0",
   },
   "platform-fighter": {
-    shared: "eb673671121ce4a3500b0cecf7886214bdd45de99e0adc86de2b69047a9e6793",
-    kit: "48b37d96c7aae550f671323aac102e7617b4a010bd9769b1909d2b2eb644eae1",
+    shared: "b0cfc6ecba6709bb9c700a20d03eb33ac10778b9a8d298503d54696a6dfd74f5",
+    kit: "5fa286048010d80e89cab7e26c9ccf651f201afae247de16e6e948aac6bd1c15",
   },
   platformer: {
-    shared: "664b3aeb8a5fa97ce6d899d40a833e74c6b3c61e1268ea445b3abf069364bc74",
-    kit: "67a3ade19e081bacedafec15f82bf5f545b57c300b162ed257fd638666973b11",
+    shared: "0db9e60bfb7953ea23437da3468266f2730c1f0ccc5de17a3668a0bcc1644a7e",
+    kit: "73856fb7054b87e61053a1a2a7d835d651eb6451389926c45f910f5898a334c9",
   },
   puzzle: {
-    shared: "c656d596d5e71b7a433a0b8fe77aabca62e213274c898a26784605a9baef479a",
-    kit: "bc328bbbadf3c59a729acf9b6f2ef0b700cbb04369a624a0baceaebf1b194e8c",
+    shared: "48fb9836550132030d8f36c6157a077d50b43229a849de70b8e814ab92bb3e39",
+    kit: "b837c77d6042867971b8c0f0f501188fd8fb59ac731adf4390f58bdce75b79f6",
   },
   racing: {
-    shared: "e8dac325041cab11eb79e9bcb755e30a83604227f889513deba7d4720f88bcb6",
-    kit: "d6237297ca702738d7f27b27c8b436fc58b9ae7a4e9666904d0d7bc1f294c952",
+    shared: "67acc38057cf690818730d305d92ccda2d7c4ce62cc47ff5704ccc1848e1f3d3",
+    kit: "c2f6776715550f84861410484acb9fee88badfd46779c045a064bc618b7395b4",
   },
   "rail-shooter": {
-    shared: "22cf26e09090b4f120a02af9fab8b4ab40e5bf990f1a6e0fd7334cfd8156d920",
-    kit: "9cd9ca5b804d81e728d46043521cbabacf9001d53e1f8a1480f01cc457df7f4f",
+    shared: "8a61286750feeca80fcbb4cc61c02bfb1ca4ff7964e62419824fd7fec7bb74c1",
+    kit: "2be32dc5f72be81d5d13f9f6f3ab7c48d8bc2e3dc6db5da243d0aa113ff42943",
   },
   rain: {
-    shared: "a343cb1f4adb9dc29ba812dc57bf41c23b9b7f2f8197de16d5c4d336bdf16135",
-    kit: "3107be8e2ef71b1f76f181ef55795db7cda6eda1c461f67bfcacadc1bca9c27a",
+    shared: "1f915b11f645137c0a72d7e3d7347e7801030a885c738dd973d2eccfa6699304",
+    kit: "465e6d7aaf40d141b27810c00699c1649935c6d6cf091b22dfce2bcb3b01acdc",
   },
   rhythm: {
-    shared: "c229b58b5d157a16a616957a2228b01b8006fc8dfbed4d3971b2e0365aced14d",
-    kit: "1dc514683ef19615a3e7a525cd1abff0b917f9ff8e52a3386debba7ec006fed5",
+    shared: "38fbc7028bb330700d761a7518956c59dc64fe66c7a169c4d7897b2301c2d814",
+    kit: "74eaacef897e8c300746c6a40f78568543282e65a7d5850f75eeffacc23717e5",
   },
   rpg: {
-    shared: "4948b56ba74a20f84c1aceebc30802e590804ce8a5edfad3f57730834582d444",
-    kit: "828c434a1e9f1538f73dac22e2ac74ad10715cf75af0ba06ff3f445c59af89a2",
+    shared: "698ee2e7dce46f47e56cffabe4fab44b898fcf54f4b919a1666724cc3e205019",
+    kit: "df2c1796984d54cc735b85d6b9bd8b053dbc1f1c69e3011611a4bb513bde372d",
   },
   rts: {
-    shared: "95d8e55c1a92ddd32cc9c64a59b0724ff3f7be649e3bec724e892e5b36c1cc6d",
-    kit: "10a875943345e2fa3dca4be37b0b2b8f59285523d3ba61ccbe571e57a824744a",
+    shared: "41a264b630c8b8dbafa5ed6c390b6ec5a9bf7fc4d582bb234095823dd165d8c8",
+    kit: "3539bd38e565cda167988c57def33821bd9f6eb1423c798a3167114e740c3267",
   },
   runner: {
-    shared: "4f2f4aa409207b3bf5da8fa8481986ac0424ac6e9486808b7fc5128b157b02d5",
-    kit: "57144155fdef73fe7e2cc44275e93fd485c0d47987ba18d63bb6a13b2394039a",
+    shared: "79c00a43c864d9821fcda4a69b0d9fda3ab07333ac77880d4a1422e6bd45222f",
+    kit: "2866174fca7555bc62384a18c17ebaec3c78b033dca832aa07d0b84d2081ffd9",
   },
   sailing: {
-    shared: "4b61e008c78ee885ce557072366e8073105fa0d5b00b56ab4130d8b2940c01b8",
-    kit: "26a54577b5c97ab364d39a07412c4c78ff3de0d64e2458b7c7516299cea77ca1",
+    shared: "a3ec06a7333006dac63429b9da02bd86870ea1cc2135b1daf037d45b3bf1cfc3",
+    kit: "cecdb13568e74bf6c72548cc8fe88b12f4997857352c3749493abf2034e533dd",
   },
   shooter: {
-    shared: "8be14c10ecff40885f461b0e15dbf20619d810fb733c4286d4139b526e0dc47d",
-    kit: "f5bcf67fd72155771b989af855b9baa8ef045163fd6a55525025e0ab6b41ea40",
+    shared: "5f5190db22386d0f1702dc6a529350ff945ae0d5239bfe62794cf277f253b958",
+    kit: "d34e545057554c041428acfea2e1ce0079fac08ffceec0776a0a059569a96672",
   },
   snow: {
-    shared: "fcbb3583afdd64936fdcb596d237f634a44b2dac6e60a2c24003342201f5fabe",
-    kit: "8a0513b00f16a5e95ee3c143e441514d9d96f99299af84df69d7d9bfc5aca9de",
+    shared: "510fbef510c4dcf67482ba6f231010e7020df8d70d5031eff61e8fd089999275",
+    kit: "db990fd5a91f99ce20a25d8bf74d7170c8c56c140033baf9ffd951f300e0139f",
   },
   starter: {
-    shared: "9385857b46497bf1f5de8ca1630f56ffdd687ada567f0895edf865e69151d350",
-    kit: "02e487a395ad0aa0c80236f4f312ea81cf0bf385a0ef08614f5551b8c2fa94bd",
+    shared: "63d71916c183d22c2f9b5c4d31a788687122057998e46c0767a6aa3af12ffc1e",
+    kit: "648c89e1525ab7b9ecb0f8fa262432060823879a3e7f6cbcd66ecdcd454b845d",
   },
   stealth: {
-    shared: "76c134c1f27ba5aa898aa8437e3788d621e413f3e7087b4df7b2ae9596d09619",
-    kit: "4e6313689254dd68c16e6163e6e37d35f5933996096d22fcdd9793316a44caa8",
+    shared: "f7fb4a3639bb645510bb89aae8aa923509146ac4de140ffad1c67741b4ff4f3d",
+    kit: "3c0bdf852b33017c2c1eda040db055e9ca69e6f7091a42a17f5ee750e1c867e2",
   },
   "survival-horror": {
-    shared: "bc5a0b3062005fd14784326988e886ea7b7ad73394b22180f068fe6b6af7e3c8",
-    kit: "cd15080b5f8fe86b57b0550a025e39a37950373beab04b724fb0127ac8b8aab5",
+    shared: "f711a43f8c514a1ab25da6ac6b6b29644f59136f36b12abf7a17c023a805124f",
+    kit: "009b63b6e241fd6164083881ca113d2cd8daa12378e554549f285e8ba0376ed5",
   },
   "tomb-explorer": {
-    shared: "e504054ed47e1a147b2975bf1168b3546e8bd0199e4bdd8a282cd361b65379ce",
-    kit: "a0c0767b43cbc19e2fcd3c653268c8ec1c0bcd3546c0f66393c3a4802ca7a762",
+    shared: "73d9f6f1ed6a4bda4d86b1856637de997d00968a8994fdd4f1e9cb209c1adcf7",
+    kit: "19240e11b2e612d89b1aac1021da5fadfb5cbc4898ea8cd1d8a4d0e43e069f28",
   },
   "tower-defense": {
-    shared: "eba4b129bd9ec142827d543a078b32cebbe7508f9b10cf1545ee8766b068bb42",
-    kit: "6095331399c592acd41dcdfdb55c043683c8148c628b53a371b4a4c1fc2b82b6",
+    shared: "5aa260acc600c7d0f25c77986c102807a7bc151102f0396aaff69dfd38b4a3b5",
+    kit: "bb5a25617db327e3bc76be8805c0875c605391a194a3fe4e389b71bd18865694",
   },
   // scaffold-pin:end
 };
@@ -465,101 +488,84 @@ describe("create-threenative", () => {
   );
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
-    const root = await makeTempDir("threenative-scaffold-stability-");
-    try {
-      const actual: Record<string, IScaffoldTreePin> = {};
-      for (const template of ALL_TEMPLATES) {
-        const { target } = await createProject(
-          { install: false, target: template, template },
-          root,
+    const targets = corpusTargets as Readonly<Record<string, string>>;
+    const actual: Record<string, IScaffoldTreePin> = {};
+    for (const template of ALL_TEMPLATES) {
+      const target = targets[template] as string;
+      expect(SCAFFOLD_TREE_HASHES[template]).toBeDefined();
+      const buckets = await scaffoldTreeBuckets(target, template);
+      actual[template] = { kit: buckets.kit, shared: buckets.shared };
+      if (template === "platformer") {
+        await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+      }
+      if (template === "collectathon" || template === "adventure") {
+        // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
+        // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
+        // traced in PROVENANCE.md.
+        const files = await readdir(path.join(target, "assets"), { recursive: true });
+        const sizes = await Promise.all(
+          files.map(async (file) => {
+            const info = await stat(path.join(target, "assets", file));
+            return info.isFile() ? info.size : 0;
+          }),
         );
-        expect(SCAFFOLD_TREE_HASHES[template]).toBeDefined();
-        const buckets = await scaffoldTreeBuckets(target, template);
-        actual[template] = { kit: buckets.kit, shared: buckets.shared };
-        if (template === "platformer") {
-          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
-        }
-        if (template === "collectathon" || template === "adventure") {
-          // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
-          // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
-          // traced in PROVENANCE.md.
-          const files = await readdir(path.join(target, "assets"), { recursive: true });
-          const sizes = await Promise.all(
-            files.map(async (file) => {
-              const info = await stat(path.join(target, "assets", file));
-              return info.isFile() ? info.size : 0;
-            }),
-          );
-          expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
-          // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
-          const provenance = await readFile(
-            path.join(target, "assets", "tex-PROVENANCE.md"),
-            "utf8",
-          );
-          const textures = files.filter((name) => name.endsWith(".webp"));
-          expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
-          for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
-        }
-        if (template === "kart") {
-          // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
-          // no image or model file but the shared icon, so every texture is painted in code.
-          await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
-          const media = (await readdir(target, { recursive: true })).filter(
-            (file) =>
-              /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
-              file !== path.join("public", "icon.png"),
-          );
-          expect(media).toEqual([]);
-        }
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
+        // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+        const provenance = await readFile(path.join(target, "assets", "tex-PROVENANCE.md"), "utf8");
+        const textures = files.filter((name) => name.endsWith(".webp"));
+        expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
+        for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
       }
-      // Two hashes per kit, so a stale pin says which side of the scaffold moved.
-      for (const [template, buckets] of Object.entries(actual)) {
-        expect(SCAFFOLD_TREE_HASHES[template], template).toEqual({
-          kit: buckets.kit,
-          shared: buckets.shared,
-        });
+      if (template === "kart") {
+        // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
+        // no image or model file but the shared icon, so every texture is painted in code.
+        await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
+        const media = (await readdir(target, { recursive: true })).filter(
+          (file) =>
+            /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
+            file !== path.join("public", "icon.png"),
+        );
+        expect(media).toEqual([]);
       }
-      expect(Object.keys(actual).sort()).toEqual([...ALL_TEMPLATES].sort());
-    } finally {
-      await rm(root, { force: true, recursive: true });
     }
+    // Two hashes per kit, so a stale pin says which side of the scaffold moved.
+    for (const [template, buckets] of Object.entries(actual)) {
+      expect(SCAFFOLD_TREE_HASHES[template], template).toEqual({
+        kit: buckets.kit,
+        shared: buckets.shared,
+      });
+    }
+    expect(Object.keys(actual).sort()).toEqual([...ALL_TEMPLATES].sort());
   });
 
   it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
-    const root = await makeTempDir("threenative-quality-config-");
-    try {
-      for (const template of ALL_TEMPLATES) {
-        const { target } = await createProject(
-          { install: false, target: template, template },
-          root,
-        );
-        const nonblank = (
-          await Promise.all(
-            ["eslint.config.js", "biome.json"].map((name) =>
-              readFile(path.join(target, name), "utf8"),
-            ),
-          )
+    const targets = corpusTargets as Readonly<Record<string, string>>;
+    for (const template of ALL_TEMPLATES) {
+      const target = targets[template] as string;
+      const nonblank = (
+        await Promise.all(
+          ["eslint.config.js", "biome.json"].map((name) =>
+            readFile(path.join(target, name), "utf8"),
+          ),
         )
-          .join("\n")
-          .split("\n")
-          .filter((line) => line.trim() !== "").length;
-        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
-        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
-          devDependencies: Record<string, string>;
-          scripts: Record<string, string>;
-        };
-        expect(manifest.scripts.check, template).toBe(
-          "pnpm typecheck && pnpm lint && pnpm format:check",
-        );
-        expect(manifest.scripts.lint, template).toBe("eslint src");
-        expect(manifest.scripts["format:check"], template).toBe("biome format src");
-        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
-        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
-        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
-        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
-      }
-    } finally {
-      await rm(root, { force: true, recursive: true });
+      )
+        .join("\n")
+        .split("\n")
+        .filter((line) => line.trim() !== "").length;
+      expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+      const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+        devDependencies: Record<string, string>;
+        scripts: Record<string, string>;
+      };
+      expect(manifest.scripts.check, template).toBe(
+        "pnpm typecheck && pnpm lint && pnpm format:check",
+      );
+      expect(manifest.scripts.lint, template).toBe("eslint src");
+      expect(manifest.scripts["format:check"], template).toBe("biome format src");
+      expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+      expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+      expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+      expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
     }
   });
 

@@ -228,7 +228,7 @@ jobs:
             tools_asset: threenative-tools-win32-x64.exe
             player: tn-native-engine-player-v8.exe
             player_asset: threenative-engine-player-win32-x64.exe
-            player_ui: "OFF"
+            player_ui: "ON"
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 60
     steps:

@@ -271,14 +271,16 @@ async function copySharedAssets(target: string, templateRootDirectory: string): 
   if (!existsSync(shared)) return;
   const source = path.join(target, "src");
   const texts: string[] = [];
+  const pending: string[] = [];
   const walk = async (directory: string): Promise<void> => {
     for (const entry of await readdir(directory, { withFileTypes: true })) {
       const file = path.join(directory, entry.name);
       if (entry.isDirectory()) await walk(file);
-      else if (/\.(?:ts|tsx)$/u.test(entry.name)) texts.push(await readFile(file, "utf8"));
+      else if (/\.(?:ts|tsx)$/u.test(entry.name)) pending.push(file);
     }
   };
   if (existsSync(source)) await walk(source);
+  texts.push(...(await Promise.all(pending.map((file) => readFile(file, "utf8")))));
   const names = readdirSync(shared);
   // A `<prefix>-PROVENANCE.md` licence record travels with any copied `<prefix>-*` file.
   const named = (name: string): boolean => texts.some((text) => text.includes(`"${name}"`));
@@ -596,25 +598,30 @@ function substituteTemplateVariables(
   return rendered;
 }
 
+/** Renders every text file under `directory`. One batch per directory, not one file at a time: a
+ * scaffold's cost on a loaded runner is the number of waits, not the bytes, and a kit's text files
+ * are independent reads. */
 async function renderTemplate(
   directory: string,
   replacements: Readonly<Record<string, string>>,
 ): Promise<void> {
   const files = await readdir(directory, { withFileTypes: true });
-  for (const entry of files) {
-    const source = path.join(directory, entry.name);
-    if (entry.isDirectory()) {
-      await renderTemplate(source, replacements);
-      continue;
-    }
-    if (!TEXT_FILE_EXTENSIONS.has(path.extname(entry.name))) continue;
-    const content = await readFile(source, "utf8");
-    let rendered = substituteTemplateVariables(content, replacements);
-    if (entry.name === "AGENTS.md" || entry.name === "CLAUDE.md") {
-      rendered = rendered.replace(SHARED_AGENT_MARKER_LINE, "");
-    }
-    await writeFile(source, rendered);
-  }
+  await Promise.all(
+    files.map(async (entry) => {
+      const source = path.join(directory, entry.name);
+      if (entry.isDirectory()) return renderTemplate(source, replacements);
+      if (!TEXT_FILE_EXTENSIONS.has(path.extname(entry.name))) return undefined;
+      const content = await readFile(source, "utf8");
+      let rendered = substituteTemplateVariables(content, replacements);
+      if (entry.name === "AGENTS.md" || entry.name === "CLAUDE.md") {
+        rendered = rendered.replace(SHARED_AGENT_MARKER_LINE, "");
+      }
+      // Most of a kit's text carries no token to substitute, and rewriting an identical file only
+      // moves its mtime: ~7 MB of template source stays unwritten on every scaffold.
+      if (rendered !== content) await writeFile(source, rendered);
+      return undefined;
+    }),
+  );
 }
 
 /** Long recipes live in this package and are read where it installs them: every generated project
@@ -1027,9 +1034,44 @@ async function hashFiles(directory: string, relative = ""): Promise<Record<strin
 }
 
 /**
+ * The layer's files as the scaffold just wrote them into `target`, relative to it: the kit router
+ * pair, every canonical `agent-files` path, and a skill directory `copyAgentFiles` had to copy
+ * where the host refused a link (a link is not a file, a copy is). Sorted, so the stamp's JSON is
+ * one byte sequence on every host.
+ */
+async function writtenAuthoringLayer(
+  target: string,
+  root: string,
+): Promise<Record<string, string>> {
+  const agentRoot = path.join(path.dirname(root), AGENT_FILES_DIRECTORY);
+  const copies: string[] = [];
+  const collect = async (directory: string, ...parts: readonly string[]): Promise<void> => {
+    const entries = await readdir(path.join(directory, ...parts), { withFileTypes: true }).catch(
+      () => [],
+    );
+    for (const entry of entries) {
+      if (entry.isDirectory()) await collect(directory, ...parts, entry.name);
+      else if (entry.isFile()) copies.push([...parts, entry.name].join("/"));
+    }
+  };
+  await collect(agentRoot);
+  await collect(target, ".claude", "skills");
+  const files: Record<string, string> = {};
+  const paths = ["AGENTS.md", "CLAUDE.md", ...copies].sort((left, right) =>
+    left < right ? -1 : 1,
+  );
+  const hashes = await Promise.all(paths.map((file) => readFile(path.join(target, file))));
+  for (const [index, file] of paths.entries()) files[file] = sha256(hashes[index] as Buffer);
+  return files;
+}
+
+/**
  * Renders `kit`'s authoring layer for a game at `target` with the scaffold's own writers — the kit
  * router pair, then `copyAgentFiles`, then `renderTemplate` — and returns each path's hash.
  * `directory` receives the bytes when given; otherwise they go to a temporary folder.
+ *
+ * The scaffold itself hashes what it wrote (`writtenAuthoringLayer`): this render is for comparing
+ * a game against the release it installs (`authoringLayerStatus`, `fixAuthoringLayer`).
  */
 async function renderedAuthoringLayer(
   target: string,
@@ -1311,12 +1353,7 @@ export async function createProject(
     writeHostMcpConfigs(target);
     await assertMcpConfig(target);
     await assertReferenceBundle(target, root);
-    await writeAuthoringStamp(
-      target,
-      template,
-      await renderedAuthoringLayer(target, template, root),
-      root,
-    );
+    await writeAuthoringStamp(target, template, await writtenAuthoringLayer(target, root), root);
     if (installed) await runInstall(target);
   } catch (error) {
     await discardScaffold(target, existedBefore);

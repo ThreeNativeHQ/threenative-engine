@@ -343,31 +343,42 @@ describe("the reinvention rows", () => {
     // Fail closed: a discovery bug must not report a green zero.
     expect(files.length).toBeGreaterThan(300);
 
+    // One config and one linter for the corpus instead of one per file, and one parse per distinct
+    // (path, bytes): 29 kits ship 1173 sources but only 834 distinct files, because `src/render/*`
+    // is stamped from one canonical source into every kit that ships it. The same bytes at the same
+    // path resolve the same config array and select the same AST nodes, so the answer is the same
+    // parse; every file is still reported by name.
+    const configs = [
+      {
+        files: ["src/**/*.ts", "src/**/*.tsx"],
+        languageOptions: { parser: tsParser as Linter.Parser },
+        plugins: { threenative: threenativePlugin },
+        rules: {
+          "threenative/hot-callback-allocation": "error",
+          "threenative/hot-callback-resource-creation": "error",
+          "threenative/hot-callback-scene-work": "error",
+          "threenative/no-native-incompatible-three": "error",
+          "threenative/no-raw-model-add": "error",
+          "threenative/no-unstable-ui-selector": "error",
+        },
+      },
+      ...reinventionConfigs(["src/**/*.ts", "src/**/*.tsx"]),
+    ] as unknown as Parameters<Linter["verify"]>[1];
+    const linter = new Linter();
+    const linted = new Map<string, readonly string[]>();
     const found: string[] = [];
     for (const { file, kit } of files) {
       const relative = path.relative(path.join(templatesRoot, kit), file);
-      const messages = new Linter().verify(
-        readFileSync(file, "utf8"),
-        [
-          {
-            files: ["src/**/*.ts", "src/**/*.tsx"],
-            languageOptions: { parser: tsParser as Linter.Parser },
-            plugins: { threenative: threenativePlugin },
-            rules: {
-              "threenative/hot-callback-allocation": "error",
-              "threenative/hot-callback-resource-creation": "error",
-              "threenative/hot-callback-scene-work": "error",
-              "threenative/no-native-incompatible-three": "error",
-              "threenative/no-raw-model-add": "error",
-              "threenative/no-unstable-ui-selector": "error",
-            },
-          },
-          ...reinventionConfigs(["src/**/*.ts", "src/**/*.tsx"]),
-        ],
-        relative,
-      );
-      for (const message of messages)
-        found.push(`${kit}/${relative}:${message.line} ${message.message}`);
+      const source = readFileSync(file, "utf8");
+      const key = `${relative}\0${source}`;
+      let messages = linted.get(key);
+      if (messages === undefined) {
+        messages = linter
+          .verify(source, configs, relative)
+          .map((message) => `${message.line} ${message.message}`);
+        linted.set(key, messages);
+      }
+      for (const message of messages) found.push(`${kit}/${relative}:${message}`);
     }
     expect(found).toEqual([]);
   });

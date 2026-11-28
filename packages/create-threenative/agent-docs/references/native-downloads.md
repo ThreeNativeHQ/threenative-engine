@@ -29,13 +29,13 @@ The error names the asset, the installed version, the URL and the reason. Three 
      `packages/runtime-native`: `node scripts/download-deps.mjs` and
      `node scripts/build-native-physics.mjs --desktop`. A fresh checkout stops at CMake without
      them, because every desktop preset enables native physics.
-   - engine player (default), Linux with a `ui.renderer: "web"` HUD: additionally run
+   - engine player (default), Linux or Windows with a `ui.renderer: "web"` HUD: additionally run
      `node scripts/build-native-ui-overlay.mjs` first (CMake refuses the overlay flag without that
      library), then `cmake --preset <platform> -B build/tn-engine-ui
      -DTN_ENGINE_ONLY=ON -DTN_ENGINE_PLAYER=ON -DTN_ENGINE_PLAYER_UI_OVERLAY=ON`, then
      `cmake --build build/tn-engine-ui --target tn-native-engine-player-v8`.
    - engine player (default), any other platform or a `"native"` HUD: the same command without
-     `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` — it is a Linux-only option, and a web HUD elsewhere needs
+     `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` — it is a Linux and Windows option, and a web HUD on macOS needs
      `engine: "threejs"`. A checkout with `build/tn-engine-ui/tn-native-engine-player-v8`
      is picked up with no variable set.
    - legacy host (`engine: "threejs"`): `pnpm --filter @threenative/runtime-native native:build`,
@@ -50,8 +50,8 @@ The error names the asset, the installed version, the URL and the reason. Three 
    (`build-native-physics.mjs --desktop` builds the host's own archive; `-DTHREENATIVE_WGPU_ROOT`
    points at a wgpu-native checkout when it is not a checked-in dependency).
    macOS publishes no desktop asset at all, so there the checkout build is the only route.
-   The overlay option is Linux-only and the released Windows and macOS players are built without
-   it: a `ui.renderer: "web"` desktop build on either is refused at `TN_ENGINE_PLAYER_UI_UNSUPPORTED`
+   The overlay option is Linux and Windows only and the released macOS player is built without
+   it: a `ui.renderer: "web"` desktop build there is refused at `TN_ENGINE_PLAYER_UI_UNSUPPORTED`
    before the download, so set `ui.renderer: "native"` (draw the HUD in the game) or
    `engine: "threejs"` (the legacy host renders the web UI) there.
 

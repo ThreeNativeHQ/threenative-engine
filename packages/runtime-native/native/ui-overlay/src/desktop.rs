@@ -1,13 +1,9 @@
-//! The desktop UI overlay on Windows and macOS.
+//! The desktop UI overlay on macOS.
 //!
-//! On both, `wry` builds a transparent web view as a child of the window SDL already owns, and
-//! that is the whole attach. What is left is the hit-region protocol, and each OS keeps it where
-//! the OS decides ownership:
-//!
-//! - Windows clips the wry container's own window region, so a pointer outside every published
-//!   rectangle never reaches the web view and lands on the game.
-//! - macOS owns the `NSView` the web view is a child of and answers `hitTest:` from the same
-//!   rectangles, returning `nil` outside them so AppKit continues to SDL's view.
+//! `wry` builds a transparent web view as a child of the window SDL already owns, and that is the
+//! whole attach. What is left is the hit-region protocol: this module owns the `NSView` the web view
+//! is a child of and answers `hitTest:` from the published rectangles, returning `nil` outside them
+//! so AppKit continues to SDL's view. Windows is `windows.rs`.
 //!
 //! Everything crossing the ABI is one JSON frame, exactly as on Linux and Android, so
 //! `@threenative/core/ui-layer` has one contract and not four dialects of it.
@@ -22,29 +18,21 @@ use wry::dpi::{LogicalPosition, LogicalSize};
 use wry::http::{header, Response};
 use wry::{Rect, WebView, WebViewBuilder};
 
-#[cfg(windows)]
-use std::num::NonZeroIsize;
-#[cfg(windows)]
-use raw_window_handle::Win32WindowHandle;
-#[cfg(windows)]
-use wry::WebViewExtWindows;
-
-#[cfg(windows)]
-use std::cell::Cell;
-#[cfg(target_os = "macos")]
-use raw_window_handle::AppKitWindowHandle;
-#[cfg(target_os = "macos")]
-use std::ptr::NonNull;
 #[cfg(target_os = "macos")]
 use objc2::rc::Retained;
 #[cfg(target_os = "macos")]
 use objc2::{
-    declare_class, mutability::MainThreadOnly, msg_send, msg_send_id, ClassType, DeclaredClass,
+    declare_class, msg_send, msg_send_id, mutability::MainThreadOnly, runtime::AnyObject,
+    ClassType, DeclaredClass,
 };
 #[cfg(target_os = "macos")]
 use objc2_app_kit::{NSAutoresizingMaskOptions, NSView};
 #[cfg(target_os = "macos")]
 use objc2_foundation::{CGPoint, MainThreadMarker, NSRect};
+#[cfg(target_os = "macos")]
+use raw_window_handle::AppKitWindowHandle;
+#[cfg(target_os = "macos")]
+use std::ptr::NonNull;
 
 /// `ui_root` was null or not a UTF-8 path.
 const BAD_ARGUMENT: c_int = -5;
@@ -62,31 +50,8 @@ thread_local! {
 struct Overlay {
     webview: WebView,
     inbound: Arc<Mutex<Vec<String>>>,
-    /// The window this process shapes. On Windows it is wry's container HWND, whose region decides
-    /// which pixels reach the web view. On macOS it is the `NSView` the web view is a child of and
-    /// whose `hitTest:` decides the same thing.
-    #[cfg(windows)]
-    container: *mut c_void,
-    #[cfg(target_os = "macos")]
+    /// The `NSView` the web view is a child of, whose `hitTest:` decides which points reach the page.
     container: Retained<TnUiOverlayView>,
-    /// The pixel size the Windows region was last cut for. A resize changes the pixel rectangles
-    /// while the published ones stay normalized, so this is how the region is kept current.
-    #[cfg(windows)]
-    region_size: Cell<(u32, u32)>,
-}
-
-/// The window SDL owns, borrowed for the one call `wry` needs it in.
-#[cfg(windows)]
-struct ParentWindow(isize);
-
-#[cfg(windows)]
-impl HasWindowHandle for ParentWindow {
-    fn window_handle(&self) -> Result<WindowHandle<'_>, HandleError> {
-        let hwnd = NonZeroIsize::new(self.0).ok_or(HandleError::Unavailable)?;
-        Ok(unsafe {
-            WindowHandle::borrow_raw(RawWindowHandle::Win32(Win32WindowHandle::new(hwnd)))
-        })
-    }
 }
 
 /// The `NSView` the web view becomes a child of.
@@ -154,6 +119,10 @@ fn build_overlay<W: HasWindowHandle>(
     let sink = inbound;
     let built = WebViewBuilder::new()
         .with_transparent(true)
+        // The game window owns the keyboard, so the page is rarely first responder, and AppKit spends a
+        // click on a view that does not accept first mouse on focusing it: a HUD button then needs two
+        // clicks (CI: the page saw the pointer move onto TAKE THE DECK, then no pointerdown at all).
+        .with_accept_first_mouse(true)
         .with_bounds(Rect {
             position: LogicalPosition::new(0.0, 0.0).into(),
             size: LogicalSize::new(width.max(1), height.max(1)).into(),
@@ -219,30 +188,6 @@ pub extern "C" fn tn_ui_overlay_attach(
 
     let inbound = Arc::new(Mutex::new(Vec::<String>::new()));
 
-    #[cfg(windows)]
-    {
-        let handle = ParentWindow(parent as isize);
-        let Ok(webview) = build_overlay(&ui_root, width, height, inbound.clone(), &handle) else {
-            return BUILD_REFUSED;
-        };
-        // wry makes its own container HWND as a child of the game's; that container is what the
-        // region has to be set on, or the game's own window would be clipped instead.
-        let mut window = windows::Win32::Foundation::HWND::default();
-        if unsafe { webview.controller().ParentWindow(&mut window) }.is_err() {
-            return NO_VIEW;
-        }
-        let container = window.0;
-        OVERLAY.with(|slot| {
-            *slot.borrow_mut() = Some(Overlay {
-                webview,
-                inbound,
-                container,
-                region_size: Cell::new((width.max(1), height.max(1))),
-            });
-        });
-        return 0;
-    }
-
     #[cfg(target_os = "macos")]
     {
         let Some(mtm) = MainThreadMarker::new() else {
@@ -272,6 +217,10 @@ pub extern "C" fn tn_ui_overlay_attach(
         unsafe {
             use wry::WebViewExtMacOS;
             let view = webview.webview();
+            // wry built it at the host's size, which is in pixels (SDL_GetWindowSizeInPixels) and twice
+            // the points on a Retina display, and AppKit may already have shrunk a window that did not
+            // fit the screen. The page is exactly the container, whose rectangles the hit test reads.
+            view.setFrame(container.bounds());
             view.setAutoresizingMask(
                 NSAutoresizingMaskOptions::NSViewWidthSizable
                     | NSAutoresizingMaskOptions::NSViewHeightSizable,
@@ -302,32 +251,30 @@ pub extern "C" fn tn_ui_overlay_attach(
 /// do.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_pump() -> c_int {
-    #[cfg(windows)]
+    #[cfg(target_os = "macos")]
     {
-        use windows::Win32::Foundation::{HWND, RECT};
-        use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
+        // The engine player opens SDL's Metal view after the overlay attaches (run.cpp: `uiAttach`
+        // before `surfaceForWindow`), and AppKit puts a later subview on top, over the page. Keep the
+        // container the front child of the content view; its `hitTest:` still lets the game have
+        // every point outside the published rectangles.
         OVERLAY.with(|slot| {
             let borrowed = slot.borrow();
             let Some(overlay) = borrowed.as_ref() else {
-                return 0;
+                return;
             };
-            let mut rect = RECT::default();
-            if unsafe { GetClientRect(HWND(overlay.container), &mut rect) }.is_ok() {
-                let size = (
-                    (rect.right - rect.left).max(1) as u32,
-                    (rect.bottom - rect.top).max(1) as u32,
-                );
-                if size != overlay.region_size.get() {
-                    overlay.region_size.set(size);
-                    let regions = crate::HIT_REGIONS.with(|regions| regions.borrow().clone());
-                    apply_region(overlay.container, &regions, size);
+            let container: &NSView = &overlay.container;
+            let Some(content) = (unsafe { container.superview() }) else {
+                return;
+            };
+            unsafe {
+                let subviews = content.subviews();
+                let front: *mut AnyObject = msg_send![&subviews, lastObject];
+                if front.cast_const() != (container as *const NSView).cast() {
+                    // NSWindowAbove, relative to no sibling: the front of the content view.
+                    let _: () = msg_send![&content, addSubview: container, positioned: 1isize, relativeTo: std::ptr::null::<AnyObject>()];
                 }
             }
-            0
-        })
-    }
-    #[cfg(target_os = "macos")]
-    {
+        });
         0
     }
 }
@@ -388,23 +335,25 @@ pub extern "C" fn tn_ui_overlay_free(frame: *mut c_char) {
     drop(unsafe { CString::from_raw(frame) });
 }
 
-/// Move and resize the overlay to follow the game window.
+/// Follow the game window. The host passes pixels (`SDL_GetWindowSizeInPixels`), twice AppKit's
+/// points on a Retina display, so the arguments are not applied: the page is exactly its container,
+/// which tracks the content view, and the frame is set again from it in points.
 #[no_mangle]
 pub extern "C" fn tn_ui_overlay_set_bounds(x: i32, y: i32, width: u32, height: u32) -> c_int {
+    let _ = (x, y, width, height);
     OVERLAY.with(|slot| {
         let borrowed = slot.borrow();
         let Some(overlay) = borrowed.as_ref() else {
             return NOT_ATTACHED;
         };
-        let bounds = Rect {
-            position: LogicalPosition::new(x, y).into(),
-            size: LogicalSize::new(width.max(1), height.max(1)).into(),
-        };
-        if overlay.webview.set_bounds(bounds).is_ok() {
-            0
-        } else {
-            BUILD_REFUSED
+        unsafe {
+            use wry::WebViewExtMacOS;
+            overlay
+                .webview
+                .webview()
+                .setFrame(overlay.container.bounds());
         }
+        0
     })
 }
 
@@ -425,18 +374,6 @@ pub extern "C" fn tn_ui_overlay_set_hit_regions(regions: *const f32, count: u32)
     };
     crate::HIT_REGIONS.with(|store| *store.borrow_mut() = published.clone());
 
-    #[cfg(windows)]
-    {
-        OVERLAY.with(|slot| {
-            let borrowed = slot.borrow();
-            let Some(overlay) = borrowed.as_ref() else {
-                return NOT_ATTACHED;
-            };
-            let size = overlay.region_size.get();
-            apply_region(overlay.container, &published, size);
-            0
-        })
-    }
     #[cfg(target_os = "macos")]
     {
         if OVERLAY.with(|slot| slot.borrow().is_none()) {
@@ -504,47 +441,7 @@ pub extern "C" fn tn_ui_overlay_detach() {
         if let Some(overlay) = taken {
             unsafe { overlay.container.removeFromSuperview() };
         }
-        #[cfg(windows)]
-        drop(taken);
     });
-}
-
-/// Cut the container's window region to the union of the published rectangles.
-///
-/// Outside the region the window does not exist as far as the pointer is concerned, so a click
-/// there is delivered to the game underneath without this process forwarding anything. An empty
-/// set is a window that takes no pointer events at all, which is right for a UI with no islands.
-#[cfg(windows)]
-fn apply_region(container: *mut c_void, regions: &[f32], size: (u32, u32)) {
-    use windows::Win32::Foundation::HWND;
-    use windows::Win32::Graphics::Gdi::{
-        CombineRgn, CreateRectRgn, DeleteObject, SetWindowRgn, RGN_OR,
-    };
-    let hwnd = HWND(container);
-    if regions.len() < 4 {
-        let empty = unsafe { CreateRectRgn(0, 0, 0, 0) };
-        unsafe { SetWindowRgn(hwnd, empty, true) };
-        return;
-    }
-    let (width, height) = (size.0 as f32, size.1 as f32);
-    let mut combined = None;
-    for region in regions.chunks_exact(4) {
-        let x1 = (region[0] * width).round() as i32;
-        let y1 = (region[1] * height).round() as i32;
-        let x2 = ((region[0] + region[2]) * width).round() as i32;
-        let y2 = ((region[1] + region[3]) * height).round() as i32;
-        let rect = unsafe { CreateRectRgn(x1, y1, x2, y2) };
-        match combined {
-            None => combined = Some(rect),
-            Some(accumulated) => unsafe {
-                let _ = CombineRgn(accumulated, accumulated, rect, RGN_OR);
-                let _ = DeleteObject(rect);
-            },
-        }
-    }
-    if let Some(region) = combined {
-        unsafe { SetWindowRgn(hwnd, region, true) };
-    }
 }
 
 /// The `NSView` the macOS web view is a child of, answering `hitTest:` from the published
@@ -581,16 +478,18 @@ declare_class!(
             if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
                 return std::ptr::null_mut();
             }
-            let x = point.x / bounds.size.width;
-            let y = point.y / bounds.size.height;
-            for region in regions.chunks_exact(4) {
-                if x >= region[0] as f64
-                    && y >= region[1] as f64
-                    && x <= (region[0] + region[2]) as f64
-                    && y <= (region[1] + region[3]) as f64
-                {
-                    return unsafe { msg_send![super(self), hitTest: point] };
-                }
+            // `point` is in the superview's space; the page's rectangles are fractions of this view,
+            // from its top, and an unflipped AppKit view counts from the bottom.
+            let superview = unsafe { self.superview() };
+            let from: *const NSView = superview
+                .as_deref()
+                .map_or(std::ptr::null(), |view| view as *const NSView);
+            let local: CGPoint = unsafe { msg_send![self, convertPoint: point, fromView: from] };
+            let flipped: bool = unsafe { msg_send![self, isFlipped] };
+            let x = (local.x / bounds.size.width) as f32;
+            let y = crate::from_top(local.y, bounds.size.height, flipped);
+            if crate::point_in_regions(&regions, x, y) {
+                return unsafe { msg_send![super(self), hitTest: point] };
             }
             std::ptr::null_mut()
         }

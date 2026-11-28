@@ -58,6 +58,8 @@ export interface IUiBridge {
 
 /** The message the UI end publishes whenever its interactive rectangles move. */
 export const HIT_REGIONS_MESSAGE = "tn:hit-regions";
+/** UI end to host: switch the game window fullscreen (`on: true`) or back. The host applies it. */
+export const FULLSCREEN_MESSAGE = "tn:fullscreen";
 /** The message the game end publishes when its shared state changes. */
 export const GAME_STATE_MESSAGE = "tn:state";
 /** The message the UI end sends when the player acts on a control. */
@@ -299,6 +301,60 @@ function installLoopback(scope: IScope): void {
 }
 
 /**
+ * On a native host the page is the game window's HUD, and the browser's Fullscreen API would at most
+ * fill the web view. A request goes to the host instead, which switches the game window. The page is
+ * fullscreen while it fills the screen, so the state stays right whoever switched the window
+ * (`display.fullscreen` at launch, the OS, or this page).
+ */
+function installHostFullscreen(scope: IScope, outbound: (frame: string) => void): () => void {
+  const document = scope.document as IScope | undefined;
+  const root = document?.documentElement as IScope | undefined;
+  const screen = scope.screen as { width?: unknown; height?: unknown } | undefined;
+  // The web loopback (`?tnUiLoopback=1`) is a browser page: its own Fullscreen API is the real one.
+  if (
+    document === undefined ||
+    root === undefined ||
+    screen === undefined ||
+    scope[LOOPBACK_KEY] !== undefined
+  )
+    return () => {};
+  // ponytail: a geometry test, not a host query; a window sized exactly to the screen with a frame
+  // would read as fullscreen. Ask the host for its state if a game ever needs that distinction.
+  const filled = (): boolean =>
+    Number(scope.innerWidth) >= Number(screen.width) &&
+    Number(scope.innerHeight) >= Number(screen.height);
+  const request = (on: boolean): Promise<void> => {
+    outbound(JSON.stringify({ type: FULLSCREEN_MESSAGE, on }));
+    return Promise.resolve();
+  };
+  Object.defineProperty(document, "fullscreenElement", {
+    configurable: true,
+    get: () => (filled() ? root : null),
+  });
+  Object.defineProperty(document, "fullscreenEnabled", { configurable: true, value: true });
+  // Any element asks for the whole window: the game window is the only thing that can go fullscreen.
+  const elements = (scope.Element as { prototype?: IScope } | undefined)?.prototype ?? root;
+  elements.requestFullscreen = () => request(true);
+  document.exitFullscreen = () => request(false);
+  const EventCtor = scope.Event as (new (type: string) => unknown) | undefined;
+  type Listen = ((type: string, listener: () => void) => void) | undefined;
+  let was = filled();
+  const onResize = (): void => {
+    const now = filled();
+    if (now === was) return;
+    was = now;
+    if (EventCtor !== undefined) {
+      (document.dispatchEvent as ((event: unknown) => void) | undefined)?.call(
+        document,
+        new EventCtor("fullscreenchange"),
+      );
+    }
+  };
+  (scope.addEventListener as Listen)?.call(scope, "resize", onResize);
+  return () => (scope.removeEventListener as Listen)?.call(scope, "resize", onResize);
+}
+
+/**
  * Connect one end of the bridge.
  *
  * The transport is discovered, never configured: a game asks for `ui` or `game` and gets the
@@ -359,6 +415,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
   }
 
   const uninstall = installInbound(scope, inboundKey, deliver);
+  const uninstallFullscreen = end === "ui" ? installHostFullscreen(scope, outbound) : () => {};
   // Android's injected object also raises `onmessage`; wiring it to the same entry point keeps
   // one inbound path on every host rather than one per host.
   const injected = scope[UI_BRIDGE_GLOBALS.uiHost] as { onmessage?: unknown } | undefined;
@@ -389,6 +446,7 @@ export function connectUiBridge(options: IConnectOptions): IUiBridge {
       closed = true;
       listeners.clear();
       uninstall();
+      uninstallFullscreen();
       if (end === "ui" && injected !== undefined && typeof injected === "object") {
         injected.onmessage = undefined;
       }

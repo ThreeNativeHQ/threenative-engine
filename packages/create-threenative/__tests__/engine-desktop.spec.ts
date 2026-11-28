@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { bundleNativeEngine } from "../../runtime-native/scripts/bundle-native-engine.mjs";
 import {
+  launchConfig,
   launcher,
   packageEngineDesktop,
   // @ts-expect-error The packager is a plain .mjs script with no declaration file.
@@ -24,12 +25,12 @@ async function temp(prefix: string): Promise<string> {
 }
 
 describe("engine player web-UI support", () => {
-  it("is Linux only, matching the release matrix's player_ui flags", () => {
-    // `native-release.yml` builds the player with TN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux and OFF
-    // on darwin and win32. A "web" HUD elsewhere would download the player and die at
+  it("is Linux and Windows, matching the release matrix's player_ui flags", () => {
+    // `native-release.yml` builds the player with TN_ENGINE_PLAYER_UI_OVERLAY=ON on Linux and win32
+    // and OFF on darwin. A "web" HUD on macOS would download the player and die at
     // TN_UI_LOAD_FAILED, so the build refuses first.
     expect(enginePlayerSupportsWebUi("linux")).toBe(true);
-    expect(enginePlayerSupportsWebUi("win32")).toBe(false);
+    expect(enginePlayerSupportsWebUi("win32")).toBe(true);
     expect(enginePlayerSupportsWebUi("darwin")).toBe(false);
   });
 });
@@ -283,6 +284,11 @@ describe("packageEngineDesktop", () => {
       const start = readFileSync(path.join(output, "midway.cmd"), "utf8");
       expect(start).toContain('"%~dp0tn-native-engine-player-v8.exe" "%~dp0game.js" %*');
       expect(start).not.toContain("#!/bin/sh");
+      // The player reads the settings itself, so the batch file overrides no variable of the person's.
+      expect(start).not.toContain("set ");
+      expect(readFileSync(path.join(output, "launch.cfg"), "utf8")).toContain(
+        "TN_PLAYER_FULLSCREEN=1\n",
+      );
     } finally {
       Object.defineProperty(process, "platform", real);
     }
@@ -296,6 +302,36 @@ describe("packageEngineDesktop", () => {
       "export TN_PLAYER_WIDTH TN_PLAYER_HEIGHT TN_PLAYER_PRIORITY",
     );
     expect(() => launcher(1280, 720, undefined, "high")).toThrow(/TN_ENGINE_PACKAGE_ARGS/u);
+  });
+
+  it("writes the game's window settings to launch.cfg, which every launcher's player reads", async () => {
+    const root = await temp("threenative-engine-package-cfg-");
+    const player = path.join(root, "player");
+    await writeFile(player, "#!/bin/sh\n");
+    const output = path.join(root, "dist-native", "midway");
+    await packageEngineDesktop(
+      {
+        project: root,
+        entry: "e",
+        player,
+        output,
+        width: 1600,
+        height: 900,
+        title: "Two\nlines",
+        fullscreen: false,
+        maximized: true,
+        resizable: false,
+      },
+      stubs,
+    );
+    expect(readFileSync(path.join(output, "launch.cfg"), "utf8")).toBe(
+      "TN_PLAYER_WIDTH=1600\nTN_PLAYER_HEIGHT=900\nTN_PLAYER_TITLE=Two lines\nTN_PLAYER_PRIORITY=game\n" +
+        "TN_PLAYER_FULLSCREEN=0\nTN_PLAYER_MAXIMIZED=1\nTN_PLAYER_RESIZABLE=0\n",
+    );
+    expect(launchConfig()).toContain(
+      "TN_PLAYER_FULLSCREEN=1\nTN_PLAYER_MAXIMIZED=0\nTN_PLAYER_RESIZABLE=1\n",
+    );
+    expect(() => launchConfig({ priority: "high" })).toThrow(/TN_ENGINE_PACKAGE_ARGS/u);
   });
 
   it("opens fullscreen unless the game sets display.fullscreen false", () => {

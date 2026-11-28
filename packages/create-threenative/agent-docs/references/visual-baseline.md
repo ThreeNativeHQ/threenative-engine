@@ -72,6 +72,30 @@ and does nothing".
 Nothing in the toolchain can see your game. `pnpm test` proves behaviour, never the look —
 so when you change something visual, actually look at it before reporting it done.
 
+8. **Native ABI, sky/fog, and `InstancedBatch` traps.** Never construct `CubeTexture` /
+   `CubeReflectionMapping` (`TN_NATIVE_BACKGROUND_UNSUPPORTED` / `TN_NATIVE_ENVIRONMENT_UNSUPPORTED`),
+   assign a non-TSL value to `scene.fogNode` (`TN_BROWSER_SHADER_NODE`), or import uncatalogued
+   `three/tsl` helpers such as `rangeFogFactor` (`TN_NATIVE_UNCATALOGUED_*`). Never pass `null`
+   to `DataTexture` `format` or `texture.mapping` (`TN_ABI_6`), or call `InstancedMesh.clone()`
+   (`TN_NATIVE_CLONE_UNSUPPORTED`). `ctx.assets.model()` resolves to `{ scene, animations }`, not an
+   `Object3D`; when instancing with `InstancedBatch` (`{ whole: true }`), always pass required
+   `material` to `new InstancedBatch({ geometry, material, ... })` and copy `userData` onto each
+   batch (`TN_ASSET_UNUSED`). Always verify `pnpm typecheck` and a non-blank frame after visual
+   edits, reverting any breaking edit before finishing.
+9. **Dynamic framing, vertical grounding, and 3-band look.** Check hero width fraction both at
+   spawn AND while moving/cruising, clamping chase-camera pullback/FOV so the hero stays within
+   +-25% of target `heroFrameFraction`. Every vertical support (overpass piers, bridge columns, lamp
+   posts, gantries, docks, arches) must extend `>= 0.15 m` into its ground or deck surface
+   (`y_bottom <= surfaceY - 0.15`) and be verified from a mid-route capture. Deliver all three bands:
+   non-flat sky gradient + horizon haze, directional key/shadow + rim contrast, and varied
+   midground/foreground dressing with calibrated non-blown-out emissives at night.
+10. **Use returned built-ins and wet-surface SSR.** Once `engine_search_capabilities` /
+    `engine_capability_detail` returns an applicable built-in (`WorldEnvironment` SSR/bloom,
+    `createSpringArm`, `InstancedBatch`, `GroundSnap`), use it — never discard it to hand-roll
+    additive floor reflection quads or custom springs. Disable SSR in `quality.ts` only for dry
+    rough tarmac; for wet, rain-slicked, or glossy asphalt, enable `ssrEnabled: true` in `quality.ts`
+    with `roughness` `0.12-0.28`, `maxDistance >= 60`, and `reflectNonMetals: true`.
+
 ## The chain, in order — and what each stage costs
 
 `postprocessing.ts` builds a `WorldEnvironment` and hands its stages to the engine's render

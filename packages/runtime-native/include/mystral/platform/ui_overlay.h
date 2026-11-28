@@ -83,9 +83,11 @@ void setUiOverlayWindow(SDL_Window* window);
 void setUiOverlayKeyboardReset(void (*reset)());
 /** Applies a page's `tn:hit-regions` frame (true), or returns false for any other frame. */
 bool applyUiHitRegionsFrame(const std::string& frame);
+/** Applies a page's `tn:fullscreen` frame to the game window (true), or returns false for any other frame. */
+bool applyUiFullscreenFrame(const std::string& frame);
 /**
  * Drain the frames the page queued. A `tn:hit-regions` frame stops at the host (it owns the hit
- * test); every other frame goes to `forward`, in order. Returns how many frames went to `forward`.
+ * test), and so does `tn:fullscreen` (it owns the window); every other frame goes to `forward`, in order. Returns how many frames went to `forward`.
  */
 size_t drainUiFramesToGame(const std::function<void(const std::string&)>& forward);
 
@@ -287,6 +289,14 @@ bool uiOverlayAdvanceClock(int ticks);
  * is stolen mid-move — the single most common way an overlay like this feels broken.
  */
 bool uiOverlayRoutePointer(const char* type, float nx, float ny, int buttons, int pointerId);
+/**
+ * Whether the attached web view takes the OS pointer itself: the child view on Windows and macOS gets
+ * its own mouse events (the window procedure routes them on Windows, AppKit's hit test on macOS), so
+ * an OS event that reaches the game is the game's, and forwarding it would replay it into the page
+ * as a synthetic pointer event per move. False for the Linux offscreen view and the CSS UI, which
+ * see the pointer only through the host. Synthetic (playtest) input routes either way.
+ */
+bool uiOverlayTakesOsPointer();
 
 /** Tear the desktop overlay down. Safe when nothing is attached. */
 void detachDesktopUiOverlay();

@@ -1706,13 +1706,13 @@ export async function ensureEngineDesktopPlayerForPackaging(
 /**
  * Whether the engine player this platform downloads can attach a web-UI overlay.
  *
- * The release builds the player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux only: the option
- * pulls in WebKitGTK, and the Windows and macOS rows ship without it. A desktop build with a "web"
- * HUD on either platform would download 118 MiB and then die at `TN_UI_LOAD_FAILED`, so the build
- * refuses before the download and names the two working configurations.
+ * The release builds the player with `-DTN_ENGINE_PLAYER_UI_OVERLAY=ON` on Linux (WebKitGTK) and
+ * Windows (WebView2, PRD-927); the macOS row ships without it. A desktop build with a "web" HUD on
+ * macOS would download 118 MiB and then die at `TN_UI_LOAD_FAILED`, so the build refuses before the
+ * download and names the two working configurations.
  */
 export function enginePlayerSupportsWebUi(platform: NodeJS.Platform = process.platform): boolean {
-  return platform === "linux";
+  return platform === "linux" || platform === "win32";
 }
 
 /** The desktop package of a game with `engine: "threenative"`: the engine player, the game on its own three, cooked assets and UI. */
@@ -1734,7 +1734,7 @@ async function buildEngineDesktop(
       `TN_ENGINE_BUNDLER_MISSING: engine "threenative" on desktop bundles the game with ${bundler}, which an installed @threenative/runtime-native does not ship yet. Build from a ThreeNative checkout, or set engine: "threejs" in threenative.config.ts to package with the legacy host.`,
     );
   }
-  // The released player carries the web-UI overlay on Linux only; on Windows and macOS it is built
+  // The released player carries the web-UI overlay on Linux and Windows; on macOS it is built
   // without one, so a web HUD there attaches nothing and the game dies at TN_UI_LOAD_FAILED after
   // the download. Refuse before fetching, when the fix costs nothing.
   if (config.ui.renderer === "web" && !enginePlayerSupportsWebUi()) {
@@ -1778,6 +1778,10 @@ async function buildEngineDesktop(
       config.display.priority,
       "--fullscreen",
       String(config.display.fullscreen),
+      "--maximized",
+      String(config.window.maximized),
+      "--resizable",
+      String(config.window.resizable),
       "--output",
       output,
     ]);
