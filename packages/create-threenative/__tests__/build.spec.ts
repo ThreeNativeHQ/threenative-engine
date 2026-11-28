@@ -360,7 +360,8 @@ describe("threenative build", () => {
         await tree(path.join(target, "vite-dist")),
       );
     }
-    // Each template ships assets/sky.jpg, so each buildWeb pays a real texture cook (~84 s total).
+    // minimal and starter ship assets/sky.jpg, so their buildWeb pays a real texture cook, which
+    // is the bulk of this test's ~26 s. It was ~84 s before the sky was halved to 2048x1024.
   }, 240_000);
 
   it.each([
