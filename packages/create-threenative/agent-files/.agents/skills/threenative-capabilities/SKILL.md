@@ -54,7 +54,9 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
    `engine_search_capabilities` with `scope: "mechanic"` per mechanic, system or symptom, and read
    every row — it carries the import path, signature, example, constraints, overrides and
    deprecations, so call `engine_capability_detail` only for a symbol the search did not return.
-   Record installed capabilities and binding constraints. A
+   Record installed capabilities and binding constraints. Do not reinvent an applicable built-in
+   returned by lookup (`WorldEnvironment` SSR/bloom, `createSpringArm`, `InstancedBatch`,
+   `GroundSnap`): use it instead of hand-rolling reflection quads or custom camera springs. A
    `verdict: "none"` means game-owned behavior in `src/`; do not rephrase until something matches.
    Its `nearMatches` are under-floor suggestions only, never binding capabilities.
    These role names add no servers.
@@ -77,7 +79,10 @@ prompt (`TN_DISCOVERY_GATE=off` opts out).
 6. **Build** — execute the plan, delegate to subagents focused on specific areas. Give each a
    bounded task, explicit file ownership, relevant context and an acceptance check; preserve other
    writers and avoid a single catch-all worker. The coordinator reviews and integrates the areas
-   before step 7, resolving interfaces and failures rather than trusting worker reports. Use the
+   before step 7, resolving interfaces and failures rather than trusting worker reports. The starter
+   kit is a mechanics bootstrap, never a visual target: edit the kit's live scene, track/stage,
+   sky, lighting, palette, and material entry files in place rather than orphan `src/world/` sidecars,
+   and delete or replace contradicting starter biome props before adding secondary scenery. Use the
    chosen kit, discovered capabilities and downloaded textures. Keep appearance in game-owned
    `src/render/`; use stock `WorldEnvironment` defaults or explicitly report named overrides.
    Build a similar mechanic with ThreeNative and adapt its timing, controls, and tuning to this game.

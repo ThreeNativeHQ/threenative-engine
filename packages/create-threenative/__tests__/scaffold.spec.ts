@@ -116,119 +116,119 @@ const PACK_GENERATED_PAGES: readonly string[] = ["capability-reference.md"];
 const SCAFFOLD_TREE_HASHES: Readonly<Record<string, IScaffoldTreePin>> = {
   // scaffold-pin:begin
   "action-rpg": {
-    shared: "59d4c4aa67b2d0e5c8b30a4ae07ecd8e315f041a11b268d2f7deaa762d0a9ead",
+    shared: "edd9efe8be5635bbe9264e7ee5fd618e15e9bf78d088783905a2775aee970b15",
     kit: "5570cd16bc2d5b9669ee903cfc9c019c150f0cb14822039f52ca4ee0f4a3b769",
   },
   adventure: {
-    shared: "d97833aeca8d69bafab9a8649f92b652dd5ad3dda8ef9d836f9a02fdaa72950f",
+    shared: "d53a01743bd370588c0b491670cf9805bd6ebd880304fdee1db0cd1605c27ac3",
     kit: "7dd126a8f4ec2542c5eb8e41aa7d01768acbe110258cad35ec8bbf851ab2e839",
   },
   "board-party": {
-    shared: "d0258a7a03c575e6ff16ab1d43cb1b407a93380ece8b678b763f24bd0b7a19bc",
+    shared: "f68260a80a39c2e678356930e122cdaab8cb02e4f178207a7af9b372f6962975",
     kit: "2201df2febbc30df9fbb3ad32448b921129ecd46ba20026d1529ab54b00eba96",
   },
   "car-combat": {
-    shared: "a7ea7f5ac6268b2fa9d0dd1b2f68f1d7b5e6d16ea435a3e32089e01801688f8c",
+    shared: "0472868fde976638495da9a0d7b78c52cd229dfa6b4785ecdaccf7a578410990",
     kit: "ea8362582ef92ba1a7420d7e74133571162a6d88afc9a8b7eb63524d198579c3",
   },
   collectathon: {
-    shared: "5c193b964974d3b7846c5bdd504f6ba5d3154192728b6624d45f9c60a7653999",
+    shared: "8d13f813ecc4be013976b9e3085ba323532f6dfda5811e593fae5abc5798123a",
     kit: "cce08ff8a8aa305e5f06ba2828932d2c863d286017bb864d1930d0a3861ee92a",
   },
   farming: {
-    shared: "52e79ca29546d4ea327783edc65eb1c0f10a8a3bd9d7c062bed4f2f00032a281",
+    shared: "6d0e1e505cc69315d242864723f759cd84ce517f2477651ac55d1f44bdcdd9d6",
     kit: "acb8bb95036ef5660519181eb3ab877bc60a71e76b93e3799d2a4b4b1d709c7b",
   },
   flight: {
-    shared: "c3495da284344459bc0b7832731839d0ada43a7adf3f760ba676dbf4646920ce",
+    shared: "ff27beb04d55bb80d97d46ada4b5d38bee0fe7c3ec89adb533913e2e775acc58",
     kit: "7950ca4323482456419ccbd1c5e4bcf9532f79a32b8f2e0dd6e1616bf7ef61c0",
   },
   kart: {
-    shared: "2e33679cd8ae3dc653192c7090fcc9aca5ce8e95c5f97e01560b0d3bb54d2313",
+    shared: "62bd2099d156b788cc5a26fa9a2735484693f6c44cf7e163905021f3348d967b",
     kit: "c4554982a394b152ca8b0c56d23f1b5e71ea17c30d892c784cee7a16dbfa0f60",
   },
   "military-shooter": {
-    shared: "d9eab8aae266a1fc59ffe9887f7d9032f6af31fdee814259881ebc5729512631",
+    shared: "803009bcdb96409a18490e4ef2bcc372c6f843e59781a79d91f6e0db7c0b8258",
     kit: "75cd78ee8e2732d5cc4073ac55877692c781f4516d756c1190e22d3fac553135",
   },
   minimal: {
-    shared: "0ce0a825a9ff5d60260817b78de95d64284bfd69e47f347469f0a9548ed57538",
+    shared: "0380a2b97cc855dc6b19d1ac2a82b1b7ec71292513b8ebc2dfcfed027ef088d2",
     kit: "cc903462fb4ecbc7380be6b5d172e48420f46876f1858d58206108ca7ad47a00",
   },
   "open-world": {
-    shared: "a0465437650c31d0a72bbc776ab9c3671f942a856942460c70f2d46ab46c0717",
+    shared: "1b37a7cb3e48973040dc0b793d7952096267f35ac6d1fb80508d9f1253d0195d",
     kit: "ebb4554d51e7d3b0743ed2808c315ebee0ac3c04a04f0be3e25548717c857df2",
   },
   "platform-fighter": {
-    shared: "eb673671121ce4a3500b0cecf7886214bdd45de99e0adc86de2b69047a9e6793",
+    shared: "d61a7223e81ca9e4d62f8468f53ef016870866805e74639625d4d01d15285735",
     kit: "48b37d96c7aae550f671323aac102e7617b4a010bd9769b1909d2b2eb644eae1",
   },
   platformer: {
-    shared: "664b3aeb8a5fa97ce6d899d40a833e74c6b3c61e1268ea445b3abf069364bc74",
+    shared: "4b9352a29833118ae662af38dbc91b3f945977a93e4a9db7af2e653e76d49e87",
     kit: "67a3ade19e081bacedafec15f82bf5f545b57c300b162ed257fd638666973b11",
   },
   puzzle: {
-    shared: "c656d596d5e71b7a433a0b8fe77aabca62e213274c898a26784605a9baef479a",
+    shared: "188efb785a7a9aad06070ed286a26018d385656cda7b8940d6c0e0e453dab5c3",
     kit: "bc328bbbadf3c59a729acf9b6f2ef0b700cbb04369a624a0baceaebf1b194e8c",
   },
   racing: {
-    shared: "e8dac325041cab11eb79e9bcb755e30a83604227f889513deba7d4720f88bcb6",
+    shared: "a88f5004230e3b706f8bec10b226c4fecadfc185de8df82eb5cdad05042e9e27",
     kit: "d6237297ca702738d7f27b27c8b436fc58b9ae7a4e9666904d0d7bc1f294c952",
   },
   "rail-shooter": {
-    shared: "22cf26e09090b4f120a02af9fab8b4ab40e5bf990f1a6e0fd7334cfd8156d920",
+    shared: "6d86c582e381a861bcbcfbbc38b4b53ff49a1fed00c093c7d954223ad4a67a0d",
     kit: "9cd9ca5b804d81e728d46043521cbabacf9001d53e1f8a1480f01cc457df7f4f",
   },
   rain: {
-    shared: "a343cb1f4adb9dc29ba812dc57bf41c23b9b7f2f8197de16d5c4d336bdf16135",
+    shared: "dd4158b5eaa87985199d363204b4de862ce19a2480c861dd633ba84b7350cabb",
     kit: "3107be8e2ef71b1f76f181ef55795db7cda6eda1c461f67bfcacadc1bca9c27a",
   },
   rhythm: {
-    shared: "c229b58b5d157a16a616957a2228b01b8006fc8dfbed4d3971b2e0365aced14d",
+    shared: "1feaf80794b389225cbb3f2a9609341242582f0b95e0bbf5f707533a8469a98c",
     kit: "1dc514683ef19615a3e7a525cd1abff0b917f9ff8e52a3386debba7ec006fed5",
   },
   rpg: {
-    shared: "4948b56ba74a20f84c1aceebc30802e590804ce8a5edfad3f57730834582d444",
+    shared: "2c3909b16bcd1fa780655e2efd95c3c46869fba5bcdac1f52485158f86c9d8c5",
     kit: "828c434a1e9f1538f73dac22e2ac74ad10715cf75af0ba06ff3f445c59af89a2",
   },
   rts: {
-    shared: "95d8e55c1a92ddd32cc9c64a59b0724ff3f7be649e3bec724e892e5b36c1cc6d",
+    shared: "81825f9ef1abf120fb8f3ae6c64ef6f6f4623f838f02538a6f63c75e95c62e38",
     kit: "10a875943345e2fa3dca4be37b0b2b8f59285523d3ba61ccbe571e57a824744a",
   },
   runner: {
-    shared: "4f2f4aa409207b3bf5da8fa8481986ac0424ac6e9486808b7fc5128b157b02d5",
+    shared: "dd7da116bda1775e21186825b098125ba718a0d917a8ab699da49382d98cdc61",
     kit: "57144155fdef73fe7e2cc44275e93fd485c0d47987ba18d63bb6a13b2394039a",
   },
   sailing: {
-    shared: "4b61e008c78ee885ce557072366e8073105fa0d5b00b56ab4130d8b2940c01b8",
+    shared: "9b7793e4fb003b573651502adec76bf4d97d3bd74f42dcace351e17e361a89f8",
     kit: "26a54577b5c97ab364d39a07412c4c78ff3de0d64e2458b7c7516299cea77ca1",
   },
   shooter: {
-    shared: "8be14c10ecff40885f461b0e15dbf20619d810fb733c4286d4139b526e0dc47d",
+    shared: "d42b263e37d3b27b5f9ece61e803ccab21db631fffb3784e4dce1400ddc3cba7",
     kit: "f5bcf67fd72155771b989af855b9baa8ef045163fd6a55525025e0ab6b41ea40",
   },
   snow: {
-    shared: "fcbb3583afdd64936fdcb596d237f634a44b2dac6e60a2c24003342201f5fabe",
+    shared: "621223ccfd93333837ad9458286744c23e5e82d0445bc2d5dcfe17791fcd0147",
     kit: "8a0513b00f16a5e95ee3c143e441514d9d96f99299af84df69d7d9bfc5aca9de",
   },
   starter: {
-    shared: "9385857b46497bf1f5de8ca1630f56ffdd687ada567f0895edf865e69151d350",
+    shared: "ab2faca2162d6737df75721d1c0c3b2c73277ca45f0002f1536e7707bbba5fae",
     kit: "02e487a395ad0aa0c80236f4f312ea81cf0bf385a0ef08614f5551b8c2fa94bd",
   },
   stealth: {
-    shared: "76c134c1f27ba5aa898aa8437e3788d621e413f3e7087b4df7b2ae9596d09619",
+    shared: "94d3ef9af84cf73f077501a36e9ff2ac4e4e0ae98bc370681179099c782d2805",
     kit: "4e6313689254dd68c16e6163e6e37d35f5933996096d22fcdd9793316a44caa8",
   },
   "survival-horror": {
-    shared: "bc5a0b3062005fd14784326988e886ea7b7ad73394b22180f068fe6b6af7e3c8",
+    shared: "3e83918ae7ce25ea0f26e64538166fa67787d3e93f10783b7e88430950b699b4",
     kit: "cd15080b5f8fe86b57b0550a025e39a37950373beab04b724fb0127ac8b8aab5",
   },
   "tomb-explorer": {
-    shared: "e504054ed47e1a147b2975bf1168b3546e8bd0199e4bdd8a282cd361b65379ce",
+    shared: "f327b4ec63bc3a74d466c50ba3f71a9cdc03d5b18993feb46b4336885f64c9ff",
     kit: "a0c0767b43cbc19e2fcd3c653268c8ec1c0bcd3546c0f66393c3a4802ca7a762",
   },
   "tower-defense": {
-    shared: "eba4b129bd9ec142827d543a078b32cebbe7508f9b10cf1545ee8766b068bb42",
+    shared: "96d04685012985212a0bbaa026969edf2b8026a4454597a564cab2cfe5855df1",
     kit: "6095331399c592acd41dcdfdb55c043683c8148c628b53a371b4a4c1fc2b82b6",
   },
   // scaffold-pin:end
