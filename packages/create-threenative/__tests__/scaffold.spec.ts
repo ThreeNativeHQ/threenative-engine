@@ -17,7 +17,7 @@ import path from "node:path";
 import { promisify } from "node:util";
 import { compileAssets } from "@threenative/assets";
 import { read as readKTX2 } from "ktx-parse";
-import { describe, expect, it } from "vitest";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { rgbaPng } from "../../../test-support/png.js";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import { loadConfig } from "../src/config.js";
@@ -54,6 +54,29 @@ const ENGINE_MCP = "threenative-engine-mcp";
 // the server packages themselves.
 const CORE_SHIM = "./node_modules/@threenative/core/mcp";
 const ALL_TEMPLATES = discoverTemplateNames(TEMPLATE_ROOT);
+
+/**
+ * Every template scaffolded once, into one root, for the corpus-wide assertions below: one scaffold
+ * is ~37 MB of writes and ~45 ms of CPU per kit, and these tests only read the tree. The hook is
+ * `beforeAll` because `makeTempDir`'s per-test cleanup would delete the root under the next test;
+ * `afterAll` removes it, and the helper's process cleanup covers a crash.
+ */
+let corpusRoot: string | undefined;
+let corpusTargets: Readonly<Record<string, string>> | undefined;
+
+beforeAll(async () => {
+  corpusRoot = await makeTempDir("threenative-scaffold-corpus-");
+  const targets: Record<string, string> = {};
+  for (const template of ALL_TEMPLATES)
+    targets[template] = (
+      await createProject({ install: false, target: template, template }, corpusRoot)
+    ).target;
+  corpusTargets = targets;
+});
+
+afterAll(async () => {
+  if (corpusRoot !== undefined) await rm(corpusRoot, { force: true, recursive: true });
+});
 const AGENT_ROLE_PATHS = [
   ".threenative/agents/builder.md",
   ".threenative/agents/verifier.md",
@@ -465,101 +488,84 @@ describe("create-threenative", () => {
   );
 
   it("keeps every no-install scaffold tree byte-stable, in a shared and a kit hash", async () => {
-    const root = await makeTempDir("threenative-scaffold-stability-");
-    try {
-      const actual: Record<string, IScaffoldTreePin> = {};
-      for (const template of ALL_TEMPLATES) {
-        const { target } = await createProject(
-          { install: false, target: template, template },
-          root,
+    const targets = corpusTargets as Readonly<Record<string, string>>;
+    const actual: Record<string, IScaffoldTreePin> = {};
+    for (const template of ALL_TEMPLATES) {
+      const target = targets[template] as string;
+      expect(SCAFFOLD_TREE_HASHES[template]).toBeDefined();
+      const buckets = await scaffoldTreeBuckets(target, template);
+      actual[template] = { kit: buckets.kit, shared: buckets.shared };
+      if (template === "platformer") {
+        await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
+      }
+      if (template === "collectathon" || template === "adventure") {
+        // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
+        // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
+        // traced in PROVENANCE.md.
+        const files = await readdir(path.join(target, "assets"), { recursive: true });
+        const sizes = await Promise.all(
+          files.map(async (file) => {
+            const info = await stat(path.join(target, "assets", file));
+            return info.isFile() ? info.size : 0;
+          }),
         );
-        expect(SCAFFOLD_TREE_HASHES[template]).toBeDefined();
-        const buckets = await scaffoldTreeBuckets(target, template);
-        actual[template] = { kit: buckets.kit, shared: buckets.shared };
-        if (template === "platformer") {
-          await expect(stat(path.join(target, "assets/sky.jpg"))).rejects.toThrow(/ENOENT/u);
-        }
-        if (template === "collectathon" || template === "adventure") {
-          // Hop Garden's and Lantern Vale's geometry is procedural; their tiling surfaces are images (owner,
-          // 2026-10-24: "make sure it doesnt bloat the games with many mb"): at most 1.5 MB, each
-          // traced in PROVENANCE.md.
-          const files = await readdir(path.join(target, "assets"), { recursive: true });
-          const sizes = await Promise.all(
-            files.map(async (file) => {
-              const info = await stat(path.join(target, "assets", file));
-              return info.isFile() ? info.size : 0;
-            }),
-          );
-          expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
-          // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
-          const provenance = await readFile(
-            path.join(target, "assets", "tex-PROVENANCE.md"),
-            "utf8",
-          );
-          const textures = files.filter((name) => name.endsWith(".webp"));
-          expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
-          for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
-        }
-        if (template === "kart") {
-          // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
-          // no image or model file but the shared icon, so every texture is painted in code.
-          await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
-          const media = (await readdir(target, { recursive: true })).filter(
-            (file) =>
-              /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
-              file !== path.join("public", "icon.png"),
-          );
-          expect(media).toEqual([]);
-        }
+        expect(sizes.reduce((sum, size) => sum + size, 0)).toBeLessThanOrEqual(1_500_000);
+        // The textures ship once in `template-assets/assets/tex-*`; the licence record follows.
+        const provenance = await readFile(path.join(target, "assets", "tex-PROVENANCE.md"), "utf8");
+        const textures = files.filter((name) => name.endsWith(".webp"));
+        expect(textures).toHaveLength(template === "collectathon" ? 12 : 5);
+        for (const file of textures) expect(provenance).toContain(path.basename(file).slice(4));
       }
-      // Two hashes per kit, so a stale pin says which side of the scaffold moved.
-      for (const [template, buckets] of Object.entries(actual)) {
-        expect(SCAFFOLD_TREE_HASHES[template], template).toEqual({
-          kit: buckets.kit,
-          shared: buckets.shared,
-        });
+      if (template === "kart") {
+        // Clover Cup is all procedural (owner, 2026-10-24): no assets folder and
+        // no image or model file but the shared icon, so every texture is painted in code.
+        await expect(stat(path.join(target, "assets"))).rejects.toThrow(/ENOENT/u);
+        const media = (await readdir(target, { recursive: true })).filter(
+          (file) =>
+            /\.(png|jpe?g|webp|ktx2|hdr|exr|glb|gltf|fbx|obj)$/u.test(file) &&
+            file !== path.join("public", "icon.png"),
+        );
+        expect(media).toEqual([]);
       }
-      expect(Object.keys(actual).sort()).toEqual([...ALL_TEMPLATES].sort());
-    } finally {
-      await rm(root, { force: true, recursive: true });
     }
+    // Two hashes per kit, so a stale pin says which side of the scaffold moved.
+    for (const [template, buckets] of Object.entries(actual)) {
+      expect(SCAFFOLD_TREE_HASHES[template], template).toEqual({
+        kit: buckets.kit,
+        shared: buckets.shared,
+      });
+    }
+    expect(Object.keys(actual).sort()).toEqual([...ALL_TEMPLATES].sort());
   });
 
   it("ships the quality gate as two thin root configs and three scripts in every template", async () => {
-    const root = await makeTempDir("threenative-quality-config-");
-    try {
-      for (const template of ALL_TEMPLATES) {
-        const { target } = await createProject(
-          { install: false, target: template, template },
-          root,
-        );
-        const nonblank = (
-          await Promise.all(
-            ["eslint.config.js", "biome.json"].map((name) =>
-              readFile(path.join(target, name), "utf8"),
-            ),
-          )
+    const targets = corpusTargets as Readonly<Record<string, string>>;
+    for (const template of ALL_TEMPLATES) {
+      const target = targets[template] as string;
+      const nonblank = (
+        await Promise.all(
+          ["eslint.config.js", "biome.json"].map((name) =>
+            readFile(path.join(target, name), "utf8"),
+          ),
         )
-          .join("\n")
-          .split("\n")
-          .filter((line) => line.trim() !== "").length;
-        expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
-        const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
-          devDependencies: Record<string, string>;
-          scripts: Record<string, string>;
-        };
-        expect(manifest.scripts.check, template).toBe(
-          "pnpm typecheck && pnpm lint && pnpm format:check",
-        );
-        expect(manifest.scripts.lint, template).toBe("eslint src");
-        expect(manifest.scripts["format:check"], template).toBe("biome format src");
-        expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
-        expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
-        expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
-        expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
-      }
-    } finally {
-      await rm(root, { force: true, recursive: true });
+      )
+        .join("\n")
+        .split("\n")
+        .filter((line) => line.trim() !== "").length;
+      expect(nonblank, `${template} config lines`).toBeLessThanOrEqual(80);
+      const manifest = JSON.parse(await readFile(path.join(target, "package.json"), "utf8")) as {
+        devDependencies: Record<string, string>;
+        scripts: Record<string, string>;
+      };
+      expect(manifest.scripts.check, template).toBe(
+        "pnpm typecheck && pnpm lint && pnpm format:check",
+      );
+      expect(manifest.scripts.lint, template).toBe("eslint src");
+      expect(manifest.scripts["format:check"], template).toBe("biome format src");
+      expect(manifest.scripts.test, template).toMatch(/^pnpm check && /u);
+      expect(manifest.devDependencies.eslint, template).toMatch(/^\d/u);
+      expect(manifest.devDependencies["@biomejs/biome"], template).toMatch(/^\d/u);
+      expect(Object.values(manifest.scripts).join(" "), template).not.toContain("npx");
     }
   });
 

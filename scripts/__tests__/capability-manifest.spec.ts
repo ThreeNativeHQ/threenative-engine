@@ -8,6 +8,7 @@ import {
 } from "../../packages/engine-mcp/src/index.js";
 import { makeTempDir } from "../../test-support/temp-dir.js";
 import {
+  type ICapabilityManifest,
   buildCapabilityManifest,
   checkCapabilityManifest,
   checkCapabilityScaffoldImports,
@@ -23,6 +24,17 @@ afterEach(async () => {
     temporaryRoots.splice(0).map((root) => rm(root, { recursive: true, force: true })),
   );
 });
+
+/**
+ * This checkout's manifest, built and checked once per file. `checkCapabilityManifest` parses every
+ * package's sources and every template's imports — seconds of CPU — and five assertions below read
+ * the same tree, which no test in this file writes to.
+ */
+let workspaceManifest: Promise<ICapabilityManifest> | undefined;
+function checkedWorkspaceManifest(): Promise<ICapabilityManifest> {
+  workspaceManifest ??= checkCapabilityManifest(process.cwd());
+  return workspaceManifest;
+}
 
 async function writePackage(
   root: string,
@@ -293,7 +305,7 @@ describe("capability manifest generator", () => {
   // A `.ts` source parsed as TSX read `const cached = <T>(…) =>` in assets.ts as JSX and dropped every
   // export after it: `fetchAsset` had no entry, and `pnpm budgets` failed on its missing doc tags.
   it("keeps an export that follows a generic arrow function in a .ts source", async () => {
-    const manifest = await checkCapabilityManifest(process.cwd());
+    const manifest = await checkedWorkspaceManifest();
     const entry = manifest.entries.find(
       (candidate) =>
         candidate.importPath === "@threenative/core" && candidate.symbol === "fetchAsset",
@@ -302,7 +314,7 @@ describe("capability manifest generator", () => {
   });
 
   it("proves the committed manifest contains the navigation regression entry", async () => {
-    const manifest = await checkCapabilityManifest(process.cwd());
+    const manifest = await checkedWorkspaceManifest();
     expect(manifest.entries.length).toBeGreaterThan(0);
     expect(manifest.entries).toContainEqual(
       expect.objectContaining({
@@ -312,8 +324,8 @@ describe("capability manifest generator", () => {
     );
   });
 
-  it("follows a re-export into a vendored .d.ts sidecar", () => {
-    const manifest = buildCapabilityManifest(process.cwd());
+  it("follows a re-export into a vendored .d.ts sidecar", async () => {
+    const manifest = await checkedWorkspaceManifest();
     for (const symbol of ["scatter", "sky", "terrain"]) {
       expect(manifest.entries).toContainEqual(
         expect.objectContaining({
@@ -367,7 +379,7 @@ describe("capability manifest generator", () => {
       "velocityTexture",
       "withVelocityContext",
     ]);
-    const manifest = await checkCapabilityManifest(process.cwd());
+    const manifest = await checkedWorkspaceManifest();
     const entries = manifest.entries.filter(
       (entry) => entry.importPath === "@threenative/core" && velocitySymbols.has(entry.symbol),
     );
@@ -714,7 +726,7 @@ describe("capability manifest generator", () => {
   });
 
   it("maps every authored alias to a named predecessor corpus row", async () => {
-    const manifest = await checkCapabilityManifest(process.cwd());
+    const manifest = await checkedWorkspaceManifest();
     const aliases = manifest.entries.flatMap((entry) => entry.aliases ?? []);
     const predecessorRows = {
       "third-person camera": { ids: ["request.third-person-camera"], owners: ["defineGame"] },
