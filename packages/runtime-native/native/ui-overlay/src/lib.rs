@@ -49,6 +49,14 @@ pub(crate) fn point_in_regions(regions: &[f32], nx: f32, ny: f32) -> bool {
     })
 }
 
+/// A view's `y` as a fraction from the top, the way the page measures its rectangles. AppKit views
+/// count from the bottom unless they are flipped.
+#[cfg(any(target_os = "macos", test))]
+pub(crate) fn from_top(y: f64, height: f64, flipped: bool) -> f32 {
+    let fraction = y / height;
+    (if flipped { fraction } else { 1.0 - fraction }) as f32
+}
+
 /// The published-region hit test shared by the ABI's `tn_ui_overlay_hit_test` on every backend.
 pub(crate) fn hit_test(nx: f32, ny: f32) -> bool {
     HIT_REGIONS.with(|regions| point_in_regions(&regions.borrow(), nx, ny))
@@ -142,7 +150,27 @@ pub(crate) fn pointer_injection_script(
 
 #[cfg(test)]
 mod tests {
-    use super::{json_string, point_in_regions, pointer_injection_script, pointer_owner};
+    use super::{from_top, json_string, point_in_regions, pointer_injection_script, pointer_owner};
+
+    // PRD-927: AppKit hands `hitTest:` a bottom-up point; the page publishes top-down rectangles.
+    #[test]
+    fn an_appkit_point_is_measured_from_the_top_of_the_page() {
+        // Midway's TAKE THE DECK, 0.742..0.820 from the top of a 653-point view.
+        let deck = [0.06, 0.742, 0.203, 0.078];
+        let bottom_up = 653.0 * (1.0 - 0.78);
+        assert!(point_in_regions(
+            &deck,
+            0.16,
+            from_top(bottom_up, 653.0, false)
+        ));
+        assert!(!point_in_regions(&deck, 0.16, (bottom_up / 653.0) as f32));
+        // A flipped view already counts from the top.
+        assert!(point_in_regions(
+            &deck,
+            0.16,
+            from_top(653.0 * 0.78, 653.0, true)
+        ));
+    }
 
     // PRD-927: the Windows window procedure routes each mouse message by this rule.
     #[test]
@@ -156,15 +184,24 @@ mod tests {
         // A press on a button belongs to the page, and starts its ownership.
         assert_eq!(pointer_owner(None, true, false, true), (true, Some(true)));
         // Dragged off the button, the page keeps it.
-        assert_eq!(pointer_owner(Some(true), false, false, false), (true, Some(true)));
+        assert_eq!(
+            pointer_owner(Some(true), false, false, false),
+            (true, Some(true))
+        );
         // The release still reaches the page, and ends the press.
         assert_eq!(pointer_owner(Some(true), false, true, false), (true, None));
     }
 
     #[test]
     fn a_drag_that_starts_on_the_game_is_not_taken_by_a_button_it_crosses() {
-        assert_eq!(pointer_owner(None, true, false, false), (false, Some(false)));
-        assert_eq!(pointer_owner(Some(false), false, false, true), (false, Some(false)));
+        assert_eq!(
+            pointer_owner(None, true, false, false),
+            (false, Some(false))
+        );
+        assert_eq!(
+            pointer_owner(Some(false), false, false, true),
+            (false, Some(false))
+        );
         assert_eq!(pointer_owner(Some(false), false, true, true), (false, None));
     }
 

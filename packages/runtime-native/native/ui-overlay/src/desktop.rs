@@ -468,16 +468,18 @@ declare_class!(
             if bounds.size.width <= 0.0 || bounds.size.height <= 0.0 {
                 return std::ptr::null_mut();
             }
-            let x = point.x / bounds.size.width;
-            let y = point.y / bounds.size.height;
-            for region in regions.chunks_exact(4) {
-                if x >= region[0] as f64
-                    && y >= region[1] as f64
-                    && x <= (region[0] + region[2]) as f64
-                    && y <= (region[1] + region[3]) as f64
-                {
-                    return unsafe { msg_send![super(self), hitTest: point] };
-                }
+            // `point` is in the superview's space; the page's rectangles are fractions of this view,
+            // from its top, and an unflipped AppKit view counts from the bottom.
+            let superview = unsafe { self.superview() };
+            let from: *const NSView = superview
+                .as_deref()
+                .map_or(std::ptr::null(), |view| view as *const NSView);
+            let local: CGPoint = unsafe { msg_send![self, convertPoint: point, fromView: from] };
+            let flipped: bool = unsafe { msg_send![self, isFlipped] };
+            let x = (local.x / bounds.size.width) as f32;
+            let y = crate::from_top(local.y, bounds.size.height, flipped);
+            if crate::point_in_regions(&regions, x, y) {
+                return unsafe { msg_send![super(self), hitTest: point] };
             }
             std::ptr::null_mut()
         }
