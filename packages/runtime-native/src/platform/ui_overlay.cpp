@@ -929,6 +929,9 @@ void uiOverlaySetPointerKind(bool touch) {
 }
 
 bool uiOverlayTakesOsPointer() {
+#if TN_ENABLE_CSS_UI
+    if (g_cssBackend) return false;  // the CSS UI has no view of its own: it sees the pointer only here
+#endif
 #if defined(_WIN32) || defined(__APPLE__)
     return uiOverlayAttached();
 #else

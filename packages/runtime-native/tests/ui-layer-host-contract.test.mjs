@@ -198,6 +198,7 @@ bool uiOverlayHitTest(float x, float y) { return x >= 0.1f && x <= 0.3f && y >= 
 bool uiOverlayInjectPointer(const char* type, float, float, int, int) { delivered = type; return true; }
 void traceUiLatency(const char*, unsigned long long, const char*) {}
 size_t uiOverlayHitRegionCount() { return 0; }
+bool uiOverlayTakesOsPointer() { return false; }  // Linux: the offscreen view sees the pointer only through the host
 ${extract(overlay, /struct UiPointerGesture \{[\s\S]*?\n\};\nUiPointerGesture g_uiGesture;/u)}
 ${extract(overlay, /bool uiOverlayRoutePointer\([\s\S]*?\n\}/u)}
 ${extract(overlay, /void detachDesktopUiOverlay\(\) \{[\s\S]*?\n\}/u)}
