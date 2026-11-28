@@ -1,5 +1,5 @@
 import { makeTempDir } from "../../../test-support/temp-dir.js";
-import { writeFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { afterEach, expect, test, vi } from "vitest";
 
@@ -51,7 +51,7 @@ async function scenarioArguments(): Promise<string[]> {
   return ["--project", project, "--scenario", "*.playtest.json"];
 }
 
-function report(pass: boolean, diagnostics: Array<{ code: string }> = []) {
+function report(pass: boolean, diagnostics: Array<{ code: string; message?: string; severity?: string }> = []) {
   return { assertionResults: [{ id: "movement", pass }], diagnostics, pass };
 }
 
@@ -149,4 +149,107 @@ test("CLI includes the original callsite when an async runner operation rejects"
   expect(diagnostic.diagnostics[0]?.code).toBe("TN_PLAYTEST_RUNNER_FAILED");
   expect(diagnostic.diagnostics[0]?.message).toContain("async settlement operation failed");
   expect(diagnostic.diagnostics[0]?.message).toContain("failAsyncRunnerOperation");
+});
+
+async function runCapturing(args: string[]): Promise<{ exitCode: number; stdout: string }> {
+  const output: string[] = [];
+  const originalWrite = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    output.push(String(chunk));
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    return { exitCode: await main(args), stdout: output.join("") };
+  } finally {
+    process.stdout.write = originalWrite;
+  }
+}
+
+function bigReport(pass: boolean) {
+  return {
+    ...report(pass, [
+      { code: "TN_WARN", message: "same", severity: "warning" },
+      { code: "TN_WARN", message: "same", severity: "warning" },
+    ]),
+    after: { frame: 9, position: [1, 2, 3] },
+    artifactDirectory: "/tmp/artifacts",
+    frames: 9,
+    movementDelta: [1, 0, 0],
+    observations: { console: [], resources: { score: { after: { points: 3 } } }, blob: "x".repeat(200_000) },
+    scenario: "big",
+  };
+}
+
+test("--summary prints a compact verdict, --out keeps the full report, exit code is kept", async () => {
+  runStandalonePlaytests.mockResolvedValueOnce([bigReport(false)]);
+  const outFile = join(await makeTempDir("playtest-cli-out-"), "full.json");
+
+  const { exitCode, stdout } = await runCapturing([...await scenarioArguments(), "--summary", "--out", outFile]);
+
+  expect(exitCode).toBe(1);
+  expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
+  const summary = JSON.parse(stdout) as { out: string; pass: boolean; scenarios: Array<Record<string, unknown>> };
+  expect(summary.pass).toBe(false);
+  expect(summary.out).toBe(outFile);
+  expect(summary.scenarios[0]).toMatchObject({
+    artifactDirectory: "/tmp/artifacts",
+    diagnosticDetails: [{ code: "TN_WARN", count: 2, message: "same" }],
+    failed: ["movement"],
+    finalState: { after: { frame: 9 }, resources: { score: '{"points":3}' } },
+    movementDelta: [1, 0, 0],
+  });
+  const full = JSON.parse(await readFile(outFile, "utf8")) as { observations: { blob: string } };
+  expect(full.observations.blob).toHaveLength(200_000);
+});
+
+test("--summary stays under 4 KB for a failing run with 50+ long error diagnostics and many failed assertions", async () => {
+  const diagnostics = Array.from({ length: 60 }, (_, index) => ({ code: `TN_ERR_${index}`, message: `error ${index} ${"m".repeat(500)}`, severity: "error" }));
+  const failing = {
+    ...bigReport(false),
+    assertionResults: Array.from({ length: 40 }, (_, index) => ({ details: { why: "d".repeat(500) }, id: `assertion-${index}-${"i".repeat(200)}`, pass: false })),
+    diagnostics,
+  };
+  runStandalonePlaytests.mockResolvedValueOnce([failing]);
+
+  const { stdout } = await runCapturing([...await scenarioArguments(), "--summary"]);
+
+  expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
+  const [scenario] = (JSON.parse(stdout) as { scenarios: Array<Record<string, unknown>> }).scenarios;
+  expect(scenario).not.toHaveProperty("reasons");
+  expect(scenario).not.toHaveProperty("diagnostics");
+  expect(scenario).toMatchObject({ failedTotal: 40, diagnosticKinds: 60 });
+});
+
+test("--summary over 10+ scenarios keeps stdout under 4 KB, failing scenarios first, with a count and an --out pointer", async () => {
+  const many = Array.from({ length: 14 }, (_, index) => ({ ...bigReport(index % 5 !== 0), scenario: `s${index}` }));
+  runStandalonePlaytests.mockResolvedValueOnce(many);
+  const outFile = join(await makeTempDir("playtest-cli-out-"), "full.json");
+
+  const { stdout } = await runCapturing([...await scenarioArguments(), "--summary", "--out", outFile]);
+
+  expect(Buffer.byteLength(stdout)).toBeLessThan(4096);
+  const summary = JSON.parse(stdout) as { omitted: number; note: string; out: string; scenarios: Array<{ pass: boolean; scenario: string }> };
+  expect(summary.out).toBe(outFile);
+  expect(summary.omitted).toBeGreaterThan(0);
+  expect(summary.scenarios.length + summary.omitted).toBe(14);
+  expect(summary.note).toContain("--out");
+  expect(summary.scenarios.slice(0, 3).map(({ scenario }) => scenario).sort()).toEqual(["s0", "s10", "s5"]);
+  expect(summary.scenarios.slice(0, 3).every(({ pass }) => !pass)).toBe(true);
+});
+
+test("--no-observations drops observations from stdout and --out, exit code is kept", async () => {
+  runStandalonePlaytests.mockResolvedValueOnce([bigReport(true)]);
+  const outFile = join(await makeTempDir("playtest-cli-out-"), "slim.json");
+
+  const { exitCode, stdout } = await runCapturing([...await scenarioArguments(), "--no-observations", "--out", outFile]);
+
+  expect(exitCode).toBe(0);
+  expect(stdout).not.toContain("observations");
+  expect(await readFile(outFile, "utf8")).not.toContain("observations");
+});
+
+test("without the new flags stdout stays the full report", async () => {
+  runStandalonePlaytests.mockResolvedValueOnce([bigReport(true)]);
+  const { stdout } = await runCapturing(await scenarioArguments());
+  expect(JSON.parse(stdout)).toMatchObject({ observations: { blob: "x".repeat(200_000) } });
 });

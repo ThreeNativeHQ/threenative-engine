@@ -1,6 +1,6 @@
 {
   "name": "@threenative/procedural-environment",
-  "version": "0.1.11",
+  "version": "0.1.12",
   "license": "MIT",
   "description": "Optional, bake-first procedural nature GLBs for ThreeNative: trees and cover (Arbor), forest floor (forest-kit) and rocks, cliffs and mountains (Outcrop), found by biome.",
   "homepage": "https://github.com/ThreeNativeHQ/threenative#readme",
@@ -48,6 +48,7 @@
     "@threenative/core": "workspace:*",
     "@types/node": "catalog:",
     "@types/three": "catalog:",
+    "gltf-validator": "2.0.0-dev.3.10",
     "publint": "0.3.22",
     "tsup": "8.5.1",
     "typescript": "catalog:",

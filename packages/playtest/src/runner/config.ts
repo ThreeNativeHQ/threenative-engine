@@ -40,6 +40,12 @@ export interface IStandalonePlaytestConfig {
    * takes whether or not anything reads them.
    */
   captureArtifactScreenshots?: boolean;
+  /** `--no-observations`: drop `observations` from the printed and written report. */
+  omitObservations?: boolean;
+  /** `--out`: the file that receives the full JSON report. */
+  outPath?: string;
+  /** `--summary`: print the compact summary instead of the full report. */
+  summary?: boolean;
   browserArgs?: readonly string[];
   /** Write a Chrome DevTools `.cpuprofile` for this run (browser and desktop targets). */
   cpuProfilePath?: string;
@@ -101,6 +107,9 @@ export const PLAYTEST_FLAGS = {
   "--artifacts": { default: "artifacts/playtest", summary: "artifact output directory", takesValue: true },
   "--build-report": { default: "none", summary: "the <artifact>.build-report.json threenative build published; its performanceBudget bounds every scenario, and a stale or foreign report refuses the run", takesValue: true },
   "--skip-check": { default: "false", summary: "skip an installed project's typecheck and lint scripts, which otherwise run first and fail the run (reported as TN_PLAYTEST_CHECK_SKIPPED)", takesValue: false },
+  "--summary": { default: "false", summary: "print one compact JSON summary (under 4 KB: verdict, movementDelta, failed assertions, top diagnostics, final state, artifact paths) instead of the full report", takesValue: false },
+  "--out": { default: "none", summary: "write the full JSON report to this file; stdout then carries only the summary when --summary is set", takesValue: true },
+  "--no-observations": { default: "false", summary: "drop the per-run observations (often megabytes) from the report", takesValue: false },
   "--no-screenshots": { default: "false", summary: "skip the before/after artifact frames; scenarios that assert on a frame still capture one", takesValue: false },
   "--browser-arg": { allowDashValue: true, default: "none (repeatable)", repeatable: true, summary: "one additional Chromium argument", takesValue: true },
   "--browser-recipe": { default: "none", summary: "named browser recipe (webgpu, which also launches headed)", takesValue: true },
@@ -251,6 +260,7 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     throw new PlaytestCliUsageError(`Unknown target '${target}'. Expected 'browser', 'android', 'desktop', or 'ios'.`);
   }
   const projectPath = resolve(cwd, flags.get("--project")?.[0] ?? ".");
+  const outFlag = flags.get("--out")?.[0];
   const serverCommand = flags.get("--server-command")?.[0];
   const requestedPort = readPort(flags.get("--port")?.[0]);
   const urlPort = portFromUrl(url);
@@ -365,6 +375,9 @@ export function parseStandalonePlaytestArgs(argv: readonly string[], cwd = proce
     },
     artifactDirectory: resolve(projectPath, flags.get("--artifacts")?.[0] ?? "artifacts/playtest"),
     captureArtifactScreenshots: !argv.includes("--no-screenshots"),
+    ...(argv.includes("--no-observations") ? { omitObservations: true } : {}),
+    ...(outFlag === undefined ? {} : { outPath: resolve(projectPath, outFlag) }),
+    ...(argv.includes("--summary") ? { summary: true } : {}),
     ...(browserArgs.length === 0 ? {} : { browserArgs }),
     ...(buildReport === undefined ? {} : { buildReportPath: resolve(projectPath, buildReport) }),
     ...(cpuProfilePath === undefined ? {} : { cpuProfilePath: resolve(projectPath, cpuProfilePath) }),

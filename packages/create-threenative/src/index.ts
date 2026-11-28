@@ -11,6 +11,7 @@ import {
   readdir,
   rename,
   rm,
+  rmdir,
   symlink,
   writeFile,
 } from "node:fs/promises";
@@ -79,6 +80,11 @@ export interface IKitManifest {
 
 export interface IScaffoldOptions {
   install?: boolean;
+  /**
+   * `--minimal` / `--strip-demo-playtests`: keep `playtests/survives.playtest.json` and drop the
+   * kit's other demo scenarios, which a divergent brief only deletes again (thousands of lines).
+   */
+  minimal?: boolean;
   packageSources?: PackageSources;
   target: string;
   template?: ScaffoldTemplate;
@@ -531,12 +537,14 @@ export function cliHelp(): string {
     "       npx create-threenative inspect <file.glb> [--json]",
     "",
     "Commands:",
-    "  inspect <file>      Report the facts in a glTF asset.",
+    "  inspect <file>      Report the facts in a glTF asset (also: --manifest, --frame <image>).",
     "",
     "Options:",
     "  --template <name>  Choose a template.",
     "  --genre <name>     Choose a kit by its genre or a word its kit.json lists (mario, zelda); unknown words use minimal.",
     "  --no-install       Copy the project without running pnpm install.",
+    "  --minimal          Keep only playtests/survives.playtest.json; drop the kit's other demo",
+    "                     playtests (alias: --strip-demo-playtests). For a brief that diverges from the kit.",
     "  --help             Show this help.",
     "",
     "Templates:",
@@ -1230,6 +1238,34 @@ async function discardScaffold(target: string, existedBefore: boolean): Promise<
   }
 }
 
+/** Every `*.playtest.json` under `playtests/` and `native-playtests/` except the survives proof. */
+async function stripDemoPlaytests(target: string): Promise<void> {
+  const keep = path.join(target, "playtests", "survives.playtest.json");
+  const strip = async (directory: string): Promise<void> => {
+    for (const entry of await readdir(directory, { withFileTypes: true }).catch(() => [])) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) {
+        await strip(full);
+        if ((await readdir(full)).length === 0) await rm(full, { recursive: true });
+      } else if (entry.name.endsWith(".playtest.json") && full !== keep) await rm(full);
+    }
+  };
+  await strip(path.join(target, "playtests"));
+  await strip(path.join(target, "native-playtests"));
+  await rmdir(path.join(target, "native-playtests")).catch(() => undefined); // emptied above; gone if it never existed
+  // A script that runs a stripped scenario would fail on a fresh game: drop it with the files.
+  const manifestPath = path.join(target, "package.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  const dangling = Object.keys(manifest.scripts ?? {}).filter((name) =>
+    manifest.scripts?.[name]?.includes("native-playtests/"),
+  );
+  if (dangling.length === 0) return;
+  for (const name of dangling) delete manifest.scripts?.[name];
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
 export async function createProject(
   options: IScaffoldOptions,
   cwd = process.cwd(),
@@ -1253,6 +1289,7 @@ export async function createProject(
     // `kit.json` is lookup data for `--genre` and `engine_search_capabilities`, which read the
     // packaged templates. Nothing in a generated game reads it (PRD-826).
     await rm(path.join(target, "kit.json"), { force: true });
+    if (options.minimal === true) await stripDemoPlaytests(target);
     if (["starter", "collectathon", "adventure", "kart"].includes(template))
       for (const relative of ADDED_RENDER_SOURCES)
         await cp(canonicalRenderSourcePath(relative, root), path.join(target, relative));
@@ -1311,7 +1348,13 @@ export function packageNameFromFlag(flag: string): string | undefined {
   return `@threenative/${suffix}`;
 }
 
-const BOOLEAN_FLAGS = new Set(["--no-install", "--help", "-h"]);
+const BOOLEAN_FLAGS = new Set([
+  "--no-install",
+  "--minimal",
+  "--strip-demo-playtests",
+  "--help",
+  "-h",
+]);
 const VALUE_FLAGS = new Set<string>([
   "--template",
   "--genre",
@@ -1378,6 +1421,9 @@ export function parseArgs(argv: readonly string[]): IScaffoldOptions {
   }
   return {
     install: !booleans.has("--no-install"),
+    ...(booleans.has("--minimal") || booleans.has("--strip-demo-playtests")
+      ? { minimal: true }
+      : {}),
     target,
     ...(Object.keys(packageSources).length === 0 ? {} : { packageSources }),
     ...(resolvedTemplate === undefined ? {} : { template: resolvedTemplate }),

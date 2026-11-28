@@ -54,6 +54,7 @@
     "@threenative/core": {
       "exports": [
         ".",
+        "./bake",
         "./hot",
         "./net",
         "./package.json",
@@ -69,6 +70,12 @@
         "./world"
       ],
       "symbols": {
+        "@threenative/core/bake#addPart": "export function addPart( parent: Object3D, geometry: BufferGeometry, material: Material, placement: IPartPlacement = { … }",
+        "@threenative/core/bake#createEmissiveMaterial": "export function createEmissiveMaterial( color: ColorRepresentation, intensity = 1, options: IPbrMaterialOptions = { … }",
+        "@threenative/core/bake#createPbrMaterial": "export function createPbrMaterial( color: ColorRepresentation, options: IPbrMaterialOptions = { … }",
+        "@threenative/core/bake#exportProceduralGlb": "export async function exportProceduralGlb( root: Object3D, outPath: string, options: IExportProceduralGlbOptions, ): Promise<IProceduralGlbReceipt> { … }",
+        "@threenative/core/bake#mergeByMaterial": "export function mergeByMaterial(root: Object3D, options: IMergeByMaterialOptions): Mesh[] { … }",
+        "@threenative/core/bake#prepareDonorWithoutMaterials": "export function prepareDonorWithoutMaterials<T extends Object3D>(root: T, material: Material): T { … }",
         "@threenative/core/hot#acceptHotUpdate": "export function acceptHotUpdate<TState extends Record<string, unknown>, TPhysics>( game: IGame<TState, TPhysics>, hot: IImportMeta[\"hot\"], ): void { … }",
         "@threenative/core/hot#assertPortableState": "export function assertPortableState(state: unknown): void { … }",
         "@threenative/core/net#connect": "export function connect(url: string, options: INetworkOptions): Promise<INetworkConnection> { … }",
@@ -394,7 +401,9 @@
         "src/game.ts#renderer.projection": "renderer.projection?: boolean | { materialChecks?: 'spread' | 'everyFrame' }",
         "src/input.ts#ctx.input.startJoyVibration": "ctx.input.startJoyVibration(weak: number, strong: number, durationMs: number, device = 0): boolean",
         "src/input.ts#ctx.input.vibrateHandheld": "ctx.input.vibrateHandheld(durationMs: number): boolean",
+        "src/input.ts#InputMap.clear": "InputMap.clear(): void",
         "src/input.ts#InputMap.setBinding": "ctx.input.setBinding(action: string, binding: IInputAction): void; ctx.input.bindings(): InputBindings",
+        "src/look/world-environment.ts#localExposureEnabled": "IWorldEnvironmentOptions.localExposureEnabled?: boolean",
         "src/scene.ts#ctx.after": "ctx.after(delay: number, callback: () => void): ScheduleHandle",
         "src/scene.ts#ctx.beforeRender": "ctx.beforeRender(callback: () => void): () => void",
         "src/scene.ts#ctx.quit": "ctx.quit(): void",
@@ -436,7 +445,8 @@
         "@threenative/physics#RigidBody3D": "export class RigidBody3D { … }",
         "@threenative/physics#ScatterColliders": "export class ScatterColliders { … }",
         "@threenative/physics#softBodyCollision": "export function softBodyCollision(...bodies: readonly RigidBody3D[]): ISoftBodyCollision { … }",
-        "@threenative/physics#VehicleBody3D": "export class VehicleBody3D extends RigidBody3D { … }"
+        "@threenative/physics#VehicleBody3D": "export class VehicleBody3D extends RigidBody3D { … }",
+        "src/simulation.ts#readContacts": "IPhysicsSimulation.readContacts?(target, colliders: Uint32Array, buffer: Float32Array): number"
       }
     },
     "@threenative/playtest": {
@@ -551,7 +561,9 @@
         "@threenative/playtest#requiredPlaytestCapabilities": "export function requiredPlaytestCapabilities( scenario: IPlaytestScenario, target?: string, ): PlaytestCapability[] { … }",
         "@threenative/playtest#resolveDiagnosticsPolicy": "export function resolveDiagnosticsPolicy( policy: IPlaytestDiagnosticsAssertion | undefined, target?: string, ): IPlaytestDiagnosticsPolicy { … }",
         "@threenative/playtest#summarizeDeviceMetrics": "export function summarizeDeviceMetrics( samples: readonly IPlaytestDeviceMetricsSample[], ): IPlaytestDeviceMetricsVerdict { … }",
-        "@threenative/playtest#unknownPlaytestCapabilities": "export function unknownPlaytestCapabilities(capabilities: readonly string[]): string[] { … }"
+        "@threenative/playtest#unknownPlaytestCapabilities": "export function unknownPlaytestCapabilities(capabilities: readonly string[]): string[] { … }",
+        "src/playtest-cli.ts#threenative-playtest --summary": "threenative-playtest <scenario> [--summary] [--out <file>] [--no-observations]",
+        "src/playtest-scenario.ts#waitForResource": "step: { waitForResource: { id: string; path: string; equals?: unknown }; timeoutMs: number }"
       }
     },
     "@threenative/procedural-environment": {
@@ -772,7 +784,9 @@
         "./terrain-kit",
         "./web-brand"
       ],
-      "symbols": {}
+      "symbols": {
+        "src/inspect.ts#threenative inspect": "threenative inspect <file.glb> | --manifest [--project <dir>] | --frame <image.png> [--sample role:u,v ...] [--json]"
+      }
     },
     "threenative-animation-mcp": {
       "exports": [".", "./package.json", "./pose-lab"],

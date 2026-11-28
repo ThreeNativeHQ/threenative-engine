@@ -13,6 +13,7 @@ import {
   validateRealismEffectsCoverage,
 } from "./realism-effects-coverage.js";
 import { RENDER_CHAIN_MANIFEST_ENTRIES } from "./render-chain-capabilities.js";
+import { TOOLING_MANIFEST_ENTRIES } from "./tooling-capabilities.js";
 import { publicWorkspacePackagesWithExports } from "./workspace-packages.js";
 
 /** The one committed manifest. `create-threenative` reads this copy; it keeps none of its own. */
@@ -743,6 +744,7 @@ export function buildCapabilityManifest(
       ...entry,
       aliases: entry.aliases ?? [],
     })),
+    ...TOOLING_MANIFEST_ENTRIES,
   ].sort((left, right) =>
     `${left.importPath}:${left.symbol}`.localeCompare(`${right.importPath}:${right.symbol}`),
   );

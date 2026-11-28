@@ -1,6 +1,6 @@
 {
   "name": "@threenative/core",
-  "version": "0.3.25",
+  "version": "0.3.26",
   "license": "MIT AND GPL-2.0-or-later",
   "description": "The small vanilla Three.js game runtime foundation.",
   "keywords": [
@@ -42,6 +42,10 @@
     ".": {
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
+    },
+    "./bake": {
+      "types": "./dist/bake.d.ts",
+      "import": "./dist/bake.js"
     },
     "./playtest": {
       "types": "./dist/playtest.d.ts",
@@ -107,8 +111,8 @@
     "chrome-devtools-mcp": "1.11.0",
     "three": "catalog:",
     "three-mesh-bvh": "catalog:",
-    "threenative-asset-mcp": "0.21.1",
-    "threenative-sculpt-mcp": "0.2.2",
+    "threenative-asset-mcp": "0.21.3",
+    "threenative-sculpt-mcp": "0.2.3",
     "zustand": "catalog:"
   },
   "devDependencies": {
@@ -127,7 +131,7 @@
     "@typescript/native": "catalog:"
   },
   "peerDependencies": {
-    "@threenative/playtest": ">=0.3.25 <0.4.0",
+    "@threenative/playtest": ">=0.3.26 <0.4.0",
     "react": ">=19.2.0 <20",
     "react-reconciler": ">=0.33.0 <0.34"
   },

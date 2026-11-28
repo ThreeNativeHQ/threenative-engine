@@ -1,5 +1,9 @@
-import { rm, writeFile } from "node:fs/promises";
+import { execFile } from "node:child_process";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { promisify } from "node:util";
+import { crc32, deflateSync } from "node:zlib";
 import { afterEach, describe, expect, it } from "vitest";
 import { makeTempDir } from "../../../test-support/temp-dir.js";
 import {
@@ -99,7 +103,11 @@ function inspectionFixture(scale = 1): Uint8Array {
         samplers: [{ input: 6, interpolation: "LINEAR", output: 7 }],
       },
     ],
-    asset: { generator: "ThreeNative inspect test", version: "2.0" },
+    asset: {
+      extras: { tnOrigin: "procedural" },
+      generator: "ThreeNative inspect test",
+      version: "2.0",
+    },
     bufferViews: [
       { buffer: 0, byteLength: 36, byteOffset: 0, target: 34962 },
       { buffer: 0, byteLength: 36, byteOffset: 36, target: 34962 },
@@ -298,5 +306,176 @@ describe("asset inspection", () => {
   it("accepts the JSON flag in either argument position", () => {
     expect(parseInspectArgs(["--json", "asset.glb"])).toEqual({ file: "asset.glb", json: true });
     expect(parseInspectArgs(["asset.glb", "--json"])).toEqual({ file: "asset.glb", json: true });
+  });
+
+  it("reports grounding, triangles, material names and asset extras", async () => {
+    const file = await temporaryAsset("grounded.glb", inspectionFixture());
+    const result = await inspectAsset(file);
+    expect(result).toMatchObject({
+      assetExtras: { tnOrigin: "procedural" },
+      materialNames: ["FixtureMaterial"],
+      maxY: 3,
+      minY: 0,
+      triangles: 1,
+    });
+    expect(formatAssetInspection(result)).toContain("minY 0.000");
+  });
+
+  it("is a public threenative command with its own help", async () => {
+    const cli = path.resolve(
+      path.dirname(fileURLToPath(import.meta.url)),
+      "../dist/threenative.js",
+    );
+    const run = promisify(execFile);
+    const general = await run(process.execPath, [cli, "--help"]);
+    expect(general.stdout).toContain("inspect");
+    const help = await run(process.execPath, [cli, "inspect", "--help"]);
+    expect(help.stdout).toContain("--manifest");
+    expect(help.stdout).toContain("threenative inspect <file.glb>");
+    const glb = await temporaryAsset("cli.glb", inspectionFixture());
+    const report = await run(process.execPath, [cli, "inspect", glb, "--json"]);
+    expect(JSON.parse(report.stdout)).toMatchObject({ minY: 0, triangles: 1 });
+  });
+
+  it("parses --manifest and --frame with repeated --sample", () => {
+    expect(parseInspectArgs(["--manifest", "--project", "game"])).toEqual({
+      json: false,
+      manifest: { project: "game" },
+    });
+    expect(
+      parseInspectArgs([
+        "--frame",
+        "a.png",
+        "--sample",
+        "hero:0.5,0.5",
+        "--sample",
+        "sky:0.1,0.1",
+        "--json",
+      ]),
+    ).toEqual({ frame: { file: "a.png", samples: ["hero:0.5,0.5", "sky:0.1,0.1"] }, json: true });
+    expect(() => parseInspectArgs(["--frame"])).toThrow("--frame needs a value");
+    expect(() => parseInspectArgs([])).toThrow("Usage");
+  });
+
+  it("audits assets against the manifest: unlisted, missing, archives, duplicates", async () => {
+    const project = await makeTempDir("threenative-inspect-manifest-");
+    temporaryDirectories.push(project);
+    await mkdir(path.join(project, "assets", "downloads"), { recursive: true });
+    await mkdir(path.join(project, "public"), { recursive: true });
+    await writeFile(path.join(project, "assets", "a.glb"), "same");
+    await writeFile(path.join(project, "assets", "downloads", "b.glb"), "same");
+    await writeFile(path.join(project, "assets", "downloads", "pack.zip"), "zip");
+    await writeFile(
+      path.join(project, "public", "assets.manifest.json"),
+      JSON.stringify({ entries: { "a.glb": {}, "gone.glb": {} }, version: 1 }),
+    );
+
+    let output = "";
+    process.exitCode = undefined;
+    await inspectCommand(["--manifest", "--project", project, "--json"], (text) => {
+      output += text;
+    });
+
+    expect(JSON.parse(output)).toMatchObject({
+      duplicates: [["a.glb", "downloads/b.glb"]],
+      leftoverArchives: ["downloads/pack.zip"],
+      missingFiles: ["gone.glb"],
+      pass: false,
+      unlisted: ["downloads/b.glb"],
+    });
+    expect(process.exitCode).toBe(1);
+    process.exitCode = undefined;
+  });
+
+  it("passes a project whose manifest lists every asset", async () => {
+    const project = await makeTempDir("threenative-inspect-manifest-ok-");
+    temporaryDirectories.push(project);
+    await mkdir(path.join(project, "assets"), { recursive: true });
+    await mkdir(path.join(project, "public"), { recursive: true });
+    await writeFile(path.join(project, "assets", "a.glb"), "x");
+    await writeFile(
+      path.join(project, "public", "assets.manifest.json"),
+      JSON.stringify({ entries: { "a.glb": {} }, version: 1 }),
+    );
+    const { auditAssetManifest } = await import("../src/inspect-project.js");
+    expect((await auditAssetManifest(project)).pass).toBe(true);
+  });
+
+  /** A real PNG: two colour bands, left red and right blue, RGB with a Sub-filtered row. */
+  function png(
+    width: number,
+    height: number,
+    colour: (x: number) => [number, number, number],
+  ): Buffer {
+    const rows = Buffer.alloc((width * 3 + 1) * height);
+    for (let y = 0; y < height; y += 1) {
+      rows[y * (width * 3 + 1)] = 1;
+      for (let x = 0; x < width; x += 1) {
+        const [r, g, b] = colour(x);
+        const [pr, pg, pb] = x === 0 ? [0, 0, 0] : colour(x - 1);
+        const at = y * (width * 3 + 1) + 1 + x * 3;
+        rows[at] = (r - pr) & 255;
+        rows[at + 1] = (g - pg) & 255;
+        rows[at + 2] = (b - pb) & 255;
+      }
+    }
+    const chunk = (type: string, body: Buffer): Buffer => {
+      const head = Buffer.alloc(8);
+      head.writeUInt32BE(body.length, 0);
+      head.write(type, 4, "latin1");
+      const tail = Buffer.alloc(4);
+      tail.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), body])), 0);
+      return Buffer.concat([head, body, tail]);
+    };
+    const header = Buffer.alloc(13);
+    header.writeUInt32BE(width, 0);
+    header.writeUInt32BE(height, 4);
+    header[8] = 8;
+    header[9] = 2;
+    return Buffer.concat([
+      Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]),
+      chunk("IHDR", header),
+      chunk("IDAT", deflateSync(rows)),
+      chunk("IEND", Buffer.alloc(0)),
+    ]);
+  }
+
+  it("samples a frame's colours and passes a drawn frame", async () => {
+    const file = await temporaryAsset(
+      "frame.png",
+      png(8, 8, (x) => (x < 4 ? [255, 0, 0] : [0, 0, 255])),
+    );
+    let output = "";
+    await inspectCommand(
+      ["--frame", file, "--sample", "left:0.1,0.5", "--sample", "right:0.9,0.5", "--json"],
+      (text) => {
+        output += text;
+      },
+    );
+    expect(JSON.parse(output)).toMatchObject({
+      blank: false,
+      dark: false,
+      height: 8,
+      pass: true,
+      samples: [
+        { hex: "#ff0000", role: "left" },
+        { hex: "#0000ff", role: "right" },
+      ],
+      width: 8,
+    });
+  });
+
+  it("fails a blank frame and a black frame", async () => {
+    const { inspectFrame } = await import("../src/inspect-project.js");
+    const flat = await temporaryAsset(
+      "flat.png",
+      png(8, 8, () => [90, 90, 90]),
+    );
+    const black = await temporaryAsset(
+      "black.png",
+      png(8, 8, () => [0, 0, 0]),
+    );
+    expect(await inspectFrame(flat, [])).toMatchObject({ blank: true, pass: false });
+    expect(await inspectFrame(black, [])).toMatchObject({ blank: true, dark: true, pass: false });
   });
 });

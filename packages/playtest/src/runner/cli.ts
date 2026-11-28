@@ -30,6 +30,7 @@ import { audioCommand } from "./audioRun.js";
 import { assertCpuProfileTargetSupported } from "./cpuProfile.js";
 import { traceCommand } from "./traceRun.js";
 import { safePart } from "./shared.js";
+import { formatCompactSummary } from "./scenario-summary.js";
 
 export interface IRunnerDiagnostic {
   code: string;
@@ -333,10 +334,20 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
         ? await runStandalonePlaytests(config)
         : await runAndroidBrowserPlaytests(config)
       : await runDevicePlaytests(config, scenarioPaths);
-    const output = reports.length === 1
-      ? reports[0]
-      : { pass: reports.every(({ pass }) => pass), reports };
-    process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
+    const trimmed = config.omitObservations === true
+      ? reports.map(({ observations: _dropped, ...rest }) => rest)
+      : reports;
+    const output = trimmed.length === 1
+      ? trimmed[0]
+      : { pass: trimmed.every(({ pass }) => pass), reports: trimmed };
+    if (config.outPath !== undefined) {
+      await mkdir(dirname(config.outPath), { recursive: true });
+      await writeFile(config.outPath, `${JSON.stringify(output, null, 2)}\n`);
+    }
+    const printed = config.summary === true
+      ? formatCompactSummary(reports, config.outPath)
+      : output;
+    process.stdout.write(`${JSON.stringify(printed, null, config.summary === true ? 0 : 2)}\n`);
     const exitCode = reports.reduce<0 | 1 | 2>((worst, report) => {
       const code = exitCodeForReport(report);
       return code > worst ? code : worst;
