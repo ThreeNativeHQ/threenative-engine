@@ -32,6 +32,13 @@ export interface IInstancedLodOptions {
   }[];
 }
 
+const partitionChildren = new WeakSet<object>();
+
+/** True for a draw partition `attachInstancedLod` added under an instanced mesh, never authored content. */
+export function isInstancedLodPartition(object: object): boolean {
+  return partitionChildren.has(object);
+}
+
 /** Split a broad instance set along its measured longest axis; each leaf owns stable public slots. */
 function spatialPartitions(mesh: InstancedMesh): number[][] {
   const limit = Math.ceil(Math.sqrt(mesh.count));
@@ -196,6 +203,7 @@ export function attachInstancedLod(mesh: InstancedMesh, options: IInstancedLodOp
         child.visible = true;
         child.frustumCulled = true;
         child.raycast = (): void => {}; // Render partitions have no public placement identity.
+        partitionChildren.add(child);
         mesh.add(child);
         return child;
       }),

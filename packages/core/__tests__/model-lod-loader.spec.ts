@@ -499,8 +499,8 @@ describe("createAssetLoader with a cooked TN_discrete_lod model", () => {
 });
 
 /** The cooked fixture as its coarse companion: the chain's coarsest indices, no chain. */
-function coarseGlb(): Buffer {
-  const full = cookedGlb();
+function coarseGlb(options: Parameters<typeof cookedGlb>[0] = {}): Buffer {
+  const full = cookedGlb(options);
   const jsonLength = full.readUInt32LE(12);
   const json = JSON.parse(full.subarray(20, 20 + jsonLength).toString("utf8")) as {
     extensionsUsed?: string[];
@@ -544,7 +544,10 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
   };
 
   /** Serves the manifest, both files and `images` (200, no `Range`); the full file waits for `release`. */
-  function stubStreamed(images: Readonly<Record<string, Uint8Array>> = {}): {
+  function stubStreamed(
+    images: Readonly<Record<string, Uint8Array>> = {},
+    files: { coarse: Buffer; full: Buffer } = { coarse, full },
+  ): {
     fetched: string[];
     release: () => void;
   } {
@@ -565,8 +568,8 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
         };
       const image = images[url];
       if (image !== undefined) return new Response(image.slice(), { status: 200 });
-      const glb = url.includes("coarse") ? coarse : full;
-      if (glb === full) await gate;
+      const glb = url.includes("coarse") ? files.coarse : files.full;
+      if (glb === files.full) await gate;
       return {
         arrayBuffer: async () => glb.buffer.slice(glb.byteOffset, glb.byteOffset + glb.byteLength),
         headers: { get: () => null },
@@ -599,6 +602,34 @@ describe("createAssetLoader with a streamed model (PRD-860 Phase 3)", () => {
     camera.position.set(0, 0, 100);
     camera.updateMatrixWorld(true);
     expect(updateModelLods(scene, camera, 1080)).toBe(COARSE_TRIANGLES * 2);
+    loader.clear();
+  }, 120_000);
+
+  // A chained instanced mesh draws through partition children of its own, so the full model lists
+  // more meshes than the coarse one. The swap pairs authored meshes, not those draw partitions.
+  it("upgrades a coarse instanced model whose full copy grew instanced LOD partitions", async () => {
+    const files = { coarse: coarseGlb({ instances: true }), full: cookedGlb({ instances: true }) };
+    const { release } = stubStreamed({}, files);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const loader = createAssetLoader({ basePath: "" });
+    const value = await loader.model<{ scene: Object3D }>("ship.glb");
+    const instanced = firstInstancedMesh(value.scene);
+    expect(instanced.children).toHaveLength(0);
+    expect(rungsByZ(instanced).get(FAR_Z)?.index?.count).toBe(COARSE_TRIANGLES * 3);
+
+    release();
+    await vi.waitFor(() => expect(instanced.children.length).toBeGreaterThan(0));
+    expect(warn.mock.calls.filter(([line]) => String(line).includes("STREAM_FAILED"))).toEqual([]);
+    const scene = new Scene();
+    scene.add(value.scene);
+    const camera = new PerspectiveCamera(60, 1, 0.1, 1000);
+    camera.position.set(0, 0, 100);
+    camera.updateMatrixWorld(true);
+    updateModelLods(scene, camera, 1080);
+    // The near placement draws the full model, the far one its coarser chain level.
+    const drawn = rungsByZ(instanced);
+    expect(drawn.get(NEAR_Z)?.index?.count).toBe(LOD0_TRIANGLES * 3);
+    expect(drawn.get(FAR_Z)?.index?.count).toBe(COARSE_TRIANGLES * 3);
     loader.clear();
   }, 120_000);
 

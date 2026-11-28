@@ -4,6 +4,7 @@ import {
   type Bone,
   BufferAttribute,
   type BufferGeometry,
+  InstancedMesh,
   Mesh,
   NoColorSpace,
   Object3D,
@@ -23,11 +24,12 @@ import {
 import { type AssetMemo, createAssetMemo } from "./asset-memo.js";
 import { TN_VIRTUAL_GEOMETRY, VirtualGeometryPlugin } from "./clustered-mesh.js";
 import { GEOMETRY_ASSET_KEY } from "./geometry-capture.js";
-import { attachInstancedLod } from "./instanced-batch-lod.js";
+import { attachInstancedLod, isInstancedLodPartition } from "./instanced-batch-lod.js";
 import {
   DiscreteLodPlugin,
   type IModelLodPolicy,
   TN_DISCRETE_LOD,
+  baseGeometryOf,
   lodChainOf,
   markStreamedGeometry,
   upgradeStreamedGeometry,
@@ -861,11 +863,16 @@ function widenNormalizedScalars(root: Object3D): void {
 }
 
 /** The `{ scene }` a GLTF result carries, when it carries one. */
-/** A loaded model's meshes in traversal order: the coarse companion and the full model list them alike. */
+/**
+ * A loaded model's authored meshes in traversal order: the coarse companion and the full model list
+ * them alike. The draw partitions an instanced LOD adds under a mesh are not authored, so a full
+ * model's chained instances do not shift every mesh after them.
+ */
 function meshesOf(value: unknown): Mesh[] {
   const meshes: Mesh[] = [];
   modelRoot(value)?.traverse((object) => {
-    if ((object as Mesh).isMesh === true) meshes.push(object as Mesh);
+    if ((object as Mesh).isMesh === true && !isInstancedLodPartition(object))
+      meshes.push(object as Mesh);
   });
   return meshes;
 }
@@ -1740,9 +1747,10 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
                       residentState && { keptOnly: true, used: false, whole: residentState.whole },
                     ),
               )
-              .then((full) => {
+              .then(async (full) => {
                 residentState?.whole.clear();
                 if (full === undefined) return;
+                const policy = await discretePolicy(path);
                 if (gone()) {
                   disposeModel(full, disposed);
                   return;
@@ -1752,9 +1760,19 @@ export function createAssetLoader(options: IAssetLoaderOptions = {}): IAssetLoad
                   throw new Error(
                     `the full model has ${String(fullMeshes.length)} mesh(es), the coarse ${String(coarseMeshes.length)}`,
                   );
-                coarseGeometries.forEach((geometry, index) =>
-                  upgradeStreamedGeometry(geometry, (fullMeshes[index] as Mesh).geometry),
-                );
+                // The full mesh's own geometry is a draw-nothing carrier when its instances take
+                // their LOD, so the swap reads the chain's base. The coarse instanced mesh then
+                // takes the same instanced LOD the full one has.
+                coarseMeshes.forEach((mesh, index) => {
+                  const geometry = coarseGeometries[index] as BufferGeometry;
+                  upgradeStreamedGeometry(geometry, baseGeometryOf(fullMeshes[index] as Mesh));
+                  if (
+                    mesh instanceof InstancedMesh &&
+                    mesh.geometry === geometry &&
+                    lodChainOf(geometry) !== undefined
+                  )
+                    attachInstancedLod(mesh, { autoLod: policy });
+                });
                 const swapped = upgradeTextures(fullMeshes, residentState?.used === true);
                 if (residentState?.used === true) {
                   pool.upgraded += swapped;
