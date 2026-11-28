@@ -16,7 +16,9 @@ export async function decodeImageBytes(
   const bytes = withoutGlbPadding(input);
   if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) {
     const { decode } = await import("jpeg-js");
-    const image = decode(bytes, { useTArray: true });
+    // jpeg-js refuses past 512 MB by default; an 8192x8192 JPEG needs about 740 MB. The source is
+    // the game's own authored asset at build time, so the cap allows 8192² with headroom.
+    const image = decode(bytes, { maxMemoryUsageInMB: 2048, useTArray: true });
     assertRgba(image.data.length, image.width, image.height, logicalPath);
     return { data: new Uint8Array(image.data), height: image.height, width: image.width };
   }

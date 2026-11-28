@@ -299,7 +299,7 @@ describe("the ktx2 texture pass", () => {
     expect(texturePass().configuration?.encoder).toBe(KTX2_ENCODER_VERSION);
   });
 
-  it("rejects a capped image and oversize input at the retained-4K encoder gate", async () => {
+  it("rejects a capped image and oversize input at the encoder gate", async () => {
     const source = rgbaPng({ height: 4096, width: 4096 });
     const capped = await texturePass({ maxSize: 2048 }).apply(source, "capped_normal.png");
     if (Buffer.isBuffer(capped)) throw new Error("4K control was not capped");
@@ -308,9 +308,16 @@ describe("the ktx2 texture pass", () => {
     expect(() =>
       expect([dimensions.pixelWidth, dimensions.pixelHeight]).toEqual([4096, 4096]),
     ).toThrow();
+    // Past one 16 Mi-texel pass only UASTC tiles; past 8192² nothing encodes.
     await expect(
       encodeToKTX2(source, {
         imageDecoder: async () => ({ data: new Uint8Array(), width: 4096, height: 4100 }),
+        isUASTC: false,
+      }),
+    ).rejects.toThrow(/TN_ASSETS_KTX2_SOURCE_SIZE/u);
+    await expect(
+      encodeToKTX2(source, {
+        imageDecoder: async () => ({ data: new Uint8Array(), width: 8192, height: 8196 }),
       }),
     ).rejects.toThrow(/TN_ASSETS_KTX2_SOURCE_SIZE/u);
   });
