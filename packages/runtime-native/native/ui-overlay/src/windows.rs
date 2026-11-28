@@ -35,10 +35,10 @@ use windows::Win32::System::WinRT::EventRegistrationToken;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
     CallWindowProcW, GetClientRect, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR, HTCLIENT,
-    WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN,
-    WM_XBUTTONUP, WNDPROC,
+    WA_INACTIVE, WM_ACTIVATE, WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE,
+    WM_MOUSEWHEEL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDBLCLK,
+    WM_XBUTTONDOWN, WM_XBUTTONUP, WNDPROC,
 };
 
 /// `ui_root` was null or not a UTF-8 path.
@@ -75,6 +75,13 @@ Object.defineProperty(window, 'ipc', { value: Object.freeze({ postMessage: s => 
   // Every press on the page answers again: a control that kept DOM focus while the game took the
   // keyboard back gets it again on its next click.
   addEventListener('pointerup', () => setTimeout(() => report(true)), true);
+  // On the web the page and the game are one document, so the keyboard moving between them never
+  // blurs the window. Here they are two windows, and the hand-off is not the app losing focus: the
+  // page's own window focus and blur stop here. The host sends one of each when the app itself is
+  // deactivated or activated (WM_ACTIVATE), so a pause-on-blur still pauses on Alt+Tab.
+  for (const type of ['blur', 'focus']) {
+    addEventListener(type, (e) => { if (e.isTrusted && e.target === window) e.stopImmediatePropagation(); }, true);
+  }
 })();
 "#;
 /// `MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2`.
@@ -332,6 +339,20 @@ fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) 
         || (message == WM_CAPTURECHANGED && lparam.0 != overlay.game.0 as isize)
     {
         overlay.press.set(None);
+        return None;
+    }
+    if message == WM_ACTIVATE {
+        let type_ = if wparam.0 & 0xffff == WA_INACTIVE as usize {
+            "blur"
+        } else {
+            "focus"
+        };
+        let script = HSTRING::from(format!("dispatchEvent(new FocusEvent('{type_}'))"));
+        let _ = unsafe {
+            overlay
+                .webview
+                .ExecuteScript(&script, None::<&ICoreWebView2ExecuteScriptCompletedHandler>)
+        };
         return None;
     }
     if message == WM_SETCURSOR {
