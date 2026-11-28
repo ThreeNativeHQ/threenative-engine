@@ -483,6 +483,9 @@ constexpr const char* kDocumentShim = R"JS(
       listeners.get(type).add(listener);
     },
     removeEventListener(type, listener) { listeners.get(type)?.delete(listener); },
+    // Core's releaseMouse asks an event-target document for this, as a browser's document has it
+    // (and the legacy host's): the lock is the canvas's, which core-host.mjs installs.
+    exitPointerLock: () => globalThis.canvas?.exitPointerLock?.(),
     dispatchEvent(event) {
       // A copy: a listener that removes another must not skip it, as a browser's dispatch does not.
       for (const listener of [...(listeners.get(event.type) ?? [])]) {
@@ -1899,7 +1902,7 @@ void V8Game::uiFrame() {
     v8::Context::Scope contextScope(ctx);
     std::string frame;
     while (mystral::platform::takeUiMessage(frame)) {
-        if (mystral::platform::applyUiHitRegionsFrame(frame)) continue;
+        if (mystral::platform::applyUiHitRegionsFrame(frame) || mystral::platform::applyUiFullscreenFrame(frame)) continue;
         v8::Local<v8::Value> receive;
         if (!ctx->Global()->Get(ctx, v8str(isolate_, "__tnUiGameReceive")).ToLocal(&receive) || !receive->IsFunction()) {
             // Not connected yet: dropping is right and must be visible, or an intent looks like a dead button.
@@ -2032,8 +2035,45 @@ int main(int argc, char** argv) {
         else
             return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: unknown argument %s\n", argument.c_str()), 2;
     }
+    // No game named: the packaged one beside the executable (package-engine-desktop.mjs stages `game.js`
+    // there), so double-clicking the player starts the game as its launch script would.
+    if (gamePath.empty()) {
+        const char* base = SDL_GetBasePath();
+        if (base != nullptr && std::filesystem::exists(std::filesystem::path(base) / "game.js"))
+            gamePath = (std::filesystem::path(base) / "game.js").string();
+    }
     if (gamePath.empty())
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;
+    // The packaged game's window and priority (`launch.cfg` beside `game.js`, package-engine-desktop.mjs):
+    // read here, so a launcher that starts the player directly (the store's) applies the game's config
+    // too. Only the window keys, and only where the environment or an argument above set nothing.
+    if (std::ifstream settings(std::filesystem::path(gamePath).parent_path() / "launch.cfg"); settings) {
+        for (std::string line; std::getline(settings, line);) {
+            if (!line.empty() && line.back() == '\r') line.pop_back();
+            const auto equals = line.find('=');
+            if (equals == std::string::npos) continue;
+            const std::string key = line.substr(0, equals), value = line.substr(equals + 1);
+            struct LaunchKey { const char* name; const char* (*read)(); };
+            static constexpr LaunchKey kLaunchKeys[] = {
+                {flags::PlayerWidth.name, &flags::read<flags::PlayerWidth>},
+                {flags::PlayerHeight.name, &flags::read<flags::PlayerHeight>},
+                {flags::PlayerTitle.name, &flags::read<flags::PlayerTitle>},
+                {flags::PlayerPriority.name, &flags::read<flags::PlayerPriority>},
+                {flags::PlayerFullscreen.name, &flags::read<flags::PlayerFullscreen>},
+                {flags::PlayerMaximized.name, &flags::read<flags::PlayerMaximized>},
+                {flags::PlayerResizable.name, &flags::read<flags::PlayerResizable>},
+            };
+            const auto found = std::find_if(std::begin(kLaunchKeys), std::end(kLaunchKeys),
+                                            [&](const LaunchKey& known) { return key == known.name; });
+            if (found == std::end(kLaunchKeys)) continue;
+            if (const char* set = found->read(); set != nullptr && set[0] != '\0') continue;
+#if defined(_WIN32)
+            _putenv_s(key.c_str(), value.c_str());
+#else
+            setenv(key.c_str(), value.c_str(), 1);
+#endif
+        }
+    }
     if (!checkRequest.empty() && !checkGame)
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: --check-request requires --check-game\n"), 2;
 

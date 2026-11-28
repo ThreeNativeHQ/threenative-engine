@@ -1907,7 +1907,7 @@ if(TN_ENABLE_UI_OVERLAY)
         # actually consumed.
         target_link_libraries(mystral-runtime PUBLIC
             "${TN_WEBVIEW2LOADER_DIR}/WebView2LoaderStatic.lib"
-            user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll
+            user32 gdi32 ole32 oleaut32 advapi32 shell32 shlwapi userenv ntdll dcomp
         )
     else()
         # webkit2gtk and its GTK stack come from the system, the same way the game's SDL does.
