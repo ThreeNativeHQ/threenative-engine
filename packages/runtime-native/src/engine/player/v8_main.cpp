@@ -1899,7 +1899,7 @@ void V8Game::uiFrame() {
     v8::Context::Scope contextScope(ctx);
     std::string frame;
     while (mystral::platform::takeUiMessage(frame)) {
-        if (mystral::platform::applyUiHitRegionsFrame(frame)) continue;
+        if (mystral::platform::applyUiHitRegionsFrame(frame) || mystral::platform::applyUiFullscreenFrame(frame)) continue;
         v8::Local<v8::Value> receive;
         if (!ctx->Global()->Get(ctx, v8str(isolate_, "__tnUiGameReceive")).ToLocal(&receive) || !receive->IsFunction()) {
             // Not connected yet: dropping is right and must be visible, or an intent looks like a dead button.
@@ -2031,6 +2031,13 @@ int main(int argc, char** argv) {
             gamePath = argument;
         else
             return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: unknown argument %s\n", argument.c_str()), 2;
+    }
+    // No game named: the packaged one beside the executable (package-engine-desktop.mjs stages `game.js`
+    // there), so double-clicking the player starts the game as its launch script would.
+    if (gamePath.empty()) {
+        const char* base = SDL_GetBasePath();
+        if (base != nullptr && std::filesystem::exists(std::filesystem::path(base) / "game.js"))
+            gamePath = (std::filesystem::path(base) / "game.js").string();
     }
     if (gamePath.empty())
         return std::fprintf(stderr, "TN_PLAYER_V8_ARGS: a game bundle path is required\n"), 2;

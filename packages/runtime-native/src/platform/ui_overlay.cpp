@@ -18,6 +18,8 @@
 
 #include <cstdio>
 
+#include <SDL3/SDL_video.h>  // applyUiFullscreenFrame switches the game window on every desktop
+
 #if defined(__APPLE__)
 #include <TargetConditionals.h>
 #endif
@@ -467,11 +469,25 @@ bool applyUiHitRegionsFrame(const std::string& frame) {
     return true;
 }
 
+/**
+ * Applies a `tn:fullscreen` frame (true), or returns false for any other frame. On a native host the
+ * page's Fullscreen API asks for the game window, not the web view (core's ui-bridge sends it), so
+ * the host switches its SDL window: desktop fullscreen, the mode `display.fullscreen` opens with.
+ */
+bool applyUiFullscreenFrame(const std::string& frame) {
+    if (frame.find("\"tn:fullscreen\"") == std::string::npos) return false;
+    const bool on = frame.find("\"on\":true") != std::string::npos;
+    const bool applied = g_uiWindow != nullptr && SDL_SetWindowFullscreen(g_uiWindow, on);
+    std::cout << "TN_UI_FULLSCREEN:{\"on\":" << (on ? "true" : "false")
+              << ",\"applied\":" << (applied ? "true" : "false") << "}" << std::endl;
+    return true;
+}
+
 size_t drainUiFramesToGame(const std::function<void(const std::string&)>& forward) {
     size_t forwarded = 0;
     std::string frame;
     while (takeUiMessage(frame)) {
-        if (applyUiHitRegionsFrame(frame)) continue;
+        if (applyUiHitRegionsFrame(frame) || applyUiFullscreenFrame(frame)) continue;
         forward(frame);
         ++forwarded;
     }
