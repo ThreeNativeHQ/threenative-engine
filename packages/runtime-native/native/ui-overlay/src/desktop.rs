@@ -119,6 +119,10 @@ fn build_overlay<W: HasWindowHandle>(
     let sink = inbound;
     let built = WebViewBuilder::new()
         .with_transparent(true)
+        // The game window owns the keyboard, so the page is rarely first responder, and AppKit spends a
+        // click on a view that does not accept first mouse on focusing it: a HUD button then needs two
+        // clicks (CI: the page saw the pointer move onto TAKE THE DECK, then no pointerdown at all).
+        .with_accept_first_mouse(true)
         .with_bounds(Rect {
             position: LogicalPosition::new(0.0, 0.0).into(),
             size: LogicalSize::new(width.max(1), height.max(1)).into(),
