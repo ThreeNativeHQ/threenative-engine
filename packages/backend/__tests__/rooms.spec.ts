@@ -109,10 +109,11 @@ function left(room: Room): Promise<string> {
   });
 }
 
-function confirmed(room: Room, key: string): Promise<void> {
+function confirmed(room: Room, key: string, count = 1): Promise<void> {
+  let remaining = count;
   return new Promise((resolve) => {
     const off = room.on("state", (written) => {
-      if (written !== key) return;
+      if (written !== key || --remaining > 0) return;
       off();
       resolve();
     });
@@ -198,15 +199,16 @@ describe("shared state (AC-2)", () => {
 
     // Two clients write the same key and different keys at once: the room orders them, so every
     // member ends on the same value and no write is lost.
-    const scoreA = confirmed(a, "score");
-    const scoreB = confirmed(late, "score");
-    const crossA = confirmed(a, "right");
-    const crossB = confirmed(late, "left");
+    const delivered = [a, late].flatMap((member) => [
+      confirmed(member, "score", 2),
+      confirmed(member, "left"),
+      confirmed(member, "right"),
+    ]);
     a.state.set("score", 1);
     late.state.set("score", 2);
     a.state.set("left", "a");
     late.state.set("right", "b");
-    await Promise.all([scoreA, scoreB, crossA, crossB]);
+    await Promise.all(delivered);
 
     expect(a.state.get("score")).toBe(late.state.get("score"));
     expect([1, 2]).toContain(a.state.get("score"));
