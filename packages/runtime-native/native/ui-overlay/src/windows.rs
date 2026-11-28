@@ -34,11 +34,11 @@ use windows::Win32::System::Com::{CoInitializeEx, COINIT_APARTMENTTHREADED};
 use windows::Win32::System::WinRT::EventRegistrationToken;
 use windows::Win32::UI::Input::KeyboardAndMouse::{GetFocus, ReleaseCapture, SetCapture, SetFocus};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CallWindowProcW, GetClientRect, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR, HTCLIENT,
-    WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN,
-    WM_XBUTTONUP, WNDPROC,
+    CallWindowProcW, GetClientRect, IsIconic, SetCursor, SetWindowLongPtrW, GWLP_WNDPROC, HCURSOR,
+    HTCLIENT, WA_INACTIVE, WM_ACTIVATE, WM_CANCELMODE, WM_CAPTURECHANGED, WM_LBUTTONDBLCLK,
+    WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDBLCLK, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEHWHEEL,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONDBLCLK, WM_RBUTTONDOWN, WM_RBUTTONUP, WM_SETCURSOR,
+    WM_SIZE, WM_XBUTTONDBLCLK, WM_XBUTTONDOWN, WM_XBUTTONUP, WNDPROC,
 };
 
 /// `ui_root` was null or not a UTF-8 path.
@@ -75,6 +75,13 @@ Object.defineProperty(window, 'ipc', { value: Object.freeze({ postMessage: s => 
   // Every press on the page answers again: a control that kept DOM focus while the game took the
   // keyboard back gets it again on its next click.
   addEventListener('pointerup', () => setTimeout(() => report(true)), true);
+  // On the web the page and the game are one document, so the keyboard moving between them never
+  // blurs the window. Here they are two windows, and the hand-off is not the app losing focus: the
+  // page's own window focus and blur stop here. The host sends one of each when the app itself is
+  // deactivated or activated (WM_ACTIVATE), so a pause-on-blur still pauses on Alt+Tab.
+  for (const type of ['blur', 'focus']) {
+    addEventListener(type, (e) => { if (e.isTrusted && e.target === window) e.stopImmediatePropagation(); }, true);
+  }
 })();
 "#;
 /// `MK_LBUTTON | MK_RBUTTON | MK_MBUTTON | MK_XBUTTON1 | MK_XBUTTON2`.
@@ -100,6 +107,10 @@ struct Overlay {
     press: Cell<Option<bool>>,
     /// Whether the pointer was last over the page, so leaving it clears the page's hover.
     hovering: Cell<bool>,
+    /// The last WM_ACTIVATE said the window is active, and whether the page was last told it has focus
+    /// (active and not minimized), so only a real change reaches the page.
+    activated: Cell<bool>,
+    focused: Cell<bool>,
 }
 
 fn client_size(hwnd: HWND) -> (i32, i32) {
@@ -294,6 +305,8 @@ fn build(
         size: Cell::new(size),
         press: Cell::new(None),
         hovering: Cell::new(false),
+        activated: Cell::new(true),
+        focused: Cell::new(true),
     })
 }
 
@@ -332,6 +345,26 @@ fn route_mouse(overlay: &Overlay, message: u32, wparam: WPARAM, lparam: LPARAM) 
         || (message == WM_CAPTURECHANGED && lparam.0 != overlay.game.0 as isize)
     {
         overlay.press.set(None);
+        return None;
+    }
+    if message == WM_ACTIVATE || message == WM_SIZE {
+        // A window can be activated while still minimized (HIWORD of WM_ACTIVATE), and a restore from
+        // the taskbar ends with WM_SIZE, not another WM_ACTIVATE: focus is active and not iconic.
+        if message == WM_ACTIVATE {
+            overlay
+                .activated
+                .set(wparam.0 & 0xffff != WA_INACTIVE as usize);
+        }
+        let focused = overlay.activated.get() && !unsafe { IsIconic(overlay.game) }.as_bool();
+        if focused != overlay.focused.replace(focused) {
+            let type_ = if focused { "focus" } else { "blur" };
+            let script = HSTRING::from(format!("dispatchEvent(new FocusEvent('{type_}'))"));
+            let _ = unsafe {
+                overlay
+                    .webview
+                    .ExecuteScript(&script, None::<&ICoreWebView2ExecuteScriptCompletedHandler>)
+            };
+        }
         return None;
     }
     if message == WM_SETCURSOR {
